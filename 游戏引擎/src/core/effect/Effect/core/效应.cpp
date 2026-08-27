@@ -17,17 +17,17 @@ namespace engine
     }
 
     //配置读取
-    bool Prop_Effect::config_read(Config_Checker& config_checker, const json& config)
+    bool Prop_Effect::config_read(const json& config)
     {
         //若读取路径字段无效
-        if (!config_checker.field_check<string>(config, "path"))
+        if (!Config_Checker::field_check<string>(config, "path"))
             return false;
         else
         {
             //获取读取路径
             path config_path = Engine_Env::absolute_path_get(config["path"].get<string>());
             //若读取路径无效
-            if (!config_checker.path_check(config_path))
+            if (!Config_Checker::path_check(config_path))
                 return false;
             //若读取路径有效
             else
@@ -42,10 +42,10 @@ namespace engine
         }
 
         //若归属字段无效
-        if (!config_checker.field_check<uint64_t>(config, "inclusion"))
+        if (!Config_Checker::field_check<uint64_t>(config, "inclusion"))
             return false;
         //若名称字段无效
-        if (!config_checker.field_check<string>(config, "name"))
+        if (!Config_Checker::field_check<string>(config, "name"))
             return false;
 
         //获取效应归属

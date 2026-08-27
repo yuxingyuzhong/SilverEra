@@ -151,7 +151,8 @@ namespace engine
             (
                 "event",
                 sol::no_constructor,
-                "target_module", &event::target_module,
+                "sender_object", &event::sender_object,
+                "target_object", &event::target_object,
                 "category", &event::category,
                 "tag", &event::tag
             );

@@ -9,6 +9,8 @@
 #include "src/core/effect/Effect/效应.h"
 //获取预定义sol2库类型别名
 #include "common/external/Sol2/sol类型别名.h"
+//获取对象管理器
+#include "src/tools/Non_GUI/Object_Manager/对象管理器.h"
 //获取配置检查器
 #include "src/tools/Non_GUI/Config_Checker/配置检查器.h"
 //获取辅助算法
@@ -104,7 +106,5 @@ namespace engine
         //效应总集合
         std::vector<effect_record> effect_set;
 
-        //效应配置检查器
-        Config_Checker config_checker;
     };
 }

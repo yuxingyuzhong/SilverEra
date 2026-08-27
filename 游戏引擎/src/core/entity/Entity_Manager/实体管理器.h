@@ -62,8 +62,6 @@ namespace engine
         //权限密钥
         int64_t acl_key = 0;
 
-        //配置检查器
-        Config_Checker config_checker{};
         //属性槽管理器指针
         Property_Manager* prop_manager = nullptr;
 

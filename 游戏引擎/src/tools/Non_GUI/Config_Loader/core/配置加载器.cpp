@@ -258,7 +258,7 @@ namespace engine
                 //填充事件标签
                 event->tag = "Load";
                 //填充目标模块
-                event->target_module = module;
+                event->target_object = module;
                 //填充配置数据
                 event->config = config_data;
                 //发送事件

@@ -61,7 +61,7 @@ namespace engine
                     //简化表示路径
                     auto& tag = buffer[transform_time];
                     //构造事件
-                    config_event needed_event("", tag.first, tag.second, json::object());
+                    config_event needed_event("Entity_Manager","", tag.first, tag.second, json::object());
                     //若该事件不存在
                     if (!event_map.count(needed_event))
                         event_map.insert(needed_event);
@@ -79,7 +79,7 @@ namespace engine
             auto& config = event->config;
 
             //若实体类型字段无效
-            if (!config_checker.field_check<string>(config, "target_type"))
+            if (!Config_Checker::field_check<string>(config, "target_type"))
                 return;
             //获取目标实体类型
             string target_type = config["target_type"];
@@ -113,7 +113,7 @@ namespace engine
             else if (tag == "Unload")
             {
                 //若待卸载实体ID集合字段无效
-                if (!config_checker.field_check<vector<int64_t>>(config, "ID_set"))
+                if (!Config_Checker::field_check<vector<int64_t>>(config, "ID_set"))
                     return;
                 //获取待卸载实体ID
                 vector<uint64_t> ID_set = config["ID_set"];
@@ -127,7 +127,7 @@ namespace engine
             else
             {
                 //若目标实体ID字段无效
-                if (!config_checker.field_check<string>(config, "target_ID"))
+                if (!Config_Checker::field_check<string>(config, "target_ID"))
                     return;
                 //获取目标实体ID
                 uint64_t target_ID = config["target_ID"];
@@ -157,7 +157,7 @@ namespace engine
             if (tag == "Build")
             {
                 //若目标实体类型字段无效
-                if (!config_checker.field_check<string>(config, "target_type"))
+                if (!Config_Checker::field_check<string>(config, "target_type"))
                 {
                     Log::warn("Entity_Manager::未定义目标实体类型\n实体创建事件已驳回");
                     return;
@@ -186,7 +186,7 @@ namespace engine
                         if (target_type == acl.minion_set[match_time])
                         {
                             //若实体创建数目字段无效
-                            if (!config_checker.field_check<vector<uint64_t>>(config, "counts"))
+                            if (!Config_Checker::field_check<vector<uint64_t>>(config, "counts"))
                             {
                                 Log::warn("Entity_Manager::从属创建未定义创建数量\n事件已驳回");
                                 return;
@@ -210,7 +210,7 @@ namespace engine
             else if (tag == "Unload")
             {
                 //若待卸载实体ID集合字段无效
-                if (!config_checker.field_check<vector<uint64_t>>(config, "ID_set"))
+                if (!Config_Checker::field_check<vector<uint64_t>>(config, "ID_set"))
                 {
                     Log::warn("Entity_Manager::未定义目标实体ID\n实体卸载事件已驳回");
                     return;
@@ -237,19 +237,19 @@ namespace engine
             else if (tag == "Transfer")
             {
                 //若从属接收实体类型字段无效
-                if (!config_checker.field_check<string>(config, "target_type"))
+                if (!Config_Checker::field_check<string>(config, "target_type"))
                 {
                     Log::warn("目标实体类型未定义\n从属转移事件已驳回");
                     return;
                 }
                 //若待卸载实体ID集合字段无效
-                if (!config_checker.field_check<uint64_t>(config, "target_ID"))
+                if (!Config_Checker::field_check<uint64_t>(config, "target_ID"))
                 {
                     Log::warn("目标实体ID未定义\n从属转移事件已驳回");
                     return;
                 }
                 //若待卸载实体ID集合字段无效
-                if (!config_checker.field_check<vector<uint64_t>>(config, "ID_set"))
+                if (!Config_Checker::field_check<vector<uint64_t>>(config, "ID_set"))
                 {
                     Log::warn("转移实体ID 集合未定义\n从属转移事件已驳回");
                     return;
@@ -275,13 +275,13 @@ namespace engine
             else if (tag == "Request" || tag == "Command")
             {
                 //若目标实体类型字段无效
-                if (!config_checker.field_check<string>(config, "target_type"))
+                if (!Config_Checker::field_check<string>(config, "target_type"))
                 {
                     Log::warn("Entity_Manager::未定义目标实体类型\n实体请求/命令事件已驳回");
                     return;
                 }
                 //若目标实体ID字段字段无效
-                if (!config_checker.field_check<vector<int64_t>>(config, "target_ID"))
+                if (!Config_Checker::field_check<vector<int64_t>>(config, "target_ID"))
                 {
                     Log::warn("Entity_Manager::未定义目标实体ID\n实体请求/命令事件已驳回");
                     return;

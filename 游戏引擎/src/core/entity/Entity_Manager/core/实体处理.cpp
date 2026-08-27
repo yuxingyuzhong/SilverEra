@@ -190,7 +190,7 @@ namespace engine
                 auto& entity = entity_set[entity_index].entity;
                 auto& master_ID = entity_set[entity_index].master_ID;
                 //销毁属性槽
-                prop_manager->prop_slot_build(entity.type_get(), entity.ID_get());
+                prop_manager->prop_slot_unload(entity.type_get(), entity.ID_get());
                 //若存在上级实体
                 if (master_ID.has_value())
                     //卸载上级实体从属记录

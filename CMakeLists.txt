@@ -96,13 +96,20 @@ target_include_directories(EngineCore PUBLIC "${GLFW_ROOT}")
 set(GLAD_ROOT "${PROJECT_ROOT_DIR}/游戏引擎/external/glad")
 target_include_directories(EngineCore PUBLIC "${GLAD_ROOT}/include")
 
-# ---------- 新增：Dear ImGui ----------
+# ---------- 新增：GLM ----------
+set(IMGUI_ROOT "${PROJECT_ROOT_DIR}/游戏引擎/external")
+target_include_directories(EngineCore PUBLIC "${IMGUI_ROOT}")
 
+# ---------- 新增：Dear ImGui ----------
 set(IMGUI_ROOT "${PROJECT_ROOT_DIR}/游戏引擎/external/Dear_ImGui/imgui")
 target_include_directories(EngineCore PUBLIC "${IMGUI_ROOT}")
 
 set(IMGUI_BACKENDS "${PROJECT_ROOT_DIR}/游戏引擎/external/Dear_ImGui/backends")
 target_include_directories(EngineCore PUBLIC "${IMGUI_BACKENDS}")
+
+# ---------- 新增：stb_image.h ----------
+set(IMGUI_ROOT "${PROJECT_ROOT_DIR}/游戏引擎/external/stb")
+target_include_directories(EngineCore PUBLIC "${IMGUI_ROOT}")
 
 # ---------- 新增：公共包含路径打印 ----------
 

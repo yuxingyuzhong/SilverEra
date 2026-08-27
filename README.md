@@ -306,7 +306,7 @@ D:\代码存储\代码仓库\游戏引擎\
 namespace engine {
     // 抽象事件（不可直接创建）
     struct event {
-        std::string target_module;  // 目标接收模块
+        std::string target_object;  // 目标接收模块
         std::string category;       // 事件大类
         std::string tag;            // 类内标签
         virtual ~event() = 0;

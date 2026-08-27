@@ -37,16 +37,16 @@ namespace engine
     bool Entity_Manager::config_field_parse(const json& config)
     {
         //若实体类型字段无效
-        if (!config_checker.field_check<string>(config, "type"))
+        if (!Config_Checker::field_check<string>(config, "type"))
             return false;
         //若决策树加载路径字段无效
-        if (!config_checker.field_check<string>(config, "decision_load_path"))
+        if (!Config_Checker::field_check<string>(config, "decision_load_path"))
             return false;
         //若权限列表字段无效
-        if (!config_checker.field_check<vector<string>>(config, "acls"))
+        if (!Config_Checker::field_check<vector<string>>(config, "acls"))
             return false;
         //若订阅事件列表字段无效
-        if (!config_checker.field_check<vector<pair<string, string>>>(config, "needed_events"))
+        if (!Config_Checker::field_check<vector<pair<string, string>>>(config, "needed_events"))
             return false;
 
         //若所有检查均通过

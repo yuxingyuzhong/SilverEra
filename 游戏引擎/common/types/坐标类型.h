@@ -1,6 +1,14 @@
 #pragma once
 //预编译头
 #include "common/前置头文件包含.h"
+//获取数学库
+#include <glm/glm.hpp>
+//获取平移/缩放等矩阵
+#include <glm/gtc/matrix_transform.hpp>        
+//四元数操作
+#include <glm/gtc/quaternion.hpp>     
+//openGL适配
+#include <glm/gtc/type_ptr.hpp>                
 
 //通用模块
 namespace engine
@@ -152,4 +160,5 @@ namespace engine
 			return os;
 		}
 	};
+
 }

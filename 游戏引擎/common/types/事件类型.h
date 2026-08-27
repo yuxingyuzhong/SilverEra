@@ -8,8 +8,10 @@ namespace engine
     //抽象事件
     struct event
     {
-        //目标接收者
-        std::string target_module{};
+        //事件发起者
+        std::string sender_object{};
+        //事件目标
+        std::string target_object{};
         //事件大类
         std::string category;
         //类内标签
@@ -23,9 +25,11 @@ namespace engine
 
         }
         //含参构造函数
-        event(const std::string& target_module, const std::string& category, const std::string& tag)
+        event(const std::string sender_object,const std::string& target_object,
+            const std::string& category, const std::string& tag)
         {
-            this->target_module = target_module;
+            this->sender_object = sender_object;
+            this->target_object = target_object;
             this->category = category;
             this->tag = tag;
         }
@@ -47,10 +51,12 @@ namespace engine
 
         }
         //含参构造函数
-        config_event(const std::string& target_module, const std::string& category,
-            const std::string& tag, const nlohmann::json& config)
+        config_event(const std::string& sender_object,const std::string& target_object,
+            const std::string& category,const std::string& tag,
+            const nlohmann::json& config)
         {
-            this->target_module = target_module;
+            this->sender_object = sender_object;
+            this->target_object = target_object;
             this->category = category;
             this->tag = tag;
             this->config = config;
@@ -67,7 +73,7 @@ namespace engine
         {
             if (this->category == other.category &&
                 this->tag == other.tag &&
-                this->target_module == other.target_module &&
+                this->target_object == other.target_object &&
                 this->config == other.config)
                 return true;
             else
@@ -96,7 +102,7 @@ namespace std
             std::hash<std::string> str_hasher;
             size_t seed = str_hasher(evt.category);
             detail::hash_combine(seed, str_hasher(evt.tag));
-            detail::hash_combine(seed, str_hasher(evt.target_module));
+            detail::hash_combine(seed, str_hasher(evt.target_object));
             return seed;
         }
     };
@@ -113,7 +119,7 @@ namespace std
             // 1. 哈希基类成员（与 event 一致）
             seed = str_hasher(evt.category);
             detail::hash_combine(seed, str_hasher(evt.tag));
-            detail::hash_combine(seed, str_hasher(evt.target_module));
+            detail::hash_combine(seed, str_hasher(evt.target_object));
 
             // 2. 哈希派生类成员 config（将 json 转为字符串再哈希）
             //    注意：dump() 可能抛出异常，但 noexcept 标记要求不抛，这里假设不会。

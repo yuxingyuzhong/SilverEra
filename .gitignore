@@ -38,3 +38,6 @@ x86/
 
 # CMake 输出目录（构建产物不纳入版本管理）
 out/
+
+# Cyrene agent
+.cyrene/

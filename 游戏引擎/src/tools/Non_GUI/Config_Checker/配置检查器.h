@@ -11,7 +11,7 @@ namespace engine
 	{
 	private:
 		//异常信息输出
-		bool error_out(std::error_code& error_info)
+		static bool error_out(std::error_code& error_info)
         {
             //若异常信息不存在
             if (!error_info)
@@ -31,7 +31,7 @@ namespace engine
 	public:
         //字段有效性检查
         template<typename T>
-        bool field_check(const nlohmann::json& config, const std::string& field)
+        static bool field_check(const nlohmann::json& config, const std::string& field)
         {
             //字段存在性检查
             if (!config.contains(field)) 
@@ -94,7 +94,7 @@ namespace engine
             return true;
         }
 		//路径有效性检查 —— path重载
-		bool path_check(const std::filesystem::path& config_path)
+		static bool path_check(const std::filesystem::path& config_path)
         {
             //若未解析出有效路径
             if (config_path.begin() == config_path.end())
@@ -124,7 +124,7 @@ namespace engine
             return true;
         }
 		//路径有效性检查 —— string重载
-		bool path_check(const std::string& config_path)
+		static bool path_check(const std::string& config_path)
         {
             //转化为可用字符串格式
             //要求string编码格式为UTF-8

@@ -148,6 +148,8 @@ namespace engine
         std::filesystem::path assets_dir;
         //路由文件名（固定管理该文件）
         std::filesystem::path route_path;
+        //实体图片元数据表（type → 相对 assets/ 的图片路径，持久化于 assets/config/entity_image.json）
+        std::map<std::string, std::string> 实体图片表;
         //实体配置集合（保持路由顺序）
         std::vector<实体配置> 实体集合;
         //路由表原始 JSON（用于保存时最小化改动）
@@ -193,6 +195,16 @@ namespace engine
         const std::filesystem::path& 资源目录() const;
         //最近一次加载时跳过的损坏/缺失配置文件数量（路由条目损坏 / 文件缺失 / JSON 解析失败等）
         int 获取上次跳过数() const { return 上次加载跳过数; }
+
+        // ———— 实体图片元数据（entity_image.json，架构改革 阶段 6） ————
+        //获取实体图片相对路径（type → 相对 assets/ 的路径；未设置返回空串）
+        std::string 获取实体图片(const std::string& type) const;
+        //设置实体图片相对路径（仅更新内存表；传空串表示清除该映射）
+        void 设置实体图片(const std::string& type, const std::string& 相对路径);
+        //从磁盘读取实体图片元数据（assets/config/entity_image.json；文件缺失视为空表）
+        bool 加载实体图片表(std::string& error);
+        //把实体图片元数据写入磁盘（原子写入；错误信息写入 error）
+        bool 保存实体图片表(std::string& error) const;
 
         // ———— 属性槽配置（config/property/，与实体配置分离） ————
 

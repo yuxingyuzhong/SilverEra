@@ -51,7 +51,7 @@ namespace engine
         Prop_Effect& operator=(Prop_Effect&&) = default; 
 
         //配置读取
-        bool config_read(Config_Checker& config_checker, const nlohmann::json& config);
+        bool config_read(const nlohmann::json& config);
         //数据注入
         void data_injection(void);
         //编号绑定

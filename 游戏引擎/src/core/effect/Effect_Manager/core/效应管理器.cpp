@@ -25,11 +25,11 @@ namespace engine
 		vector<config_event> needed_events;
 
 		//构造配置加载事件
-		needed_events.emplace_back("Effect_Manager", "Config", "Load", json::object());
+		needed_events.emplace_back("","Effect_Manager", "Config", "Load", json::object());
 		//构造实体构建事件
-		needed_events.emplace_back("", "Effect", "Build", json::object());
+		needed_events.emplace_back("","", "Effect", "Build", json::object());
 		//构造实体卸载事件
-		needed_events.emplace_back("", "Effect", "Unload", json::object());
+		needed_events.emplace_back("","", "Effect", "Unload", json::object());
 		//构建事件接收入口
 		auto receive_entry = [this](shared_ptr<config_event> event)->void
 			{
@@ -89,20 +89,20 @@ namespace engine
 		auto& config = event->config;
 
 		//若效应归属字段无效
-		if (!config_checker.field_check<uint64_t>(config, "inclusion"))
+		if (!Config_Checker::field_check<uint64_t>(config, "inclusion"))
 		{
 			Log::warn("Effect_Manager::未指定效应归属\n效应构建事件已驳回");
 			return nullopt;
 		}
 		//若效应执行阶段字段无效
-		if (!config_checker.field_check<uint64_t>(config, "act_phase"))
+		if (!Config_Checker::field_check<uint64_t>(config, "act_phase"))
 		{
 			Log::warn("Effect_Manager::未指定效应执行阶段\n效应构建事件已驳回");
 			return nullopt;
 		}
 		//若执行优先级字段非字符串和无符号整数
-		if (!config_checker.field_check<string>(config, "priority") &&
-			!config_checker.field_check<uint64_t>(config, "priority"))
+		if (!Config_Checker::field_check<string>(config, "priority") &&
+			!Config_Checker::field_check<uint64_t>(config, "priority"))
 		{
 			Log::warn("Prop_Effect::未定义执行优先级字段\n效应无法加载");
 			return false;
@@ -134,7 +134,7 @@ namespace engine
 		auto& new_effect = new_record.pro_effect;
 
 		//若效应配置解析异常
-		if (!new_effect.config_read(config_checker, config))
+		if (!new_effect.config_read(config))
 		{
 			//记录空闲索引
 			free_indexs.push_back(index);
@@ -210,7 +210,7 @@ namespace engine
 		auto& config = event->config;
 
 		//若效应ID字段无效
-		if (!config_checker.field_check<uint64_t>(config, "target_ID"))
+		if (!Config_Checker::field_check<uint64_t>(config, "target_ID"))
 		{
 			Log::warn("Effect_Manager::效应ID未定义\n效应卸载事件已驳回");
 			return false;
@@ -330,7 +330,7 @@ namespace engine
 			else if (tag == "Act")
 			{
 				//若效应执行阶段字段未定义
-				if (!config_checker.field_check<string>(config, "act_phase"))
+				if (!Config_Checker::field_check<string>(config, "act_phase"))
 				{
 					Log::warn("Effect_Manager::效应执行阶段未定义\n效应触发事件已驳回");
 					return;
@@ -345,7 +345,7 @@ namespace engine
 			else
 			{
 				//若效应ID字段未定义
-				if (!config_checker.field_check<string>(config, "target_ID"))
+				if (!Config_Checker::field_check<string>(config, "target_ID"))
 				{
 					Log::warn("Effect_Manager::目标效应ID未定义\n未知事件已驳回");
 					return;
@@ -382,13 +382,13 @@ namespace engine
 				if(event->tag == "Interact")
 				{
 					//若事件发起者ID字段无效
-					if (!config_checker.field_check<uint64_t>(config, "sender_ID"))
+					if (!Config_Checker::field_check<uint64_t>(config, "sender_ID"))
 					{
 						Log::warn("Effecr_Manager::事件发起者ID未定义\n效应交流事件已驳回");
 						return;
 					}
 					//若事件目标ID字段无效
-					if (!config_checker.field_check<uint64_t>(config, "sender_ID"))
+					if (!Config_Checker::field_check<uint64_t>(config, "sender_ID"))
 					{
 						Log::warn("Effecr_Manager::事件目标ID未定义\n效应交流事件已驳回");
 						return;
@@ -410,7 +410,7 @@ namespace engine
 					auto& sender_effect = effect_set[sender_index].pro_effect;
 
 					//将事件发送给目标效应
-					sender_effect.event_terminal.event_receive(event);
+					target_effect.event_terminal.event_receive(event);
 				}
 			}
 		}

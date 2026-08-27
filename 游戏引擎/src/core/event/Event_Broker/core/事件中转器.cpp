@@ -90,7 +90,8 @@ namespace engine
     void Event_Broker::receive(std::shared_ptr<config_event> event)
     {
         //简化表示路径
-        auto& target_module = event->target_module;
+        auto& sender_object = event->sender_object;
+        auto& target_object = event->target_object;
 
         //若事件所属分类不存在或未注册
         if (event->category.empty() || !acl_set.count(event->category))
@@ -101,10 +102,10 @@ namespace engine
             return;
 
         //若为定向发送且目标存在
-        if (!target_module.empty() && mapping_set.count(target_module))
+        if (!target_object.empty() && mapping_set.count(target_object))
         {
             //获取目标ID
-            int target_ID = mapping_set[target_module];
+            int target_ID = mapping_set[target_object];
             //定向发送事件
             event_entries[target_ID](event);
             //处理下一事件
@@ -132,9 +133,24 @@ namespace engine
                     acl.ID_set.end());
         }
 
+        //事件发起者ID记录
+        int32_t sender_ID;
+        //获取事件发送者ID
+        auto it = mapping_set.find(sender_object);
+        //若事件发起者映射存在
+        if (it != mapping_set.end())
+            sender_ID = it->second;
+        //若事件发起者映射不存在
+        else
+            sender_ID = -1;
+
         //发送事件
         for (int send_time = 0; send_time < acled_IDs.size(); send_time++)
-            event_entries[acled_IDs[send_time]](event);
+        {
+            //若非事件发起者
+            if(acled_IDs[send_time] != sender_ID)
+                event_entries[acled_IDs[send_time]](event);
+        }
     }
 
     //事件接收 —— 多事件重载

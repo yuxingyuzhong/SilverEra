@@ -23,11 +23,11 @@ namespace engine
 		vector<config_event> needed_events;
 
 		//构造配置加载事件
-		needed_events.emplace_back("Property_Manager", "Config", "Load",json::object());
+		needed_events.emplace_back("","Property_Manager", "Config", "Load",json::object());
 		//构造实体构建事件
-		needed_events.emplace_back("", "Entity", "Build", json::object());
+		needed_events.emplace_back("","", "Entity", "Build", json::object());
 		//构造实体卸载事件
-		needed_events.emplace_back("", "Entity", "Unload",json::object());
+		needed_events.emplace_back("","", "Entity", "Unload",json::object());
 
 		//构造事件接收入口
 		auto event_receive_entry = [this](shared_ptr<config_event> event)-> void
@@ -143,14 +143,14 @@ namespace engine
 		if (category == "Config" && tag == "Load")
 		{
 			//若实体类型字段无效
-			if (!config_checker.field_check<string>(config, "type"))
+			if (!Config_Checker::field_check<string>(config, "type"))
 			{
 				Log::warn("Prop_Manager::配置出错");
 				Log::warn("Prop_Manager::未定义目标实体类型!!!");
 				return;
 			}
 			//若初始化脚本读取路径字段无效
-			if (!config_checker.field_check<string>(config, "initialize_path"))
+			if (!Config_Checker::field_check<string>(config, "initialize_path"))
 			{
 				Log::warn("Prop_Manager::配置出错");
 				Log::warn("Prop_Manager::未定义初始化脚本加载路径!!!");
