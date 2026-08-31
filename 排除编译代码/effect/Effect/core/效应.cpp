@@ -19,28 +19,9 @@ namespace engine
     //配置读取
     bool Prop_Effect::config_read(const json& config)
     {
-        //若读取路径字段无效
+        //若加载路径字段无效
         if (!Config_Checker::field_check<string>(config, "path"))
             return false;
-        else
-        {
-            //获取读取路径
-            path config_path = Engine_Env::absolute_path_get(config["path"].get<string>());
-            //若读取路径无效
-            if (!Config_Checker::path_check(config_path))
-                return false;
-            //若读取路径有效
-            else
-            {
-                //重置状态机
-                script = LuaState{};
-                //加载新状态机
-                script.load_file(path_to_string(config_path));
-                //打开所有标准库
-                script.open_libraries();
-            }
-        }
-
         //若归属字段无效
         if (!Config_Checker::field_check<uint64_t>(config, "inclusion"))
             return false;
@@ -48,6 +29,22 @@ namespace engine
         if (!Config_Checker::field_check<string>(config, "name"))
             return false;
 
+        //获取加载路径
+        path config_path = Engine_Env::absolute_path_get(config["path"].get<string>());
+        //若加载路径无效
+        if (!Config_Checker::path_check(config_path))
+            return false;
+        //若读取路径有效
+        else
+        {
+            //重置状态机
+            script = LuaState{};
+            //加载新状态机
+            script.load_file(path_to_string(config_path));
+            //打开标准库
+            script.open_libraries(sol::lib::base, sol::lib::math,
+                sol::lib::string, sol::lib::table);
+        }
         //获取效应归属
         inclusion = config["inclusion"].get<uint64_t>();
         //获取效应名称
@@ -67,11 +64,11 @@ namespace engine
             return;
         }
         //注册效应归属
-        script.set("effect_inclusion", inclusion);
+        script.set("inclusion", inclusion);
         //注册效应ID
-        script.set("effect_ID", ID.value());
+        script.set("ID", ID.value());
         //注册效应名称
-        script.set("effect_name",name);
+        script.set("name",name);
         //注册效应作用对象
         script.set("effect_object", sol::as_table(*effect_object));
 
@@ -85,7 +82,7 @@ namespace engine
         //注册事件发送函数
         script.set_function("event_send", [this](shared_ptr<config_event> event)->void
             {
-                this->event_terminal.event_send({ event }, acl_key);
+                this->event_terminal.event_send(event, acl_key);
             });
     }
 

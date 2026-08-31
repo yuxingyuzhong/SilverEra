@@ -86,6 +86,12 @@ namespace engine
         }
     }
 
+    //订阅者登记状态确认
+    bool Event_Broker::target_object_check(const std::string& module_name)
+    {
+        return mapping_set.count(module_name);
+    }
+
     //事件接收 —— 单事件重载
     void Event_Broker::receive(std::shared_ptr<config_event> event)
     {

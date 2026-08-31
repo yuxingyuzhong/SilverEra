@@ -295,7 +295,7 @@ namespace engine
             std::filesystem::path script_path = assets_dir / utf8_path(cfg.decision_load_path);
             if (!std::filesystem::is_regular_file(script_path))
                 warnings.push_back("决策树脚本不存在：" + cfg.decision_load_path +
-                    "（Dynamic_Entity 加载时会调用 load_file，路径错误将导致实体行为初始化失败）");
+                    "（Entity 加载时会调用 load_file，路径错误将导致实体行为初始化失败）");
         }
 
         //acls 引用类型存在性检查

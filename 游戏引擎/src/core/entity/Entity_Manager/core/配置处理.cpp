@@ -11,12 +11,6 @@ namespace engine
         acl_key = event_terminal.acl_key_gen();
     }
 
-    //属性槽管理器绑定
-    void Entity_Manager::bind_property_manager(Property_Manager* prop_manager)
-    {
-        this->prop_manager = prop_manager;
-    }
-
     //事件中转站接入
     void Entity_Manager::attach(void)
     {
@@ -25,7 +19,7 @@ namespace engine
         //构造事件接收入口
         auto event_receive_entry = [this](shared_ptr<config_event> evt)-> void
             {
-                this->outer_event_process(evt);
+                this->event_process(evt);
             };
         //注册事件接收入口
         event_terminal.receive_entry_register(event_receive_entry);
@@ -39,11 +33,11 @@ namespace engine
         //若实体类型字段无效
         if (!Config_Checker::field_check<string>(config, "type"))
             return false;
-        //若决策树加载路径字段无效
-        if (!Config_Checker::field_check<string>(config, "decision_load_path"))
+        //若属性槽配置脚本加载路径无效
+        if (!Config_Checker::field_check<string>(config, "prop_load_path"))
             return false;
-        //若权限列表字段无效
-        if (!Config_Checker::field_check<vector<string>>(config, "acls"))
+        //若行为脚本加载路径字段无效
+        if (!Config_Checker::field_check<string>(config, "action_load_path"))
             return false;
         //若订阅事件列表字段无效
         if (!Config_Checker::field_check<vector<pair<string, string>>>(config, "needed_events"))
@@ -54,22 +48,21 @@ namespace engine
     }
 
     //决策树加载路径注册
-    void Entity_Manager::decision_tree_register(const string& entity_type, const string& path)
+    void Entity_Manager::action_load_path_register(const string& entity_type, const nlohmann::json& config)
     {
-        //若当前实体类型未注册决策树加载路径
-        if (!decision_load_paths.count(entity_type))
-            decision_load_paths.insert({ entity_type,path });
+        //获取实体行为加载路径
+        path decision_load_path = Engine_Env::absolute_path_get(config["decision_load_path"].get<string>());
+        //记录实体行为加载路径
+        action_load_path[entity_type] = path_to_string(decision_load_path);
     }
 
-    //实体从属权限注册
-    void Entity_Manager::owner_acl_register(const string& master, const vector<string>& minion_set)
+    //属性槽配置加载路径注册
+    void Entity_Manager::prop_load_path_register(const std::string& entity_type, const nlohmann::json& config)
     {
-        //拷贝权限数据
-        acl_set.push_back({ master ,minion_set });
-        //对新权限进行内部字典序排序
-        sort(acl_set.back().minion_set, less());
-        //对权限集合进行字典序排序
-        sort(acl_set, less(), &minion_acl::master);
+        //获取属性槽配置加载路径
+        path prop_load_path = Engine_Env::absolute_path_get(config["prop_load_path"].get<string>());
+        //记录属性槽配置加载路径
+        prop_config_paths[entity_type].load_file(path_to_string(prop_load_path));
     }
 
 }

@@ -1,5 +1,5 @@
 #pragma once
-#include "动态实体.h"
+#include "实体.h"
 
 // ---------- 基本类型别名 ----------
 using std::pair;

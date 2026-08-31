@@ -107,6 +107,20 @@ namespace engine
 		return true;
 	}
 
+	//查询入口注册
+	bool Event_Terminal::check_entry_register(std::function<bool(const std::string& module_name)> check_entry)
+	{
+		//为查询入口分配内存
+		this->check_entry.reset(new(nothrow) std::function<bool(const std::string & module_name)>);
+		//若内存分配失败
+		if (!this->check_entry)
+			return false;
+		else
+			*(this->check_entry) = check_entry;
+
+		return true;
+	}
+
 	//中转站接入
 	bool Event_Terminal::attach(const string& module_name, const vector<config_event>& needed_events,
 		const int64_t& acl_key)
@@ -133,6 +147,12 @@ namespace engine
 
 		//若事件接收入口注册完毕
 		return true;
+	}
+
+	//中转站查询
+	bool Event_Terminal::check(const std::string& module_name)
+	{
+		return (*check_entry)(module_name);
 	}
 
 	//事件发送 —— 单事件重载

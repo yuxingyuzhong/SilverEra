@@ -14,10 +14,8 @@ int main(void)
 	Event_Broker event_broker;
 	//配置加载器
 	Config_Loader config_loader;
-	//属性槽管理器
-	Property_Manager prop_manager;
-	//效应管理器
-	Effect_Manager effect_manager;
+	//属性槽分发器
+	Prop_Distributor prop_distributor;
 	//实体管理器
 	Entity_Manager entity_manager;
 
@@ -41,30 +39,12 @@ int main(void)
 		event_broker.receive(event_set);
 		};
 
-	// ———— 属性槽管理器初始化 ———— 
+	// ———— 属性槽分发器初始化 ———— 
 
 	//接入入口注入
-	prop_manager.event_terminal.attach_entry_register(attach_entry);
+	prop_distributor.event_terminal.attach_entry_register(attach_entry);
 	//接入事件中转站
-	prop_manager.attach();
-	//属性槽获取通道封装
-	auto prop_bind_entry = [&prop_manager](const uint64_t& ID) -> std::unordered_map<std::string, double>*
-		{
-			return prop_manager.prop_slot_get(ID);
-		};
-
-	// ———— 效应管理器初始化 ————
-
-	//接入入口注入
-	effect_manager.event_terminal.attach_entry_register(attach_entry);
-	//单事件入口注入
-	effect_manager.event_terminal.send_entry_register(event_entry);
-	//多事件入口注入
-	effect_manager.event_terminal.send_entry_register(event_set_entry);
-	//接入事件中转站
-	effect_manager.attach();
-	//属性槽获取通道注入
-	effect_manager.bind_entry_register(prop_bind_entry);
+	prop_distributor.attach();
 
 	// ———— 实体管理器初始化 ————
 
@@ -76,8 +56,14 @@ int main(void)
 	entity_manager.event_terminal.send_entry_register(event_set_entry);
 	//接入事件中转站
 	entity_manager.attach();
-	//属性槽获取通道注入
-	entity_manager.bind_property_manager(prop_manager.ptr());
+	//属性槽绑定入口封装
+	auto prop_bind_entry = [&entity_manager](const uint64_t& distribute_key) 
+		->Object_Pool<prop_record>*
+		{
+			return entity_manager.prop_slot_get(distribute_key);
+		};
+	//属性槽分发器绑定属性槽
+	prop_distributor.prop_slots_bind(prop_bind_entry);
 
 	// ———— 配置加载器初始化 ————
 	

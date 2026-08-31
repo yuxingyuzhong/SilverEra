@@ -43,7 +43,7 @@
 | 特性 | 说明 |
 | --- | --- |
 | 🧩 **事件驱动架构** | 模块间完全通过事件解耦，支持注册订阅、定向投递、事件仲裁 |
-| 🧬 **实体体系** | 抽象基类 `Entity` → 派生 `Dynamic_Entity`，支持从属（minion）权限管理（ACL） |
+| 🧬 **实体体系** | 抽象基类 `Entity` → 派生 `Entity`，支持从属（minion）权限管理（ACL） |
 | 📊 **属性槽机制** | 通用数值属性以 `string → double` 键值对存储，Lua 端可直接读写 |
 | ⚡ **效应系统** | 支持效应（Effect）、效应管理器（Effect_Manager）、执行时间段（EffectPhase） |
 | 🌳 **四叉树空间索引** | 2D 空间划分与查询，为后续碰撞/索敌提供高效基础 |
@@ -125,7 +125,7 @@ D:\代码存储\代码仓库\游戏引擎\
     │   ├── core/                 # ★ 核心模块
     │   │   ├── entity/           #   实体系统
     │   │   │   ├── Entity/               #     实体基类（抽象）
-    │   │   │   ├── Dynamic_Entity/       #     动态实体（Lua 决策树驱动）
+    │   │   │   ├── Entity/       #     动态实体（Lua 决策树驱动）
     │   │   │   ├── Entity_Manager/       #     实体管理器（创建/卸载/行动）
     │   │   │   └── Property_Manager/     #     属性槽管理器
     │   │   ├── event/            #   事件系统
@@ -251,7 +251,7 @@ D:\代码存储\代码仓库\游戏引擎\
 | `type_get()` | `std::string` | 获取实体类型 |
 | `is_alive()` | `bool` | 查询存活状态 |
 
-#### 动态实体 `Dynamic_Entity`（`Dynamic_Entity/动态实体.h`）
+#### 动态实体 `Entity`（`Entity/动态实体.h`）
 
 继承 `Entity`，是可被 Lua 脚本驱动的活动实体：
 
@@ -276,7 +276,7 @@ D:\代码存储\代码仓库\游戏引擎\
 
 | 数据 | 说明 |
 | --- | --- |
-| `entity_set` | 活跃实体集合（`entity_record{ID, shared_ptr<Dynamic_Entity>}`） |
+| `entity_set` | 活跃实体集合（`entity_record{ID, shared_ptr<Entity>}`） |
 | `acl_set` | 从属权限集合（`ownership_acl{master, minion_set}`） |
 | `minion_records` | 从属关系记录（`minion_record{master, minion_set}`） |
 | `event_map` | 订阅事件集合（`unordered_set<config_event>`） |
@@ -511,7 +511,7 @@ end
 
 #### ② 行为决策脚本（`behavior/`）
 
-由 `Dynamic_Entity::decision_tree_load()` 加载，作为实体的「决策树」，在 `act()` 每帧驱动下执行索敌、攻击、移动等行为逻辑。
+由 `Entity::decision_tree_load()` 加载，作为实体的「决策树」，在 `act()` 每帧驱动下执行索敌、攻击、移动等行为逻辑。
 
 ### 属性槽在 Lua 中的读写约定
 
@@ -565,7 +565,7 @@ end
 
 ## 路线图
 
-- [ ] **实体架构革新（进行中）**：重构实体体系，完善 `Entity` / `Dynamic_Entity` / `Entity_Manager` 关系
+- [ ] **实体架构革新（进行中）**：重构实体体系，完善 `Entity` / `Entity` / `Entity_Manager` 关系
 - [ ] 主循环接入：将 `for(;;)` 空循环替换为帧循环（固定时间步 + 更新驱动）
 - [ ] 渲染管线：接入 GLFW / GLAD / OpenGL 渲染循环
 - [ ] 四叉树空间查询接入实体系统（索敌 / 碰撞候选）

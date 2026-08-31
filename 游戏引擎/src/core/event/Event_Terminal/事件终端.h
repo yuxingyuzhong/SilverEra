@@ -30,6 +30,8 @@ namespace engine
 			const std::vector<config_event>& needed_events,
 			std::function<void(std::shared_ptr<config_event> evt)> event_send_entry)>>
 			attach_entry;
+		//中转站查询入口
+		std::unique_ptr<std::function<bool(const std::string& module_name)>> check_entry;
 
 		//事件发送入口 —— 单事件重载
 		std::unique_ptr<std::function<void(std::shared_ptr<config_event> event)>> event_send_entry;
@@ -61,6 +63,9 @@ namespace engine
 			const std::vector<config_event>& needed_events,
 			std::function<void(std::shared_ptr<config_event> evt)> receive_entry)> attach_entry);
 
+		//查询入口注册
+		bool check_entry_register(std::function<bool(const std::string& module_name)> check_entry);
+
 		//事件发送入口注册 —— 单事件重载
 		bool send_entry_register
 		(std::function<void(std::shared_ptr<config_event> events)>event_send_entry);
@@ -82,6 +87,9 @@ namespace engine
 		bool attach(const std::string& module_name,const std::vector<config_event>& needed_events,
 			const int64_t& acl_key);
 
+		//中转站查询
+		bool check(const std::string& module_name);
+
 		// ———— 事件交互 ————
 
 		//事件发送 —— 单事件重载
@@ -101,6 +109,25 @@ namespace engine
 
 		//事件清空
 		bool clear(const int64_t& acl_key);
+
+		//括号重载 —— 事件发送
+		bool operator()(std::shared_ptr<config_event> event, const int64_t& acl_key)
+		{
+			return event_send(event,acl_key);
+		}
+		bool operator()(std::vector<std::shared_ptr<config_event>> events, const int64_t& acl_key)
+		{
+			return event_send(events, acl_key);
+		}
+		//括号重载 —— 事件接收
+		void operator()(std::shared_ptr<config_event> event)
+		{
+			event_receive(event);
+		}
+		void operator()(std::vector<std::shared_ptr<config_event>> events)
+		{
+			event_receive(events);
+		}
 	private:
 		//函数包装器内存分配
 	    template <typename T>

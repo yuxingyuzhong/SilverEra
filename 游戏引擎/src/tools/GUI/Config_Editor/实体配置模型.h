@@ -39,7 +39,7 @@ namespace engine
         //实体类型标识（对应 JSON 字段 "type"）
         std::string type;
         //决策树加载路径（对应 JSON 字段 "decision_load_path"，
-        //  由 Entity_Manager 注册决策树，Dynamic_Entity 加载行为脚本）
+        //  由 Entity_Manager 注册决策树，Entity 加载行为脚本）
         std::string decision_load_path;
         //实体从属权限列表（对应 JSON 字段 "acls"，作为 Entity_Manager
         //  owner_acl_register 的 minion_set，master 即实体类型自身）

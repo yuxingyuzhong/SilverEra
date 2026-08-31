@@ -3,16 +3,18 @@
 #include "common/前置头文件包含.h"
 //获取预定义事件类型
 #include "common/types/事件类型.h"
+//获取预定义记录类型
+#include "common/types/记录类型.h"
 //获取事件终端
 #include "src/core/event/Event_Terminal/事件终端.h"
-//获取动态实体
-#include "src/core/entity/Dynamic_Entity/动态实体.h"
-//获取属性槽管理器
-#include "src/core/entity/Property_Manager/属性槽管理器.h"
+//获取实体
+#include "src/core/entity/Entity/实体.h"
 //获取预定义sol2库类型别名
 #include "common/external/Sol2/sol类型别名.h"
 //获取配置检查器
 #include "src/tools/Non_GUI/Config_Checker/配置检查器.h"
+//获取对象池
+#include "src/tools/Non_GUI/Object_Pool/对象池.h"
 //获取引擎环境
 #include "src/tools/Non_GUI/Engine_Env/引擎环境.h"
 //获取路径字符串转化方法
@@ -24,106 +26,63 @@ namespace engine
 {
     //实体管理器
     class Entity_Manager
-    {
+    {       
     private:
-        //从属权限
-        struct minion_acl
-        {
-            //权限拥有实体
-            std::string master{};
-            //合法从属类型
-            std::vector<std::string> minion_set{};
-        };
-        //从属记录
-        struct minion_record
-        {
-            //上级实体ID
-            uint64_t master_ID;
-            //从属实体ID
-            std::vector<uint64_t> minion_IDs{};
-        };
         //实体记录
-        struct entity_record
+        struct entity_record : public object_record
         {
-            //上级实体ID
-            std::optional<uint64_t> master_ID{};
-            //实体ID记录
-            uint64_t ID{};
             //实体
-            Dynamic_Entity entity{};
+            Entity entity{};
         };
-    private:
         //订阅事件集合
         std::unordered_set<config_event> event_map{};
     public:
         //事件终端
         Event_Terminal event_terminal;
     private:
-        //权限密钥
+        //事件发送权限密钥
         int64_t acl_key = 0;
 
-        //属性槽管理器指针
-        Property_Manager* prop_manager = nullptr;
-
-        //新实体预分配ID
-        uint64_t now_entity_ID = 0;
-
-        //决策树加载路径集合
-        std::unordered_map<std::string,std::string> decision_load_paths;
-
-        //从属权限集合
-        std::vector<minion_acl> acl_set{};
-        //从属记录集合
-        std::vector<minion_record> minion_records;
-        //活跃实体集合
-        std::vector<entity_record> entity_set{};
+        //属性槽分发权限密钥
+        std::optional<uint64_t> distribute_key = std::nullopt;
+        //属性槽配置脚本加载路径集合
+        std::unordered_map<std::string, LuaState> prop_config_paths;
+        //行为脚本加载路径集合
+        std::unordered_map<std::string,std::string> action_load_path;
+        //属性槽记录集合
+        Object_Pool<prop_record> prop_records;
+        //实体记录集合
+        Object_Pool<entity_record> entity_records;
 
     public:
         //构造函数
         Entity_Manager();
         //析构函数
         ~Entity_Manager() = default;
-        //属性槽管理器绑定
-        void bind_property_manager(Property_Manager* prop_manager);
         //事件中转站接入
         void attach(void);
-
-        // ———— 配置相关 ————
 
     private:
         //配置字段检验
         bool config_field_parse(const nlohmann::json& config);
         //决策树加载路径注册
-        void decision_tree_register(const std::string& entity_type,const std::string& path);
-        //实体从属权限注册
-        void owner_acl_register(const std::string& master,const std::vector<std::string>& minion_set);
+        void action_load_path_register(const std::string& entity_type, const nlohmann::json& config);
+        //属性槽配置加载路径注册
+        void prop_load_path_register(const std::string& entity_type, const nlohmann::json& config);
 
-        // ———— 实体相关 ———— 
-
-    private:
-        //权限记录查找
-        int64_t acl_record_seek(const std::string& master);
-        //从属记录查找
-        int64_t minion_record_seek(const uint64_t& ID); 
-        //实体记录查找
-        int64_t entity_record_seek(const uint64_t& ID);
-        //从属记录添加
-        void minion_record_add(const uint64_t& master_ID,const std::vector<uint64_t>& IDs);
-        //从属记录删除
-        std::vector<uint64_t> minion_record_erase(const uint64_t& master_ID, const std::vector<uint64_t>& IDs);
     public:
-        //实体创建 —— 创建数目重载
-        std::vector<uint64_t> entity_build(const std::string& type, const int& counts,
-            std::optional<uint64_t> master_ID = std::nullopt);
-        //实体创建 —— ID集合重载
-        void entity_build(const std::string& type,const std::vector<uint64_t>& IDs,
-            std::optional<uint64_t> master_ID = std::nullopt);
+        //实体创建
+        std::vector<uint64_t> entity_build(const std::string& type, const int& counts);
         //实体卸载
         void entity_unload(std::vector<uint64_t>& ID);
-        //实体行动
+        //实体行动 —— 指定实体执行
+        void entity_act(std::vector<uint64_t>& IDs);
+        //实体行动 —— 全量执行
         void entity_act(void);
-
-        // ———— 事件相关 ————
+        //属性槽分发密钥生成
+        bool distribute_key_gen(void);
+        //属性槽获取
+        Object_Pool<prop_record>* prop_slot_get(const uint64_t& distribute_key);
 
     public:
         //事件广播
@@ -132,11 +91,8 @@ namespace engine
         bool event_unicast(const std::string& type,const uint64_t& ID,
             std::shared_ptr<config_event> event);
     private:
-        //外部事件处理
-        void outer_event_process(std::shared_ptr<config_event> evt);
-    private:
-        //内部事件仲裁
-        void inner_event_govern(std::shared_ptr<config_event> event);
+        //事件处理
+        void event_process(std::shared_ptr<config_event> evt);
     };
 
 }

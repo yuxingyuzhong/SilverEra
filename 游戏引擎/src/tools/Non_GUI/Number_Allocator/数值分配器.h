@@ -63,5 +63,13 @@ namespace engine
 			for (auto number : recycle_numbers)
 				recycle(number);
 		}
+		//重置分配器
+		void reset(void)
+		{
+			//重置可分配新数值
+			next_number = 0;
+			//重置回收数值集合
+			recycle_numbers.clear();
+		}
 	};
 }

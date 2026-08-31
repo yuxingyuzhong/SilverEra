@@ -11,6 +11,10 @@
 #include "common/external/Sol2/sol类型注册.h"
 //获取预定义sol2库类型别名
 #include "common/external/Sol2/sol类型别名.h"
+//获取预定义记录类型
+#include "common/types/记录类型.h"
+//获取对象池
+#include "src/tools/Non_GUI/Object_Pool/对象池.h"
 //获取引擎环境
 #include "src/tools/Non_GUI/Engine_Env/引擎环境.h"
 //获取路径字符串转化方法
@@ -20,62 +24,39 @@
 
 namespace engine
 {
-	//属性槽管理器
-	class Property_Manager
+	//属性槽分发器
+	class Prop_Distributor
 	{
 	private:
-		//属性槽记录
-		struct prop_record
-		{
-			//属性槽归属实体类型
-			std::string type;
-			//属性槽归属实体ID
-			uint64_t ID;
-			//通用属性槽
-			std::unordered_map<std::string, double> property_slot;
-		};
-	private:
-		//初始化脚本集合
-		std::unordered_map<std::string, LuaState> initialize_scripts;
 		//属性槽记录集合
-		std::vector<prop_record> record_set;
+		Object_Pool<prop_record>* prop_records = nullptr;
 	public:
 		//事件终端
 		Event_Terminal event_terminal;
 	private:
-		//权限密钥
+		//事件发送权限密钥
 		int64_t acl_key = 0;
 
-		//配置检查器
-		Config_Checker config_checker;
+		//属性槽分发权限密钥
+		std::optional<uint64_t> distribute_key = std::nullopt;
+
 	public:
 		//构造函数
-		Property_Manager();
+		Prop_Distributor();
 		//析构函数
-		~Property_Manager();
+		~Prop_Distributor();
+
 		//事件中转站接入
 		void attach(void);
-
-		//读写指针获取
-		Property_Manager* ptr(void);
-		//只读指针获取 
-		const Property_Manager* const_ptr(void) const;
-
+		//属性槽集合绑定
+		void prop_slots_bind(std::function< Object_Pool<prop_record>*
+			(const uint64_t& distribute_key)> bind_entry);
 		//属性槽获取
 		std::unordered_map<std::string, double>* prop_slot_get(const uint64_t& ID);
 		//只读属性槽获取
 		const std::unordered_map<std::string, double>* const_prop_slot_get(const uint64_t& ID) const;
-
-		//属性槽构建
-		bool prop_slot_build(const std::string& type, const uint64_t& ID);
-	private:
-		//属性槽查找
-		uint64_t prop_slot_seek(const uint64_t& ID) const;
-	public:
-		//属性槽卸载
-		bool prop_slot_unload(const std::string& type, const uint64_t& ID);
 	private:
 		//事件处理
-		void event_process(std::shared_ptr<config_event> event);
+		void event_process(std::shared_ptr<config_event> evt);
 	};
 }

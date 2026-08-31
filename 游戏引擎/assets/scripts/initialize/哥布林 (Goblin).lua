@@ -40,7 +40,7 @@ function Goblin_Initialize(entity)
 
     // --- 用途2：记录行为决策脚本加载路径 ---
 
-    // 行为决策脚本路径：Dynamic_Entity据此加载行为决策脚本
+    // 行为决策脚本路径：Entity据此加载行为决策脚本
     entity.behavior_script_path = "scripts/behavior/哥布林 (Goblin)_Behavior.lua"
 
 end
