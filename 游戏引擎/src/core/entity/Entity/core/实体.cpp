@@ -74,12 +74,12 @@ namespace engine
 		//注册配置事件信息
 		register_config_event(action);
 		//注册事件集合引用
-		action.set("event_set", ref(event_terminal.event_get(acl_key)));
+		action.set("event_set", ref(event_terminal.query(acl_key)));
 
 		//注册事件发送函数
-		action.set_function("event_send", [this](shared_ptr<config_event> event)->void
+		action.set_function("send", [this](shared_ptr<config_event> event)->void
 			{
-				this->event_terminal.event_send({ event }, acl_key);
+				this->event_terminal.send({ event }, acl_key);
 			});
 	}
 

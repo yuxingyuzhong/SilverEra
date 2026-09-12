@@ -38,7 +38,7 @@ namespace engine
 				this->event_process(event);
 			};
 		//注册事件接收入口
-		event_terminal.receive_entry_register(receive_entry);
+		event_terminal.event_receiver_register(receive_entry);
 
 		//更新接入信息
 		event_terminal.attach("Effect_Manager", needed_events, acl_key);
@@ -127,10 +127,10 @@ namespace engine
 			auto event_send_entry = [this](std::vector<std::shared_ptr<config_event>> events)->void
 				{
 					//直接转发至其余模块
-					this->event_terminal.event_send(events,acl_key);
+					this->event_terminal.send(events,acl_key);
 				};
 			//配置事件终端
-			terminal.send_entry_register(event_send_entry);
+			terminal.event_sender_register(event_send_entry);
 
 			//获取效应分组索引
 			int64_t group_index = effect_group_seek(new_record->inclusion);
@@ -206,7 +206,7 @@ namespace engine
 				auto& effect = effects[match_time];
 				//若非目标效应则发送效应销毁事件
 				if (effect->ID != target_record->ID)
-					effect->pro_effect.event_terminal.event_receive(event);
+					effect->pro_effect.event_terminal.receive(event);
 				//若为目标效应则记录其索引
 				else
 					target_index = match_time;
@@ -298,7 +298,7 @@ namespace engine
 					//获取目标效应
 					auto* effect = effect_set.get(target_ID);
 					//发送事件
-					effect->pro_effect.event_terminal.event_receive(event);
+					effect->pro_effect.event_terminal.receive(event);
 				}	
 			}
 		}

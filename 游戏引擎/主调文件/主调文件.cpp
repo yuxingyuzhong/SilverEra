@@ -42,18 +42,18 @@ int main(void)
 	// ———— 属性槽分发器初始化 ———— 
 
 	//接入入口注入
-	prop_distributor.event_terminal.attach_entry_register(attach_entry);
+	prop_distributor.event_terminal->attach_handler_register(attach_entry);
 	//接入事件中转站
 	prop_distributor.attach();
 
 	// ———— 实体管理器初始化 ————
 
 	//接入入口注入
-	entity_manager.event_terminal.attach_entry_register(attach_entry);
+	entity_manager.event_terminal->attach_handler_register(attach_entry);
 	//单事件入口注入
-	entity_manager.event_terminal.send_entry_register(event_entry);
+	entity_manager.event_terminal->event_sender_register(event_entry);
 	//多事件入口注入
-	entity_manager.event_terminal.send_entry_register(event_set_entry);
+	entity_manager.event_terminal->event_sender_register(event_set_entry);
 	//接入事件中转站
 	entity_manager.attach();
 	//属性槽绑定入口封装
@@ -68,9 +68,9 @@ int main(void)
 	// ———— 配置加载器初始化 ————
 	
 	//单事件入口注入
-	config_loader.event_terminal.send_entry_register(event_entry);
+	config_loader.event_terminal->event_sender_register(event_entry);
 	//多事件入口注入
-	config_loader.event_terminal.send_entry_register(event_set_entry);
+	config_loader.event_terminal->event_sender_register(event_set_entry);
 	//加载配置
 	config_loader.act();
 

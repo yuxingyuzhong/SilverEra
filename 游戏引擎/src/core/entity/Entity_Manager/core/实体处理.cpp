@@ -48,7 +48,7 @@ namespace engine
                     event_terminal(events);
                 };
             //设置事件发送入口
-            new_entity.event_terminal.send_entry_register(event_entry);
+            new_entity.event_terminal->event_sender_register(event_entry);
             //绑定属性槽
             new_entity.prop_slot_bind(&new_prop_slot);
             //加载决策树

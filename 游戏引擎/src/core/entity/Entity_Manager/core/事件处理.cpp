@@ -98,7 +98,7 @@ namespace engine
                     //增加"ID_set"字段
                     config.emplace("ID_set", ID_set);
                     //向外界发布修饰后事件
-                    event_terminal.event_send(event, acl_key);
+                    event_terminal.send(event, acl_key);
                 }
             }
             //若为卸载分支事件

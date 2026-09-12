@@ -326,7 +326,7 @@ namespace engine {
 
 每个模块/实体持有的事件收发接口：
 
-- `attach_entry_register(entry)`：注册接入入口（连接中转站）；
+- `attach_handler_register(entry)`：注册接入入口（连接中转站）；
 - `event_entry_register(entry)`：注册事件入口（投递通道）；
 - 负责本模块的订阅注册与事件投递。
 

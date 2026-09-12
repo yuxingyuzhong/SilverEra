@@ -9,10 +9,10 @@
 //   wrap_script_sign    - 技能参数打包脚本添加接口 (function)
 //   wrap_script_unload  - 技能参数打包脚本移除接口 (function)
 //   wrap_script_call    - 技能参数打包脚本执行接口 (function)
-//   event_send     - 事件发送入口 (function)
+//   send     - 事件发送入口 (function)
 function Goblin_Behavior(pros, minion_set, transfer_buffer, event_set,
                          effect_script_sign, wrap_script_sign, wrap_script_unload, wrap_script_call,
-                         event_send)
+                         send)
 
     // --- 局部变量声明 ---
 

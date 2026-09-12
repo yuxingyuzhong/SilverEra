@@ -22,7 +22,7 @@ namespace engine
                 this->event_process(evt);
             };
         //注册事件接收入口
-        event_terminal.receive_entry_register(event_receive_entry);
+        event_terminal->event_receiver_register(event_receive_entry);
         //更新接入信息
         event_terminal.attach("Entity_Manager", needed_events, acl_key);
     }

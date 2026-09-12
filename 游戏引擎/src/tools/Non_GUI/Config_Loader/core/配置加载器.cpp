@@ -262,7 +262,7 @@ namespace engine
                 //填充配置数据
                 event->config = config_data;
                 //发送事件
-                if (!event_terminal.event_send({ event }, acl_key))
+                if (!event_terminal.send({ event }, acl_key))
                 {
                     Log::info("Config_Loader::未注册事件中转站依赖");
                     Log::info("配置工作无法完成");
