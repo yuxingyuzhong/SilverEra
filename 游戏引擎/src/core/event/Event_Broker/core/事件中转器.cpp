@@ -4,8 +4,8 @@
 namespace engine
 {
     //订阅者登记注册
-    void Event_Broker::info_register(const std::string& module_name, const vector<config_event>& needed_events,
-        function<void(shared_ptr<config_event> evt)> event_entry)
+    void Event_Broker::info_register(const std::string& module_name, const vector<event>& needed_events,
+        function<void(shared_ptr<event> evt)> event_entry)
     {
         //订阅者ID记录
         int32_t subscriber_ID = -1;
@@ -33,29 +33,29 @@ namespace engine
         for (int register_time = 0; register_time < needed_events.size(); register_time++)
         {
             //简化表示路径
-            auto& event = needed_events[register_time];
+            auto& evt = needed_events[register_time];
 
             //若事件所属分类未指定则略过
-            if (event.category.empty())
+            if (evt.category.empty())
                 continue;
 
             //若事件所属分类未注册则略过
-            if (!acl_set.count(event.category))
+            if (!acl_set.count(evt.category))
             {
                 //创建该事件分类
-                acl_set.insert({ event.category,{} });
+                acl_set.insert({ evt.category,{} });
                 //全订阅标记初始化
-                acl_set[event.category].push_back({});
+                acl_set[evt.category].push_back({});
             }
 
             //获取事件分类内部信息
-            auto& acl_row = acl_set[event.category];
+            auto& acl_row = acl_set[evt.category];
 
             //匹配事件标签
             for (int match_time = 0; match_time < acl_row.size(); match_time++)
             {
                 //若事件标签匹配则订阅该事件
-                if (event.tag == acl_row[match_time].tag)
+                if (evt.tag == acl_row[match_time].tag)
                 {
                     //简化表示路径
                     auto& ID_set = acl_row[match_time].ID_set;
@@ -81,7 +81,7 @@ namespace engine
                 }
                 //若匹配失败则创建该事件标签
                 else if (match_time == acl_row.size() - 1)
-                    acl_row.push_back({ event.tag, { subscriber_ID } });
+                    acl_row.push_back({ evt.tag, { subscriber_ID } });
             }
         }
     }
@@ -93,18 +93,18 @@ namespace engine
     }
 
     //事件接收 —— 单事件重载
-    void Event_Broker::receive(std::shared_ptr<config_event> event)
+    void Event_Broker::receive(std::shared_ptr<event> evt)
     {
         //简化表示路径
-        auto& sender_object = event->sender_object;
-        auto& target_object = event->target_object;
+        auto& sender_object = evt->sender_object;
+        auto& target_object = evt->target_object;
 
         //若事件所属分类不存在或未注册
-        if (event->category.empty() || !acl_set.count(event->category))
+        if (evt->category.empty() || !acl_set.count(evt->category))
             return;
 
         //若事件标签不存在
-        if (event->tag.empty())
+        if (evt->tag.empty())
             return;
 
         //若为定向发送且目标存在
@@ -113,13 +113,13 @@ namespace engine
             //获取目标ID
             int target_ID = mapping_set[target_object];
             //定向发送事件
-            event_entries[target_ID](event);
+            event_entries[target_ID](evt);
             //处理下一事件
             return;
         }
 
         //简化表示路径
-        auto& acl_row = acl_set[event->category];
+        auto& acl_row = acl_set[evt->category];
 
         //授权订阅者ID记录
         vector<uint16_t> acled_IDs;
@@ -134,7 +134,7 @@ namespace engine
             //简化表示路径
             auto& acl = acl_row[match_time];
             //若事件标签匹配
-            if (event->tag == acl.tag)
+            if (evt->tag == acl.tag)
                 acled_IDs.insert(acled_IDs.end(), acl.ID_set.begin(),
                     acl.ID_set.end());
         }
@@ -155,12 +155,12 @@ namespace engine
         {
             //若非事件发起者
             if(acled_IDs[send_time] != sender_ID)
-                event_entries[acled_IDs[send_time]](event);
+                event_entries[acled_IDs[send_time]](evt);
         }
     }
 
     //事件接收 —— 多事件重载
-    void Event_Broker::receive(vector<shared_ptr<config_event>> event_set)
+    void Event_Broker::receive(vector<shared_ptr<event>> event_set)
     {
         //批处理事件
         for (int process_time = 0; process_time < event_set.size(); process_time++)

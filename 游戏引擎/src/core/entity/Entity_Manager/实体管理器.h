@@ -4,7 +4,7 @@
 //获取预定义事件类型
 #include "common/types/事件类型.h"
 //获取预定义记录类型
-#include "common/types/记录类型.h"
+#include "common/types/对象类型.h"
 //获取事件终端
 #include "src/core/event/Event_Terminal/事件终端.h"
 //获取实体
@@ -28,14 +28,8 @@ namespace engine
     class Entity_Manager
     {       
     private:
-        //实体记录
-        struct entity_record : public object_record
-        {
-            //实体
-            Entity entity{};
-        };
         //订阅事件集合
-        std::unordered_set<config_event> event_map{};
+        std::unordered_set<event> event_map{};
     public:
         //事件终端
         Event_Terminal event_terminal;
@@ -49,10 +43,10 @@ namespace engine
         std::unordered_map<std::string, LuaState> prop_config_paths;
         //行为脚本加载路径集合
         std::unordered_map<std::string,std::string> action_load_path;
-        //属性槽记录集合
-        Object_Pool<prop_record> prop_records;
-        //实体记录集合
-        Object_Pool<entity_record> entity_records;
+        //属性槽集合
+        Object_Pool<Prop> props;
+        //实体集合
+        Object_Pool<Entity> entities;
 
     public:
         //构造函数
@@ -82,17 +76,17 @@ namespace engine
         //属性槽分发密钥生成
         bool distribute_key_gen(void);
         //属性槽获取
-        Object_Pool<prop_record>* prop_slot_get(const uint64_t& distribute_key);
+        Object_Pool<Prop>* prop_slot_get(const uint64_t& distribute_key);
 
     public:
         //事件广播
-        void event_broadcast(std::shared_ptr<config_event> event);
+        void event_broadcast(std::shared_ptr<event> evt);
         //事件定向发送
         bool event_unicast(const std::string& type,const uint64_t& ID,
-            std::shared_ptr<config_event> event);
+            std::shared_ptr<event> evt);
     private:
         //事件处理
-        void event_process(std::shared_ptr<config_event> evt);
+        void event_process(std::shared_ptr<event> evt);
     };
 
 }

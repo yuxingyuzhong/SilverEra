@@ -23,19 +23,19 @@ namespace engine
         //事件订阅者集合
         std::unordered_map<std::string, int32_t> mapping_set{};
         //事件转发入口集合
-        std::unordered_map<int32_t, std::function<void(std::shared_ptr<config_event> evt)>>
+        std::unordered_map<int32_t, std::function<void(std::shared_ptr<event> evt)>>
             event_entries;
 
     public:
         //订阅者登记注册
         void info_register(const std::string& module_name, 
-            const std::vector<config_event>& needed_events,
-            std::function<void(std::shared_ptr<config_event>)> event_entry);
+            const std::vector<event>& needed_events,
+            std::function<void(std::shared_ptr<event>)> event_entry);
         //订阅者登记状态确认
         bool target_object_check(const std::string& module_name);
         //事件接收 —— 单事件重载
-        void receive(std::shared_ptr<config_event> event);
+        void receive(std::shared_ptr<event> evt);
         //事件接收 —— 多事件重载
-        void receive(std::vector<std::shared_ptr<config_event>> event_set);
+        void receive(std::vector<std::shared_ptr<event>> event_set);
     };
 }

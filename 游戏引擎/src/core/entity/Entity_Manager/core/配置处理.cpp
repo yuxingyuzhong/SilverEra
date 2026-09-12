@@ -15,9 +15,9 @@ namespace engine
     void Entity_Manager::attach(void)
     {
         //订阅事件集合记录
-        vector<config_event> needed_events(event_map.begin(), event_map.end());
+        vector<event> needed_events(event_map.begin(), event_map.end());
         //构造事件接收入口
-        auto event_receive_entry = [this](shared_ptr<config_event> evt)-> void
+        auto event_receive_entry = [this](shared_ptr<event> evt)-> void
             {
                 this->event_process(evt);
             };

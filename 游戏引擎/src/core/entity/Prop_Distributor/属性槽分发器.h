@@ -12,7 +12,7 @@
 //获取预定义sol2库类型别名
 #include "common/external/Sol2/sol类型别名.h"
 //获取预定义记录类型
-#include "common/types/记录类型.h"
+#include "common/types/对象类型.h"
 //获取对象池
 #include "src/tools/Non_GUI/Object_Pool/对象池.h"
 //获取引擎环境
@@ -29,7 +29,7 @@ namespace engine
 	{
 	private:
 		//属性槽记录集合
-		Object_Pool<prop_record>* prop_records = nullptr;
+		Object_Pool<Prop>* props = nullptr;
 	public:
 		//事件终端
 		Event_Terminal event_terminal;
@@ -49,7 +49,7 @@ namespace engine
 		//事件中转站接入
 		void attach(void);
 		//属性槽集合绑定
-		void prop_slots_bind(std::function< Object_Pool<prop_record>*
+		void prop_slots_bind(std::function< Object_Pool<Prop>*
 			(const uint64_t& distribute_key)> bind_entry);
 		//属性槽获取
 		std::unordered_map<std::string, double>* prop_slot_get(const uint64_t& ID);
@@ -57,6 +57,6 @@ namespace engine
 		const std::unordered_map<std::string, double>* const_prop_slot_get(const uint64_t& ID) const;
 	private:
 		//事件处理
-		void event_process(std::shared_ptr<config_event> evt);
+		void event_process(std::shared_ptr<event> evt);
 	};
 }

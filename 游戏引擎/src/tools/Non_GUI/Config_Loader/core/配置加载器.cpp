@@ -249,20 +249,20 @@ namespace engine
                 }
 
                 //构造配置事件
-                shared_ptr<config_event> event(new(nothrow) config_event());
+                shared_ptr<event> evt(new(nothrow) event());
                 //若配置事件构造失败
-                if (event == nullptr)
+                if (evt == nullptr)
                     return;
                 //填充事件分类
-                event->category = "Config";
+                evt->category = "Config";
                 //填充事件标签
-                event->tag = "Load";
+                evt->tag = "Load";
                 //填充目标模块
-                event->target_object = module;
+                evt->target_object = module;
                 //填充配置数据
-                event->config = config_data;
+                evt->config = config_data;
                 //发送事件
-                if (!event_terminal.send({ event }, acl_key))
+                if (!event_terminal.send({ evt }, acl_key))
                 {
                     Log::info("Config_Loader::未注册事件中转站依赖");
                     Log::info("配置工作无法完成");

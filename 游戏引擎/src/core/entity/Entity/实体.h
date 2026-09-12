@@ -1,6 +1,8 @@
 #pragma once
 //预编译头
 #include "common/前置头文件包含.h"
+//获取预定义对象类型
+#include "common/types/对象类型.h"
 //获取预定义事件类型
 #include "common/types/事件类型.h"
 //获取事件终端
@@ -14,13 +16,11 @@
 namespace engine
 {
 	//动态实体
-	class Entity
+	class Entity : public Object
 	{
 	private:
 		//实体类型标签
-		std::string type{};
-		//实体编号
-		int64_t ID = 0;
+		std::string entity_type{};
 		//通用属性槽
 		std::unordered_map<std::string, double>* property_slot;
 
@@ -54,12 +54,8 @@ namespace engine
 		//析构函数
 		~Entity();
 
-		//ID绑定
-		void ID_bind(const uint64_t& ID);
-		//ID信息获取
-		uint64_t ID_get(void);
 		//类型信息获取
-		std::string type_get(void);
+		std::string type(void);
 		//属性槽绑定
 		void prop_slot_bind(std::unordered_map<std::string, double>* ptr);
 		//行为加载

@@ -62,14 +62,14 @@ namespace engine
         //效应分组查找
         int64_t effect_group_seek(const uint64_t& inclusion);
         //效应构建
-        std::optional<uint64_t> effect_build(std::shared_ptr<config_event> event);
+        std::optional<uint64_t> effect_build(std::shared_ptr<event> evt);
         //效应卸载
-        bool effect_unload(std::shared_ptr<config_event> event);
+        bool effect_unload(std::shared_ptr<event> evt);
         //效应执行
         void effect_act(uint64_t phase);
 
         //事件处理
-        void event_process(std::shared_ptr<config_event> event);
+        void event_process(std::shared_ptr<event> evt);
 
     public:
         //事件终端

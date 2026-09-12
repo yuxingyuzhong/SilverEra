@@ -143,34 +143,23 @@ namespace engine
         }
     }
 
-    //注册事件基类
+    //注册配置事件
     inline void register_event(sol::state& lua)
     {
-        // ========== 1. 注册抽象基类 event ==========
         lua.new_usertype<event>
             (
                 "event",
-                sol::no_constructor,
+                sol::call_constructor, sol::constructors<>(),
                 "sender_object", &event::sender_object,
                 "target_object", &event::target_object,
                 "category", &event::category,
-                "tag", &event::tag
-            );
-    }
-
-    //注册配置事件
-    inline void register_config_event(sol::state& lua)
-    {
-        lua.new_usertype<config_event>
-            ("config_event",
-                sol::base_classes, sol::bases<event>(),
-                sol::call_constructor, sol::constructors<>(),
+                "tag", &event::tag,
                 "config", sol::property
                 (
-                    [&lua](config_event& self) -> sol::table {
+                    [&lua](event& self) -> sol::table {
                         return engine::json_to_table(lua, self.config);
                     },
-                    [&lua](config_event& self, sol::table t)
+                    [&lua](event& self, sol::table t)
                     {
                         self.config = engine::table_to_json(lua, t);
                     }

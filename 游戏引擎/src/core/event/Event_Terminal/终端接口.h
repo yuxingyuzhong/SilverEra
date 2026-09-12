@@ -29,11 +29,11 @@ namespace engine
 	{
 	private:
 		//订阅事件类型别名
-		using needed_events = const std::vector<config_event>&;
+		using needed_events = const std::vector<event>&;
 		//事件入口类型别名 —— 单事件重载
-		using event_handler = std::function<void(std::shared_ptr<config_event> evt)>;
+		using event_handler = std::function<void(std::shared_ptr<event> evt)>;
 		//事件入口类型别名 —— 多事件重载
-		using events_handler = std::function<void(std::vector<std::shared_ptr<config_event>>)>;
+		using events_handler = std::function<void(std::vector<std::shared_ptr<event>>)>;
 		//接口入口类型别名
 		using attch_handler = std::function<void(const std::string& name,needed_events events,
 			event_handler receiver)>;

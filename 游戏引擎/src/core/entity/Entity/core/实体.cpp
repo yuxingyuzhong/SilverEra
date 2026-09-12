@@ -15,7 +15,7 @@ namespace engine
 	Entity::Entity(const int64_t& ID) : Entity()
 	{
 		//设置实体ID编号
-		this->ID = ID;
+		this->object_ID = ID;
 	}
 
 	//构造函数
@@ -31,22 +31,10 @@ namespace engine
 
 	}
 
-	//ID绑定
-	void Entity::ID_bind(const uint64_t& ID)
-	{
-		this->ID = ID;
-	}
-
-	//ID信息获取
-	uint64_t Entity::ID_get(void)
-	{
-		return ID;
-	}
-
 	//标签信息获取
-	std::string Entity::type_get(void)
+	std::string Entity::type(void)
 	{
-		return type;
+		return entity_type;
 	}
 
 	//属性槽绑定
@@ -69,17 +57,15 @@ namespace engine
 		//注册通用属性槽
 		action.set("pros", sol::as_table(property_slot));
 
-		//注册事件基类信息
+		//注册事件信息
 		register_event(action);
-		//注册配置事件信息
-		register_config_event(action);
 		//注册事件集合引用
 		action.set("event_set", ref(event_terminal.query(acl_key)));
 
 		//注册事件发送函数
-		action.set_function("send", [this](shared_ptr<config_event> event)->void
+		action.set_function("send", [this](shared_ptr<event> evt)->void
 			{
-				this->event_terminal.send({ event }, acl_key);
+				this->event_terminal.send({ evt }, acl_key);
 			});
 	}
 

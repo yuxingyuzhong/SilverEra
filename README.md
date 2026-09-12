@@ -117,7 +117,7 @@ D:\代码存储\代码仓库\游戏引擎\
     │   ├── external/             # 公共外部库封装
     │   │   └── Sol2/             #   Sol2 类型注册 / 类型别名
     │   └── types/                # 全局类型定义
-    │       ├── 事件类型.h         #   event / config_event + 哈希特化
+    │       ├── 事件类型.h         #   event / event + 哈希特化
     │       ├── 坐标类型.h         #   坐标相关类型
     │       └── 计时器类型.h       #   计时器相关类型
     │
@@ -247,8 +247,8 @@ D:\代码存储\代码仓库\游戏引擎\
 | `type` | `std::string` | 实体类型标签（如 `"Goblin"`） |
 | `ID` | `int64_t` | 实体编号（唯一标识） |
 | `alive` | `bool` | 存活标记 |
-| `ID_get()` | `int64_t` | 获取实体 ID |
-| `type_get()` | `std::string` | 获取实体类型 |
+| `ID()` | `int64_t` | 获取实体 ID |
+| `type()` | `std::string` | 获取实体类型 |
 | `is_alive()` | `bool` | 查询存活状态 |
 
 #### 动态实体 `Entity`（`Entity/动态实体.h`）
@@ -279,7 +279,7 @@ D:\代码存储\代码仓库\游戏引擎\
 | `entity_set` | 活跃实体集合（`entity_record{ID, shared_ptr<Entity>}`） |
 | `acl_set` | 从属权限集合（`ownership_acl{master, minion_set}`） |
 | `minion_records` | 从属关系记录（`minion_record{master, minion_set}`） |
-| `event_map` | 订阅事件集合（`unordered_set<config_event>`） |
+| `event_map` | 订阅事件集合（`unordered_set<event>`） |
 | `decision_load_paths` | 实体类型 → 决策树加载路径映射 |
 | `start_ID / now_ID` | 实体 ID 分配器（从 10000 起） |
 
@@ -313,13 +313,13 @@ namespace engine {
     };
 
     // 配置事件（携带 JSON 配置包）
-    struct config_event : public event {
+    struct event : public event {
         nlohmann::json config;      // 配置数据
     };
 }
 ```
 
-- `std::hash<engine::event>` / `std::hash<engine::config_event>` 已特化（含 `detail::hash_combine` 组合哈希），事件可作为 `unordered_set` / `unordered_map` 键使用；
+- `std::hash<engine::event>` / `std::hash<engine::event>` 已特化（含 `detail::hash_combine` 组合哈希），事件可作为 `unordered_set` / `unordered_map` 键使用；
 - 事件以「目标模块 + 大类 + 标签」三元组唯一定位，实现模块间定向通信。
 
 #### 事件终端 `Event_Terminal`（`Event_Terminal/事件终端.h`）
@@ -471,7 +471,7 @@ cmake --build build
 }
 ```
 
-配置加载器启动时读取所有 JSON → 构造 `config_event` → 通过事件中转站广播 → 各管理器按订阅响应。
+配置加载器启动时读取所有 JSON → 构造 `event` → 通过事件中转站广播 → 各管理器按订阅响应。
 
 ---
 

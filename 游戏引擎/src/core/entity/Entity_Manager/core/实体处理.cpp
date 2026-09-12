@@ -26,33 +26,36 @@ namespace engine
         }
         //新实体ID集合记录
         vector<uint64_t> IDs{};
-        //构建新实体记录
-        IDs = entity_records.build(counts);
-        //构造新属性槽记录
-        prop_records.build(counts);
+        for (int build_times = 0; build_times < counts; build_times++)
+        {
+            //构建新实体
+            IDs.push_back(entities.push());
+            //构造新属性槽
+            props.push();
+        }
 
         //初始化新实体
         for (const auto& ID : IDs)
         {
             //获取新实体
-            auto& new_entity = entity_records.get(ID)->entity;
+            auto new_entity = entities.find(ID);
             //获取新属性槽
-            auto& new_prop_slot = prop_records.get(ID)->property_slot;
+            auto& new_prop_slot = props.find(ID)->prop_get();
             //清空属性槽避免数据残留
             new_prop_slot.clear();
 
             //构造待注入依赖
-            auto event_entry = [this](vector<shared_ptr<config_event>> events)->void
+            auto event_entry = [this](vector<shared_ptr<event>> events)->void
                 {
                     //直接转发事件至外部
                     event_terminal(events);
                 };
             //设置事件发送入口
-            new_entity.event_terminal->event_sender_register(event_entry);
+            new_entity->event_terminal->event_sender_register(event_entry);
             //绑定属性槽
-            new_entity.prop_slot_bind(&new_prop_slot);
+            new_entity->prop_slot_bind(&new_prop_slot);
             //加载决策树
-            new_entity.action_load(action_it->second);
+            new_entity->action_load(action_it->second);
 
             //返回实体ID集合
             return IDs;
@@ -63,22 +66,22 @@ namespace engine
     void Entity_Manager::entity_unload(vector<uint64_t>& IDs)
     {
         //卸载目标实体记录
-        entity_records.unload(IDs);
+        entities.erase(IDs);
         //销毁目标实体属性槽
-        prop_records.unload(IDs);
+        props.erase(IDs);
     }
 
     //实体行动 —— 指定实体执行
     void Entity_Manager::entity_act(std::vector<uint64_t>& IDs)
     {
         for (const auto& ID : IDs)
-            entity_records.get(ID)->entity.act();
+            entities.find(ID)->act();
     }
 
     //实体行动 —— 全量执行
     void Entity_Manager::entity_act(void)
     {
-        for (auto& entity_record : entity_records.get())
-            entity_record.entity.act();
+        for (auto& entity_record : entities.data())
+            entity_record.act();
     }
 }

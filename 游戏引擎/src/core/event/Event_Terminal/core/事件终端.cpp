@@ -24,7 +24,7 @@ namespace engine
 	}
 
 	//中转站接入
-	bool Event_Terminal::attach(const string& module_name, const vector<config_event>& needed_events,
+	bool Event_Terminal::attach(const string& module_name, const vector<event>& needed_events,
 		const int64_t& acl_key)
 	{
 		//若密钥权限未匹配
@@ -37,7 +37,7 @@ namespace engine
 		if(!event_receiver)
 		{
 			//包装单事件接收入口
-			*event_receiver = [this](shared_ptr<config_event> evt) -> void
+			*event_receiver = [this](shared_ptr<event> evt) -> void
 				{
 					this->receive(evt);
 				};
@@ -55,7 +55,7 @@ namespace engine
 	}
 
 	//事件发送 —— 单事件重载
-	bool Event_Terminal::send(std::shared_ptr<config_event> event, const int64_t& acl_key)
+	bool Event_Terminal::send(std::shared_ptr<event> evt, const int64_t& acl_key)
 	{
 		//若权限密钥匹配
 		if (this->acl_key == acl_key)
@@ -64,7 +64,7 @@ namespace engine
 			if (terminal_interface.event_sender)
 			{
 				//发送事件
-				(*terminal_interface.event_sender)(event);
+				(*terminal_interface.event_sender)(evt);
 				//返回发送成功
 				return true;
 			}
@@ -77,7 +77,7 @@ namespace engine
 	}
 
 	//事件发送 —— 多事件重载
-	bool Event_Terminal::send(vector<shared_ptr<config_event>> events, const int64_t& acl_key)
+	bool Event_Terminal::send(vector<shared_ptr<event>> events, const int64_t& acl_key)
 	{
 		//若权限密钥匹配
 		if (this->acl_key == acl_key)
@@ -99,18 +99,18 @@ namespace engine
 	}
 
 	//事件接收 —— 单事件重载
-	void Event_Terminal::receive(shared_ptr<config_event> event)
+	void Event_Terminal::receive(shared_ptr<event> evt)
 	{
 		//若事件接收入口已额外注册
 		if (terminal_interface.event_receiver)
-			(*terminal_interface.event_receiver)(event);
+			(*terminal_interface.event_receiver)(evt);
 		//若未额外注册则使用原生通道
 		else
-			event_set.push_back(event);
+			event_set.push_back(evt);
 	}
 
 	//事件接收 —— 多事件重载
-	void Event_Terminal::receive(std::vector<std::shared_ptr<config_event>> events)
+	void Event_Terminal::receive(std::vector<std::shared_ptr<event>> events)
 	{
 		//若事件接收入口已额外注册
 		if (terminal_interface.events_receiver)
@@ -121,7 +121,7 @@ namespace engine
 	}
 
 	//事件查阅
-	const vector<shared_ptr<config_event>>& Event_Terminal::query(const int64_t& acl_key)
+	const vector<shared_ptr<event>>& Event_Terminal::query(const int64_t& acl_key)
 	{
 		//若密钥匹配则发送事件集合
 		if (this->acl_key == acl_key)

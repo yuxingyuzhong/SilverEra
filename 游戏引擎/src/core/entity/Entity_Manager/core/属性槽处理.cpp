@@ -28,23 +28,23 @@ namespace engine
 			}();
 
 		//构造密钥传送事件
-		shared_ptr<config_event> event(new(nothrow) config_event());
+		shared_ptr<event> evt(new(nothrow) event());
 		//记录事件发送者
-		event->sender_object = "Entity_Manager";
+		evt->sender_object = "Entity_Manager";
 		//记录事件接收者
-		event->target_object = "Prop_Distributor";
+		evt->target_object = "Prop_Distributor";
 		//记录事件大类
-		event->category = "Key";
+		evt->category = "Key";
 		//记录事件标签
-		event->tag = "Distribute";
+		evt->tag = "Distribute";
 		//记录密钥
-		event->config["key"] = this->distribute_key;
+		evt->config["key"] = this->distribute_key;
 		//发送密钥传送事件
-		event_terminal(event);
+		event_terminal(evt);
 	}
 
 	//属性槽获取
-	Object_Pool<prop_record>* Entity_Manager::prop_slot_get(const uint64_t& distribute_key)
+	Object_Pool<Prop>* Entity_Manager::prop_slot_get(const uint64_t& distribute_key)
 	{
 		//若当前未生成分发密钥
 		if (!this->distribute_key.has_value())
@@ -60,6 +60,6 @@ namespace engine
 		}
 		//若分发密钥匹配
 		else
-			return &prop_records;
+			return &props;
 	}
 }

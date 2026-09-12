@@ -5,53 +5,16 @@
 //游戏引擎命名空间
 namespace engine
 {
-    //抽象事件
+    //事件
     struct event
     {
-        //事件发起者
-        std::string sender_object{};
-        //事件目标
-        std::string target_object{};
-        //事件大类
-        std::string category;
-        //类内标签
-        std::string tag;
-
-        //使用默认等于运算符
-        bool operator==(const event&) const = default;
         //默认构造函数
         event()
         {
 
         }
         //含参构造函数
-        event(const std::string sender_object,const std::string& target_object,
-            const std::string& category, const std::string& tag)
-        {
-            this->sender_object = sender_object;
-            this->target_object = target_object;
-            this->category = category;
-            this->tag = tag;
-        }
-
-        //析构函数保证该结构体不可创建
-        virtual ~event() = 0;
-
-    };
-
-    //纯虚析构函数实现
-    inline event::~event() = default;
-
-    //配置事件
-    struct config_event : public event
-    {
-        //默认构造函数
-        config_event()
-        {
-
-        }
-        //含参构造函数
-        config_event(const std::string& sender_object,const std::string& target_object,
+        event(const std::string& sender_object,const std::string& target_object,
             const std::string& category,const std::string& tag,
             const nlohmann::json& config)
         {
@@ -62,14 +25,24 @@ namespace engine
             this->config = config;
         }
         //默认析构函数
-        ~config_event()
+        ~event()
         {
 
         }
+
+        //事件发起者
+        std::string sender_object{};
+        //事件目标
+        std::string target_object{};
+        //事件大类
+        std::string category;
+        //类内标签
+        std::string tag;
         //配置包
         nlohmann::json config;
+
         //使用默认等于运算符
-        bool operator==(const config_event& other) const
+        bool operator==(const event& other) const
         {
             if (this->category == other.category &&
                 this->tag == other.tag &&
@@ -93,25 +66,10 @@ namespace detail
 
 namespace std
 {
-    // 为 event 特化哈希
     template<>
     struct hash<engine::event>
     {
         size_t operator()(const engine::event& evt) const noexcept
-        {
-            std::hash<std::string> str_hasher;
-            size_t seed = str_hasher(evt.category);
-            detail::hash_combine(seed, str_hasher(evt.tag));
-            detail::hash_combine(seed, str_hasher(evt.target_object));
-            return seed;
-        }
-    };
-
-    // ========== 修复 config_event 哈希特化 ==========
-    template<>
-    struct hash<engine::config_event>
-    {
-        size_t operator()(const engine::config_event& evt) const noexcept
         {
             std::hash<std::string> str_hasher;
             size_t seed = 0;

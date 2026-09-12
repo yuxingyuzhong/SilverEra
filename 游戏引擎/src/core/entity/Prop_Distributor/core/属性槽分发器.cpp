@@ -18,7 +18,7 @@ namespace engine
 	void Prop_Distributor::attach(void)
 	{
 		//构造事件接收入口
-		auto event_receive_entry = [this](shared_ptr<config_event> evt)-> void
+		auto event_receive_entry = [this](shared_ptr<event> evt)-> void
 			{
 				this->event_process(evt);
 			};
@@ -29,7 +29,7 @@ namespace engine
 	}
 
 	//属性槽集合绑定
-	void Prop_Distributor::prop_slots_bind(std::function<Object_Pool<prop_record>*
+	void Prop_Distributor::prop_slots_bind(std::function<Object_Pool<Prop>*
 		(const uint64_t& distribute_key)> bind_entry)
 	{
 		//若尚未获取分发权限密钥
@@ -38,7 +38,7 @@ namespace engine
 			Log::warn("Prop_Distributor::尚未获取分发权限密钥\n无法绑定属性槽集合");
 			return;
 		}
-		prop_records = bind_entry(distribute_key.value());
+		props = bind_entry(distribute_key.value());
 	}
 
 	//属性槽获取
@@ -50,22 +50,22 @@ namespace engine
 	//只读属性槽获取
 	const unordered_map<string, double>* Prop_Distributor::const_prop_slot_get(const uint64_t& ID) const
 	{
-		//获取属性槽记录指针
-		auto* prop_slot = prop_records->get(ID);
+		//获取属性槽记录迭代器
+		auto prop_slot = props->find(ID);
 		//若目标属性槽存在
-		if (prop_slot)
-			return &prop_slot->property_slot;
+		if (prop_slot != props->end())
+			return &prop_slot->prop_get();
 		//若目标属性槽不存在
 		else
 			return nullptr;
 	}
 
 	//事件处理
-	void Prop_Distributor::event_process(std::shared_ptr<config_event> event)
+	void Prop_Distributor::event_process(std::shared_ptr<event> evt)
 	{
 		//若当前为密钥传送事件
-		if (event->category == "Key" && event->tag == "Distributor")
+		if (evt->category == "Key" && evt->tag == "Distributor")
 			//获取权限密钥
-			this->distribute_key = event->config["key"].get<uint64_t>();
+			this->distribute_key = evt->config["key"].get<uint64_t>();
 	}
 }

@@ -23,18 +23,18 @@ int main(void)
 
 	//接入入口封装
 	auto attach_entry = [&event_broker](const std::string& name,
-		const std::vector<config_event>& events,
-		std::function<void(std::shared_ptr<config_event>)> event_entry)
+		const std::vector<event>& events,
+		std::function<void(std::shared_ptr<event>)> event_entry)
 		{
 			event_broker.info_register(name, events, event_entry);
 		};
 	//单事件入口封装
-	auto event_entry = [&event_broker](std::shared_ptr<config_event> event)
+	auto event_entry = [&event_broker](std::shared_ptr<event> evt)
 		{
-			event_broker.receive(event);
+			event_broker.receive(evt);
 		};
 	//多事件入口封装
-	auto event_set_entry = [&event_broker](std::vector<std::shared_ptr<config_event>> event_set)
+	auto event_set_entry = [&event_broker](std::vector<std::shared_ptr<event>> event_set)
 		{
 		event_broker.receive(event_set);
 		};
@@ -58,7 +58,7 @@ int main(void)
 	entity_manager.attach();
 	//属性槽绑定入口封装
 	auto prop_bind_entry = [&entity_manager](const uint64_t& distribute_key) 
-		->Object_Pool<prop_record>*
+		->Object_Pool<Prop>*
 		{
 			return entity_manager.prop_slot_get(distribute_key);
 		};

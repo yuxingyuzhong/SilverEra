@@ -21,7 +21,7 @@ namespace engine
 		Random_Generator key_generator{};
 
 		//事件集合
-		std::vector<std::shared_ptr<config_event>> event_set{};
+		std::vector<std::shared_ptr<event>> event_set{};
 		//终端接口
 		Terminal_Interface terminal_interface;
 
@@ -45,7 +45,7 @@ namespace engine
 		int64_t acl_key_gen(void);
 
 		//中转站接入
-		bool attach(const std::string& module_name,const std::vector<config_event>& needed_events,
+		bool attach(const std::string& module_name,const std::vector<event>& needed_events,
 			const int64_t& acl_key);
 		//目标对象接入检查
 		bool check(const std::string& module_name);
@@ -53,40 +53,40 @@ namespace engine
 		bool call(const std::string& module_name);
 
 		//事件构造
-		std::shared_ptr<config_event> build();
+		std::shared_ptr<event> build();
 
 		//事件发送 —— 单事件重载
-		bool send(std::shared_ptr<config_event> event, const int64_t& acl_key);
+		bool send(std::shared_ptr<event> evt, const int64_t& acl_key);
 		//事件发送 —— 多事件重载
-		bool send(std::vector<std::shared_ptr<config_event>> events,const int64_t& acl_key);
+		bool send(std::vector<std::shared_ptr<event>> events,const int64_t& acl_key);
 
 		//事件接收 —— 单事件重载
-		void receive(std::shared_ptr<config_event> event);
+		void receive(std::shared_ptr<event> evt);
 		//事件接收 —— 多事件重载
-		void receive(std::vector<std::shared_ptr<config_event>> events);
+		void receive(std::vector<std::shared_ptr<event>> events);
 
 		//事件查阅 —— 全量查阅
-		const std::vector<std::shared_ptr<config_event>>& query(const int64_t& acl_key);
+		const std::vector<std::shared_ptr<event>>& query(const int64_t& acl_key);
 
 		//事件删除 —— 指定事件
 		//事件清空
 		bool clear(const int64_t& acl_key);
 
 		//括号重载 —— 事件发送
-		bool operator()(std::shared_ptr<config_event> event, const int64_t& acl_key)
+		bool operator()(std::shared_ptr<event> evt, const int64_t& acl_key)
 		{
-			return send(event,acl_key);
+			return send(evt,acl_key);
 		}
-		bool operator()(std::vector<std::shared_ptr<config_event>> events, const int64_t& acl_key)
+		bool operator()(std::vector<std::shared_ptr<event>> events, const int64_t& acl_key)
 		{
 			return send(events, acl_key);
 		}
 		//括号重载 —— 事件接收
-		void operator()(std::shared_ptr<config_event> event)
+		void operator()(std::shared_ptr<event> evt)
 		{
-			receive(event);
+			receive(evt);
 		}
-		void operator()(std::vector<std::shared_ptr<config_event>> events)
+		void operator()(std::vector<std::shared_ptr<event>> events)
 		{
 			receive(events);
 		}

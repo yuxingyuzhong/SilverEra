@@ -22,7 +22,7 @@ namespace engine
 	void Effect_Manager::attach(void)
 	{
 		//订阅事件集合记录
-		vector<config_event> needed_events;
+		vector<event> needed_events;
 
 		//构造配置加载事件
 		needed_events.emplace_back("", "Effect_Manager", "Config", "Load", json::object());
@@ -33,9 +33,9 @@ namespace engine
 		//构造效应执行事件
 		needed_events.emplace_back("", "", "Effect", "Act", json::object());
 		//构建事件接收入口
-		auto receive_entry = [this](shared_ptr<config_event> event)->void
+		auto receive_entry = [this](shared_ptr<event> evt)->void
 			{
-				this->event_process(event);
+				this->event_process(evt);
 			};
 		//注册事件接收入口
 		event_terminal.event_receiver_register(receive_entry);
@@ -51,10 +51,10 @@ namespace engine
 	}
 
 	//效应构建
-	optional<uint64_t> Effect_Manager::effect_build(shared_ptr<config_event> event)
+	optional<uint64_t> Effect_Manager::effect_build(shared_ptr<event> evt)
 	{
 		//简化表示路径
-		auto& config = event->config;
+		auto& config = evt->config;
 
 		//若效应归属字段无效
 		if (!Config_Checker::field_check<uint64_t>(config, "inclusion"))
@@ -124,7 +124,7 @@ namespace engine
 			//获取事件终端
 			auto& terminal = new_effect.event_terminal;
 			//构造事件入口
-			auto event_send_entry = [this](std::vector<std::shared_ptr<config_event>> events)->void
+			auto event_send_entry = [this](std::vector<std::shared_ptr<event>> events)->void
 				{
 					//直接转发至其余模块
 					this->event_terminal.send(events,acl_key);
@@ -146,10 +146,10 @@ namespace engine
 			auto& group = effect_groups[group_index];
 
 			//配置效应信息
-			event->config["ID"] = new_record->ID;
+			evt->config["ID"] = new_record->ID;
 			//发送修饰事件
 			for (auto& effect : group.effects)
-				effect->pro_effect.event_terminal(event);
+				effect->pro_effect.event_terminal(evt);
 			//将新建效应加入分组
 			group.effects.push_back(new_record);
 
@@ -164,10 +164,10 @@ namespace engine
 	}
 
 	//效应卸载
-	bool Effect_Manager::effect_unload(std::shared_ptr<config_event> event)
+	bool Effect_Manager::effect_unload(std::shared_ptr<event> evt)
 	{
 		//简化表示路径
-		auto& config = event->config;
+		auto& config = evt->config;
 
 		//若效应ID字段无效
 		if (!Config_Checker::field_check<uint64_t>(config, "target_ID"))
@@ -194,8 +194,8 @@ namespace engine
 		else
 		{
 			//配置效应信息
-			event->config["inclusion"] = target_record->inclusion;
-			event->config["name"] = target_record->pro_effect.effect_name_get();
+			evt->config["inclusion"] = target_record->inclusion;
+			evt->config["name"] = target_record->pro_effect.effect_name_get();
 
 			//目标效应索引记录
 			int64_t target_index = -1;
@@ -206,7 +206,7 @@ namespace engine
 				auto& effect = effects[match_time];
 				//若非目标效应则发送效应销毁事件
 				if (effect->ID != target_record->ID)
-					effect->pro_effect.event_terminal.receive(event);
+					effect->pro_effect.event_terminal.receive(evt);
 				//若为目标效应则记录其索引
 				else
 					target_index = match_time;
@@ -242,23 +242,23 @@ namespace engine
 	}
 
 	//事件处理
-	void Effect_Manager::event_process(std::shared_ptr<config_event> event)
+	void Effect_Manager::event_process(std::shared_ptr<event> evt)
 	{
 		//若为效应大类分支
-		if (event->category == "Effect")
+		if (evt->category == "Effect")
 		{
 			//简化表示路径
-			auto& tag = event->tag;
-			auto& config = event->config;
+			auto& tag = evt->tag;
+			auto& config = evt->config;
 
 			//若为效应构建事件
 			if (tag == "Build")
 				//构建新效应
-				optional<uint64_t> effect_ID = effect_build(event);
+				optional<uint64_t> effect_ID = effect_build(evt);
 			//若为效应卸载事件
 			else if (tag == "Unload")
 				//卸载指定效应
-				effect_unload(event);
+				effect_unload(evt);
 			//若为效应触发事件
 			else if (tag == "Act")
 			{
@@ -298,7 +298,7 @@ namespace engine
 					//获取目标效应
 					auto* effect = effect_set.get(target_ID);
 					//发送事件
-					effect->pro_effect.event_terminal.receive(event);
+					effect->pro_effect.event_terminal.receive(evt);
 				}	
 			}
 		}

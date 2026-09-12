@@ -5,36 +5,40 @@
 namespace engine
 {
     //事件广播
-    void Entity_Manager::event_broadcast(shared_ptr<config_event> event)
+    void Entity_Manager::event_broadcast(shared_ptr<event> evt)
     {
         //向所有实体发送事件
-        for (auto& entity_record : entity_records.get())
-            entity_record.entity.event_terminal(event);
+        for (auto& entity_record : entities.data())
+            entity_record.event_terminal(evt);
     }
 
     //事件定向发送
     bool Entity_Manager::event_unicast(const std::string& type, const uint64_t& ID,
-        std::shared_ptr<config_event> event)
+        std::shared_ptr<event> evt)
     {
-        //获取指定实体
-        auto& entity = entity_records.get(ID)->entity;
-        //若实体类型与实际类型不匹配
-        if (entity.type_get() != type)
+        //获取实体迭代器
+        auto it = entities.find(ID);
+        //若迭代器有效
+        if (it != entities.end() && it->type() == type)
+        {
+            //向指定实体发送事件
+            it->event_terminal(evt);
+            //返回发送成功
+            return true;
+        }
+        else
+            //返回发送失败
             return false;
-        //向指定实体发送事件
-        entity.event_terminal(event);
-        //返回发送成功
-        return true;
     }
 
     //事件处理
-    void Entity_Manager::event_process(shared_ptr<config_event> event)
+    void Entity_Manager::event_process(shared_ptr<event> evt)
     {
         //若当前为配置事件
-        if (event->category == "Config")
+        if (evt->category == "Config")
         {
             //简化表示路径
-            auto& config = event->config;
+            auto& config = evt->config;
 
             //若配置字段检查通过
             if (config_field_parse(config))
@@ -54,7 +58,7 @@ namespace engine
                     //简化表示路径
                     auto& tag = buffer[transform_time];
                     //构造事件
-                    config_event needed_event("Entity_Manager","", tag.first, tag.second, json::object());
+                    event needed_event("Entity_Manager","", tag.first, tag.second, json::object());
                     //若该事件不存在
                     if (!event_map.count(needed_event))
                         event_map.insert(needed_event);
@@ -68,8 +72,8 @@ namespace engine
         else
         {
             //简化表示路径
-            auto& tag = event->tag;
-            auto& config = event->config;
+            auto& tag = evt->tag;
+            auto& config = evt->config;
 
             //若实体类型字段无效
             if (!Config_Checker::field_check<string>(config, "target_type"))
@@ -98,7 +102,7 @@ namespace engine
                     //增加"ID_set"字段
                     config.emplace("ID_set", ID_set);
                     //向外界发布修饰后事件
-                    event_terminal.send(event, acl_key);
+                    event_terminal.send(evt, acl_key);
                 }
             }
             //若为卸载分支事件
@@ -130,7 +134,7 @@ namespace engine
                 uint64_t target_ID = config["target_ID"];
 
                 //定向发送事件
-                event_unicast(target_type, target_ID, event);
+                event_unicast(target_type, target_ID, evt);
             }
         }
     }
