@@ -1,0 +1,17 @@
+{
+  "type": "Goblin",
+  "acls": {
+    "master": "Goblin",
+    "minion_set": []
+  },
+  "needed_events": [
+    {
+      "category": "Entity",
+      "tag": "Request"
+    },
+    {
+      "category": "config",
+      "tag": "damage"
+    }
+  ]
+}
