@@ -39,6 +39,9 @@ x86/
 # CMake 输出目录（构建产物不纳入版本管理）
 out/
 
+# glfw 预编译静态库是链接必需依赖，放行入库（例外于 *.lib 规则）
+!external/glfw/glfw3.lib
+
 # Cyrene agent
 .cyrene/
 
