@@ -10,6 +10,7 @@ using std::vector;
 
 // ---------- 智能指针 ----------
 using std::shared_ptr;
+using std::nothrow;
 
 // ---------- 函数对象 ----------
 using std::function;

@@ -1,10 +1,12 @@
 #include "../局部命名空间使用.h"
+#include "src/tools/Logging/日志系统.h"
 
 //引擎命名空间
 namespace engine
 {
     //订阅者登记注册
-    void Event_Broker::info_register(const std::string& module_name, const vector<event>& needed_events,
+    void Event_Broker::info_register
+    (const string& module_name, const vector<event>& needed_events,
         function<void(shared_ptr<event> evt)> event_entry)
     {
         //订阅者ID记录
@@ -84,16 +86,11 @@ namespace engine
                     acl_row.push_back({ evt.tag, { subscriber_ID } });
             }
         }
-    }
 
-    //订阅者登记状态确认
-    bool Event_Broker::target_object_check(const std::string& module_name)
-    {
-        return mapping_set.count(module_name);
     }
 
     //事件接收 —— 单事件重载
-    void Event_Broker::receive(std::shared_ptr<event> evt)
+    void Event_Broker::receive(shared_ptr<event> evt)
     {
         //简化表示路径
         auto& sender_object = evt->sender_object;
@@ -165,6 +162,74 @@ namespace engine
         //批处理事件
         for (int process_time = 0; process_time < event_set.size(); process_time++)
             receive(event_set[process_time]);
+    }
+
+    //事件处理 —— 单事件重载
+    shared_ptr<event> Event_Broker::process(shared_ptr<event> evt)
+    {
+        //简化表示路径
+        auto& config = evt->config;
+
+        //若未定义事件发送者则直接返回
+        if (evt->sender_object.empty())
+        {
+            Log::warn("Event_Broker::事件发送者未定义\n事件无法处理");
+            return;
+        }
+        //若未定义事件目标则直接返回
+        if (evt->target_object.empty())
+        {
+            Log::warn("Event_Broker::事件目标未定义\n事件无法处理");
+            return;
+        }
+        //若事件发送者不存在则直接返回
+        if (!mapping_set.count(evt->sender_object))
+        {
+            Log::warn("Event_Broker::事件发送者不存在\n事件无法处理");
+            return;
+        }
+
+        //若事件大类可处理
+        if (evt->category == "Subscriber")
+        {
+            //若事件标签可处理
+            if (evt->tag == "Check" || evt->tag == "Call")
+            {
+                //构造回复事件
+                shared_ptr<event> response_event(new(nothrow)event("Subscriber","Response"));
+                //查询目标对象
+                auto it = mapping_set.find(evt->target_object);
+                //若目标对象不存在
+                if (it == mapping_set.end())
+                    //设置目标对象不存在
+                    response_event->config["object_existence"] = false;
+                else
+                {
+                    //设置目标对象存在
+                    response_event->config["object_existence"] = true;
+                    //若为目标呼叫事件
+                    if (evt->tag == "Call")
+                        //将呼叫事件转发给目标对象
+                        event_entries[it->second](evt);
+                }
+
+                //返回答复事件
+                return response_event;
+            }
+            
+        }
+    }
+
+    //事件处理 —— 多事件重载
+    vector<shared_ptr<event>> Event_Broker::process(vector<shared_ptr<event>> event_set)
+    {
+        //回复事件缓冲
+        vector<shared_ptr<event>> buffer{};
+        //处理事件
+        for (auto& evt:event_set)
+            buffer.push_back(process(evt));
+        //返回回复事件集合
+        return buffer;
     }
 }
 

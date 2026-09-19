@@ -195,6 +195,9 @@ install(TARGETS EngineCore
 # 若在此处接入测试层，宿主会链接到不存在的目标）。
 # 默认开启：本层单独打开时即可在 VS 启动项下拉中看到宿主可执行文件。
 # 关闭方式：配置时传 -DBYJY_JOIN_TEST_HOST=OFF，或在 CMakeSettings.json 里显式置为 "false"。
+# 宿主范围：本层只请求 EngineHost —— 系统层源码不会进入本构建树，
+# 因此在引擎层里生成时不会再被系统层的编译错误打断。
+#（若想在本层的构建树里连系统层一起编，把下面的 "EngineHost" 换成 "SystemHost" 或 "FullHost"）
 option(BYJY_JOIN_TEST_HOST "把测试层宿主可执行文件并入本构建树" ON)
 if(BYJY_JOIN_TEST_HOST
    AND CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR
@@ -206,6 +209,8 @@ if(BYJY_JOIN_TEST_HOST
     else()
         # 环路保护的二次防护：用普通变量（不写入缓存），避免污染 CMakeCache 影响后续配置
         set(BYJY_TEST_HOST_JOINED TRUE)
+        # 请求范围：只起引擎层组件，系统层不进本构建树
+        set(BYJY_HOST_REQUEST "EngineHost")
         add_subdirectory("${TEST_LAYER_DIR}" "${CMAKE_BINARY_DIR}/测试层")
     endif()
 endif()

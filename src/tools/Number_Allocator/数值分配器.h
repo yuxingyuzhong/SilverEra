@@ -18,7 +18,7 @@ namespace engine
 		std::vector<uint64_t> recycle_numbers;
 	public:
 		//设置分配起点
-		uint64_t set(const uint64_t& min_allocate_number)
+		void set(const uint64_t& min_allocate_number)
 		{
 			next_number = min_allocate_number;
 		}

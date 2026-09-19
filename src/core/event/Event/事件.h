@@ -13,7 +13,24 @@ namespace engine
         {
 
         }
-        //含参构造函数
+        //含参构造函数 —— 构造事件标签
+        event(const std::string& category, const std::string& tag)
+        {
+            this->category = category;
+            this->tag = tag;
+        }
+
+        //含参构造函数 —— 构造对象标签
+        event(const std::string& sender_object, const std::string& target_object,
+            const std::string& category, const std::string& tag)
+        {
+            this->sender_object = sender_object;
+            this->target_object = target_object;
+            this->category = category;
+            this->tag = tag;
+        }
+
+        //含参构造函数 —— 全量构造
         event(const std::string& sender_object,const std::string& target_object,
             const std::string& category,const std::string& tag,
             const nlohmann::json& config)
@@ -24,6 +41,7 @@ namespace engine
             this->tag = tag;
             this->config = config;
         }
+
         //默认析构函数
         ~event()
         {

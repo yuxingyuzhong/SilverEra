@@ -31,31 +31,88 @@ namespace engine
 		if (this->acl_key != acl_key)
 			return false;
 
-		//获取当前单事件接收入口
-		auto event_receiver = terminal_interface.event_receiver;
+		//简化表示路径
+		auto& Tinterface = terminal_interface;
+
 		//若未注册单事件接收入口
-		if(!event_receiver)
+		if(!Tinterface.event_receiver)
 		{
 			//包装单事件接收入口
-			*event_receiver = [this](shared_ptr<event> evt) -> void
+			*Tinterface.event_receiver = [this](shared_ptr<event> evt) -> void
 				{
 					this->receive(evt);
 				};
 		}
 		
 		//接入中转站
-		(*terminal_interface.attach_handler)(module_name, needed_events, *event_receiver);
+		(*Tinterface.attach_handler)(module_name, needed_events, *Tinterface.event_receiver);
 		return true;
 	}
 
-	//中转站查询
-	bool Event_Terminal::check(const std::string& module_name)
+	//中转站交互 —— 单事件重载
+	bool Event_Terminal::interact(std::shared_ptr<event> evt, const int64_t& acl_key)
 	{
-		return true;
+		//若权限密钥匹配
+		if (this->acl_key == acl_key)
+		{
+			//若未注册单事件交互接口则返回
+			if (!terminal_interface.interface_check(interface_ID::EVENT_INTERACTOR))
+				return false;
+			else
+				(*terminal_interface.event_interactor)(evt);
+		}
+		else
+			return false;
+	}
+
+	//中转站交互 —— 多事件重载
+	bool Event_Terminal::interact(std::vector<std::shared_ptr<event>> events, const int64_t& acl_key)
+	{
+		//若权限密钥匹配
+		if (this->acl_key == acl_key)
+		{
+			//若已注册多事件交互接口
+			if (terminal_interface.interface_check(interface_ID::EVENTS_INTERACTOR))
+			{
+				(*terminal_interface.events_interactor)(events);
+				return true;
+			}
+			//若已注册单事件交互接口则返回
+			else if (terminal_interface.interface_check(interface_ID::EVENT_INTERACTOR))
+			{
+				//分多次发送事件
+				for (auto& evt : events)
+					(*terminal_interface.event_interactor)(evt);
+				return true;
+			}
+			else
+				return false;
+		}
+		else
+			return false;
+	}
+
+	//事件构造
+	shared_ptr<event> Event_Terminal::build(void)
+	{
+		return shared_ptr<event> (new(nothrow)event());
+	}
+
+	//事件构造
+	shared_ptr<event> Event_Terminal::build(const string& category, const string& tag)
+	{
+		return shared_ptr<event>(new(nothrow)event(category,tag));
+	}
+
+	//事件构造
+	shared_ptr<event> Event_Terminal::build(const string& sender_object, const string& target_object,
+		const string& category, const string& tag)
+	{
+		return shared_ptr<event>(new(nothrow)event(sender_object,target_object,category,tag));
 	}
 
 	//事件发送 —— 单事件重载
-	bool Event_Terminal::send(std::shared_ptr<event> evt, const int64_t& acl_key)
+	bool Event_Terminal::send(shared_ptr<event> evt, const int64_t& acl_key)
 	{
 		//若权限密钥匹配
 		if (this->acl_key == acl_key)

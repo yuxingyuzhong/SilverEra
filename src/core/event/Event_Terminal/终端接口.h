@@ -42,29 +42,29 @@ namespace engine
 		std::vector<interface_ID> map{};
 
 		//中转站接入入口
-		std::shared_ptr<attch_handler> attach_handler;
+		std::unique_ptr<attch_handler> attach_handler;
 		//中转站交互入口 —— 单事件重载
-		std::shared_ptr<event_handler> event_interactor;
-		//中转站交互入口 —— 多事件重载
-		std::shared_ptr<events_handler> events_interactor;
+		std::unique_ptr<event_handler> event_interactor;
+		//中转站交互入口 —— 单事件重载
+		std::unique_ptr<events_handler> events_interactor;
 
 		//事件发送入口 —— 单事件重载
-		std::shared_ptr<event_handler> event_sender;
+		std::unique_ptr<event_handler> event_sender;
 		//事件发送入口 —— 多事件重载
-		std::shared_ptr<events_handler> events_sender;
+		std::unique_ptr<events_handler> events_sender;
 
 		//事件接收入口 —— 单事件重载
-		std::shared_ptr<event_handler> event_receiver;
+		std::unique_ptr<event_handler> event_receiver;
 		//事件接收入口 —— 多事件重载
-		std::shared_ptr<events_handler> events_receiver;
+		std::unique_ptr<events_handler> events_receiver;
 
 		//函数包装器内存分配
 		template <typename... Args>
-		bool memory_malloc(std::shared_ptr<std::function<void(Args ...)>>& target);
+		bool memory_malloc(std::unique_ptr<std::function<void(Args ...)>>& target);
 
 		//函数接口注册
 		template <typename... Args>
-		bool function_register(interface_ID ID,std::shared_ptr<std::function<void(Args ...)>>& target,
+		bool function_register(interface_ID ID,std::unique_ptr<std::function<void(Args ...)>>& target,
 			std::function<void(Args ...)> function);
 	public:
 		//事件终端友元
@@ -72,10 +72,10 @@ namespace engine
 
 		//中转站接入入口注册
 		bool attach_handler_register(attch_handler callback);
-		//中转站交互入口注册 —— 单事件重载
+		//中转站交互入口注册
 		bool event_interactor_register(event_handler callback);
-		//中转站交互入口注册 —— 多事件重载
-		bool event_interactor_register(events_handler callback);
+		//中转站交互入口注册
+		bool events_interactor_register(events_handler callback);
 
 		//事件发送入口注册 —— 单事件重载
 		bool event_sender_register(event_handler callback);

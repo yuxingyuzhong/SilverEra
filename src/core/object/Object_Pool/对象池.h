@@ -24,7 +24,7 @@ namespace engine
 		//对象集合
 		std::vector<T> objects;
 		//模板类型标记
-		constexpr bool is_key_integral = std::is_integral_v<Key>;
+		bool is_key_integral = std::is_integral_v<Key>;
 		//对象池排序标记
 		bool is_sorted = false;
 		//对象池管理信息
@@ -38,9 +38,9 @@ namespace engine
 				//投影字段
 				std::function<Key(const T&)> projector;  
 				//比较方式(默认降序)
-				bool is_greater = false;
+				bool is_greater;
 				//有效索引起点
-				std::optional<uint64_t> min_valid_index{};
+				std::optional<uint64_t> min_valid_index;
 			};
 		};
 
@@ -85,7 +85,7 @@ namespace engine
 				//重置索引分配器
 				index_allocator.reset();
 				//升序排序使非法记录移动到序列前端
-				std::ranges::sort(objects, std::ranges::less, [](const T& o) { return o.ID(); });
+				std::ranges::sort(objects, std::ranges::less(), [](const T& o) { return o.ID(); });
 				//获取有效索引起点
 				for (int filter_index = 0; filter_index < objects.size(); filter_index++)
 				{
@@ -105,11 +105,11 @@ namespace engine
 			is_greater = greater;
 			//重排序对象
 			if (!is_greater)
-				std::ranges::sort(objects.begin() + min_valid_index, objects.end(),
-					std::ranges::less, proj);
+				std::ranges::sort(objects.begin() + min_valid_index.value(), objects.end(),
+					std::ranges::less(), proj);
 			else
-				std::ranges::sort(objects.begin() + min_valid_index, objects.end(),
-					std::ranges::greater, proj);
+				std::ranges::sort(objects.begin() + min_valid_index.value(), objects.end(),
+					std::ranges::greater(), proj);
 		}
 		//对象排列方式重置
 		void sort_order_reset(void)
@@ -163,10 +163,10 @@ namespace engine
 				//获取目标对象索引
 				if(!is_greater)
 				    index = binary_search(objects.begin() + min_valid_index.value(), objects.end(),
-					   key, std::ranges::less, projector);
+					   key, std::ranges::less(), projector);
 				else
 					index = binary_search(objects.begin() + min_valid_index.value(), objects.end(),
-						key, std::ranges::greater, projector);
+						key, std::ranges::greater(), projector);
 				//若返回索引有效
 				if (index >= 0)
 					return objects.begin() + min_valid_index.value() + index;
@@ -206,7 +206,7 @@ namespace engine
 		void unload(const Key& key)
 		{
 			//获取目标对象迭代器
-			auto it = find(key;
+			auto it = find(key);
 			//若目标迭代器有效
 			if (it != objects.end())
 			{

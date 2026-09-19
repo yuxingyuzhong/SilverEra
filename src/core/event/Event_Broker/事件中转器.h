@@ -28,14 +28,16 @@ namespace engine
 
     public:
         //订阅者登记注册
-        void info_register(const std::string& module_name, 
+        void info_register(const std::string& module_name,
             const std::vector<event>& needed_events,
             std::function<void(std::shared_ptr<event>)> event_entry);
-        //订阅者登记状态确认
-        bool target_object_check(const std::string& module_name);
         //事件接收 —— 单事件重载
         void receive(std::shared_ptr<event> evt);
         //事件接收 —— 多事件重载
         void receive(std::vector<std::shared_ptr<event>> event_set);
+        //事件处理 —— 单事件重载
+        std::shared_ptr<event> process(std::shared_ptr<event> evt);
+        //事件处理 —— 多事件重载
+        std::vector<std::shared_ptr<event>> process(std::vector<std::shared_ptr<event>> event_set);
     };
 }

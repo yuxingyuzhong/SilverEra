@@ -47,48 +47,31 @@ namespace engine
 		//中转站接入
 		bool attach(const std::string& module_name,const std::vector<event>& needed_events,
 			const int64_t& acl_key);
-		//目标对象接入检查
-		bool check(const std::string& module_name);
-		//目标对象呼叫
-		bool call(const std::string& module_name);
+		//中转站交互 —— 单事件重载
+		bool interact(std::shared_ptr<event> evt, const int64_t& acl_key);
+		//中转站交互 —— 多事件重载
+		bool interact(std::vector<std::shared_ptr<event>> events, const int64_t& acl_key);
 
 		//事件构造
-		std::shared_ptr<event> build();
+		std::shared_ptr<event> build(void);
+		//事件构造
+		std::shared_ptr<event> build(const std::string& category, const std::string& tag);
+		//事件构造
+		std::shared_ptr<event> build(const std::string& sender_object, const std::string& target_object,
+			const std::string& category, const std::string& tag);
 
 		//事件发送 —— 单事件重载
 		bool send(std::shared_ptr<event> evt, const int64_t& acl_key);
 		//事件发送 —— 多事件重载
 		bool send(std::vector<std::shared_ptr<event>> events,const int64_t& acl_key);
-
 		//事件接收 —— 单事件重载
 		void receive(std::shared_ptr<event> evt);
 		//事件接收 —— 多事件重载
 		void receive(std::vector<std::shared_ptr<event>> events);
-
-		//事件查阅 —— 全量查阅
+		//事件查阅
 		const std::vector<std::shared_ptr<event>>& query(const int64_t& acl_key);
-
-		//事件删除 —— 指定事件
 		//事件清空
 		bool clear(const int64_t& acl_key);
 
-		//括号重载 —— 事件发送
-		bool operator()(std::shared_ptr<event> evt, const int64_t& acl_key)
-		{
-			return send(evt,acl_key);
-		}
-		bool operator()(std::vector<std::shared_ptr<event>> events, const int64_t& acl_key)
-		{
-			return send(events, acl_key);
-		}
-		//括号重载 —— 事件接收
-		void operator()(std::shared_ptr<event> evt)
-		{
-			receive(evt);
-		}
-		void operator()(std::vector<std::shared_ptr<event>> events)
-		{
-			receive(events);
-		}
 	};
 }
