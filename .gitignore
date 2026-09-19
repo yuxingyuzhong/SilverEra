@@ -1,69 +1,50 @@
-# Prerequisites
-*.d
+# =============================================================================
+# 白银纪元 —— 顶层仓库忽略规则
+# =============================================================================
 
-# Compiled Object files
-*.slo
-*.lo
-*.o
+# Visual Studio 临时文件与个人设置
+.vs/
+*.user
+*.suo
+*.dbmdl
+*.jfm
+*.opendb
+*.VC.opendb
+
+# 构建输出目录
+out/
+Debug/
+Release/
+x64/
+x86/
+[Bb]in/
+[Oo]bj/
+
+# C++ 编译产物
 *.obj
-
-# Precompiled Headers
-*.gch
-*.pch
-
-# Linker files
-*.ilk
-
-# Debugger Files
-*.pdb
-
-# Compiled Dynamic libraries
-*.so
-*.dylib
-*.dll
-*.so.*
-
-
-# Fortran module files
-*.mod
-*.smod
-
-# Compiled Static libraries
-*.lai
-*.la
-*.a
-*.lib
-
-# Executables
 *.exe
-*.out
-*.app
+*.dll
+*.pdb
+*.ilk
+*.lib
+*.exp
+*.ipch
+*.tlog
 
-# Build directories
-build/
-Build/
-build-*/
-
-# CMake generated files
-CMakeFiles/
-CMakeCache.txt
-cmake_install.cmake
-Makefile
-install_manifest.txt
-compile_commands.json
-
-# Temporary files
-*.tmp
+# 其他临时文件
 *.log
-*.bak
-*.swp
+*.tmp
+*.cache
+imgui.ini
 
-# vcpkg
-vcpkg_installed/
+# Cyrene agent
+.cyrene/
 
-# debug information files
-*.dwo
-
-# test output & cache
-Testing/
-.cache/
+# =============================================================================
+# 以下三层为独立的 Git 仓库，源码由各自的分支在远程存档
+# 同一目录下嵌套仓库时，上层仓库无法收录下层仓库的文件（Git 会把整个
+# 子目录记成一个 gitlink），故在此排除，避免误提交空壳
+# =============================================================================
+引擎层/
+系统层/
+游戏层/
