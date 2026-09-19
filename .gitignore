@@ -1,0 +1,44 @@
+# =============================================================================
+# 测试层 —— 独立仓库忽略规则
+# =============================================================================
+
+# Visual Studio 临时文件与个人设置
+.vs/
+*.user
+*.suo
+*.dbmdl
+*.jfm
+*.opendb
+*.VC.opendb
+
+# 构建输出目录
+out/
+build/
+cmake-build-debug/
+cmake-build-release/
+Debug/
+Release/
+x64/
+x86/
+[Bb]in/
+[Oo]bj/
+
+# C++ 编译产物
+*.obj
+*.exe
+*.dll
+*.pdb
+*.ilk
+*.lib
+*.exp
+*.ipch
+*.tlog
+
+# 其他临时文件
+*.log
+*.tmp
+*.cache
+imgui.ini
+
+# Cyrene agent
+.cyrene/
