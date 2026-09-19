@@ -7,10 +7,7 @@
 #include "src/core/space/quadtree/四叉树.h"
 #include "src/core/space/quadtree_manager/四叉树管理器.h"
 
-//实体模块
-#include "src/core/entity/Entity/实体.h"
-#include "src/core/entity/Prop_Distributor/属性槽分发器.h"
-#include "src/core/entity/Entity_Manager/实体管理器.h"
+//实体模块已迁出引擎层（现位于 系统层/entity/），改由上层自行包含
 
 //事件模块
 #include "src/core/event/Event_Broker/事件中转器.h"

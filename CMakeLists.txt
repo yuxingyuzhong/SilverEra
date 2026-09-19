@@ -10,9 +10,9 @@ endif()
 # =============================================================================
 # 1. 项目基本信息
 # =============================================================================
-# 项目名称：游戏引擎（支持中文，但建议英文）
+# 项目名称：引擎层（支持中文，但建议英文）
 # 语言：C 和 C++（明确启用 C，以便 .c 文件默认按 C 编译）
-project(游戏引擎 LANGUAGES C CXX)
+project(引擎层 LANGUAGES C CXX)
 
 # 强制使用 C++20 标准（Sol2 需要 C++17 以上，这里设 20 更现代）
 set(CMAKE_CXX_STANDARD 20)
@@ -25,11 +25,15 @@ set(CMAKE_CXX_EXTENSIONS OFF)         # 禁用 GCC/MSVC 的编译器扩展，提
 # 获取当前 CMakeLists.txt 所在目录的绝对路径（即项目根目录）
 get_filename_component(PROJECT_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}" ABSOLUTE)
 
-# 递归搜索 "游戏引擎" 子目录下的所有 .cpp 和 .c 文件
+# 递归搜索引擎源码目录（src / common / external）下的所有 .cpp 和 .c 文件
 # CONFIGURE_DEPENDS 让 CMake 在构建时自动检测新增/删除的源文件（不必手动重新运行 cmake）
 file(GLOB_RECURSE ENGINE_SOURCES CONFIGURE_DEPENDS
-    "${PROJECT_ROOT_DIR}/游戏引擎/*.cpp"
-    "${PROJECT_ROOT_DIR}/游戏引擎/*.c"      # 重要：Lua 官方源码是 .c，必须包含
+    "${PROJECT_ROOT_DIR}/src/*.cpp"
+    "${PROJECT_ROOT_DIR}/src/*.c"
+    "${PROJECT_ROOT_DIR}/common/*.cpp"
+    "${PROJECT_ROOT_DIR}/common/*.c"
+    "${PROJECT_ROOT_DIR}/external/*.cpp"
+    "${PROJECT_ROOT_DIR}/external/*.c"      # 重要：Lua 官方源码是 .c，必须包含
 )
 
 # ----- 过滤掉不需要的文件 -----
@@ -42,6 +46,7 @@ if(ENGINE_SOURCES)
     list(FILTER ENGINE_SOURCES EXCLUDE REGEX "^${SAFE_BINARY_REGEX}/")
 
     # 2) 排除 "主调文件" 目录（该目录包含 main()，不应编入静态库）
+    #    注：当前收集范围已不含该目录，此处作为兜底保留
     list(FILTER ENGINE_SOURCES EXCLUDE REGEX "/主调文件/")
 
     # 3) 排除配置编辑器目录（该目录包含独立的 main()，不应编入静态库）
@@ -52,7 +57,7 @@ endif()
 # 如果过滤后没有源文件，终止配置并给出明确错误提示
 if(NOT ENGINE_SOURCES)
     message(FATAL_ERROR 
-        "未在 '${PROJECT_ROOT_DIR}/游戏引擎/' 下找到任何 .cpp 或 .c 文件！\n"
+        "未在 '${PROJECT_ROOT_DIR}' 的 src/、common/、external/ 下找到任何 .cpp 或 .c 文件！\n"
         "请检查目录结构是否完整，以及 CMakeLists.txt 是否放置正确。"
     )
 endif()
@@ -68,47 +73,47 @@ add_library(EngineCore STATIC ${ENGINE_SOURCES})
 # =============================================================================
 # 4. 头文件搜索路径设置（使用 PUBLIC 让依赖者继承）
 # =============================================================================
-# PUBLIC 表示这个包含目录不仅对 EngineCore 自身可见，也对链接 EngineCore 的其他目标（如 TestEngine）可见。
-# 这样 TestEngine 无需重复添加同样的路径，减少冗余。
-target_include_directories(EngineCore PUBLIC "${PROJECT_ROOT_DIR}/游戏引擎")
+# PUBLIC 表示这个包含目录不仅对 EngineCore 自身可见，也对链接 EngineCore 的上层目标
+#（系统层的 SystemCore、游戏层的 TestEngine）可见，上层无需重复添加同样的路径。
+target_include_directories(EngineCore PUBLIC "${PROJECT_ROOT_DIR}")
 
 # =============================================================================
 # 5. 第三方库
 # =============================================================================
 
 # ---------- Sol2（纯头文件库） ----------
-set(SOL2_ROOT "${PROJECT_ROOT_DIR}/游戏引擎/external/Sol2/include")
+set(SOL2_ROOT "${PROJECT_ROOT_DIR}/external/Sol2/include")
 target_include_directories(EngineCore PUBLIC "${SOL2_ROOT}")
 
 # ---------- Lua（源码直接编译） ----------
-set(LUA_SRC_DIR "${PROJECT_ROOT_DIR}/游戏引擎/external/Lua")
+set(LUA_SRC_DIR "${PROJECT_ROOT_DIR}/external/Lua")
 target_include_directories(EngineCore PUBLIC "${LUA_SRC_DIR}")
 
 # ---------- Json（纯头文件库） ----------
-set(JSON_ROOT "${PROJECT_ROOT_DIR}/游戏引擎/external/Json")
+set(JSON_ROOT "${PROJECT_ROOT_DIR}/external/Json")
 target_include_directories(EngineCore PUBLIC "${JSON_ROOT}")
 
 # ---------- 新增：GLFW ----------
-set(GLFW_ROOT "${PROJECT_ROOT_DIR}/游戏引擎/external/glfw")
+set(GLFW_ROOT "${PROJECT_ROOT_DIR}/external/glfw")
 target_include_directories(EngineCore PUBLIC "${GLFW_ROOT}")
 
 # ---------- 新增：GLAD ----------
-set(GLAD_ROOT "${PROJECT_ROOT_DIR}/游戏引擎/external/glad")
+set(GLAD_ROOT "${PROJECT_ROOT_DIR}/external/glad")
 target_include_directories(EngineCore PUBLIC "${GLAD_ROOT}/include")
 
 # ---------- 新增：GLM ----------
-set(IMGUI_ROOT "${PROJECT_ROOT_DIR}/游戏引擎/external")
+set(IMGUI_ROOT "${PROJECT_ROOT_DIR}/external")
 target_include_directories(EngineCore PUBLIC "${IMGUI_ROOT}")
 
 # ---------- 新增：Dear ImGui ----------
-set(IMGUI_ROOT "${PROJECT_ROOT_DIR}/游戏引擎/external/Dear_ImGui/imgui")
+set(IMGUI_ROOT "${PROJECT_ROOT_DIR}/external/Dear_ImGui/imgui")
 target_include_directories(EngineCore PUBLIC "${IMGUI_ROOT}")
 
-set(IMGUI_BACKENDS "${PROJECT_ROOT_DIR}/游戏引擎/external/Dear_ImGui/backends")
+set(IMGUI_BACKENDS "${PROJECT_ROOT_DIR}/external/Dear_ImGui/backends")
 target_include_directories(EngineCore PUBLIC "${IMGUI_BACKENDS}")
 
 # ---------- 新增：stb_image.h ----------
-set(IMGUI_ROOT "${PROJECT_ROOT_DIR}/游戏引擎/external/stb")
+set(IMGUI_ROOT "${PROJECT_ROOT_DIR}/external/stb")
 target_include_directories(EngineCore PUBLIC "${IMGUI_ROOT}")
 
 # ---------- 新增：公共包含路径打印 ----------
@@ -170,7 +175,7 @@ set_target_properties(EngineCore PROPERTIES
 # 8. 安装规则（方便部署）
 # =============================================================================
 # 将引擎的头文件安装到 include/EngineCore/ 下
-install(DIRECTORY "${PROJECT_ROOT_DIR}/游戏引擎/"
+install(DIRECTORY "${PROJECT_ROOT_DIR}/"
     DESTINATION "include/EngineCore"
     FILES_MATCHING PATTERN "*.h" PATTERN "*.hpp"   # 只安装 .h 和 .hpp
     PATTERN "Private" EXCLUDE                     # 排除 Private 子目录（内部实现）
@@ -184,37 +189,12 @@ install(TARGETS EngineCore
 )
 
 # =============================================================================
-# 9. 可执行测试目标（用于调试引擎）
+# 9. 关于组合根（原 TestEngine）的说明
 # =============================================================================
-# 搜索主调文件目录下的 .cpp 文件（通常包含 main() 函数）
-file(GLOB_RECURSE TEST_SOURCES CONFIGURE_DEPENDS
-    "${PROJECT_ROOT_DIR}/游戏引擎/主调文件/*.cpp"
-)
-
-if(TEST_SOURCES)
-    # 创建测试可执行文件 TestEngine.exe
-    add_executable(TestEngine ${TEST_SOURCES})
-
-    # 链接引擎静态库（Lua 和 Sol2 的包含路径通过 PUBLIC 自动继承，无需再写）
-    target_link_libraries(TestEngine PRIVATE EngineCore)
-
-    # ---- 新增：将 TestEngine.exe 输出到游戏引擎/ 目录 ----
-    set_target_properties(TestEngine PROPERTIES
-        RUNTIME_OUTPUT_DIRECTORY "${PROJECT_ROOT_DIR}/游戏引擎"
-    )
-
-    # 给 TestEngine 也应用编译选项（保持一致）
-    if(MSVC)
-        target_compile_options(TestEngine PRIVATE /MP /utf-8)
-        target_compile_definitions(TestEngine PRIVATE _CRT_SECURE_NO_WARNINGS)
-    endif()
-
-    # 将 TestEngine 设为 Visual Studio 的默认启动项目（方便调试）
-    set_property(DIRECTORY PROPERTY VS_STARTUP_PROJECT "TestEngine")
-else()
-    # 如果没有主调文件，则只生成静态库，不生成可执行文件（警告但不终止）
-    message(WARNING "未找到主调文件目录下的测试源文件，将不会生成可执行文件。")
-endif()
+# 原 引擎层/主调文件/ 已迁至 游戏层/主调文件/，TestEngine 目标由 游戏层/CMakeLists.txt 生成。
+# 原因：主调文件同时依赖引擎层（事件、配置加载）与系统层（实体、属性槽分发器），
+#       属于上层应用的组合根；留在引擎层会导致「引擎层反向依赖系统层」。
+# 因此引擎层自身只产出：EngineCore 静态库 + ConfigEditor 可执行文件。
 
 # =============================================================================
 # 10. 预留插件/模块接口（将来可添加子目录）
@@ -226,7 +206,7 @@ endif()
 # =============================================================================
 # 搜索 Config_Editor 目录下的 .cpp 文件（包括 main）
 file(GLOB_RECURSE EDITOR_SOURCES
-    "${PROJECT_ROOT_DIR}/游戏引擎/src/tools/GUI/Config_Editor/core/*.cpp"
+    "${PROJECT_ROOT_DIR}/src/tools/GUI/Config_Editor/core/*.cpp"
 )
 
 if(EDITOR_SOURCES)
@@ -244,7 +224,7 @@ if(EDITOR_SOURCES)
 
     # 输出到项目根目录（与 TestEngine 并列）
     set_target_properties(ConfigEditor PROPERTIES
-        RUNTIME_OUTPUT_DIRECTORY "${PROJECT_ROOT_DIR}/游戏引擎"
+        RUNTIME_OUTPUT_DIRECTORY "${PROJECT_ROOT_DIR}"
     )
 
     message(STATUS "配置编辑器已添加: ConfigEditor.exe")

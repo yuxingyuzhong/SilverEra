@@ -41,3 +41,6 @@ out/
 
 # Cyrene agent
 .cyrene/
+
+# ImGui 运行时生成的窗口布局缓存
+imgui.ini
