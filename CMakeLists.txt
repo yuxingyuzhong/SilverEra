@@ -45,13 +45,6 @@ if(ENGINE_SOURCES)
     string(REGEX REPLACE "([.+*?^$()])" "\\\\\\1" SAFE_BINARY_REGEX "${SAFE_BINARY_DIR}")
     list(FILTER ENGINE_SOURCES EXCLUDE REGEX "^${SAFE_BINARY_REGEX}/")
 
-    # 2) 排除 "主调文件" 目录（该目录包含 main()，不应编入静态库）
-    #    注：当前收集范围已不含该目录，此处作为兜底保留
-    list(FILTER ENGINE_SOURCES EXCLUDE REGEX "/主调文件/")
-
-    # 3) 排除配置编辑器目录（该目录包含独立的 main()，不应编入静态库）
-list(FILTER ENGINE_SOURCES EXCLUDE REGEX "/src/tools/GUI/Config_Editor/")
-
 endif()
 
 # 如果过滤后没有源文件，终止配置并给出明确错误提示
@@ -93,28 +86,29 @@ target_include_directories(EngineCore PUBLIC "${LUA_SRC_DIR}")
 set(JSON_ROOT "${PROJECT_ROOT_DIR}/external/Json")
 target_include_directories(EngineCore PUBLIC "${JSON_ROOT}")
 
-# ---------- 新增：GLFW ----------
+# ---------- GLFW ----------
 set(GLFW_ROOT "${PROJECT_ROOT_DIR}/external/glfw")
 target_include_directories(EngineCore PUBLIC "${GLFW_ROOT}")
 
-# ---------- 新增：GLAD ----------
+# ---------- GLAD ----------
 set(GLAD_ROOT "${PROJECT_ROOT_DIR}/external/glad")
 target_include_directories(EngineCore PUBLIC "${GLAD_ROOT}/include")
 
-# ---------- 新增：GLM ----------
-set(IMGUI_ROOT "${PROJECT_ROOT_DIR}/external")
-target_include_directories(EngineCore PUBLIC "${IMGUI_ROOT}")
+# ---------- GLM ----------
+# 代码里用 #include <glm/glm.hpp>，故包含 external 目录本身
+set(GLM_ROOT "${PROJECT_ROOT_DIR}/external")
+target_include_directories(EngineCore PUBLIC "${GLM_ROOT}")
 
-# ---------- 新增：Dear ImGui ----------
+# ---------- Dear ImGui ----------
 set(IMGUI_ROOT "${PROJECT_ROOT_DIR}/external/Dear_ImGui/imgui")
 target_include_directories(EngineCore PUBLIC "${IMGUI_ROOT}")
 
 set(IMGUI_BACKENDS "${PROJECT_ROOT_DIR}/external/Dear_ImGui/backends")
 target_include_directories(EngineCore PUBLIC "${IMGUI_BACKENDS}")
 
-# ---------- 新增：stb_image.h ----------
-set(IMGUI_ROOT "${PROJECT_ROOT_DIR}/external/stb")
-target_include_directories(EngineCore PUBLIC "${IMGUI_ROOT}")
+# ---------- stb ----------
+set(STB_ROOT "${PROJECT_ROOT_DIR}/external/stb")
+target_include_directories(EngineCore PUBLIC "${STB_ROOT}")
 
 # ---------- 新增：公共包含路径打印 ----------
 
@@ -189,45 +183,29 @@ install(TARGETS EngineCore
 )
 
 # =============================================================================
-# 9. 关于组合根（原 TestEngine）的说明
+# 9. 测试层宿主可执行文件接入（可选）
 # =============================================================================
-# 原 引擎层/主调文件/ 已迁至 游戏层/主调文件/，TestEngine 目标由 游戏层/CMakeLists.txt 生成。
-# 原因：主调文件同时依赖引擎层（事件、配置加载）与系统层（实体、属性槽分发器），
-#       属于上层应用的组合根；留在引擎层会导致「引擎层反向依赖系统层」。
-# 因此引擎层自身只产出：EngineCore 静态库 + ConfigEditor 可执行文件。
-
-# =============================================================================
-# 10. 预留插件/模块接口（将来可添加子目录）
-# =============================================================================
-# add_subdirectory(Plugins/CombatProxy)
-
-# =============================================================================
-# 11. 配置编辑器独立可执行文件
-# =============================================================================
-# 搜索 Config_Editor 目录下的 .cpp 文件（包括 main）
-file(GLOB_RECURSE EDITOR_SOURCES
-    "${PROJECT_ROOT_DIR}/src/tools/GUI/Config_Editor/core/*.cpp"
-)
-
-if(EDITOR_SOURCES)
-    # 创建独立可执行文件
-    add_executable(ConfigEditor ${EDITOR_SOURCES})
-
-    # 链接引擎核心静态库（复用所有第三方库和引擎逻辑）
-    target_link_libraries(ConfigEditor PRIVATE EngineCore)
-
-    # 应用与 TestEngine 相同的编译选项
-    if(MSVC)
-        target_compile_options(ConfigEditor PRIVATE /MP /utf-8)
-        target_compile_definitions(ConfigEditor PRIVATE _CRT_SECURE_NO_WARNINGS)
+# 静态库不具备「启动项目」身份，单独打开本层时 VS 启动项下拉为空、也无法 F5 调试。
+# 打开本层文件夹做开发时，把测试层的分层宿主可执行文件并入本次构建树，于是
+# 「改本层源码 → 生成 → 本层静态库重编 → 宿主重新链接 → 运行」形成完整闭环。
+#
+# 仅当本层是构建树的顶层源码目录时生效：被其他层 add_subdirectory 拉入时，
+# 由拉入者负责编排，本段保持惰性。这同时断开了
+# 「系统层 → 引擎层 → 测试层 → 系统层」这类环路（重入时 SystemCore 尚未定义，
+# 若在此处接入测试层，宿主会链接到不存在的目标）。
+# 默认开启：本层单独打开时即可在 VS 启动项下拉中看到宿主可执行文件。
+# 关闭方式：配置时传 -DBYJY_JOIN_TEST_HOST=OFF，或在 CMakeSettings.json 里显式置为 "false"。
+option(BYJY_JOIN_TEST_HOST "把测试层宿主可执行文件并入本构建树" ON)
+if(BYJY_JOIN_TEST_HOST
+   AND CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR
+   AND NOT BYJY_TEST_HOST_JOINED)
+    set(TEST_LAYER_DIR "${PROJECT_ROOT_DIR}/../测试层")
+    # 本层源码被单独复制分发时，同级目录下可能没有测试层，此时安静跳过，不让配置失败
+    if(NOT EXISTS "${TEST_LAYER_DIR}/CMakeLists.txt")
+        message(STATUS "未找到测试层工程（${TEST_LAYER_DIR}），跳过宿主接入")
+    else()
+        # 环路保护的二次防护：用普通变量（不写入缓存），避免污染 CMakeCache 影响后续配置
+        set(BYJY_TEST_HOST_JOINED TRUE)
+        add_subdirectory("${TEST_LAYER_DIR}" "${CMAKE_BINARY_DIR}/测试层")
     endif()
-
-    # 输出到项目根目录（与 TestEngine 并列）
-    set_target_properties(ConfigEditor PROPERTIES
-        RUNTIME_OUTPUT_DIRECTORY "${PROJECT_ROOT_DIR}"
-    )
-
-    message(STATUS "配置编辑器已添加: ConfigEditor.exe")
-else()
-    message(WARNING "未找到配置编辑器源文件，将不会生成 ConfigEditor.exe。")
 endif()

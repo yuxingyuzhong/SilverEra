@@ -2,7 +2,7 @@
 //预编译头
 #include "common/前置头文件包含.h"
 //获取预定义事件类型
-#include "common/types/事件类型.h"
+#include "../Event/事件.h"
 
 namespace engine
 {

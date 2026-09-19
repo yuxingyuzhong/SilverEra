@@ -2,9 +2,9 @@
 //预编译头
 #include "common/前置头文件包含.h"
 //获取预定义事件类型
-#include "common/types/事件类型.h"
+#include "../Event/事件.h"
 //获取随机数生成器(用于权限密钥生成)
-#include "src/tools/Non_GUI/Random/随机数生成器.h"
+#include "src/tools/Random/随机数生成器.h"
 
 namespace engine
 {
