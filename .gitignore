@@ -39,3 +39,6 @@ imgui.ini
 
 # Cyrene agent
 .cyrene/
+
+# glfw 预编译静态库是链接必需依赖，放行入库（例外于 *.lib 规则）
+!引擎层/external/glfw/glfw3.lib
