@@ -2,7 +2,7 @@
 #include <gtest/gtest.h>
 
 //获取四叉树
-#include "src/core/space/Quadtree/四叉树.h"
+#include "src/core/spatial/partition/Quadtree/四叉树.h"
 
 //四叉树测试夹具
 class Quadtree_Test : public ::testing::Test

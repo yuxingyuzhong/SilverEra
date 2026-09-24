@@ -30,21 +30,29 @@ protected:
 	engine::Event_Broker broker;
 };
 
-//订阅登记状态：注册后确认为已登记
+//订阅登记状态：登记后匹配事件能送达
+//（引擎层 e430610 移除了 Event_Broker::target_object_check，登记状态不再可直接查询，
+//  此处改为观察可验证的行为：登记后投递一条匹配事件应当送达一次）
 TEST_F(Event_Broker_Test, 注册后状态确认)
 {
+	//收到次数
+	int received = 0;
 	//登记一个订阅者
 	broker.info_register("订阅者", make_needed("输入", "按键"),
-		[](std::shared_ptr<engine::event>) {});
-	//状态确认应通过
-	EXPECT_TRUE(broker.target_object_check("订阅者"));
+		[&received](std::shared_ptr<engine::event>) { ++received; });
+	//投递一条匹配事件
+	broker.receive(make_event("", "", "输入", "按键"));
+	//登记生效：应送达一次
+	EXPECT_EQ(received, 1);
 }
 
-//订阅登记状态：未注册者为未登记
+//订阅登记状态：未登记时投递安静结束
+//（同上，target_object_check 已移除；未登记则没有可送达的对象，
+//  投递应正常结束而不崩溃——这是该路径现在唯一还能验证的性质）
 TEST_F(Event_Broker_Test, 未注册状态确认失败)
 {
-	//未登记过的名称
-	EXPECT_FALSE(broker.target_object_check("路人"));
+	//未登记过的名称，直接投递
+	EXPECT_NO_THROW(broker.receive(make_event("", "", "输入", "按键")));
 }
 
 //标签匹配：同分类同标签的订阅者收到事件
@@ -291,8 +299,8 @@ TEST_F(Event_Broker_Test, 空分类登记被跳过)
 	//以空分类登记
 	broker.info_register("订阅者", make_needed("", "按键"),
 		[&received](std::shared_ptr<engine::event>) { ++received; });
-	//订阅者映射仍应建立
-	EXPECT_TRUE(broker.target_object_check("订阅者"));
+	//订阅者映射的登记状态不再可查（target_object_check 已移除），
+	//此处只保留可验证的行为：空分类登记不会带来任何送达
 	//投递事件不会送达（无任何分类被登记）
 	broker.receive(make_event("", "", "输入", "按键"));
 	EXPECT_EQ(received, 0);

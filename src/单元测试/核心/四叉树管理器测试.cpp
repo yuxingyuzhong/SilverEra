@@ -2,7 +2,7 @@
 #include <gtest/gtest.h>
 
 //获取四叉树管理器
-#include "src/core/space/Quadtree_Manager/四叉树管理器.h"
+#include "src/core/spatial/partition/Quadtree_Manager/四叉树管理器.h"
 
 //四叉树管理器测试夹具
 class Quadtree_Manager_Test : public ::testing::Test

@@ -178,8 +178,10 @@ TEST_F(Event_Terminal_Test, 正确密钥清空成功)
 	EXPECT_EQ(terminal.query(key).size(), 0u);
 }
 
-//括号重载：发送与接收与函数调用等价
-TEST_F(Event_Terminal_Test, 括号重载与函数等价)
+//发送与接收：send 计入发送通道，未注册接收通道时事件落入原生集合
+//（Event_Terminal 只有 operator-> 没有括号重载，原用例里的 terminal(...)
+//  是没有对应接口的草稿写法，这里改回接口上的 send / receive）
+TEST_F(Event_Terminal_Test, 发送走通道且接收落入原生集合)
 {
 	//生成权限密钥
 	const int64_t key = terminal.acl_key_gen();
@@ -187,13 +189,11 @@ TEST_F(Event_Terminal_Test, 括号重载与函数等价)
 	int sent = 0;
 	//注册发送通道
 	terminal->event_sender_register([&sent](std::shared_ptr<engine::event>) { ++sent; });
-	//以括号形式发送
-	EXPECT_TRUE(terminal(make_event("输入", "按键"), key));
-	//发送计数应增加
+	//发送：走发送通道，计数应增加
+	EXPECT_TRUE(terminal.send(make_event("输入", "按键"), key));
 	EXPECT_EQ(sent, 1);
-	//以括号形式接收
-	terminal(make_event("输入", "松开"));
-	//未注册接收通道，事件应落入原生集合
+	//接收：未注册接收通道，事件应落入原生集合
+	terminal.receive(make_event("输入", "松开"));
 	EXPECT_EQ(terminal.query(key).size(), 1u);
 }
 
