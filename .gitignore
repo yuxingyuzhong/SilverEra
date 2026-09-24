@@ -40,5 +40,9 @@ x86/
 *.cache
 imgui.ini
 
+# 资产目录：目录联接指向 游戏层/assets（单一真源，内容不入库）
+# 不加此规则时 git 会把联接当真实目录递归追踪，产生大量重复条目
+assets/
+
 # Cyrene agent
 .cyrene/
