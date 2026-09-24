@@ -6,12 +6,14 @@ namespace engine
 	//属性槽分发密钥生成
 	bool Entity_Manager::distribute_key_gen(void)
 	{
+		/*/
 		//若属性槽分发器未注册事件中转站
-		if (!event_terminal.check("Prop_Distributor"))
+		if (!event_terminal.interact("Prop_Distributor"))
 		{
 			Log::warn("Entity_Manager::属性槽分发器尚未注册事件中转站信息\n分发密钥生成失败");
 			return false;
 		}
+		/**/
 		//若当前已生成分发密钥
 		if (this->distribute_key.has_value())
 		{
