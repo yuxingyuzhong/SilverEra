@@ -198,6 +198,16 @@ namespace engine
 			//若序列稳定则记录索引映射
 			if(!is_sorted)
 				object_index_map.insert({ new_object.ID(), index });
+			else
+			{
+				//重排序对象
+				if (!is_greater)
+					std::ranges::sort(objects.begin() + min_valid_index.value(), objects.end(),
+						std::ranges::less(), projector);
+				else
+					std::ranges::sort(objects.begin() + min_valid_index.value(), objects.end(),
+						std::ranges::greater(), projector);
+			}
 
 			//返回对象ID
 			return new_object.ID();

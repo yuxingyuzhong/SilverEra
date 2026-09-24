@@ -174,19 +174,19 @@ namespace engine
         if (evt->sender_object.empty())
         {
             Log::warn("Event_Broker::事件发送者未定义\n事件无法处理");
-            return;
+            return nullptr;
         }
         //若未定义事件目标则直接返回
         if (evt->target_object.empty())
         {
             Log::warn("Event_Broker::事件目标未定义\n事件无法处理");
-            return;
+            return nullptr;
         }
         //若事件发送者不存在则直接返回
         if (!mapping_set.count(evt->sender_object))
         {
             Log::warn("Event_Broker::事件发送者不存在\n事件无法处理");
-            return;
+            return nullptr;
         }
 
         //若事件大类可处理
