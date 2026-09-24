@@ -127,3 +127,32 @@ if(ENTRY_SOURCES)
 else()
     message(WARNING "未找到 '${PROJECT_ROOT_DIR}/主调文件/' 下的 .cpp 文件，将不会生成 TestEngine.exe。")
 endif()
+
+# =============================================================================
+# 5. 测试层宿主可执行文件接入（可选）
+# =============================================================================
+# 打开本层文件夹做开发时，把测试层的分层宿主可执行文件并入本次构建树，
+# 启动项下拉里除 TestEngine 外还会出现测试层宿主，便于按层级范围分别调试。
+#
+# 仅当本层是构建树的顶层源码目录时生效：被其他层 add_subdirectory 拉入时，
+# 由拉入者负责编排，本段保持惰性。
+# 默认开启：本层单独打开时即可在 VS 启动项下拉中看到宿主可执行文件。
+# 关闭方式：配置时传 -DBYJY_JOIN_TEST_HOST=OFF，或在 CMakeSettings.json 里显式置为 "false"。
+# 宿主范围：本层已经要编 SystemCore（TestEngine 依赖它），故三个宿主一并请求，
+# 调试时可在启动项下拉里按层级切换；启动项仍保持本层的 TestEngine。
+option(BYJY_JOIN_TEST_HOST "把测试层宿主可执行文件并入本构建树" ON)
+if(BYJY_JOIN_TEST_HOST
+   AND CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR
+   AND NOT BYJY_TEST_HOST_JOINED)
+    set(TEST_LAYER_DIR "${PROJECT_ROOT_DIR}/../测试层")
+    # 本层源码被单独复制分发时，同级目录下可能没有测试层，此时安静跳过，不让配置失败
+    if(NOT EXISTS "${TEST_LAYER_DIR}/CMakeLists.txt")
+        message(STATUS "未找到测试层工程（${TEST_LAYER_DIR}），跳过宿主接入")
+    else()
+        # 环路保护的二次防护：用普通变量（不写入缓存），避免污染 CMakeCache 影响后续配置
+        set(BYJY_TEST_HOST_JOINED TRUE)
+        # 请求范围：三个宿主全给（系统层本就要编，增量成本只有宿主入口本身）
+        set(BYJY_HOST_REQUEST "EngineHost" "SystemHost" "FullHost")
+        add_subdirectory("${TEST_LAYER_DIR}" "${CMAKE_BINARY_DIR}/测试层")
+    endif()
+endif()
