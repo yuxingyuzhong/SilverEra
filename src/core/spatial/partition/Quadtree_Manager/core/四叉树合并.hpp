@@ -16,13 +16,13 @@ namespace engine
         //四叉树扩大级数存储
         int expand_level = 0;
         //四叉树当前最大可扩大大小存储
-        int max_expandable_size = largest_tree_size;
+        uint64_t max_expandable_size = largest_tree_size;
         //若当前最大四叉树大小已达上限
         if (max_expandable_size == max_tree_size)
             max_expandable_size /= 2;
 
         //计算最大可扩大四叉树扩大级数
-        for (int temp = max_expandable_size; (temp /= 2) >= min_tree_size;)
+        for (uint64_t temp = max_expandable_size; (temp /= 2) >= min_tree_size;)
             expand_level++;
 
         //不同扩大级数四叉树存储
@@ -321,8 +321,13 @@ namespace engine
                         ptr_data = nullptr;
                         //稳定查询创建新区块
                         new_tree->tree->block_seek(ptr_data, point_to_int(buffer[copy_time]->node), true);
-                        //复制区块数据
-                        copy(*ptr_data, *buffer[copy_time]);
+                        //若区块创建成功
+                        if (ptr_data)
+                            //复制区块数据
+                            copy(*ptr_data, *buffer[copy_time]);
+                        //若区块创建失败
+                        else
+                            continue;
                     }
                 }
 

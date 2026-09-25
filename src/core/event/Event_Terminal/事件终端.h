@@ -16,7 +16,7 @@ namespace engine
 	{
 	private:
 		//权限密钥
-		int64_t acl_key = 0;
+		std::optional<int64_t> acl_key;
 		//密钥生成器
 		Random_Generator key_generator{};
 
@@ -69,7 +69,7 @@ namespace engine
 		//事件接收 —— 多事件重载
 		void receive(std::vector<std::shared_ptr<event>> events);
 		//事件查阅
-		const std::vector<std::shared_ptr<event>>& query(const int64_t& acl_key);
+		const std::vector<std::shared_ptr<event>>* query(const int64_t& acl_key);
 		//事件清空
 		bool clear(const int64_t& acl_key);
 

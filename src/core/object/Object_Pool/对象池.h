@@ -23,8 +23,6 @@ namespace engine
 
 		//对象集合
 		std::vector<T> objects;
-		//模板类型标记
-		bool is_key_integral = std::is_integral_v<Key>;
 		//对象池排序标记
 		bool is_sorted = false;
 		//对象池管理信息
@@ -75,6 +73,8 @@ namespace engine
 				object_index_map.~unordered_map();	
 				//分配内存并记录投影字段
 				new (&projector) std::function<Key(const T&)>(proj);
+				new (&is_greater) bool(false);
+				new (&min_valid_index) std::optional<uint64_t>();   
 			}
 			else
 				projector = proj;
@@ -82,15 +82,13 @@ namespace engine
 			//若未记录有效索引起点
 			if (!min_valid_index.has_value())
 			{
-				//重置索引分配器
-				index_allocator.reset();
 				//升序排序使非法记录移动到序列前端
 				std::ranges::sort(objects, std::ranges::less(), [](const T& o) { return o.ID(); });
 				//获取有效索引起点
 				for (int filter_index = 0; filter_index < objects.size(); filter_index++)
 				{
 					//若当前对象索引有效
-					if (objects[filter_index].ID() > 0)
+					if (objects[filter_index].valid())
 					{
 						min_valid_index = filter_index;
 						break;
@@ -99,6 +97,10 @@ namespace engine
 						//回收无效索引
 						index_allocator.recycle(filter_index);
 				}
+
+				//若未获得有效索引起点
+				if (!min_valid_index.has_value())
+					min_valid_index = objects.size();
 			}
 
 			//记录排序方式
@@ -128,53 +130,78 @@ namespace engine
 				//重建映射
 				for (uint64_t index = 0; index < objects.size(); index++)
 				{
-					if (objects[index].ID() > 0)
+					if (objects[index].valid())
 						object_index_map.insert({ objects[index].ID(), index });
 				}
 				//标记回到稳定模式
 				is_sorted = false;
 			}
 		}
-		//对象查找 —— 连续存储重载
+		//对象查找
 		typename std::vector<T>::iterator find(const Key& key)
 		{
-			//若对象池序列稳定且为整数Key
-			if (!is_sorted && is_key_integral)
+			//编译期条件分支分派
+			if constexpr (std::is_integral_v<Key>)
 			{
-				//获取索引映射迭代器
-				auto it = object_index_map.find(key);
-				//若迭代器有效
-				if (it != object_index_map.end())
-					return objects.begin() + it->second;
-				//若不存在目标对象则返回超尾迭代器
+				//若对象池序列稳定
+				if (!is_sorted)
+				{
+					//获取索引映射迭代器
+					auto it = object_index_map.find(key);
+					//若迭代器有效
+					if (it != object_index_map.end())
+						return objects.begin() + it->second;
+					//若不存在目标对象则返回超尾迭代器
+					else
+						return objects.end();
+				}
 				else
-					return objects.end();
-			}
-			//若对象池序列稳定且非整数Key
-			else if (!is_sorted && !is_key_integral)
-			{
-				Log::error("Object_Pool::当前对象池未排序\n无法使用ID以外字段查找目标对象");
-				return objects.end();
+				{
+					//目标对象索引存储
+					int index;
+					//获取目标对象索引
+					if (!is_greater)
+						index = binary_search(objects.begin() + min_valid_index.value(), objects.end(),
+							key, std::ranges::less(), projector);
+					else
+						index = binary_search(objects.begin() + min_valid_index.value(), objects.end(),
+							key, std::ranges::greater(), projector);
+					//若返回索引有效
+					if (index >= 0)
+						return objects.begin() + min_valid_index.value() + index;
+					//若不存在目标对象则返回超尾迭代器
+					else
+						return objects.end();
+				}
 			}
 			else
 			{
-				//目标对象索引存储
-				int index;
-				//获取目标对象索引
-				if(!is_greater)
-				    index = binary_search(objects.begin() + min_valid_index.value(), objects.end(),
-					   key, std::ranges::less(), projector);
-				else
-					index = binary_search(objects.begin() + min_valid_index.value(), objects.end(),
-						key, std::ranges::greater(), projector);
-				//若返回索引有效
-				if (index >= 0)
-					return objects.begin() + min_valid_index.value() + index;
-				//若不存在目标对象则返回超尾迭代器
-				else
+				//若对象池序列稳定
+				if (!is_sorted)
+				{
+					Log::error("Object_Pool::当前对象池未排序\n无法使用ID以外字段查找目标对象");
 					return objects.end();
+				}
+				else
+				{
+					//目标对象索引存储
+					int index;
+					//获取目标对象索引
+					if (!is_greater)
+						index = binary_search(objects.begin() + min_valid_index.value(), objects.end(),
+							key, std::ranges::less(), projector);
+					else
+						index = binary_search(objects.begin() + min_valid_index.value(), objects.end(),
+							key, std::ranges::greater(), projector);
+					//若返回索引有效
+					if (index >= 0)
+						return objects.begin() + min_valid_index.value() + index;
+					//若不存在目标对象则返回超尾迭代器
+					else
+						return objects.end();
+				}
 			}
-		}
+		}		
 		//对象添加
 		uint64_t build(void)
 		{
@@ -183,8 +210,9 @@ namespace engine
 			//若索引越界
 			if (index >= objects.size())
 				objects.push_back({});
-			//若索引位于有效区边界则拓展有效区
-			else if (index == min_valid_index.value() - 1)
+
+			//若为排序模式且索引位于有效区边界
+			if(is_sorted && index == min_valid_index.value() - 1)
 				min_valid_index.value()--;
 
 			//获取新对象
@@ -226,6 +254,8 @@ namespace engine
 				uint64_t ID = it->ID();
 				//回收目标对象ID
 				ID_allocator.recycle(ID);
+				//设置预留无效ID
+				it->ID_set(0);
 				//设置目标对象记录不合法
 				objects[target_index].valid_set(false);
 				//若序列稳定
@@ -270,7 +300,7 @@ namespace engine
 			//清空所有索引记录
 			index_allocator.reset();
 			//若为稳定模式清空所有索引映射
-			if(is_sorted)
+			if(!is_sorted)
 			    object_index_map.clear();
 			else
 			{
@@ -279,7 +309,7 @@ namespace engine
 				//重置比较方式(默认降序)
 				is_greater = false;
 				//重置有效索引起点
-				min_valid_index = std::nullopt;
+				min_valid_index = 0;
 			}
 		}
 		//全部对象获取

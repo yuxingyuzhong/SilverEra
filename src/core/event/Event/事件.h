@@ -72,13 +72,12 @@ namespace engine
         }
     };
 
-}
-
-// 哈希组合工具
-namespace detail 
-{
-    inline void hash_combine(size_t& seed, size_t val) noexcept {
-        seed ^= val + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+    // 哈希组合工具
+    namespace detail
+    {
+        inline void hash_combine(size_t& seed, size_t val) noexcept {
+            seed ^= val + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+        }
     }
 }
 
@@ -94,14 +93,14 @@ namespace std
 
             // 1. 哈希基类成员（与 event 一致）
             seed = str_hasher(evt.category);
-            detail::hash_combine(seed, str_hasher(evt.tag));
-            detail::hash_combine(seed, str_hasher(evt.target_object));
+            engine::detail::hash_combine(seed, str_hasher(evt.tag));
+            engine::detail::hash_combine(seed, str_hasher(evt.target_object));
 
             // 2. 哈希派生类成员 config（将 json 转为字符串再哈希）
             //    注意：dump() 可能抛出异常，但 noexcept 标记要求不抛，这里假设不会。
             //    若担心，可以捕获异常并返回一个默认值（但会破坏一致性）。
             std::string config_str = evt.config.dump();
-            detail::hash_combine(seed, str_hasher(config_str));
+            engine::detail::hash_combine(seed, str_hasher(config_str));
 
             return seed;
         }

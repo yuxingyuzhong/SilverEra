@@ -59,10 +59,6 @@ namespace engine
     {
         //记录四叉树下限大小信息
         settings.min_tree_size = min_size;
-        //设置四叉树下限大小信息
-        auto& tree_group = X_sequence;
-        for (int set_time = 0; set_time < tree_group.size(); set_time++)
-            tree_group[set_time]->tree->set_max_size(settings.min_tree_size);;
     }
 
     //高速缓存启用状态设置

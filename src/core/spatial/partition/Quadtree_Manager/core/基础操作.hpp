@@ -71,15 +71,19 @@ namespace engine
                 //若高速缓存已启用且四叉树数量到达阈值
                 if (is_cache_enabled && tree_group.size() >= cache_active_threshold)
                 {
-                    //若缓存条目已达上限
-                    if (records.size() == max_cache_records)
+                    //若缓存条目上限有效
+                    if(max_cache_records > 0)
                     {
-                        records.pop_back();
-                        ranges.pop_back();
+                        //若缓存条目已达上限
+                        if (records.size() >= max_cache_records)
+                        {
+                            records.pop_back();
+                            ranges.pop_back();
+                        }
+                        //记录缓存条目
+                        records.push_back(tree_group[seek_time]);
+                        ranges.push_back(tree_range);
                     }
-                    //记录缓存条目
-                    records.push_back(tree_group[seek_time]);
-                    ranges.push_back(tree_range);
                 }
                 //返回查找结果
                 return tree_group[seek_time];
@@ -100,6 +104,9 @@ namespace engine
         //获取根节点X轴坐标与目标坐标相同的索引范围
         std::pair<int, int> range = range_binary_search(tree_group.begin(), tree_group.end(),
             root.X, std::ranges::greater(), [](auto* p) { return p->root.X; });
+        //若返回区间无效
+        if (range.first < 0 && range.second < 0)
+            return -1;
 
         //检测是否存在符合要求的四叉树
         for (int begin = range.first, end = range.second; begin <= end; begin++)

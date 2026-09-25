@@ -9,25 +9,6 @@ namespace engine
 	//配置检查器
 	class Data_Validator
 	{
-	private:
-		//异常信息输出
-		static bool error_out(std::error_code& error_info)
-        {
-            //若异常信息不存在
-            if (!error_info)
-                //返回异常未输出
-                return false;
-            //若异常信息存在
-            else
-            {
-                //输出异常信息
-                Log::info("{}", error_info);
-                //清空异常信息
-                error_info.clear();
-                //返回异常已输出
-                return true;
-            }
-        }
 	public:
         //字段有效性检查
         template<typename T>
@@ -40,8 +21,17 @@ namespace engine
                 return false;
             }
 
+            //萃取布尔类型
+            if constexpr (std::is_same_v<T, bool>)
+            {
+                if (!config[field].is_boolean())
+                {
+                    Log::info("Data_Validator::字段 {} 非布尔格式", field);
+                    return false;
+                }
+            }
             //萃取整数类形
-            if constexpr (std::is_integral_v<T>) 
+            else if constexpr (std::is_integral_v<T>) 
             {
                 //匹配所有整数类型
                 if (!config[field].is_number_integer()) 
@@ -60,12 +50,19 @@ namespace engine
                     return false;
                 }
             }
-            // 萃取布尔类型
-            if constexpr (std::is_same_v<T, bool>)
+            //萃取字符串类型
+            else if constexpr (std::is_same_v<T, std::string>)
             {
-                if (!config[field].is_boolean())
+                //若字段非字符串
+                if (!config[field].is_string())
                 {
-                    Log::info("Data_Validator::字段 {} 非布尔格式", field);
+                    Log::info("Data_Validator::字段 {} 类型不匹配", field);
+                    return false;
+                }
+                //若字符串为空
+                if (config[field].get_ref<const std::string&>().empty())
+                {
+                    Log::info("Data_Validator::字段 {} 内容为空", field);
                     return false;
                 }
             }
@@ -84,7 +81,8 @@ namespace engine
                 }
 
                 //非空检查
-                if (config[field].empty())
+                if ((config[field].is_array() || config[field].is_object()) &&
+                    config[field].empty())
                 {
                     Log::info("Data_Validator::字段 {} 内容为空", field);
                     return false;
@@ -133,6 +131,25 @@ namespace engine
             std::filesystem::path suspect_path = u8config_path;
             //调用path重载
             return path_check(suspect_path);
+        }
+    private:
+        //异常信息输出
+        static bool error_out(std::error_code& error_info)
+        {
+            //若异常信息不存在
+            if (!error_info)
+                //返回异常未输出
+                return false;
+            //若异常信息存在
+            else
+            {
+                //输出异常信息
+                Log::info("{}", error_info);
+                //清空异常信息
+                error_info.clear();
+                //返回异常已输出
+                return true;
+            }
         }
 	};
 }

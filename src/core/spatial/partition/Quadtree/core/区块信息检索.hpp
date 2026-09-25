@@ -148,7 +148,7 @@ namespace engine
 	void Quadtree<T>::block_seek(tree_chunk_data<T>*& receiver, const Point2i& target, bool stable)
 	{
 		//四叉树上限上限临时存储
-		int max_size = state.max_size;
+		uint64_t max_size = state.max_size;
 		//最大检测次数存储
 		int exam_time_max = 1;
 		//计算最大检测次数
@@ -307,8 +307,9 @@ namespace engine
 				bool is_pop_back = true;
 
 				//父节点递归
-				//若递归失败则弹栈
-				if (child_node_recur(parent_node, recur_direct, MIDDLE, stable))
+	            //若递归失败则弹栈
+				bool entered = child_node_recur(parent_node, recur_direct, MIDDLE, stable);
+				if (entered)
 				{
 					//存储父节点范围
 					Rect2i old_range = parent_range;
@@ -325,8 +326,9 @@ namespace engine
 				{
 					//更新递归方向
 					recur_direct++;
-					//标记无需弹栈
-					is_pop_back = false;
+					//仅在成功进入子节点时才标记无需弹栈
+					if (entered)
+						is_pop_back = false;
 				}
 				//若当前层级无未查找方向
 				else

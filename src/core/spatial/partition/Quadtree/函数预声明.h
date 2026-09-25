@@ -90,11 +90,9 @@ namespace engine
 		//范围区块单元查找
 		void range_seek(std::vector<tree_chunk_data<T>*>& receiver, const Rect2i& target_range, bool stable);
 
-		// ---- 读取 ----
 		//四叉树状态获取
 		const tree_state& tree_state_get(void);
 
-		// ---- 维护 ---- 
 		//四叉树扩大
 		bool tree_expand(void);
 

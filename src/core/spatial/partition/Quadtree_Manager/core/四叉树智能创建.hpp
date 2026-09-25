@@ -193,9 +193,12 @@ namespace engine
         // 直至保证子区块尽可能小，且里面的点尽可能多
         // 尽可能远离区块边界
 
+        //若参考坐标点集为空
+        if (coord_set.empty())
+            return;
+
         //简化表示路径
         auto& tree_group = X_sequence;
-
         //若四叉树集合尚未存在
         if (tree_group.size() == 0)
         {

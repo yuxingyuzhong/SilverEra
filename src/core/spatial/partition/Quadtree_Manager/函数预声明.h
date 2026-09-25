@@ -145,7 +145,7 @@ namespace engine
 
         // ---------- 查询辅助 ----------
         //查询范围列表修改
-        void target_range_amaed(const Rect2i& excel_range, bool* ptr_excel,
+        void target_range_amend(const Rect2i& excel_range, bool* ptr_excel,
             const Rect2i& target_range);
         //查询结果列表元素坐标化
         void excel_element_to_coord(const Rect2i& excel_range, const int& element_ID,
