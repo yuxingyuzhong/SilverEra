@@ -73,31 +73,16 @@ TEST_F(Data_Validator_Test, 字符串字段通过)
 	EXPECT_TRUE(engine::Data_Validator::field_check<std::string>(config, "名称"));
 }
 
-//字符串字段：空文本无法被非空检查拦下，属已知缺陷
-//缺陷位置：数据校验器.h 字段有效性检查的「非空检查」分支
-//成因：该分支用 nlohmann::json::empty() 判空，而本工程内嵌的 json.hpp（22947 行）
-//     只对 null、空数组、空对象返回 true，字符串与数值、布尔同归 default 分支恒返回 false，
-//     于是空字符串字段照样通过校验。
-//修复方向：显式判断 config[field].is_string() && config[field].get_ref<const std::string&>().empty()，
-//     或改用 config[field].size() 配合类型分支。
-//去掉下划线前缀即可在缺陷修复后转为回归用例。
-TEST_F(Data_Validator_Test, DISABLED_空字符串字段被拒绝)
+//字符串字段：空文本被拒绝（回归用例）
+//引擎层已为字符串字段补上类型检查与空值检查，原先被放行的空文本现在会被拦下，
+//故此处由「现状固化 + 禁用用例」转为正式回归用例。
+TEST_F(Data_Validator_Test, 空字符串字段被拒绝)
 {
 	//文本字段被留空
 	nlohmann::json config = nlohmann::json::object();
 	config["名称"] = "";
 	//非空检查应失败
 	EXPECT_FALSE(engine::Data_Validator::field_check<std::string>(config, "名称"));
-}
-
-//字符串字段：空文本当前会被放行（与上一用例对应的现状固化）
-TEST_F(Data_Validator_Test, 空字符串现状被放行)
-{
-	//文本字段被留空
-	nlohmann::json config = nlohmann::json::object();
-	config["名称"] = "";
-	//当前实现会放行空文本
-	EXPECT_TRUE(engine::Data_Validator::field_check<std::string>(config, "名称"));
 }
 
 //字符串字段：数值内容被拒绝
