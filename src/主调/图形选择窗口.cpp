@@ -89,33 +89,39 @@ namespace engine
             return false;
         }
 
-        //应用粉色主题（明丽版，与系统层配置编辑器同一色系）
-        void 应用粉色主题()
+        //渐变三段色：顶端深蓝、中段中蓝、底端亮蓝（由 绘制蓝色渐变背景() 与兜底清屏色共用）
+        const ImVec4 渐变顶端色(0.05f, 0.11f, 0.26f, 1.00f);
+        const ImVec4 渐变中段色(0.12f, 0.28f, 0.55f, 1.00f);
+        const ImVec4 渐变底端色(0.26f, 0.52f, 0.85f, 1.00f);
+
+        //应用蓝色主题（明丽版，仅颜色与旧的粉色主题不同）
+        void 应用蓝色主题()
         {
             ImGuiStyle& 样式 = ImGui::GetStyle();
             ImVec4* 颜色 = 样式.Colors;
 
-            颜色[ImGuiCol_WindowBg]       = ImVec4(0.36f, 0.20f, 0.40f, 1.00f);
-            颜色[ImGuiCol_ChildBg]        = ImVec4(0.44f, 0.26f, 0.48f, 0.55f);
-            颜色[ImGuiCol_PopupBg]        = ImVec4(0.55f, 0.32f, 0.58f, 0.98f);
-            颜色[ImGuiCol_Border]         = ImVec4(1.00f, 0.75f, 0.95f, 0.55f);
-            颜色[ImGuiCol_Text]           = ImVec4(1.00f, 0.96f, 1.00f, 1.00f);
-            颜色[ImGuiCol_TextDisabled]   = ImVec4(0.88f, 0.74f, 0.90f, 1.00f);
-            颜色[ImGuiCol_FrameBg]        = ImVec4(0.55f, 0.33f, 0.58f, 1.00f);
-            颜色[ImGuiCol_FrameBgHovered] = ImVec4(0.65f, 0.42f, 0.68f, 1.00f);
-            颜色[ImGuiCol_FrameBgActive]  = ImVec4(0.72f, 0.48f, 0.74f, 1.00f);
-            颜色[ImGuiCol_Button]         = ImVec4(0.85f, 0.45f, 0.78f, 1.00f);
-            颜色[ImGuiCol_ButtonHovered]  = ImVec4(0.98f, 0.62f, 0.90f, 1.00f);
-            颜色[ImGuiCol_ButtonActive]   = ImVec4(0.70f, 0.34f, 0.66f, 1.00f);
-            颜色[ImGuiCol_Header]         = ImVec4(0.80f, 0.45f, 0.74f, 0.95f);
-            颜色[ImGuiCol_HeaderHovered]  = ImVec4(0.90f, 0.55f, 0.84f, 1.00f);
-            颜色[ImGuiCol_HeaderActive]   = ImVec4(0.74f, 0.40f, 0.70f, 1.00f);
-            颜色[ImGuiCol_CheckMark]      = ImVec4(1.00f, 0.72f, 0.94f, 1.00f);
-            颜色[ImGuiCol_SliderGrab]     = ImVec4(0.96f, 0.58f, 0.88f, 1.00f);
-            颜色[ImGuiCol_ScrollbarBg]    = ImVec4(0.36f, 0.20f, 0.40f, 0.80f);
-            颜色[ImGuiCol_ScrollbarGrab]  = ImVec4(0.86f, 0.46f, 0.80f, 1.00f);
-            颜色[ImGuiCol_TitleBg]        = ImVec4(0.72f, 0.38f, 0.68f, 1.00f);
-            颜色[ImGuiCol_TitleBgActive]  = ImVec4(0.85f, 0.48f, 0.80f, 1.00f);
+            //窗口底色全透明：让背景绘制列表里的蓝色渐变透出来，否则会盖住渐变
+            颜色[ImGuiCol_WindowBg]       = ImVec4(0.10f, 0.22f, 0.44f, 0.00f);
+            颜色[ImGuiCol_ChildBg]        = ImVec4(0.08f, 0.18f, 0.38f, 0.55f);
+            颜色[ImGuiCol_PopupBg]        = ImVec4(0.12f, 0.25f, 0.50f, 0.98f);
+            颜色[ImGuiCol_Border]         = ImVec4(0.55f, 0.78f, 1.00f, 0.55f);
+            颜色[ImGuiCol_Text]           = ImVec4(0.96f, 0.98f, 1.00f, 1.00f);
+            颜色[ImGuiCol_TextDisabled]   = ImVec4(0.72f, 0.82f, 0.95f, 1.00f);
+            颜色[ImGuiCol_FrameBg]        = ImVec4(0.16f, 0.33f, 0.62f, 1.00f);
+            颜色[ImGuiCol_FrameBgHovered] = ImVec4(0.22f, 0.44f, 0.76f, 1.00f);
+            颜色[ImGuiCol_FrameBgActive]  = ImVec4(0.28f, 0.52f, 0.84f, 1.00f);
+            颜色[ImGuiCol_Button]         = ImVec4(0.20f, 0.44f, 0.80f, 1.00f);
+            颜色[ImGuiCol_ButtonHovered]  = ImVec4(0.32f, 0.60f, 0.94f, 1.00f);
+            颜色[ImGuiCol_ButtonActive]   = ImVec4(0.15f, 0.35f, 0.68f, 1.00f);
+            颜色[ImGuiCol_Header]         = ImVec4(0.24f, 0.48f, 0.82f, 0.95f);
+            颜色[ImGuiCol_HeaderHovered]  = ImVec4(0.34f, 0.60f, 0.92f, 1.00f);
+            颜色[ImGuiCol_HeaderActive]   = ImVec4(0.20f, 0.42f, 0.74f, 1.00f);
+            颜色[ImGuiCol_CheckMark]      = ImVec4(0.62f, 0.86f, 1.00f, 1.00f);
+            颜色[ImGuiCol_SliderGrab]     = ImVec4(0.40f, 0.68f, 0.96f, 1.00f);
+            颜色[ImGuiCol_ScrollbarBg]    = ImVec4(0.08f, 0.18f, 0.38f, 0.80f);
+            颜色[ImGuiCol_ScrollbarGrab]  = ImVec4(0.28f, 0.54f, 0.86f, 1.00f);
+            颜色[ImGuiCol_TitleBg]        = ImVec4(0.16f, 0.36f, 0.68f, 1.00f);
+            颜色[ImGuiCol_TitleBgActive]  = ImVec4(0.24f, 0.48f, 0.82f, 1.00f);
 
             //柔和圆角与内边距
             样式.WindowRounding = 8.0f;
@@ -124,6 +130,32 @@ namespace engine
             样式.WindowPadding  = ImVec2(12.0f, 12.0f);
             样式.FramePadding   = ImVec2(8.0f, 5.0f);
             样式.ItemSpacing    = ImVec2(8.0f, 6.0f);
+        }
+
+        //绘制蓝色渐变背景（两段连续垂直渐变：深蓝 → 中蓝 → 亮蓝）
+        void 绘制蓝色渐变背景()
+        {
+            const ImGuiViewport* 视口 = ImGui::GetMainViewport();
+            //渐变覆盖整个视口，与铺满视口的无标题面板对齐
+            const ImVec2 左上 = 视口->Pos;
+            const float 宽度 = 视口->Size.x;
+            const float 中点 = 视口->Size.y * 0.5f;
+
+            const ImU32 顶端色 = ImGui::GetColorU32(渐变顶端色);
+            const ImU32 中段色 = ImGui::GetColorU32(渐变中段色);
+            const ImU32 底端色 = ImGui::GetColorU32(渐变底端色);
+
+            //背景绘制列表位于所有窗口之后，作为窗口底色
+            ImDrawList* 绘制列表 = ImGui::GetBackgroundDrawList();
+            //上半段：深蓝（上）→ 中蓝（下）
+            绘制列表->AddRectFilledMultiColor(左上,
+                ImVec2(左上.x + 宽度, 左上.y + 中点),
+                顶端色, 顶端色, 中段色, 中段色);
+            //下半段：中蓝（上）→ 亮蓝（下）
+            绘制列表->AddRectFilledMultiColor(
+                ImVec2(左上.x, 左上.y + 中点),
+                ImVec2(左上.x + 宽度, 左上.y + 视口->Size.y),
+                中段色, 中段色, 底端色, 底端色);
         }
 
         //关键词匹配（空关键词视为命中）
@@ -175,7 +207,7 @@ namespace engine
         //不写 imgui.ini，保持工作区整洁
         io.IniFilename = nullptr;
 
-        应用粉色主题();
+        应用蓝色主题();
         ImGui_ImplGlfw_InitForOpenGL(窗口, true);
         ImGui_ImplOpenGL3_Init("#version 130");
 
@@ -195,6 +227,9 @@ namespace engine
             ImGui_ImplOpenGL3_NewFrame();
             ImGui_ImplGlfw_NewFrame();
             ImGui::NewFrame();
+
+            //先铺蓝色渐变，再画窗口（窗口底色透明，渐变作为背景透出）
+            绘制蓝色渐变背景();
 
             //铺满整个窗口的无标题面板
             const ImGuiViewport* 视口 = ImGui::GetMainViewport();
@@ -322,7 +357,7 @@ namespace engine
             int 显示高度 = 0;
             glfwGetFramebufferSize(窗口, &显示宽度, &显示高度);
             glViewport(0, 0, 显示宽度, 显示高度);
-            glClearColor(0.30f, 0.16f, 0.34f, 1.00f);
+            glClearColor(渐变顶端色.x, 渐变顶端色.y, 渐变顶端色.z, 1.00f);
             glClear(GL_COLOR_BUFFER_BIT);
             ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
             glfwSwapBuffers(窗口);
