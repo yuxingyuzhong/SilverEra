@@ -732,32 +732,34 @@ TEST_F(Quadtree_Manager_Test, 范围查询不稳定模式不崩溃)
 	chunk_clean(receiver);
 }
 
-//超大边长上限：建树路径仍会抛整数除零，用例保持禁用
-//已修复部分：block_seek 的 max_size 与 quedtree_merge_collect 的
-//          max_expandable_size 均已改为 uint64_t，检索次数的类型截断已消除；
-//          block_seek 入口另补 `state.size <= 0` 直接返回，杜绝该处除零。
-//仍存在的缺陷：把边长上限配置到 INT_MAX 以上（如 1ull << 33）后按单点建树，
-//          仍会抛出 SEH 异常 0xC0000094（整数除以零）。
-//          崩点位于 Quadtree_Manager/core/区块信息检索.hpp 的 excel_element_to_coord：
-//              int width = (excel_range.right - excel_range.left + 1) / settings.block_size;
-//              int row = element_ID / width;
-//              int col = element_ID % width;
-//          当格式化后的查询范围宽度不足一个 block_size 时 width 为 0，除法即抛异常。
-//          根因涉及 int 型坐标表示无法承载 INT_MAX 以上的树尺寸
-//          （Rect2i 各分量为 int，manage_range_calcu 按 tree_size 计算范围时会溢出），
-//          需架构层调整，非局部防御可解。
-//          修复后去掉下划线前缀即可转为回归用例。
-TEST_F(Quadtree_Manager_Test, DISABLED_超大边长上限下区块检索次数正常)
+//超大边长上限：把边长上限配置到 INT_MAX 以上后按单点建树并检索
+//历史缺陷：边长上限超过 INT_MAX（如 1ull << 33）时，智能创建在
+//          prepare_smart_create_params 内把 settings.max_tree_size 存进
+//          int father_block_size，2^33 按模 2^32 截断为 0，
+//          紧随其后的 width % father_block_size 即抛 SEH 0xC0000094（整数除以零）。
+//          同类风险点还有 excel_element_to_coord：格式化后的查询范围宽度
+//          不足一个 block_size 时 width 为 0，随后的 element_ID / width 同样除零。
+//本版次修复：链路尺寸层整体 64 位化——Rect2l / Point2l 承载树尺寸与范围，
+//          尺寸参数一律 int64_t，并在 prepare_smart_create_params、
+//          target_range_format、excel_element_to_coord 等处对非正尺寸/宽度加早退防御。
+TEST_F(Quadtree_Manager_Test, 超大边长上限下区块检索次数正常)
 {
-	//启用前请先修复上述除零缺陷。
 	//默认构造的管理器
-	//engine::Quadtree_Manager<int> manager;
+	engine::Quadtree_Manager<int> manager;
 	//把边长上限提到 INT_MAX 以上
-	//manager.set_max_size(1ull << 33);
+	manager.set_max_size(1ull << 33);
 	//按单点建树
-	//manager.qurdtree_build_smart({ make_coord(0, 0) });
-	//应建成一棵树
-	//EXPECT_EQ(manager.records_get().size(), 1u);
+	manager.qurdtree_build_smart({ make_coord(0, 0) });
+	//应建成一棵四叉树
+	ASSERT_EQ(manager.records_get().size(), 1u);
+	//查询结果存储
+	engine::tree_chunk_data<int>* receiver = nullptr;
+	//在该超大连长四叉树上做稳定单点查询
+	manager.seek(receiver, make_coord(0, 0), true);
+	//仍应取到区块信息
+	EXPECT_NE(receiver, nullptr);
+	//释放区块信息
+	chunk_clean(receiver);
 }
 
 //合并：拷贝前检查区块指针

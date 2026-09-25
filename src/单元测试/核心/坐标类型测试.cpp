@@ -185,6 +185,64 @@ TEST_F(Coord_Type_Test, 整数矩形边界可独立改写)
 	EXPECT_EQ(range.down, -7);
 }
 
+// ———— 64 位坐标：Point2l / Rect2l ————
+
+//64 位点：默认构造为零点、带参构造按顺序写入
+TEST_F(Coord_Type_Test, 六十四位点构造与读写)
+{
+	//默认构造的 64 位点
+	engine::Point2l zero;
+	//两个分量都应为零
+	EXPECT_EQ(zero.X, 0);
+	EXPECT_EQ(zero.Y, 0);
+	//带参构造的 64 位点
+	engine::Point2l point(3, -7);
+	//横坐标为第一个参数
+	EXPECT_EQ(point.X, 3);
+	EXPECT_EQ(point.Y, -7);
+	//改写后应能逐条读回
+	point.X = -9;
+	EXPECT_EQ(point.X, -9);
+}
+
+//64 位点：可承载超出 int 表示范围的分量
+TEST_F(Coord_Type_Test, 六十四位点承载超int边界值)
+{
+	//2^33 已超出 int 的表示范围
+	const int64_t beyond = 1ll << 33;
+	//带参构造写入超 int 分量
+	engine::Point2l point(beyond, -beyond);
+	//分量应按 64 位原值读回，不被截断
+	EXPECT_EQ(point.X, beyond);
+	EXPECT_EQ(point.Y, -beyond);
+	//int 最大值与它之外的下一个整数
+	const int64_t int_max = (1ll << 31) - 1;
+	//超出 int 表示范围的值同样可承载
+	EXPECT_EQ((engine::Point2l(int_max + 1, 0).X), int_max + 1);
+}
+
+//64 位矩形：默认构造为零、四边可承载超 int 边界
+TEST_F(Coord_Type_Test, 六十四位矩形承载超int边界值)
+{
+	//默认构造的 64 位矩形
+	engine::Rect2l zero;
+	//四条边界都应为零
+	EXPECT_EQ(zero.left, 0);
+	EXPECT_EQ(zero.right, 0);
+	EXPECT_EQ(zero.up, 0);
+	EXPECT_EQ(zero.down, 0);
+	//按 左、右、上、下 的顺序构造超大范围
+	const int64_t beyond = 1ll << 33;
+	engine::Rect2l range(-beyond, beyond - 1, beyond - 1, -beyond);
+	//四条边界都应按 64 位原值读回
+	EXPECT_EQ(range.left, -beyond);
+	EXPECT_EQ(range.right, beyond - 1);
+	EXPECT_EQ(range.up, beyond - 1);
+	EXPECT_EQ(range.down, -beyond);
+	//宽度应按 64 位计算，不截断
+	EXPECT_EQ(range.right - range.left + 1, beyond * 2);
+}
+
 // ———— 精度转换 ————
 
 //浮点转整数：按四舍五入取整
@@ -219,6 +277,37 @@ TEST_F(Coord_Type_Test, 精度转换往返保持原值)
 	const engine::Point2i origin(7, -9);
 	//先转浮点再转回整数
 	EXPECT_EQ(engine::point_to_int(engine::point_to_double(origin)), origin);
+}
+
+//64 位浮点转整数：与 point_to_int 同口径取整，且不丢超 int 分量
+TEST_F(Coord_Type_Test, 六十四位浮点转整数按四舍五入取整)
+{
+	//小数部分不足一半向下取整
+	EXPECT_EQ(engine::point_to_l(engine::Point2d(1.4, 2.4)), (engine::Point2l(1, 2)));
+	//小数部分超过一半向上取整
+	EXPECT_EQ(engine::point_to_l(engine::Point2d(1.6, 2.6)), (engine::Point2l(2, 3)));
+	//半数远离零
+	EXPECT_EQ(engine::point_to_l(engine::Point2d(2.5, 0.5)), (engine::Point2l(3, 1)));
+	EXPECT_EQ(engine::point_to_l(engine::Point2d(-2.5, -0.5)), (engine::Point2l(-3, -1)));
+	//超出 int 的整数值应完整落到 64 位分量
+	EXPECT_EQ(engine::point_to_l(engine::Point2d(4294967296.0, -4294967296.0)),
+		(engine::Point2l(1ll << 32, -(1ll << 32))));
+}
+
+//64 位精度转换：经浮点往返保持原值
+TEST_F(Coord_Type_Test, 六十四位精度转换往返保持原值)
+{
+	//原始 64 位点（分量超出 int 表示范围）
+	const engine::Point2l origin(1ll << 33, -(1ll << 33));
+	//先转浮点再转回 64 位整数
+	EXPECT_EQ(engine::point_to_l(engine::point_to_double(origin)), origin);
+	//未超 int 的分量，往返结果应与原有 32 位路径一致
+	const engine::Point2i small_int(7, -9);
+	const engine::Point2l small_long = engine::point_to_l(engine::point_to_double(engine::Point2l(7, -9)));
+	const engine::Point2i small_round = engine::point_to_int(engine::point_to_double(small_int));
+	//逐分量比对两条路径
+	EXPECT_EQ(small_long.X, static_cast<int64_t>(small_round.X));
+	EXPECT_EQ(small_long.Y, static_cast<int64_t>(small_round.Y));
 }
 
 // ———— 精度比较工具 ————

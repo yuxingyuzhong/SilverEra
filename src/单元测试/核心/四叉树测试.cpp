@@ -86,7 +86,7 @@ TEST_F(Quadtree_Test, 管理范围计算256)
 	//默认构造的四叉树
 	engine::Quadtree<int> tree;
 	//范围接收器
-	engine::Rect2i range{};
+	engine::Rect2l range{};
 	//计算管理范围
 	tree.manage_range_calcu(range, { 0.5, 0.5 }, 256);
 	//左右边界覆盖 256 个整数单位
@@ -103,7 +103,7 @@ TEST_F(Quadtree_Test, 管理范围计算16)
 	//默认构造的四叉树
 	engine::Quadtree<int> tree;
 	//范围接收器
-	engine::Rect2i range{};
+	engine::Rect2l range{};
 	//计算管理范围
 	tree.manage_range_calcu(range, { 0.5, 0.5 }, 16);
 	//四个边界
@@ -119,7 +119,7 @@ TEST_F(Quadtree_Test, 管理范围随根坐标平移)
 	//默认构造的四叉树
 	engine::Quadtree<int> tree;
 	//范围接收器
-	engine::Rect2i range{};
+	engine::Rect2l range{};
 	//以根坐标 8.5 计算管理范围
 	tree.manage_range_calcu(range, { 8.5, 8.5 }, 16);
 	//四个边界
@@ -135,7 +135,7 @@ TEST_F(Quadtree_Test, 待查询范围向外对齐)
 	//默认构造的四叉树
 	engine::Quadtree<int> tree;
 	//待对齐的范围
-	engine::Rect2i range{ -1, 6, 6, -1 };
+	engine::Rect2l range{ -1, 6, 6, -1 };
 	//执行格式化
 	tree.target_range_format(range, { 0.5, 0.5 }, 16);
 	//左边界向下对齐至 16 的倍数
@@ -154,7 +154,7 @@ TEST_F(Quadtree_Test, 已对齐范围保持不变)
 	//默认构造的四叉树
 	engine::Quadtree<int> tree;
 	//恰好落在区块边界上的范围
-	engine::Rect2i range{ -15, 0, 0, -15 };
+	engine::Rect2l range{ -15, 0, 0, -15 };
 	//执行格式化
 	tree.target_range_format(range, { 0.5, 0.5 }, 16);
 	//四个边界均保持原值
@@ -170,11 +170,11 @@ TEST_F(Quadtree_Test, 可查询范围无需扩大)
 	//默认构造的四叉树
 	engine::Quadtree<int> tree;
 	//可查询范围接收器
-	engine::Rect2i seekable{};
+	engine::Rect2l seekable{};
 	//初始化为树的管理范围
 	tree.manage_range_calcu(seekable, { 0.5, 0.5 }, 256);
 	//待查询范围完全落在树内
-	engine::Rect2i target{ -15, 0, 0, -15 };
+	engine::Rect2l target{ -15, 0, 0, -15 };
 	//求交集
 	engine::Point2d register_coord = tree.seekable_range_calcu(target, seekable);
 	//返回树根坐标表示无需扩大
@@ -192,11 +192,11 @@ TEST_F(Quadtree_Test, 可查询范围请求扩大)
 	//默认构造的四叉树
 	engine::Quadtree<int> tree;
 	//可查询范围接收器
-	engine::Rect2i seekable{};
+	engine::Rect2l seekable{};
 	//初始化为树的管理范围
 	tree.manage_range_calcu(seekable, { 0.5, 0.5 }, 256);
 	//待查询范围向右越界
-	engine::Rect2i target{ 100, 200, 0, -15 };
+	engine::Rect2l target{ 100, 200, 0, -15 };
 	//求交集
 	engine::Point2d register_coord = tree.seekable_range_calcu(target, seekable);
 	//返回坐标非树根坐标
@@ -406,7 +406,7 @@ TEST_F(Quadtree_Test, 越界检索经回调放行后扩大)
 	//默认构造的四叉树
 	engine::Quadtree<int> tree;
 	//回调一律放行
-	tree.set_callback_manage([](engine::Point2d, engine::Point2i) { return true; });
+	tree.set_callback_manage([](engine::Point2d, engine::Point2l) { return true; });
 	//检索结果
 	engine::tree_chunk_data<int>* receiver = nullptr;
 	//查询超出当前管理范围的坐标
@@ -426,7 +426,7 @@ TEST_F(Quadtree_Test, 越界检索被回调拒绝)
 	//默认构造的四叉树
 	engine::Quadtree<int> tree;
 	//回调一律拒绝
-	tree.set_callback_manage([](engine::Point2d, engine::Point2i) { return false; });
+	tree.set_callback_manage([](engine::Point2d, engine::Point2l) { return false; });
 	//检索结果
 	engine::tree_chunk_data<int>* receiver = nullptr;
 	//查询超出当前管理范围的坐标
@@ -478,7 +478,7 @@ TEST_F(Quadtree_Test, 达到上限时回调收到通报)
 	//记录回调次数
 	int call_count = 0;
 	//注册计数回调
-	tree.set_callback_manage([&call_count](engine::Point2d, engine::Point2i)
+	tree.set_callback_manage([&call_count](engine::Point2d, engine::Point2l)
 		{
 			call_count++;
 			return false;
@@ -520,7 +520,7 @@ TEST_F(Quadtree_Test, 范围检索单区块)
 	//检索结果集合
 	std::vector<engine::tree_chunk_data<int>*> receiver;
 	//查询原点所在区块
-	engine::Rect2i range{ -15, 0, 0, -15 };
+	engine::Rect2l range{ -15, 0, 0, -15 };
 	tree.range_seek(receiver, range, true);
 	//恰好命中一个区块
 	ASSERT_EQ(receiver.size(), 1u);
@@ -538,7 +538,7 @@ TEST_F(Quadtree_Test, 范围检索跨区块)
 	//检索结果集合
 	std::vector<engine::tree_chunk_data<int>*> receiver;
 	//查询横跨四块区块的范围
-	engine::Rect2i range{ -15, 16, 16, -15 };
+	engine::Rect2l range{ -15, 16, 16, -15 };
 	tree.range_seek(receiver, range, true);
 	//应取回四个区块
 	ASSERT_EQ(receiver.size(), 4u);
@@ -577,7 +577,7 @@ TEST_F(Quadtree_Test, 范围检索与单点检索一致)
 	ASSERT_NE(point, nullptr);
 	//再做同区块的范围检索
 	std::vector<engine::tree_chunk_data<int>*> receiver;
-	engine::Rect2i range{ -15, 0, 0, -15 };
+	engine::Rect2l range{ -15, 0, 0, -15 };
 	tree.range_seek(receiver, range, true);
 	ASSERT_EQ(receiver.size(), 1u);
 	//两条路径指向同一叶子存储
@@ -594,7 +594,7 @@ TEST_F(Quadtree_Test, 范围检索非稳定模式)
 	//检索结果集合
 	std::vector<engine::tree_chunk_data<int>*> receiver;
 	//非稳定模式查询新区块
-	engine::Rect2i range{ -15, 0, 0, -15 };
+	engine::Rect2l range{ -15, 0, 0, -15 };
 	tree.range_seek(receiver, range, false);
 	//节点尚未建立，无区块可取
 	EXPECT_TRUE(receiver.empty());
@@ -607,11 +607,11 @@ TEST_F(Quadtree_Test, 范围检索越界触发扩大)
 	//默认构造的四叉树
 	engine::Quadtree<int> tree;
 	//回调一律放行
-	tree.set_callback_manage([](engine::Point2d, engine::Point2i) { return true; });
+	tree.set_callback_manage([](engine::Point2d, engine::Point2l) { return true; });
 	//检索结果集合
 	std::vector<engine::tree_chunk_data<int>*> receiver;
 	//查询向右越界的范围
-	engine::Rect2i range{ 100, 200, 16, -15 };
+	engine::Rect2l range{ 100, 200, 16, -15 };
 	tree.range_seek(receiver, range, true);
 	//边长被扩大
 	EXPECT_GT(tree.tree_state_get().size, 256u);
