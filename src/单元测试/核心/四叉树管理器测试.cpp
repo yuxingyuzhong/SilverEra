@@ -12,7 +12,7 @@ public:
 	//PS:tree_record 的大小字段是 uint16_t，而设置里的边长上限缺省为 65536，
 	//   即"默认上限下建出的树，其记录大小必然溢出"。相关缺陷见本文件末尾的禁用用例，
 	//   因此凡涉及查询的用例都先把上限压到 uint16_t 装得下的 256。
-	static void build_one_tree(engine::Quadtree_Manager<int>& manager, const engine::coord2D_int& target)
+	static void build_one_tree(engine::Quadtree_Manager<int>& manager, const engine::Point2i& target)
 	{
 		manager.set_max_size(256);
 		manager.qurdtree_build_smart({ target });
@@ -34,15 +34,15 @@ public:
 	}
 
 	//构造整数坐标
-	static engine::coord2D_int make_coord(int coord_X, int coord_Y)
+	static engine::Point2i make_coord(int coord_X, int coord_Y)
 	{
-		return engine::coord2D_int(coord_X, coord_Y);
+		return engine::Point2i(coord_X, coord_Y);
 	}
 
 	//构造范围（左、右、上、下）
-	static engine::coord2D_range make_range(int left, int right, int up, int down)
+	static engine::Rect2i make_range(int left, int right, int up, int down)
 	{
-		engine::coord2D_range range{};
+		engine::Rect2i range{};
 		range.left = left;
 		range.right = right;
 		range.up = up;
@@ -152,7 +152,7 @@ TEST_F(Quadtree_Manager_Test, 智能创建单点建立一棵树)
 	//只建立一棵四叉树
 	ASSERT_EQ(records.size(), 1u);
 	//包围矩形按上限对齐后为 [0,255]×[0,255]，根节点落在其中心
-	EXPECT_EQ(records[0]->root, (engine::coord2D_double(127.5, 127.5)));
+	EXPECT_EQ(records[0]->root, (engine::Point2d(127.5, 127.5)));
 	//记录的大小与上限一致
 	EXPECT_EQ(records[0]->size, 256);
 }
@@ -170,8 +170,8 @@ TEST_F(Quadtree_Manager_Test, 智能创建多点建立多棵树)
 	//两个坐标各占一个最大区块，故建立两棵树
 	ASSERT_EQ(records.size(), 2u);
 	//(300,300) 所属区块的根坐标更大，排在前面
-	EXPECT_EQ(records[0]->root, (engine::coord2D_double(383.5, 383.5)));
-	EXPECT_EQ(records[1]->root, (engine::coord2D_double(127.5, 127.5)));
+	EXPECT_EQ(records[0]->root, (engine::Point2d(383.5, 383.5)));
+	EXPECT_EQ(records[1]->root, (engine::Point2d(127.5, 127.5)));
 	//两棵树的大小均等于上限
 	EXPECT_EQ(records[0]->size, 256);
 	EXPECT_EQ(records[1]->size, 256);
@@ -230,7 +230,7 @@ TEST_F(Quadtree_Manager_Test, 稳定查询自动建树)
 	//取得了区块信息
 	ASSERT_NE(receiver, nullptr);
 	//(0,0) 落在最小区块 [0,15]×[0,15]，其中心为 (7.5,7.5)
-	EXPECT_EQ(receiver->node, (engine::coord2D_double(7.5, 7.5)));
+	EXPECT_EQ(receiver->node, (engine::Point2d(7.5, 7.5)));
 	//顺带建立了一棵四叉树
 	EXPECT_EQ(manager.records_get().size(), 1u);
 	chunk_clean(receiver);
@@ -250,7 +250,7 @@ TEST_F(Quadtree_Manager_Test, 稳定查询命中已有树)
 	//取得了区块信息
 	ASSERT_NE(receiver, nullptr);
 	//(10,10) 同样落在 [0,15]×[0,15]
-	EXPECT_EQ(receiver->node, (engine::coord2D_double(7.5, 7.5)));
+	EXPECT_EQ(receiver->node, (engine::Point2d(7.5, 7.5)));
 	//序列数量未变
 	EXPECT_EQ(manager.records_get().size(), 1u);
 	chunk_clean(receiver);
@@ -270,7 +270,7 @@ TEST_F(Quadtree_Manager_Test, 稳定查询不同象限返回不同区块)
 	//取得了区块信息
 	ASSERT_NE(receiver, nullptr);
 	//逐级向东北再折向西南，最终落在 [192,207]×[192,207]
-	EXPECT_EQ(receiver->node, (engine::coord2D_double(199.5, 199.5)));
+	EXPECT_EQ(receiver->node, (engine::Point2d(199.5, 199.5)));
 	chunk_clean(receiver);
 }
 
@@ -332,10 +332,10 @@ TEST_F(Quadtree_Manager_Test, 越界查询改建新树)
 	//在原树之外补建了一棵新树
 	ASSERT_EQ(records.size(), 2u);
 	//新树的根节点正对目标所在区块，大小取下限 256
-	EXPECT_EQ(records[0]->root, (engine::coord2D_double(383.5, 383.5)));
+	EXPECT_EQ(records[0]->root, (engine::Point2d(383.5, 383.5)));
 	EXPECT_EQ(records[0]->size, 256);
 	//原树保持不变
-	EXPECT_EQ(records[1]->root, (engine::coord2D_double(127.5, 127.5)));
+	EXPECT_EQ(records[1]->root, (engine::Point2d(127.5, 127.5)));
 	EXPECT_EQ(records[1]->size, 256);
 	chunk_clean(receiver);
 }
@@ -360,10 +360,10 @@ TEST_F(Quadtree_Manager_Test, 越界查询按基准树校准新树位置)
 	const std::vector<engine::tree_record<int>*>& records = manager.records_get();
 	ASSERT_EQ(records.size(), 2u);
 	//新树被校准到 [512,767]×[512,767]，根节点落在中心
-	EXPECT_EQ(records[0]->root, (engine::coord2D_double(639.5, 639.5)));
+	EXPECT_EQ(records[0]->root, (engine::Point2d(639.5, 639.5)));
 	EXPECT_EQ(records[0]->size, 256);
 	//主树保持原有大小与位置
-	EXPECT_EQ(records[1]->root, (engine::coord2D_double(255.5, 255.5)));
+	EXPECT_EQ(records[1]->root, (engine::Point2d(255.5, 255.5)));
 	EXPECT_EQ(records[1]->size, 512);
 	chunk_clean(receiver);
 }
@@ -423,7 +423,7 @@ TEST_F(Quadtree_Manager_Test, 范围查询单区块范围)
 	manager.seek(receiver, make_range(0, 15, 15, 0), true);
 	ASSERT_EQ(receiver.size(), 1u);
 	//该区块中心为 (7.5,7.5)
-	EXPECT_EQ(receiver[0]->node, (engine::coord2D_double(7.5, 7.5)));
+	EXPECT_EQ(receiver[0]->node, (engine::Point2d(7.5, 7.5)));
 	chunk_clean(receiver);
 }
 
@@ -485,11 +485,11 @@ TEST_F(Quadtree_Manager_Test, 按根坐标卸载单棵树)
 	manager.qurdtree_build_smart({ make_coord(0, 0), make_coord(300, 300) });
 	ASSERT_EQ(manager.records_get().size(), 2u);
 	//卸载根坐标 383.5 的那一棵
-	manager.quadtree_unload({ engine::coord2D_double(383.5, 383.5) });
+	manager.quadtree_unload({ engine::Point2d(383.5, 383.5) });
 	//只剩一棵，且根坐标正确
 	const std::vector<engine::tree_record<int>*>& records = manager.records_get();
 	ASSERT_EQ(records.size(), 1u);
-	EXPECT_EQ(records[0]->root, (engine::coord2D_double(127.5, 127.5)));
+	EXPECT_EQ(records[0]->root, (engine::Point2d(127.5, 127.5)));
 }
 
 //卸载：按根节点坐标卸载全部
@@ -502,8 +502,8 @@ TEST_F(Quadtree_Manager_Test, 按根坐标卸载全部树)
 	manager.qurdtree_build_smart({ make_coord(0, 0), make_coord(300, 300) });
 	ASSERT_EQ(manager.records_get().size(), 2u);
 	//一次卸载两棵
-	manager.quadtree_unload({ engine::coord2D_double(383.5, 383.5),
-		engine::coord2D_double(127.5, 127.5) });
+	manager.quadtree_unload({ engine::Point2d(383.5, 383.5),
+		engine::Point2d(127.5, 127.5) });
 	//序列已空
 	EXPECT_TRUE(manager.records_get().empty());
 }
@@ -591,7 +591,7 @@ TEST_F(Quadtree_Manager_Test, DISABLED_默认边长上限下建成的树记录�
 	const std::vector<engine::tree_record<int>*>& records = manager.records_get();
 	ASSERT_EQ(records.size(), 1u);
 	//根节点仍应落在包围矩形中心
-	EXPECT_EQ(records[0]->root, (engine::coord2D_double(32767.5, 32767.5)));
+	EXPECT_EQ(records[0]->root, (engine::Point2d(32767.5, 32767.5)));
 	//期望记录值与边长上限一致（当前实际被截断为 0）
 	EXPECT_EQ(records[0]->size, 65536);
 }
@@ -653,7 +653,7 @@ TEST_F(Quadtree_Manager_Test, DISABLED_卸载不存在的根坐标不越界)
 	//启用前请先修复上述缺陷，否则本用例会越界访问序列。
 	//engine::Quadtree_Manager<int> manager;
 	//build_one_tree(manager, make_coord(0, 0));
-	//manager.quadtree_unload({ engine::coord2D_double(9999.5, 9999.5) });
+	//manager.quadtree_unload({ engine::Point2d(9999.5, 9999.5) });
 	//EXPECT_EQ(manager.records_get().size(), 1u);
 }
 
