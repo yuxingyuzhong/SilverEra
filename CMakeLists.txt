@@ -4,7 +4,9 @@
 # 位置：白银纪元/测试层
 # 依赖：引擎层（EngineCore）、系统层（SystemCore）—— 一律链接「已经构建好的」静态库
 # 产物：TestCore 静态库（src/ 下的功能测试器集合，当前为空）
-#       EngineTests.exe（本层唯一可执行文件，main 由 googletest 提供）
+#       TestLauncher 静态库（src/主调/ 下的测试选择模型与控制台菜单）
+#       TestGui 静态库（external/Dear_ImGui + external/glad，供图形选择窗口使用）
+#       EngineTests.exe（本层唯一可执行文件，main 由 src/主调/主程序.cpp 提供）
 # 用法（本层独立配置与构建）：
 #     cmake -S <本目录> -B <本目录>/out/build/x64-Debug -G Ninja
 #     cmake --build <本目录>/out/build/x64-Debug
@@ -89,6 +91,9 @@ endif()
 # 若并入静态库，未被引用的 .obj 会连 TEST 宏的注册一起被链接器丢弃，用例便静默不跑
 list(FILTER TEST_SOURCES EXCLUDE REGEX "/src/单元测试/")
 
+# 主调代码（含 main 与图形窗口）也不并入 TestCore：它是可执行入口，不是库内容
+list(FILTER TEST_SOURCES EXCLUDE REGEX "/src/主调/")
+
 # src/ 下暂无源文件时不视为错误：分阶段开发中测试代码尚未落位属正常状态，
 # 此时不产出 TestCore，EngineTests 仍可只靠下层静态库独立生成
 if(NOT TEST_SOURCES)
@@ -126,6 +131,51 @@ if(TEST_SOURCES)
 endif()
 
 # =============================================================================
+# 3.5 GUI 第三方接入（Dear ImGui + glad）
+# =============================================================================
+# 供主调的图形选择窗口使用。与 external/googletest 同构：第三方源码以副本形式
+# 放在本层 external/ 下，由本层自行编译，不改动系统层的构建与对外接口。
+# 说明：
+#   - 不编 imgui_demo.cpp（示例窗口，本层用不到）
+#   - opengl3 后端默认使用自带的 loader，另编 glad 供窗口自身的 GL 调用使用
+#   - GLFW 头文件 / GLFW_STATIC / glfw3.lib 与系统库由 EngineCore 的对外面传递
+if(EXISTS "${PROJECT_ROOT_DIR}/external/Dear_ImGui/imgui/imgui.cpp"
+   AND EXISTS "${PROJECT_ROOT_DIR}/external/glad/src/gl.c")
+    set(BYJY_IMGUI_DIR "${PROJECT_ROOT_DIR}/external/Dear_ImGui")
+    set(BYJY_GLAD_DIR "${PROJECT_ROOT_DIR}/external/glad")
+
+    add_library(TestGui STATIC
+        "${BYJY_IMGUI_DIR}/imgui/imgui.cpp"
+        "${BYJY_IMGUI_DIR}/imgui/imgui_draw.cpp"
+        "${BYJY_IMGUI_DIR}/imgui/imgui_tables.cpp"
+        "${BYJY_IMGUI_DIR}/imgui/imgui_widgets.cpp"
+        "${BYJY_IMGUI_DIR}/backends/imgui_impl_glfw.cpp"
+        "${BYJY_IMGUI_DIR}/backends/imgui_impl_opengl3.cpp"
+        "${BYJY_GLAD_DIR}/src/gl.c"
+    )
+
+    # 包含目录：imgui 核心 / 后端 / glad；EngineCore 提供 GLFW 头与链接库
+    target_include_directories(TestGui PUBLIC
+        "${BYJY_IMGUI_DIR}/imgui"
+        "${BYJY_IMGUI_DIR}/backends"
+        "${BYJY_GLAD_DIR}/include"
+    )
+    target_link_libraries(TestGui PUBLIC EngineCore)
+
+    if(MSVC)
+        target_compile_options(TestGui PRIVATE /MP /utf-8)
+        target_compile_definitions(TestGui PRIVATE _CRT_SECURE_NO_WARNINGS)
+    endif()
+
+    set_target_properties(TestGui PROPERTIES
+        ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
+        LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
+    )
+else()
+    message(FATAL_ERROR "未找到 external/Dear_ImGui 或 external/glad：图形选择窗口依赖它们，请先还原第三方副本")
+endif()
+
+# =============================================================================
 # 4. 单元测试接入（googletest）
 # =============================================================================
 # 用例统一放在 src/单元测试/ 下，按被测层分「工具」「核心」两棵子树。
@@ -155,11 +205,32 @@ elseif(NOT TARGET GTest::gtest)
 else()
     message(STATUS "测试层用例文件: ${BYJY_TEST_SOURCES}")
 
+    # =========================================================================
+    # 4.5 测试选择模型（主调逻辑，供主程序与用例共用）
+    # =========================================================================
+    # 只收纯逻辑部分：图形窗口依赖 ImGui，单独编进 EngineTests，不并入此库，
+    # 使用例不必拖上图形库。
+    add_library(TestLauncher STATIC
+        "${PROJECT_ROOT_DIR}/src/主调/测试选择模型.cpp"
+        "${PROJECT_ROOT_DIR}/src/主调/控制台选择菜单.cpp"
+    )
+    target_include_directories(TestLauncher PUBLIC "${PROJECT_ROOT_DIR}")
+    target_link_libraries(TestLauncher PUBLIC GTest::gtest)
+    if(MSVC)
+        target_compile_options(TestLauncher PRIVATE /MP /utf-8)
+        target_compile_definitions(TestLauncher PRIVATE _CRT_SECURE_NO_WARNINGS)
+    endif()
+    set_target_properties(TestLauncher PROPERTIES
+        ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
+        LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
+    )
+
     #用例目标：编一次，EngineTests 取一份 .obj
     add_library(EngineTestObjects OBJECT ${BYJY_TEST_SOURCES})
 
-    #链接下层静态库以取得对外的包含路径，并从 gtest 取得测试框架头文件路径
-    target_link_libraries(EngineTestObjects PUBLIC EngineCore SystemCore GTest::gtest)
+    #链接下层静态库以取得对外的包含路径；从 gtest 取得框架头文件路径；
+    #并由 TestLauncher 取得本层根目录（用例要 include "src/主调/测试选择模型.h"）
+    target_link_libraries(EngineTestObjects PUBLIC EngineCore SystemCore GTest::gtest TestLauncher)
 
     #编译选项与下层保持一致
     if(MSVC)
@@ -173,10 +244,19 @@ else()
     # =========================================================================
     # 5. 独立测试可执行文件（本层唯一的可执行产物）
     # =========================================================================
-    # main 由 gtest_main 提供；产物落在本层根目录，与 assets/ 同级
+    # main 由本层主调提供（src/主调/主程序.cpp），不再链接 GTest::gtest_main；
+    # 图形选择窗口（依赖 ImGui）只编进本可执行文件。
+    # 产物落在本层根目录，与 assets/ 同级
     #（Engine_Env 以「可执行文件所在目录」为基准解析资源路径，这是硬性要求）
-    add_executable(EngineTests $<TARGET_OBJECTS:EngineTestObjects>)
-    target_link_libraries(EngineTests PRIVATE EngineTestObjects EngineCore SystemCore GTest::gtest_main)
+    add_executable(EngineTests
+        $<TARGET_OBJECTS:EngineTestObjects>
+        "${PROJECT_ROOT_DIR}/src/主调/主程序.cpp"
+        "${PROJECT_ROOT_DIR}/src/主调/图形选择窗口.cpp"
+    )
+    target_link_libraries(EngineTests PRIVATE
+        EngineTestObjects EngineCore SystemCore
+        GTest::gtest TestLauncher TestGui
+    )
     set_target_properties(EngineTests PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${PROJECT_ROOT_DIR}"
     )
@@ -201,7 +281,8 @@ else()
     else()
         message(STATUS "工程路径含非 ASCII 字符，EngineTests 改为整体注册（逐用例）
    请直接运行 EngineTests.exe --gtest_filter=xxx 筛选用例")
-        add_test(NAME EngineTests COMMAND EngineTests
+        # 不开窗直接全跑：无参数的 ctest 不会阻塞在图形窗口上
+        add_test(NAME EngineTests COMMAND EngineTests --selector=off
             WORKING_DIRECTORY "${PROJECT_ROOT_DIR}"
         )
     endif()
