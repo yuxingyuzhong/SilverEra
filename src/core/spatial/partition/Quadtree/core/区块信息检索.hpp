@@ -151,6 +151,9 @@ namespace engine
 		uint64_t max_size = state.max_size;
 		//最大检测次数存储
 		int exam_time_max = 1;
+		//若四叉树大小为零
+		if (state.size <= 0)
+			return;
 		//计算最大检测次数
 		for (; (max_size /= 2) / state.size > 1;)
 			exam_time_max++;
