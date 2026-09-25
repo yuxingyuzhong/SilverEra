@@ -6,7 +6,7 @@ namespace engine
 {
 	//单点查询可行性分析
 	template <typename T>
-	int Quadtree<T>::point_seekable_analyse(const Point2i& target)
+	int Quadtree<T>::point_seekable_analyse(const Point2l& target)
 	{
 		/*函数逻辑：
 				  0，代表分析已经结束，查找不可行
@@ -17,7 +17,7 @@ namespace engine
 		//简化表示路径
 		auto& root = state.root;
 		//四叉树管理范围存储
-		Rect2i tree_range{};
+		Rect2l tree_range{};
 		//计算四叉树管理范围
 		manage_range_calcu(tree_range, state.root, state.size);
 
@@ -73,7 +73,7 @@ namespace engine
 
 	//范围查询可行性分析
 	template <typename T>
-	void Quadtree<T>::range_seekable_analyse(const Rect2i& format_range, Rect2i& seekable_range)
+	void Quadtree<T>::range_seekable_analyse(const Rect2l& format_range, Rect2l& seekable_range)
 	{
 		for (;;)
 		{
@@ -90,7 +90,9 @@ namespace engine
 				if (callback)
 				{
 					//若扩大申请通过通过则扩大
-					if (callback(state.root, point_to_int(expand_register)))
+					//扩大标记取自可查询范围边界，可能超出 32 位整数范围
+					//故按 64 位整数通报
+					if (callback(state.root, point_to_l(expand_register)))
 					{
 						//若扩大失败则直接结束计算
 						if (!tree_expand())
@@ -121,7 +123,7 @@ namespace engine
 	//递归栈操作
 	template <typename T>
 	void Quadtree<T>::recur_stack_operate(std::vector<recur_record>& recur_stack,
-		Node*& ptr, Rect2i& range, int& level,
+		Node*& ptr, Rect2l& range, int& level,
 		bool push_back)
 	{
 		//若为弹栈操作
@@ -145,7 +147,7 @@ namespace engine
 
 	//最小区块单元查找
 	template <typename T>
-	void Quadtree<T>::block_seek(tree_chunk_data<T>*& receiver, const Point2i& target, bool stable)
+	void Quadtree<T>::block_seek(tree_chunk_data<T>*& receiver, const Point2l& target, bool stable)
 	{
 		//四叉树上限上限临时存储
 		uint64_t max_size = state.max_size;
@@ -185,7 +187,7 @@ namespace engine
 		//获取根节点指针
 		Node* child_node = &root;
 		//节点管理范围存储
-		Rect2i node_range{};
+		Rect2l node_range{};
 		//初始化为四叉树管理范围
 		manage_range_calcu(node_range, state.root, state.size);
 		//路径递归方向标记存储
@@ -209,7 +211,7 @@ namespace engine
 				return;
 
 			//存储旧范围值
-			Rect2i old_range = node_range;
+			Rect2l old_range = node_range;
 			//计算新范围值
 			child_node_range_calcu(recur_direct, node_range, old_range);
 		}
@@ -224,20 +226,21 @@ namespace engine
 		}
 
 		//记录查询结果
+		//范围边界为 64 位整数，故以双精度求中点避免精度损失
 		receiver->ptr_data = &(child_node->leaf);
-		receiver->node.X = (node_range.left + node_range.right) / 2.0f;
-		receiver->node.Y = (node_range.down + node_range.up) / 2.0f;
+		receiver->node.X = static_cast<double>(node_range.left + node_range.right) / 2.0;
+		receiver->node.Y = static_cast<double>(node_range.down + node_range.up) / 2.0;
 	}
 
 	//范围区块单元查找
 	template <typename T>
 	void Quadtree<T>::range_seek(std::vector<tree_chunk_data<T>*>& receiver, 
-		const Rect2i& target_range, bool stable)
+		const Rect2l& target_range, bool stable)
 	{
 		//可查询范围存储
-		Rect2i seekable_range{};
+		Rect2l seekable_range{};
 		//格式化待查询范围存储
-		Rect2i format_range = target_range;
+		Rect2l format_range = target_range;
 		//格式化待查询范围
 		target_range_format(format_range, state.root, state.block_size);
 		//分析获得可查询范围
@@ -256,11 +259,11 @@ namespace engine
 		//父节点指针存储
 		Node* parent_node = &root;
 		//父节点管理范围存储
-		Rect2i parent_range{};
+		Rect2l parent_range{};
 		//父节点初始化为四叉树管理范围
 		manage_range_calcu(parent_range, state.root, state.size);
 		//子节点管理范围存储
-		Rect2i child_range{};
+		Rect2l child_range{};
 
 		//递归查找子区块
 		for (int recur_level_now = 0; recur_level_now < recur_level_max;)
@@ -315,7 +318,7 @@ namespace engine
 				if (entered)
 				{
 					//存储父节点范围
-					Rect2i old_range = parent_range;
+					Rect2l old_range = parent_range;
 					//更新父节点范围
 					child_node_range_calcu(recur_direct, parent_range, old_range);
 					//更新递归级数
@@ -367,9 +370,11 @@ namespace engine
 					if (!child_node_recur(child_node, recur_direct, LEAF, stable))
 						continue;
 					//记录查询结果
+					//区块中心坐标由 64 位范围求得
+					//先以双精度求中点再落单精度，尽量减少精度损失
 					auto* new_data = new(std::nothrow) tree_chunk_data<T>
-						((child_range.left + child_range.right) / 2.0f,
-							(child_range.up + child_range.down) / 2.0f,
+						(static_cast<float>((child_range.left + child_range.right) / 2.0),
+							static_cast<float>((child_range.up + child_range.down) / 2.0),
 							&child_node->leaf);
 					//若内存分配失败则直接返回
 					if (new_data == nullptr)

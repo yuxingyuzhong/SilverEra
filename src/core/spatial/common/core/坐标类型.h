@@ -84,6 +84,8 @@ namespace engine
 
 	//二维点 —— 整数精度
 	using Point2i = Point2<int>;
+	//二维点 —— 64 位整数精度
+	using Point2l = Point2<int64_t>;
 	//二维点 —— 双精度浮点
 	using Point2d = Point2<double>;
 
@@ -128,6 +130,8 @@ namespace engine
 
 	//二维矩形范围 —— 整数精度
 	using Rect2i = Rect2<int>;
+	//二维矩形范围 —— 64 位整数精度
+	using Rect2l = Rect2<int64_t>;
 	//二维矩形范围 —— 双精度浮点
 	using Rect2d = Rect2<double>;
 
@@ -140,6 +144,20 @@ namespace engine
 
 	//精度转换 —— 整数转浮点
 	inline Point2d point_to_double(const Point2i& p) noexcept
+	{
+		return { static_cast<double>(p.X),
+			static_cast<double>(p.Y) };
+	}
+
+	//精度转换 —— 浮点转 64 位整数
+	inline Point2l point_to_l(const Point2d& p) noexcept
+	{
+		return { static_cast<int64_t>(std::llround(p.X)),
+			static_cast<int64_t>(std::llround(p.Y)) };
+	}
+
+	//精度转换 —— 64 位整数转浮点
+	inline Point2d point_to_double(const Point2l& p) noexcept
 	{
 		return { static_cast<double>(p.X),
 			static_cast<double>(p.Y) };

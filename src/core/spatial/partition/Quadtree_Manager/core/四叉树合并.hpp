@@ -296,7 +296,7 @@ namespace engine
                 //数据拷贝指针
                 tree_chunk_data<T>* ptr_data = nullptr;
                 //待合并四叉树范围存储
-                Rect2i merged_tree_range{};
+                Rect2l merged_tree_range{};
                 //重置待合并四叉树索引集合
                 index_set.clear();
                 //复制区块数据
@@ -319,8 +319,8 @@ namespace engine
                     {
                         //重置数据拷贝指针
                         ptr_data = nullptr;
-                        //稳定查询创建新区块
-                        new_tree->tree->block_seek(ptr_data, point_to_int(buffer[copy_time]->node), true);
+                        //稳定查询创建新区块（节点坐标为双精度，按 64 位整数取整）
+                        new_tree->tree->block_seek(ptr_data, point_to_l(buffer[copy_time]->node), true);
                         //若区块创建成功
                         if (ptr_data)
                             //复制区块数据

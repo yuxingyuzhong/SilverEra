@@ -7,7 +7,7 @@ namespace engine
     //相邻四叉树查找_____矩形筛选
     template<typename T>
     void Quadtree_Manager<T>::rectangle_filter(std::vector<tree_record<T>*>& receiver, const tree_record<T>* tree,
-        const Rect2i& range, const std::vector<tree_record<T>*>* tree_group)
+        const Rect2l& range, const std::vector<tree_record<T>*>* tree_group)
     {
         /*/
         矩形筛选逻辑：选定待查找树，记录其根节点坐标，然后以根节点坐标为原点
@@ -75,7 +75,7 @@ namespace engine
         std::vector<tree_record<T>*> verify_candidate{};
 
         //根节点坐标差值
-        Point2i root_diff = { 0,0 };
+        Point2l root_diff = { 0,0 };
         //筛选条件命中次数
         int filter_hits = 0;
 
@@ -84,9 +84,10 @@ namespace engine
             //重置筛选条件命中次数
             filter_hits = 0;
             //重新计算根节点X坐标差值
-            root_diff.X = std::abs(tree->root.X - candidate[filter]->root.X);
+            //根节点坐标为双精度，差值向下取整后放入 64 位整数（语义同上版次）
+            root_diff.X = static_cast<int64_t>(std::abs(tree->root.X - candidate[filter]->root.X));
             //重新计算根节点Y坐标差值
-            root_diff.Y = std::abs(tree->root.Y - candidate[filter]->root.Y);
+            root_diff.Y = static_cast<int64_t>(std::abs(tree->root.Y - candidate[filter]->root.Y));
 
             //若X轴坐标差值小于等于两四叉树边长和之一半
             //则满足条件
@@ -124,12 +125,12 @@ namespace engine
         /**/
 
         //中心四叉树边界存储
-        Rect2i center_tree_range{};
+        Rect2l center_tree_range{};
         //计算中心四叉树边界
         tree->tree->manage_range_calcu(center_tree_range, tree->root, tree->size);
 
         //当前候选四叉树边界存储
-        Rect2i candidate_tree_range{};
+        Rect2l candidate_tree_range{};
 
         for (int filter_time = 0; filter_time < candidate.size(); filter_time++)
         {
@@ -138,14 +139,14 @@ namespace engine
             //重置候选相邻四叉树边界
             ptr_tree->tree->manage_range_calcu(candidate_tree_range, ptr_tree->root, ptr_tree->size);
 
-            //重置X轴坐标交集
-            float left1 = center_tree_range.left, right1 = center_tree_range.right;
-            float left2 = candidate_tree_range.left, right2 = candidate_tree_range.right;
+            //重置X轴坐标交集（大范围下浮点单精度不足，改用双精度）
+            double left1 = static_cast<double>(center_tree_range.left), right1 = static_cast<double>(center_tree_range.right);
+            double left2 = static_cast<double>(candidate_tree_range.left), right2 = static_cast<double>(candidate_tree_range.right);
             bool is_x_next = way(right1, left2, right2, left1);
 
             //重置Y轴坐标交集
-            float down1 = center_tree_range.down, up1 = center_tree_range.up;
-            float down2 = candidate_tree_range.down, up2 = candidate_tree_range.up;
+            double down1 = static_cast<double>(center_tree_range.down), up1 = static_cast<double>(center_tree_range.up);
+            double down2 = static_cast<double>(candidate_tree_range.down), up2 = static_cast<double>(candidate_tree_range.up);
             bool is_y_next = way(up1, down2, up2, down1);
 
             //当一侧交集不为0即为相邻树
@@ -164,7 +165,7 @@ namespace engine
         std::vector<tree_record<T>*> verify_candidate = next_tree_classify(receiver, tree, candidate);
 
         //四叉树筛选方式lambda
-        auto screen_method = [](float coord_1, float coord_2, float coord_3, float coord_4) -> bool
+        auto screen_method = [](double coord_1, double coord_2, double coord_3, double coord_4) -> bool
             {
                 if (coord_1 >= coord_2 - 1 && coord_3 >= coord_4 - 1)
                     return true;
@@ -187,12 +188,12 @@ namespace engine
         //矩形四叉树筛选结果存储
         std::vector<tree_record<T>*> rectan_trees{};
         //筛选以四叉树为中心的矩形范围内是否存在相邻四叉树
-        Rect2i tree_range{};
-        //计算矩形筛选范围
-        tree_range.left = tree->root.X - (tree->size + largest_tree_size) / 2;
-        tree_range.right = tree->root.X + (tree->size + largest_tree_size) / 2;
-        tree_range.up = tree->root.Y + (tree->size + largest_tree_size) / 2;
-        tree_range.down = tree->root.Y - (tree->size + largest_tree_size) / 2;
+        Rect2l tree_range{};
+        //计算矩形筛选范围（树大小已达 64 位，差值向下取整后存 64 位整数）
+        tree_range.left = static_cast<int64_t>(tree->root.X - (tree->size + largest_tree_size) / 2);
+        tree_range.right = static_cast<int64_t>(tree->root.X + (tree->size + largest_tree_size) / 2);
+        tree_range.up = static_cast<int64_t>(tree->root.Y + (tree->size + largest_tree_size) / 2);
+        tree_range.down = static_cast<int64_t>(tree->root.Y - (tree->size + largest_tree_size) / 2);
         //进行矩形筛选
         rectangle_filter(rectan_trees, tree, tree_range, tree_group);
         //若未筛选出候选四叉树或内存分配失败则直接返回

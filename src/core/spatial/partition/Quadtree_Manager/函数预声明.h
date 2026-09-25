@@ -82,7 +82,8 @@ namespace engine
             //缓存记录
             std::vector<tree_record<T>*> records{};
             //缓存范围
-            std::vector<Rect2i> ranges{};
+            //范围边界由树边长推导，用 64 位整数承载
+            std::vector<Rect2l> ranges{};
         }tree_cache;
         //管理器设置
         tree_manager_settings settings;
@@ -93,12 +94,12 @@ namespace engine
 
         // ---------- 相邻四叉树筛选 ----------
         //直属四叉树查找
-        tree_record<T>* quadtree_inclusion_seek(const Point2i& target);
+        tree_record<T>* quadtree_inclusion_seek(const Point2l& target);
         //四叉树序列索引查找
         int64_t quadtree_index_seek(const Point2d& root);
         //矩形筛选
         void rectangle_filter(std::vector<tree_record<T>*>& receiver, const tree_record<T>* tree,
-            const Rect2i& range, const std::vector<tree_record<T>*>* tree_group = nullptr);
+            const Rect2l& range, const std::vector<tree_record<T>*>* tree_group = nullptr);
         //分类筛选
         std::vector<tree_record<T>*> next_tree_classify(std::vector<tree_record<T>*>& receiver, const tree_record<T>* tree,
             const std::vector<tree_record<T>*>& candidate);
@@ -116,9 +117,9 @@ namespace engine
         //回调管理四叉树查找
         tree_record<T>* callback_tree_seek(const Point2d& root);
         //新四叉树管理范围计算
-        void new_tree_range_calcu(const tree_record<T>* primary_tree, const Point2i& seek, Rect2i& new_tree);
+        void new_tree_range_calcu(const tree_record<T>* primary_tree, const Point2l& seek, Rect2l& new_tree);
         //扩大管理方法
-        bool tree_expand_approve(const Point2d& root, const Point2i& seek, bool internal = false);
+        bool tree_expand_approve(const Point2d& root, const Point2l& seek, bool internal = false);
 
         // ---------- 四叉树合并 / 卸载 ----------
         //四叉树创建
@@ -134,21 +135,21 @@ namespace engine
         // ---------- 智能创建辅助 ----------
         //计算初始包围矩形及最大区块划分参数
         void prepare_smart_create_params(const std::vector<Point2i>& coord_set,
-            Rect2i& recta_range, int& father_block_num_all,
-            int& father_block_size) const;
+            Rect2l& recta_range, int64_t& father_block_num_all,
+            int64_t& father_block_size) const;
         //单个最大区块的深度划分（递归复制子集版）
         void divide_single_father_block(const std::vector<Point2i>& coord_set,
-            int block_left, int block_right, int block_up, int block_down,
-            int block_size, int coord_count_in_parent,
+            int64_t block_left, int64_t block_right, int64_t block_up, int64_t block_down,
+            int64_t block_size, int64_t coord_count_in_parent,
             std::vector<Point2d>& node_centers,
             std::vector<uint64_t>& tree_sizes) const;
 
         // ---------- 查询辅助 ----------
         //查询范围列表修改
-        void target_range_amend(const Rect2i& excel_range, bool* ptr_excel,
-            const Rect2i& target_range);
+        void target_range_amend(const Rect2l& excel_range, bool* ptr_excel,
+            const Rect2l& target_range);
         //查询结果列表元素坐标化
-        void excel_element_to_coord(const Rect2i& excel_range, const int& element_ID,
-            Point2i& receiver);
+        void excel_element_to_coord(const Rect2l& excel_range, const int64_t& element_ID,
+            Point2l& receiver);
     };
 }

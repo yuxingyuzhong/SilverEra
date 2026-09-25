@@ -97,7 +97,7 @@ namespace engine
 	//四叉树回调管理方法设置
 	template <typename T>
 	void Quadtree<T>::set_callback_manage
-	(const std::function<bool(Point2d root, Point2i target)>& cb)
+	(const std::function<bool(Point2d root, Point2l target)>& cb)
 	{
 		//回调管理函数注册
 		callback = cb;

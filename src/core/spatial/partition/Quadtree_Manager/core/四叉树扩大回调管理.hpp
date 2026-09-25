@@ -25,10 +25,12 @@ namespace engine
     //四叉树扩大管理_____新四叉树管理范围计算
     template<typename T>
     void Quadtree_Manager<T>::new_tree_range_calcu(const tree_record<T>* baseline_tree,
-        const Point2i& target, Rect2i& new_tree)
+        const Point2l& target, Rect2l& new_tree)
     {
         //简化表示路径
         auto& min_tree_size = settings.min_tree_size;
+        //树大小按 64 位有符号整数参与边界运算
+        int64_t min_size = static_cast<int64_t>(min_tree_size);
         auto& root = baseline_tree->root;
         //计算新四叉树起始范围
         baseline_tree->tree->manage_range_calcu(new_tree, root, min_tree_size);
@@ -37,17 +39,17 @@ namespace engine
         //则对起始范围进行进一步校准
         if (baseline_tree->size != settings.min_tree_size)
         {
-            //X轴偏移量
-            uint64_t offset_x = min_tree_size / 2;
+            //X轴偏移量（按 64 位有符号整数记录方向）
+            int64_t offset_x = static_cast<int64_t>(min_tree_size / 2);
             //Y轴偏移量
-            uint64_t offset_y = min_tree_size / 2;
+            int64_t offset_y = static_cast<int64_t>(min_tree_size / 2);
 
             //若目标X轴坐标小于根节点坐标
             if (target.X < root.X)
-                offset_x *= -1;
+                offset_x = -offset_x;
             //若目标Y轴坐标小于根节点坐标
             if (target.Y < root.Y)
-                offset_y *= -1;
+                offset_y = -offset_y;
 
             //校准范围
             new_tree.left += offset_x;
@@ -63,29 +65,29 @@ namespace engine
             if (new_tree.left > target.X)
             {
                 //更新四叉树边界
-                new_tree.left -= min_tree_size;
-                new_tree.right -= min_tree_size;
+                new_tree.left -= min_size;
+                new_tree.right -= min_size;
             }
             //若新四叉树右边界在目标左侧
             else if (new_tree.right < target.X)
             {
                 //更新四叉树边界
-                new_tree.left += min_tree_size;
-                new_tree.right += min_tree_size;
+                new_tree.left += min_size;
+                new_tree.right += min_size;
             }
             //若新四叉树上边界在目标下侧
             if (new_tree.up < target.Y)
             {
                 //更新四叉树边界
-                new_tree.up += min_tree_size;
-                new_tree.down += min_tree_size;
+                new_tree.up += min_size;
+                new_tree.down += min_size;
             }
             //若新四叉树下边界在目标上侧
             else if (new_tree.down > target.Y)
             {
                 //更新四叉树边界
-                new_tree.up -= min_tree_size;
-                new_tree.down -= min_tree_size;
+                new_tree.up -= min_size;
+                new_tree.down -= min_size;
             }
 
             //若新四叉树包含目标则退出
@@ -97,7 +99,7 @@ namespace engine
 
     //四叉树扩大管理方法
     template<typename T>
-    bool Quadtree_Manager<T>::tree_expand_approve(const Point2d& root, const Point2i& target, bool internal)
+    bool Quadtree_Manager<T>::tree_expand_approve(const Point2d& root, const Point2l& target, bool internal)
     {
         //获取当前回调管理四叉树信息
         tree_record<T>* now_tree = nullptr;
@@ -114,16 +116,16 @@ namespace engine
         else if (now_tree->size < settings.max_tree_size)
         {
             //矩形筛选范围存储
-            Rect2i rectan_range{};
+            Rect2l rectan_range{};
             //当前四叉树扩大区域四叉树根节点存储
             std::vector<tree_record<T>*> ptr_rectan_tree{};
             //筛选扩大后树管理范围
             //与当前树管理范围的非交集范围(即将管理区域)
             //是否存在其他四叉树根节点
-            rectan_range.left = now_tree->root.X - (now_tree->size + now_tree->size) / 2;
-            rectan_range.right = now_tree->root.X + (now_tree->size + now_tree->size) / 2;
-            rectan_range.up = now_tree->root.Y + (now_tree->size + now_tree->size) / 2;
-            rectan_range.down = now_tree->root.Y - (now_tree->size + now_tree->size) / 2;
+            rectan_range.left = static_cast<int64_t>(now_tree->root.X - (now_tree->size + now_tree->size) / 2);
+            rectan_range.right = static_cast<int64_t>(now_tree->root.X + (now_tree->size + now_tree->size) / 2);
+            rectan_range.up = static_cast<int64_t>(now_tree->root.Y + (now_tree->size + now_tree->size) / 2);
+            rectan_range.down = static_cast<int64_t>(now_tree->root.Y - (now_tree->size + now_tree->size) / 2);
             //进入矩形筛选
             rectangle_filter(ptr_rectan_tree, now_tree, rectan_range);
 
@@ -146,7 +148,7 @@ namespace engine
                     //重置四叉树存储
                     std::vector<tree_record<T>*> ptr_overlap_tree{};
                     //重定义筛选方式确保筛选出重叠四叉树
-                    auto screen_method = [](float coord_1, float coord_2, float coord_3, float coord_4) -> bool
+                    auto screen_method = [](double coord_1, double coord_2, double coord_3, double coord_4) -> bool
                         {
                             if (coord_1 > coord_2 - 1 && coord_3 > coord_4 - 1)
                                 return true;
@@ -216,12 +218,12 @@ namespace engine
         //新四叉树根节点存储
         Point2d new_root = { 0.5,0.5 };
         //新四叉树管理范围存储
-        Rect2i new_tree_range{};
+        Rect2l new_tree_range{};
         //获取新四叉树管理范围
         new_tree_range_calcu(now_tree, target, new_tree_range);
         //计算新四叉树根节点位置
-        new_root.X = (new_tree_range.left + new_tree_range.right) / 2.0f;
-        new_root.Y = (new_tree_range.up + new_tree_range.down) / 2.0f;
+        new_root.X = (new_tree_range.left + new_tree_range.right) / 2.0;
+        new_root.Y = (new_tree_range.up + new_tree_range.down) / 2.0;
 
         //创建新四叉树
         quadtree_build(new_root, settings.min_tree_size);
