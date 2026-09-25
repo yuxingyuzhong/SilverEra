@@ -2,7 +2,7 @@
 //预编译头
 #include "common/前置头文件包含.h"
 //获取预定义坐标类型
-#include "../../common/坐标类型.h"
+#include "../../common/core/坐标类型.h"
 
 //游戏引擎命名空间
 namespace engine

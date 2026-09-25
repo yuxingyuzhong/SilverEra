@@ -7,7 +7,7 @@
 namespace engine
 {
 	//配置检查器
-	class Config_Checker
+	class Data_Validator
 	{
 	private:
 		//异常信息输出
@@ -36,7 +36,7 @@ namespace engine
             //字段存在性检查
             if (!config.contains(field)) 
             {
-                Log::warn("Config_Checker::未包含指定字段: {}", field);
+                Log::warn("Data_Validator::未包含指定字段: {}", field);
                 return false;
             }
 
@@ -46,7 +46,7 @@ namespace engine
                 //匹配所有整数类型
                 if (!config[field].is_number_integer()) 
                 {
-                    Log::info("Config_Checker::字段 {} 非整数格式", field);
+                    Log::info("Data_Validator::字段 {} 非整数格式", field);
                     return false;
                 }
             }
@@ -56,7 +56,7 @@ namespace engine
                 //匹配所有浮点类型
                 if (!config[field].is_number_float()) 
                 {
-                    Log::info("Config_Checker::字段 {} 非浮点数格式", field);
+                    Log::info("Data_Validator::字段 {} 非浮点数格式", field);
                     return false;
                 }
             }
@@ -65,7 +65,7 @@ namespace engine
             {
                 if (!config[field].is_boolean())
                 {
-                    Log::info("Config_Checker::字段 {} 非布尔格式", field);
+                    Log::info("Data_Validator::字段 {} 非布尔格式", field);
                     return false;
                 }
             }
@@ -79,14 +79,14 @@ namespace engine
                 }
                 catch (const nlohmann::json::type_error&)
                 {
-                    Log::info("Config_Checker::字段 {} 类型不匹配", field);
+                    Log::info("Data_Validator::字段 {} 类型不匹配", field);
                     return false;
                 }
 
                 //非空检查
                 if (config[field].empty())
                 {
-                    Log::info("Config_Checker::字段 {} 内容为空", field);
+                    Log::info("Data_Validator::字段 {} 内容为空", field);
                     return false;
                 }
             }

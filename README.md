@@ -156,7 +156,7 @@ D:\代码存储\代码仓库\游戏引擎\
     │       │       └── core/             #     编辑器核心实现
     │       └──           #   非图形工具
     │           ├── Auxi_Algorithm/       #     算法辅助（二分查找、路径字符串转换）
-    │           ├── Config_Checker/       #     配置检查器
+    │           ├── Data_Validator/       #     配置检查器
     │           ├── Config_Loader/        #     配置加载器
     │           ├── Engine_Env/           #     引擎环境
     │           ├── Logging/              #     日志系统
@@ -447,7 +447,7 @@ namespace engine {
 | 模块 | 职责 |
 | --- | --- |
 | `Auxi_Algorithm` | 算法辅助：`二分查找.h`、`路径字符串转换.h` |
-| `Config_Checker` | 配置检查器：校验 JSON 配置字段合法性 |
+| `Data_Validator` | 配置检查器：校验 JSON 配置字段合法性 |
 | `Config_Loader` | 配置加载器：启动时加载 `assets/config/` 全部配置并广播事件 |
 | `Engine_Env` | 引擎环境：路径、环境变量等运行环境信息 |
 | `Logging` | 日志系统：引擎运行日志 |
