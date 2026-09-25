@@ -493,8 +493,11 @@ TEST_F(Quadtree_Test, 达到上限时回调收到通报)
 	EXPECT_EQ(receiver, nullptr);
 }
 
-//越界检索：单次调用最多扩大一次边长
-TEST_F(Quadtree_Test, 越界检索单次调用只扩大一次)
+//越界检索：单次调用连续扩大直至容纳目标坐标
+//实现语义：block_seek 先按上限与当前边长算出最大检测次数，
+//          再在循环里反复调用 point_seekable_analyse 逐级扩大，
+//          所以单次检索会把边长一路翻倍到能容纳目标坐标为止（或触达上限）。
+TEST_F(Quadtree_Test, 越界检索连续扩大直至容纳目标)
 {
 	//默认构造的四叉树
 	engine::Quadtree<int> tree;
@@ -502,8 +505,8 @@ TEST_F(Quadtree_Test, 越界检索单次调用只扩大一次)
 	engine::tree_chunk_data<int>* receiver = nullptr;
 	//查询远超出管理范围的坐标
 	tree.block_seek(receiver, { 100000, 100000 }, true);
-	//单次调用只把边长翻一倍
-	EXPECT_EQ(tree.tree_state_get().size, 512u);
+	//边长被逐级翻倍至足以覆盖 (100000,100000) 的 262144
+	EXPECT_EQ(tree.tree_state_get().size, 262144u);
 	delete receiver;
 }
 

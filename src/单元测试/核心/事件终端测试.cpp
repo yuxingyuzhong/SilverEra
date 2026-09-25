@@ -108,7 +108,7 @@ TEST_F(Event_Terminal_Test, 未注册接收通道时落原生集合)
 	//接收一条事件
 	terminal.receive(make_event("输入", "按键"));
 	//原生集合应留存该事件
-	EXPECT_EQ(terminal.query(key).size(), 1u);
+	EXPECT_EQ(terminal.query(key)->size(), 1u);
 }
 
 //接收通道：注册后事件被转发且不落原生集合
@@ -126,7 +126,7 @@ TEST_F(Event_Terminal_Test, 注册接收通道后事件被转发)
 	//事件应被转发
 	EXPECT_EQ(received, 1);
 	//原生集合不应留存
-	EXPECT_EQ(terminal.query(key).size(), 0u);
+	EXPECT_EQ(terminal.query(key)->size(), 0u);
 }
 
 //接收通道：批量重载可用
@@ -148,7 +148,7 @@ TEST_F(Event_Terminal_Test, 批量接收入口可用)
 	//两条事件应整体转发
 	EXPECT_EQ(received_count, 2u);
 	//原生集合不应留存
-	EXPECT_EQ(terminal.query(key).size(), 0u);
+	EXPECT_EQ(terminal.query(key)->size(), 0u);
 }
 
 //事件清空：密钥错误时清空失败
@@ -161,7 +161,7 @@ TEST_F(Event_Terminal_Test, 错误密钥清空失败)
 	//以错误密钥清空
 	EXPECT_FALSE(terminal.clear(key + 1));
 	//事件仍在集合中
-	EXPECT_EQ(terminal.query(key).size(), 1u);
+	EXPECT_EQ(terminal.query(key)->size(), 1u);
 }
 
 //事件清空：密钥正确时集合被清空
@@ -175,7 +175,7 @@ TEST_F(Event_Terminal_Test, 正确密钥清空成功)
 	//清空事件集合
 	EXPECT_TRUE(terminal.clear(key));
 	//集合应为空
-	EXPECT_EQ(terminal.query(key).size(), 0u);
+	EXPECT_EQ(terminal.query(key)->size(), 0u);
 }
 
 //发送与接收：send 计入发送通道，未注册接收通道时事件落入原生集合
@@ -194,7 +194,7 @@ TEST_F(Event_Terminal_Test, 发送走通道且接收落入原生集合)
 	EXPECT_EQ(sent, 1);
 	//接收：未注册接收通道，事件应落入原生集合
 	terminal.receive(make_event("输入", "松开"));
-	EXPECT_EQ(terminal.query(key).size(), 1u);
+	EXPECT_EQ(terminal.query(key)->size(), 1u);
 }
 
 //接入中转站：密钥不匹配时接入失败
@@ -270,37 +270,36 @@ TEST_F(Event_Terminal_Test, 接入后经通道送入事件)
 	//事件应被转交给已注册的接收通道
 	EXPECT_EQ(forwarded, 1);
 	//已注册接收通道时，原生集合不应留存事件
-	EXPECT_EQ(terminal.query(key).size(), 0u);
+	EXPECT_EQ(terminal.query(key)->size(), 0u);
 }
 
-//密钥未生成时的默认值：零密钥可通过权限校验，属已知缺陷
-//缺陷位置：事件终端.h 的 acl_key 成员默认值为 0，事件终端.cpp 的校验为直接相等比较
-//成因：未调用 acl_key_gen 时 acl_key 恰为零，而校验只比较「传入密钥 == 自身密钥」，
-//     于是以 0 为密钥的调用会被判为有权，等于默认开放。
-//修复方向：把 acl_key 的初值改为非零哨兵值，或在校验前额外判断密钥是否已生成。
-//本用例固化的是这一现状。
-TEST_F(Event_Terminal_Test, 零密钥可通过权限校验)
+//密钥未生成：所有对外接口一律锁定，不再默认开放
+//修复后语义：acl_key 改为 std::optional，未生成时 attach / interact / send / query / clear
+//          全部拒绝并告警，query 返回空指针。
+TEST_F(Event_Terminal_Test, 密钥未生成时接口全部锁定)
 {
-	//不生成密钥，直接注册发送通道
+	//注册发送通道（仅注册，不涉及权限校验）
 	terminal->event_sender_register([](std::shared_ptr<engine::event>) {});
-	//以零为密钥发送
-	EXPECT_TRUE(terminal.send(make_event("输入", "按键"), 0));
-	//以零为密钥清空
-	EXPECT_TRUE(terminal.clear(0));
+	//未生成密钥时发送被拒绝
+	EXPECT_FALSE(terminal.send(make_event("输入", "按键"), 0));
+	//未生成密钥时清空被拒绝
+	EXPECT_FALSE(terminal.clear(0));
+	//未生成密钥时接入被拒绝
+	EXPECT_FALSE(terminal.attach("模块", {}, 0));
+	//未生成密钥时交互被拒绝
+	EXPECT_FALSE(terminal.interact(make_event("输入", "按键"), 0));
+	//未生成密钥时查阅返回空指针
+	EXPECT_EQ(terminal.query(0), nullptr);
 }
 
-//错误密钥查询：当前实现返回局部临时量的引用，属已知缺陷
-//缺陷位置：事件终端.cpp 的事件查阅
-//成因：密钥不匹配分支写作 return {};，此处返回的是临时容器，
-//     函数返回类型却是 const 引用，调用方拿到的是悬垂引用。
-//修复方向：改为按值返回，或返回一个静态空容器的引用。
-//本用例默认禁用，避免读取已析构对象；缺陷修复后去掉下划线前缀即可启用。
-TEST_F(Event_Terminal_Test, DISABLED_错误密钥查询返回空集合)
+//错误密钥查询：返回空指针
+//修复后语义：query 返回指针，密钥不匹配或密钥未生成时一律返回 nullptr。
+TEST_F(Event_Terminal_Test, 错误密钥查询返回空指针)
 {
 	//生成权限密钥
 	const int64_t key = terminal.acl_key_gen();
-	//以错误密钥查询
-	const std::vector<std::shared_ptr<engine::event>>& result = terminal.query(key + 1);
-	//应返回空集合
-	EXPECT_TRUE(result.empty());
+	//以错误密钥查询应返回空指针
+	EXPECT_EQ(terminal.query(key + 1), nullptr);
+	//以正确密钥查询应可用
+	EXPECT_NE(terminal.query(key), nullptr);
 }

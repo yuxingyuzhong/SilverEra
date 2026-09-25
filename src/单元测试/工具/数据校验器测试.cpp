@@ -134,20 +134,26 @@ TEST_F(Data_Validator_Test, 缺失字段被拒绝)
 	EXPECT_FALSE(engine::Data_Validator::field_check<int>(config, "数量"));
 }
 
-//布尔字段：当前实现被整数分支拦截，属已知缺陷
-//缺陷位置：数据校验器.h 字段有效性检查
-//成因：首个 if constexpr 判断 std::is_integral_v<T>，bool 满足整数条件，
-//     于是进入 is_number_integer() 分支；而 JSON 布尔值的 is_number_integer()
-//     恒为 false，导致布尔字段永远无法通过校验。
-//修复方向：把 is_same_v<T,bool> 分支提到整数分支之前，或改写为 else if 链。
-//去掉下划线前缀即可在缺陷修复后转为回归用例。
-TEST_F(Data_Validator_Test, DISABLED_布尔字段检查)
+//布尔字段：布尔值通过校验（回归用例）
+//修复后语义：数据校验器.h 的 if constexpr 链改为 else if constexpr，
+//          布尔分支不再落入整数分支，布尔字段可以正常通过校验。
+TEST_F(Data_Validator_Test, 布尔字段通过)
 {
 	//含布尔字段的配置
 	nlohmann::json config = nlohmann::json::object();
 	config["启用"] = true;
 	//布尔类型校验应通过
 	EXPECT_TRUE(engine::Data_Validator::field_check<bool>(config, "启用"));
+}
+
+//布尔字段：非布尔内容被拒绝
+TEST_F(Data_Validator_Test, 布尔字段拒绝整数)
+{
+	//布尔字段被填成整数
+	nlohmann::json config = nlohmann::json::object();
+	config["启用"] = 1;
+	//布尔类型校验应失败
+	EXPECT_FALSE(engine::Data_Validator::field_check<bool>(config, "启用"));
 }
 
 //路径检查：真实存在的可执行文件通过

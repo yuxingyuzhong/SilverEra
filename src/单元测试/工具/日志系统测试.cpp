@@ -1,4 +1,4 @@
-//日志系统测试：覆盖四级输出的类型前缀与格式化内容、错误码格式化特化与文件重载可达性
+//日志系统测试：覆盖四级输出的类型前缀与格式化内容、错误码格式化特化与活跃输出流控制
 #include <gtest/gtest.h>
 
 //获取日志系统
@@ -173,36 +173,61 @@ TEST_F(Log_Test, 错误码格式化特化)
 	EXPECT_NE(output.find(error_info.message()), std::string::npos);
 }
 
-//文件输出重载：以字符串字面量为文件名时被控制台重载截走，属已知缺陷
-//缺陷位置：日志系统.h 的 info / warn / error / debug 文件输出重载
-//成因：文件重载首参为 const std::string&，控制台重载首参为 std::format_string<Args...>。
-//     字符串字面量到两者的转换序列都是用户定义转换且前导序列相同，无法分出优劣；
-//     比较第二个参数时控制台重载恰好更优，于是整个调用被判给控制台重载。
-//     若首参写成 std::string 变量，则文件重载首参为恒等匹配、控制台重载第二参更优，
-//     两个候选各有一处更优参数，编译器直接报 C2666 调用不明确。
-//结果：文件输出重载在两种传参形式下都不可达 —— 指定文件名不会产生任何文件，
-//     文件名反而被当作格式串交给控制台重载输出。本用例固化的是这一现状。
-TEST_F(Log_Test, 文件输出重载被控制台截走)
+//活跃输出流：stream_set 指定文件后，日志写入该文件
+//修复后语义：文件输出重载已整体删除，改由 Log::stream_set(文件名) 指定活跃输出流；
+//          文件名留空时回落到控制台。
+TEST_F(Log_Test, 设置活跃流后日志落文件)
 {
-	//日志文件名（纯 ASCII，便于字面量传参）
+	//日志文件名（纯 ASCII，避开编码问题）
 	const std::string file_name = "engine_log_probe.txt";
 	//删除可能存在的残留文件
 	std::error_code remove_info;
 	std::filesystem::remove(engine::string_to_path(file_name), remove_info);
+
+	//设置活跃输出流为该文件
+	engine::Log log;
+	log.stream_set(file_name);
+	//此时输出一条信息日志
+	engine::Log::info("落盘探针 {}", 7);
+
+	//文件应被创建
+	EXPECT_TRUE(std::filesystem::exists(engine::string_to_path(file_name)));
+
+	//读回文件内容
+	std::ifstream reader(engine::string_to_path(file_name));
+	std::string content;
+	std::string line;
+	while (std::getline(reader, line))
+		content += line;
+	reader.close();
+	//类型前缀应落到文件
+	EXPECT_NE(content.find("[INFO]"), std::string::npos);
+	//格式化结果应落到文件
+	EXPECT_NE(content.find("落盘探针 7"), std::string::npos);
+
+	//还原活跃输出流为控制台，避免影响其它用例
+	log.stream_set("");
+	//清理探针文件
+	std::filesystem::remove(engine::string_to_path(file_name), remove_info);
+}
+
+//活跃输出流：未设置时日志走控制台
+TEST_F(Log_Test, 未设置活跃流时走控制台)
+{
+	//显式把活跃输出流置空（控制台）
+	engine::Log log;
+	log.stream_set("");
 
 	//捕获内容
 	std::string output;
 	{
 		//开始捕获控制台输出
 		Console_Capture capture;
-		//以字面量文件名调用（按当前重载决议落到控制台重载）
-		engine::Log::info("engine_log_probe.txt", "内容");
+		//输出一条信息日志
+		engine::Log::info("控制台落点 {}", 1);
 		//取回输出内容
 		output = capture.text();
 	}
-
-	//控制台输出里出现的是文件名本身，说明它被当成了格式串
-	EXPECT_NE(output.find("engine_log_probe.txt"), std::string::npos);
-	//指定文件名并未产生文件
-	EXPECT_FALSE(std::filesystem::exists(engine::string_to_path(file_name)));
+	//类型前缀与格式化结果都应出现在控制台
+	EXPECT_NE(output.find("[INFO]控制台落点 1"), std::string::npos);
 }

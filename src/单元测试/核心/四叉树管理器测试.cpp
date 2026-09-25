@@ -9,9 +9,8 @@ class Quadtree_Manager_Test : public ::testing::Test
 {
 public:
 	//把边长上限压到 256，再按目标坐标建一棵四叉树
-	//PS:tree_record 的大小字段是 uint16_t，而设置里的边长上限缺省为 65536，
-	//   即"默认上限下建出的树，其记录大小必然溢出"。相关缺陷见本文件末尾的禁用用例，
-	//   因此凡涉及查询的用例都先把上限压到 uint16_t 装得下的 256。
+	//tree_record 的大小字段已随引擎修复改回 uint64_t，默认上限 65536 不再溢出；
+	//此处仍压到 256，只是为了让包围矩形与区块划分保持固定、便于断言。
 	static void build_one_tree(engine::Quadtree_Manager<int>& manager, const engine::Point2i& target)
 	{
 		manager.set_max_size(256);
@@ -572,16 +571,14 @@ TEST_F(Quadtree_Manager_Test, 析构释放全部四叉树)
 	SUCCEED();
 }
 
-// ———— 缺陷固化（修复前禁用） ————
-//以下用例记录当前实现中的缺陷，默认不执行。
-//每一项都按"修复后即可去掉下划线前缀转为回归用例"的方式编写。
+// ———— 缺陷回归（修复后启用） ————
+//以下用例原先固化引擎缺陷并处于禁用状态，缺陷修复后已转为正式回归用例；
+//唯「超大边长上限下区块检索次数正常」一条仍被未修的除零缺陷阻塞，保持禁用。
 
-//缺陷位置：四叉树管理器通信结构体.h 的 tree_record::size
-//成因：size 声明为 uint16_t，而 tree_manager_settings::max_tree_size 的缺省值是 65536
-//     （且可配置到更大）。quadtree_build 里 new_tree->size = tree_size 会把 65536
-//     截断成 0，于是记录里的大小与四叉树自身状态不一致。
-//修复方向：把 tree_record::size 的类型改回 uint64_t，与 Quadtree::state.size 保持一致。
-TEST_F(Quadtree_Manager_Test, DISABLED_默认边长上限下建成的树记录大小正确)
+//默认边长上限：建成的树记录大小与上限一致
+//修复后语义：tree_record::size 已改回 uint64_t，与 Quadtree::state.size 对齐，
+//          65536 不再被截断成 0。
+TEST_F(Quadtree_Manager_Test, 默认边长上限下建成的树记录大小正确)
 {
 	//默认构造的管理器（边长上限缺省 65536）
 	engine::Quadtree_Manager<int> manager;
@@ -596,175 +593,181 @@ TEST_F(Quadtree_Manager_Test, DISABLED_默认边长上限下建成的树记录�
 	EXPECT_EQ(records[0]->size, 65536);
 }
 
-//缺陷位置：四叉树管理器通信结构体.h 的 tree_record::size（承接上一项）
-//成因：记录大小被截断成 0 后，quadtree_inclusion_seek 调用 manage_range_calcu
-//     会算出 left > right 的空范围，于是任何坐标都找不到直属四叉树；
-//     单点查询的 for(;;) 便会每轮重新走一次智能创建与扩大审批，
-//     而记录大小始终为 0，循环永不收敛（每轮还会真的扩大一次树，内存持续增长）。
-//修复方向：同上一项。修复前本用例会挂死，故只能禁用。
-TEST_F(Quadtree_Manager_Test, DISABLED_默认设置下单点查询能够收敛)
+//默认设置：单点查询能够收敛
+//修复后语义：记录大小不再截断，quadtree_inclusion_seek 能算出正确范围，
+//          单点查询的 for(;;) 首轮即可取到区块并结束，不会反复重建。
+TEST_F(Quadtree_Manager_Test, 默认设置下单点查询能够收敛)
 {
-	//启用前请先修复上述缺陷，否则本用例会陷入死循环并持续占用内存。
-	//engine::Quadtree_Manager<int> manager;
-	//engine::tree_chunk_data<int>* receiver = nullptr;
-	//manager.seek(receiver, make_coord(0, 0), true);
-	//EXPECT_NE(receiver, nullptr);
-	//delete receiver;
+	//默认构造的管理器（边长上限缺省 65536）
+	engine::Quadtree_Manager<int> manager;
+	//查询结果存储
+	engine::tree_chunk_data<int>* receiver = nullptr;
+	//稳定模式下查询单点
+	manager.seek(receiver, make_coord(0, 0), true);
+	//应取到区块信息
+	ASSERT_NE(receiver, nullptr);
+	//释放区块信息
+	delete receiver;
 }
 
-//缺陷位置：Quadtree_Manager/core/四叉树智能创建.hpp 的 prepare_smart_create_params
-//成因：函数首行直接取 coord_set.front() 与 .back() 一侧的边界，没有任何空集合校验，
-//     空坐标集合会触发空容器取首元素（未定义行为）。
-//修复方向：在 qurdtree_build_smart 入口对 coord_set 做 empty() 判断并直接返回，
-//     或在 prepare_smart_create_params 内先行处理空集合并把最大区块数置零。
-//修复前本用例会崩溃，故只能禁用。
-TEST_F(Quadtree_Manager_Test, DISABLED_智能创建空坐标集合不建树)
+//智能创建：空坐标集合不建树
+//修复后语义：qurdtree_build_smart 入口已对 coord_set 做 empty() 判断并直接返回，
+//          不会再对空容器取首元素。
+TEST_F(Quadtree_Manager_Test, 智能创建空坐标集合不建树)
 {
-	//启用前请先修复上述缺陷，否则本用例会访问空容器。
-	//engine::Quadtree_Manager<int> manager;
-	//manager.set_max_size(256);
-	//manager.qurdtree_build_smart({});
-	//EXPECT_TRUE(manager.records_get().empty());
+	//默认构造的管理器
+	engine::Quadtree_Manager<int> manager;
+	//设定边长上限
+	manager.set_max_size(256);
+	//投喂空坐标集合
+	manager.qurdtree_build_smart({});
+	//不应建立任何四叉树
+	EXPECT_TRUE(manager.records_get().empty());
 }
 
-//缺陷位置：Quadtree_Manager/core/区块信息检索.hpp 的范围查询重载
-//成因：函数开篇即取 tree_group.front() 以获取基准树，未校验序列是否为空；
-//     在没有任何四叉树时调用范围查询会取空容器首元素（未定义行为）。
-//修复方向：进入查询前判断 X_sequence 为空则直接返回，或先按范围调用智能创建。
-//修复前本用例会崩溃，故只能禁用。
-TEST_F(Quadtree_Manager_Test, DISABLED_范围查询空序列返回空结果)
+//范围查询：空序列直接返回空结果
+//修复后语义：范围查询重载已先校验 X_sequence 是否为空，非稳定模式下直接返回。
+TEST_F(Quadtree_Manager_Test, 范围查询空序列返回空结果)
 {
-	//启用前请先修复上述缺陷，否则本用例会访问空容器。
-	//engine::Quadtree_Manager<int> manager;
-	//std::vector<engine::tree_chunk_data<int>*> receiver{};
-	//manager.seek(receiver, make_range(0, 255, 255, 0), false);
-	//EXPECT_TRUE(receiver.empty());
+	//默认构造的管理器（不含任何四叉树）
+	engine::Quadtree_Manager<int> manager;
+	//查询结果存储
+	std::vector<engine::tree_chunk_data<int>*> receiver{};
+	//不稳定模式下对空管理器做范围查询
+	manager.seek(receiver, make_range(0, 255, 255, 0), false);
+	//应返回空结果
+	EXPECT_TRUE(receiver.empty());
 }
 
-//缺陷位置：Quadtree_Manager/core/基础操作.hpp 的 quadtree_index_seek 与 quadtree_unload
-//成因：quadtree_index_seek 在查不到时返回 -1，而两个 quadtree_unload
-//     都只判断 index < 0 就 continue（按根坐标的重载有一处判断，按索引的重载同样）
-//     ——但 quadtree_index_seek 内部先调用 range_binary_search，
-//     该函数未命中时返回 {-1,-1}，于是 for 循环仍会执行一次并访问 tree_group[-1]。
-//修复方向：在 quadtree_index_seek 调用 range_binary_search 后先判断 range.first < 0 再进入循环。
-//修复前本用例会越界访问，故只能禁用。
-TEST_F(Quadtree_Manager_Test, DISABLED_卸载不存在的根坐标不越界)
+//卸载：不存在的根坐标不会越界
+//修复后语义：quadtree_index_seek 在 range_binary_search 未命中时先判断
+//          range.first < 0 并返回 -1，不会再索引 tree_group[-1]。
+TEST_F(Quadtree_Manager_Test, 卸载不存在的根坐标不越界)
 {
-	//启用前请先修复上述缺陷，否则本用例会越界访问序列。
-	//engine::Quadtree_Manager<int> manager;
-	//build_one_tree(manager, make_coord(0, 0));
-	//manager.quadtree_unload({ engine::Point2d(9999.5, 9999.5) });
-	//EXPECT_EQ(manager.records_get().size(), 1u);
+	//默认构造的管理器
+	engine::Quadtree_Manager<int> manager;
+	//先建立一棵覆盖 [0,255]×[0,255] 的四叉树
+	build_one_tree(manager, make_coord(0, 0));
+	//卸载一个不在序列中的根坐标
+	manager.quadtree_unload({ engine::Point2d(9999.5, 9999.5) });
+	//原有四叉树应保持不变
+	EXPECT_EQ(manager.records_get().size(), 1u);
 }
 
-//缺陷位置：Quadtree_Manager/core/区块信息检索.hpp 的 target_range_amaed
-//成因：该函数签名的形参顺序是 (excel_range, ptr_excel, target_range)，
-//     而范围查询的调用处传入的是 (seekable_range, target_excel, tree_range)，
-//     两者语义被颠倒：本应作为"整表范围"的树管理范围被当成目标范围，
-//     于是 X_start/Y_start 会算出负数、X_end 会超出列宽，ptr_excel[row * width + col]
-//     直接写到数组边界之外。只有"查询范围恰好覆盖整棵树"时索引才恰好落回界内。
-//修复方向：调用处改为 target_range_amaed(tree_range, target_excel, seekable_range)，
-//     并在函数内对行列索引做 [0, width) / [0, 总行数) 的裁剪。
-//修复前本用例会破坏堆内存，故只能禁用。
-TEST_F(Quadtree_Manager_Test, DISABLED_范围查询部分覆盖不越界)
+//范围查询：部分覆盖目标范围不越界
+//修复后语义：调用处已按 (tree_range, target_excel, seekable_range) 传参，
+//          target_range_amend 内也对行列索引做了 [0, width) / [0, 总行数) 裁剪。
+TEST_F(Quadtree_Manager_Test, 范围查询部分覆盖不越界)
 {
-	//启用前请先修复上述缺陷，否则本用例会写出结果表边界。
-	//engine::Quadtree_Manager<int> manager;
-	//build_one_tree(manager, make_coord(0, 0));
-	//std::vector<engine::tree_chunk_data<int>*> receiver{};
-	//manager.seek(receiver, make_range(20, 40, 40, 20), true);
-	//EXPECT_GT(receiver.size(), 0u);
+	//默认构造的管理器
+	engine::Quadtree_Manager<int> manager;
+	//先建立一棵覆盖 [0,255]×[0,255] 的四叉树
+	build_one_tree(manager, make_coord(0, 0));
+	//查询结果存储
+	std::vector<engine::tree_chunk_data<int>*> receiver{};
+	//稳定模式下查询树内的一小块区域（不覆盖整棵树）
+	manager.seek(receiver, make_range(20, 40, 40, 20), true);
+	//应取到区块信息
+	EXPECT_GT(receiver.size(), 0u);
+	//释放查询结果
+	chunk_clean(receiver);
 }
 
-//缺陷位置：Quadtree_Manager/core/设置与交互.hpp 的 set_min_size
-//成因：函数把下限记录进 settings.min_tree_size 之后，遍历现有四叉树时调用的却是
-//     tree->set_max_size(settings.min_tree_size) —— 下限被写成了四叉树的上限。
-//     一旦下限大于上限，四叉树的边长上限会被反向放大；
-//     反之则被反向压缩，两种情况下四叉树自身的扩大判定都不再可信。
-//修复方向：此处应调用 tree->set_block_size 之外的对应接口；Quadtree 目前没有
-//     set_min_size，需要补一个并在此处改调它。
-//说明：该副作用无法从管理器的公开接口直接观测（tree 是 tree_record 的私有成员），
-//     故本用例仅作记录，修复后应改为通过四叉树状态读取接口断言。
-TEST_F(Quadtree_Manager_Test, DISABLED_设置边长下限写入的是四叉树上限)
+//设置边长下限：只更新下限，不再误写上限
+//修复后语义：set_min_size 只写入 settings.min_tree_size，
+//          不再调用 tree->set_max_size()，四叉树的边长上限不会被反向改写。
+TEST_F(Quadtree_Manager_Test, 设置边长下限只更新下限)
 {
-	//启用前请先为 Quadtree 补上 set_min_size 接口并修正调用点。
-	//engine::Quadtree_Manager<int> manager;
-	//manager.set_max_size(1024);
-	//manager.set_min_size(256);
-	//EXPECT_EQ(manager.settings_get().min_tree_size, 256u);
+	//默认构造的管理器
+	engine::Quadtree_Manager<int> manager;
+	//先设定边长上限
+	manager.set_max_size(1024);
+	//再设定边长下限
+	manager.set_min_size(256);
+	//下限被正确记录
+	EXPECT_EQ(manager.settings_get().min_tree_size, 256u);
+	//上限不受影响
+	EXPECT_EQ(manager.settings_get().max_tree_size, 1024u);
 }
 
-//缺陷位置：Quadtree_Manager/core/基础操作.hpp 的 quadtree_inclusion_seek（缓存写入段）
-//成因：缓存条目已满时直接 records.pop_back() / ranges.pop_back()，
-//     判满条件写作 records.size() == max_cache_records。
-//     当外界把条目上限设为 0 时，条件对空容器成立，pop_back 会作用在空 vector 上。
-//修复方向：改为 records.size() >= max_cache_records 且写入前判断 max_cache_records > 0。
-//修复前本用例会触发未定义行为，故只能禁用。
-TEST_F(Quadtree_Manager_Test, DISABLED_缓存条目上限为零时查找不崩溃)
+//缓存：条目上限为零时查找不崩溃
+//修复后语义：判满条件改为 records.size() >= max_cache_records，
+//          且写入前先判断 max_cache_records > 0，空缓存不会再被弹出。
+TEST_F(Quadtree_Manager_Test, 缓存条目上限为零时查找不崩溃)
 {
-	//启用前请先修复上述缺陷，否则本用例会对空缓存容器执行弹出。
-	//engine::Quadtree_Manager<int> manager;
-	//manager.set_max_size(256);
-	//manager.set_cache_active_threshold(1);
-	//manager.set_max_cach_records(0);
-	//build_one_tree(manager, make_coord(0, 0));
-	//engine::tree_chunk_data<int>* receiver = nullptr;
-	//manager.seek(receiver, make_coord(10, 10), true);
-	//EXPECT_NE(receiver, nullptr);
-	//delete receiver;
+	//默认构造的管理器
+	engine::Quadtree_Manager<int> manager;
+	//设定边长上限、缓存启用阈值与条目上限
+	manager.set_max_size(256);
+	manager.set_cache_active_threshold(1);
+	manager.set_max_cach_records(0);
+	//先建立一棵覆盖 [0,255]×[0,255] 的四叉树
+	build_one_tree(manager, make_coord(0, 0));
+	//查询结果存储
+	engine::tree_chunk_data<int>* receiver = nullptr;
+	//稳定模式下查询
+	manager.seek(receiver, make_coord(10, 10), true);
+	//应取到区块信息
+	ASSERT_NE(receiver, nullptr);
+	//释放区块信息
+	delete receiver;
 }
 
-//缺陷位置：Quadtree / Quadtree_Manager 的 range_seek 路径（Quadtree 的区块信息检索.hpp）
-//成因：range_seek 在中间层调用 child_node_recur 时，若子节点为空且 stable == false，
-//     该函数会把传入的 parent_node 置为 nullptr 并返回 false；
-//     但调用处只据此设置 is_pop_back，当同层存在多于一个相交子块（recursive_num > 1）时
-//     会把 is_pop_back 改回 false 并直接进入下一轮循环，
-//     下一轮再对已为空的 parent_node 递归，形成空指针解引用。
-//     因此范围查询的不稳定模式在首次遍历时就会崩溃。
-//修复方向：child_node_recur 失败时不要把引用参数写成空指针（改为返回子节点指针），
-//     或在调用处失败即弹栈/跳出，不再使用 parent_node。
-//修复前本用例会崩溃，故只能禁用。
-TEST_F(Quadtree_Manager_Test, DISABLED_范围查询不稳定模式不崩溃)
+//范围查询：不稳定模式不崩溃
+//修复后语义：child_node_recur 的返回值被调用处接收（entered / continue），
+//          失败时不再继续使用已置空的节点指针。
+TEST_F(Quadtree_Manager_Test, 范围查询不稳定模式不崩溃)
 {
-	//启用前请先修复上述缺陷，否则本用例会解引用空节点。
-	//engine::Quadtree_Manager<int> manager;
-	//build_one_tree(manager, make_coord(0, 0));
-	//std::vector<engine::tree_chunk_data<int>*> receiver{};
-	//manager.seek(receiver, make_range(0, 255, 255, 0), false);
-	//EXPECT_TRUE(receiver.empty());
+	//默认构造的管理器
+	engine::Quadtree_Manager<int> manager;
+	//先建立一棵覆盖 [0,255]×[0,255] 的四叉树
+	build_one_tree(manager, make_coord(0, 0));
+	//查询结果存储
+	std::vector<engine::tree_chunk_data<int>*> receiver{};
+	//不稳定模式下做范围查询
+	manager.seek(receiver, make_range(0, 255, 255, 0), false);
+	//不稳定模式不新建区块，结果应为空
+	EXPECT_TRUE(receiver.empty());
+	//释放查询结果
+	chunk_clean(receiver);
 }
 
-//缺陷位置：Quadtree 的区块信息检索.hpp 的 block_seek（检测次数计算段）
-//成因：函数把 uint64_t 的 state.max_size 直接赋给 int 类型的 max_size。
-//     当边长上限配置到超过 INT_MAX 时赋值发生截断，负值参与无符号除法后
-//     会得到一个极大的 exam_time_max，区块检索会进行长时间的无效循环。
-//     同理，Quadtree_Manager 的 quedtree_merge_collect 里
-//     int max_expandable_size = largest_tree_size 也存在相同的截断风险。
-//修复方向：两处局部变量均改为 uint64_t。
-//说明：触发需要把边长上限配置到 INT_MAX 以上，本用例仅作记录。
+//超大边长上限：建树路径仍会抛整数除零，用例保持禁用
+//已修复部分：block_seek 的 max_size 与 quedtree_merge_collect 的
+//          max_expandable_size 均已改为 uint64_t，检索次数的类型截断已消除。
+//仍存在的缺陷：把边长上限配置到 INT_MAX 以上（如 1ull << 33）后按单点建树，
+//          会抛出 SEH 异常 0xC0000094（整数除以零）。
+//          缺陷位置：Quadtree/core/区块信息检索.hpp 的 block_seek，
+//          `for (; (max_size /= 2) / state.size > 1;)` 在 state.size 为 0 时除零，
+//          该处尚未加 state.size 为 0 的防御。
+//          修复后去掉下划线前缀即可转为回归用例。
 TEST_F(Quadtree_Manager_Test, DISABLED_超大边长上限下区块检索次数正常)
 {
-	//启用前请先修复上述缺陷。
+	//启用前请先修复上述除零缺陷。
+	//默认构造的管理器
 	//engine::Quadtree_Manager<int> manager;
+	//把边长上限提到 INT_MAX 以上
 	//manager.set_max_size(1ull << 33);
+	//按单点建树
 	//manager.qurdtree_build_smart({ make_coord(0, 0) });
+	//应建成一棵树
 	//EXPECT_EQ(manager.records_get().size(), 1u);
 }
 
-//缺陷位置：Quadtree_Manager/core/四叉树合并.hpp 的 qurdtree_merge（数据拷贝段）
-//成因：稳定查询 new_tree->tree->block_seek(ptr_data, ...) 之后直接
-//     copy(*ptr_data, *buffer[copy_time])，没有判断 ptr_data 是否为空。
-//     新区块分配失败或新树拒绝该坐标时 ptr_data 会保持 nullptr，
-//     此时对空指针解引用。
-//修复方向：拷贝前判断 ptr_data != nullptr，为空则跳过并计入失败统计。
-//修复前本用例会崩溃（需要构造分配失败场景），故只能禁用。
-TEST_F(Quadtree_Manager_Test, DISABLED_合并拷贝前检查区块指针)
+//合并：拷贝前检查区块指针
+//修复后语义：qurdtree_merge 的数据拷贝段已加 if (ptr_data) 判断，
+//          区块创建失败时跳过拷贝并计入失败统计。
+TEST_F(Quadtree_Manager_Test, 合并拷贝前检查区块指针)
 {
-	//启用前请先修复上述缺陷；构造四棵同级相邻四叉树即可进入拷贝段。
-	//engine::Quadtree_Manager<int> manager;
-	//manager.set_max_size(256);
-	//manager.callback_register([](engine::tree_chunk_data<int>& receiver,
-	//	engine::tree_chunk_data<int>& transmiter) {});
-	//manager.qurdtree_merge();
-	//SUCCEED();
+	//默认构造的管理器
+	engine::Quadtree_Manager<int> manager;
+	//设定边长上限
+	manager.set_max_size(256);
+	//注册数据迁移方法
+	manager.callback_register([](engine::tree_chunk_data<int>& receiver,
+		engine::tree_chunk_data<int>& transmiter) {});
+	//执行合并
+	manager.qurdtree_merge();
+	//无崩溃即为通过
+	SUCCEED();
 }

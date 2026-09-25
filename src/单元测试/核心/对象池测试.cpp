@@ -92,8 +92,9 @@ TEST_F(Object_Pool_Test, 卸载后查找返回超尾)
 	EXPECT_NE(pool.find(second), pool.end());
 }
 
-//对象卸载：卸载只清有效标记，记录本身留在容器中
-TEST_F(Object_Pool_Test, 卸载仅清有效标记)
+//对象卸载：记录留在容器中，ID 被回收清零
+//引擎语义：unload 回收对象 ID 并置零、清有效标记，记录本身仍留在容器里。
+TEST_F(Object_Pool_Test, 卸载后记录保留但ID清零)
 {
 	//默认构造的对象池
 	engine::Object_Pool<Test_Object> pool;
@@ -103,9 +104,9 @@ TEST_F(Object_Pool_Test, 卸载仅清有效标记)
 	pool.unload(ID);
 	//容器规模不变
 	ASSERT_EQ(pool.data().size(), 1u);
-	//记录仍在容器中
-	EXPECT_EQ(pool.data()[0].ID(), ID);
-	//但有效标记已被清除
+	//ID 已被回收清零
+	EXPECT_EQ(pool.data()[0].ID(), 0u);
+	//有效标记已被清除
 	EXPECT_FALSE(pool.data()[0].valid());
 }
 
@@ -169,21 +170,13 @@ TEST_F(Object_Pool_Test, 卸载后新建复用索引)
 //     模板参数 Key 名义上可选非整数，实际不可用。
 //修复方向：把分支判定换成 if constexpr，使不可达分支不参与实例化。
 
-//排序模式：整体不可用，属已知缺陷，以下用例全部禁用
-//缺陷位置：对象池.h 的 sort_order_set
-//成因：对象索引映射与排序定位信息（投影字段、比较方式、有效索引起点）共用同一块联合体存储。
-//     首次调用时先析构索引映射、原地构造投影字段，紧接着却去读同一块存储上的
-//     min_valid_index.has_value()；此时该标志位来自 std::function 的内部字节，并非由 optional 构造，
-//     实测会被判为「已有值」，于是整段「计算有效索引起点」的初始化被跳过，
-//     随后 objects.begin() + min_valid_index.value() 直接使用这块未初始化内存。
-//实测表现：无论对象池是否为空，首次设置排序方式都会让 MSVC 的调试迭代器断言
-//     "cannot seek vector iterator after end"，进程被直接终止。
-//修复方向：把三个排序定位字段从联合体中拆出来单独存放，或改为显式的模式标记加独立成员，
-//     使「是否已计算有效索引起点」不再依赖未构造对象的标志位。
-//下面用例在被修复前一律不执行；修复后去掉下划线前缀即为排序模式的回归用例。
+//排序模式：索引映射与排序定位信息共用联合体存储，
+//min_valid_index 现已在 sort_order_set 内以 placement new 显式构造，
+//不再读取 std::function 的内部字节作为「是否已有值」的依据。
+//以下用例由缺陷固化转为排序模式的正式回归用例。
 
 //排序模式：设置排序方式后仍可按ID查找
-TEST_F(Object_Pool_Test, DISABLED_排序模式按ID查找)
+TEST_F(Object_Pool_Test, 排序模式按ID查找)
 {
 	//默认构造的对象池
 	engine::Object_Pool<Test_Object> pool;
@@ -201,7 +194,7 @@ TEST_F(Object_Pool_Test, DISABLED_排序模式按ID查找)
 }
 
 //排序模式：降序排列同样可按ID查找
-TEST_F(Object_Pool_Test, DISABLED_排序模式降序查找)
+TEST_F(Object_Pool_Test, 排序模式降序查找)
 {
 	//默认构造的对象池
 	engine::Object_Pool<Test_Object> pool;
@@ -216,7 +209,7 @@ TEST_F(Object_Pool_Test, DISABLED_排序模式降序查找)
 }
 
 //排序模式：按自定义投影字段查找
-TEST_F(Object_Pool_Test, DISABLED_排序模式按投影字段查找)
+TEST_F(Object_Pool_Test, 排序模式按投影字段查找)
 {
 	//默认构造的对象池
 	engine::Object_Pool<Test_Object> pool;
@@ -241,7 +234,7 @@ TEST_F(Object_Pool_Test, DISABLED_排序模式按投影字段查找)
 }
 
 //排序模式：卸载后查找返回超尾
-TEST_F(Object_Pool_Test, DISABLED_排序模式卸载后不可查找)
+TEST_F(Object_Pool_Test, 排序模式卸载后不可查找)
 {
 	//默认构造的对象池
 	engine::Object_Pool<Test_Object> pool;
@@ -260,7 +253,7 @@ TEST_F(Object_Pool_Test, DISABLED_排序模式卸载后不可查找)
 }
 
 //排序模式：新建对象后仍应能找到它
-TEST_F(Object_Pool_Test, DISABLED_排序模式新建后可查找)
+TEST_F(Object_Pool_Test, 排序模式新建后可查找)
 {
 	//默认构造的对象池
 	engine::Object_Pool<Test_Object> pool;
@@ -276,7 +269,7 @@ TEST_F(Object_Pool_Test, DISABLED_排序模式新建后可查找)
 }
 
 //排序重置：重置后可按ID查找到原有对象
-TEST_F(Object_Pool_Test, DISABLED_排序重置后原对象可查找)
+TEST_F(Object_Pool_Test, 排序重置后原对象可查找)
 {
 	//默认构造的对象池
 	engine::Object_Pool<Test_Object> pool;
@@ -292,12 +285,10 @@ TEST_F(Object_Pool_Test, DISABLED_排序重置后原对象可查找)
 	EXPECT_NE(pool.find(second), pool.end());
 }
 
-//排序重置：已卸载对象会被重新写回索引映射
-//缺陷位置：对象池.h 的 sort_order_reset
-//成因：重建索引映射时以 ID() > 0 判定记录有效，而卸载只清有效标记、保留对象 ID，
-//     于是排序模式下卸载过的记录会被重新写回索引映射，查找时又能命中。
-//修复方向：改用 valid() 判定记录有效，或在卸载时把对象 ID 一并清零。
-TEST_F(Object_Pool_Test, DISABLED_重置排序后已卸载对象仍被命中)
+//排序重置：已卸载对象不会再被写回索引映射
+//修复后语义：sort_order_reset 重建索引映射时改用 valid() 判定记录有效，
+//          卸载只清有效标记的记录不会被误收录。
+TEST_F(Object_Pool_Test, 重置排序后已卸载对象查不到)
 {
 	//默认构造的对象池
 	engine::Object_Pool<Test_Object> pool;
@@ -310,12 +301,12 @@ TEST_F(Object_Pool_Test, DISABLED_重置排序后已卸载对象仍被命中)
 	pool.unload(first);
 	//重置排列方式
 	pool.sort_order_reset();
-	//期望：已卸载对象查不到（当前实现仍会命中）
+	//期望：已卸载对象查不到
 	EXPECT_EQ(pool.find(first), pool.end());
 }
 
 //空池排序：没有记录可排时不应改动对象池
-TEST_F(Object_Pool_Test, DISABLED_空池设置排序方式)
+TEST_F(Object_Pool_Test, 空池设置排序方式)
 {
 	//默认构造的对象池（不含任何对象）
 	engine::Object_Pool<Test_Object> pool;
@@ -325,16 +316,12 @@ TEST_F(Object_Pool_Test, DISABLED_空池设置排序方式)
 	EXPECT_TRUE(pool.data().empty());
 }
 
-//对象清除：两个模式下的分支写反，属已知缺陷，用例全部禁用
-//缺陷位置：对象池.h 的 clear
-//成因：条件写作 if (is_sorted) 清空索引映射，而稳定模式下索引映射才是激活成员；
-//     于是稳定模式会去改写未激活的投影字段，排序模式反过来对未激活的映射调用 clear。
-//     两种模式都会踩到联合体中未构造的成员，属未定义行为，实际执行极可能直接崩溃。
-//修复方向：与 sort_order_set 一并把排序定位字段从联合体中拆出来，让两侧分支各自作用于正确成员。
-//下面用例在被修复前一律不执行。
+//对象清除：两个模式下的分支已各归其位，转为正式回归用例
+//修复后语义：clear 的条件为 if (!is_sorted) 清空索引映射，
+//          稳定模式作用于索引映射、排序模式作用于排序定位字段，不再触及未构造成员。
 
 //对象清除：稳定模式下清空
-TEST_F(Object_Pool_Test, DISABLED_稳定模式清空对象池)
+TEST_F(Object_Pool_Test, 稳定模式清空对象池)
 {
 	//默认构造的对象池
 	engine::Object_Pool<Test_Object> pool;
@@ -348,7 +335,7 @@ TEST_F(Object_Pool_Test, DISABLED_稳定模式清空对象池)
 }
 
 //对象清除：排序模式下清空
-TEST_F(Object_Pool_Test, DISABLED_排序模式清空对象池)
+TEST_F(Object_Pool_Test, 排序模式清空对象池)
 {
 	//默认构造的对象池
 	engine::Object_Pool<Test_Object> pool;
