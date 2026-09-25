@@ -734,12 +734,18 @@ TEST_F(Quadtree_Manager_Test, 范围查询不稳定模式不崩溃)
 
 //超大边长上限：建树路径仍会抛整数除零，用例保持禁用
 //已修复部分：block_seek 的 max_size 与 quedtree_merge_collect 的
-//          max_expandable_size 均已改为 uint64_t，检索次数的类型截断已消除。
+//          max_expandable_size 均已改为 uint64_t，检索次数的类型截断已消除；
+//          block_seek 入口另补 `state.size <= 0` 直接返回，杜绝该处除零。
 //仍存在的缺陷：把边长上限配置到 INT_MAX 以上（如 1ull << 33）后按单点建树，
-//          会抛出 SEH 异常 0xC0000094（整数除以零）。
-//          缺陷位置：Quadtree/core/区块信息检索.hpp 的 block_seek，
-//          `for (; (max_size /= 2) / state.size > 1;)` 在 state.size 为 0 时除零，
-//          该处尚未加 state.size 为 0 的防御。
+//          仍会抛出 SEH 异常 0xC0000094（整数除以零）。
+//          崩点位于 Quadtree_Manager/core/区块信息检索.hpp 的 excel_element_to_coord：
+//              int width = (excel_range.right - excel_range.left + 1) / settings.block_size;
+//              int row = element_ID / width;
+//              int col = element_ID % width;
+//          当格式化后的查询范围宽度不足一个 block_size 时 width 为 0，除法即抛异常。
+//          根因涉及 int 型坐标表示无法承载 INT_MAX 以上的树尺寸
+//          （Rect2i 各分量为 int，manage_range_calcu 按 tree_size 计算范围时会溢出），
+//          需架构层调整，非局部防御可解。
 //          修复后去掉下划线前缀即可转为回归用例。
 TEST_F(Quadtree_Manager_Test, DISABLED_超大边长上限下区块检索次数正常)
 {
