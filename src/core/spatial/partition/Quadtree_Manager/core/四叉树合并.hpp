@@ -110,9 +110,9 @@ namespace engine
                 //即为满足条件的四叉树组合
 
         //新四叉树可能根节点坐标存储
-        std::vector<coord2D_double> possible_root{};
+        std::vector<Point2d> possible_root{};
         //主体四叉树坐标存储
-        coord2D_double center_tree_root{ 0.5, 0.5 };
+        Point2d center_tree_root{ 0.5, 0.5 };
         //主体四叉树大小存储
         uint64_t center_tree_size;
         //根节点坐标偏移
@@ -157,7 +157,7 @@ namespace engine
             for (int time = 0; time < 3; time++)
                 indexs[time] = (time + 1);
             //四叉树集合平均根节点坐标存储
-            coord2D_double average_root = { 0.5, 0.5 };
+            Point2d average_root = { 0.5, 0.5 };
 
             //循环终止变量
             bool is_mergeable_group_found = false;
@@ -270,7 +270,7 @@ namespace engine
             quedtree_merge_filter(classfied_tree, varified_tree);
 
             //新四叉树根节点坐标存储
-            coord2D_double new_root{ 0.5,0.5 };
+            Point2d new_root{ 0.5,0.5 };
             //区块数据缓冲区
             std::vector<tree_chunk_data<T>*> buffer{};
             //待合并/卸载四叉树序列索引存储
@@ -296,7 +296,7 @@ namespace engine
                 //数据拷贝指针
                 tree_chunk_data<T>* ptr_data = nullptr;
                 //待合并四叉树范围存储
-                coord2D_range merged_tree_range{};
+                Rect2i merged_tree_range{};
                 //重置待合并四叉树索引集合
                 index_set.clear();
                 //复制区块数据
@@ -320,7 +320,7 @@ namespace engine
                         //重置数据拷贝指针
                         ptr_data = nullptr;
                         //稳定查询创建新区块
-                        new_tree->tree->block_seek(ptr_data, buffer[copy_time]->node, true);
+                        new_tree->tree->block_seek(ptr_data, point_to_int(buffer[copy_time]->node), true);
                         //复制区块数据
                         copy(*ptr_data, *buffer[copy_time]);
                     }

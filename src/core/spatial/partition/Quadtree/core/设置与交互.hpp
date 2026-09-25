@@ -6,7 +6,7 @@ namespace engine
 {
 	//构造函数
 	template <typename T>
-	Quadtree<T>::Quadtree(const uint64_t& size, const coord2D_double& root)
+	Quadtree<T>::Quadtree(const uint64_t& size, const Point2d& root)
 	{
 		state.size = size;
 		state.root = root;
@@ -97,7 +97,7 @@ namespace engine
 	//四叉树回调管理方法设置
 	template <typename T>
 	void Quadtree<T>::set_callback_manage
-	(const std::function<bool(coord2D_double root, coord2D_int target)>& cb)
+	(const std::function<bool(Point2d root, Point2i target)>& cb)
 	{
 		//回调管理函数注册
 		callback = cb;

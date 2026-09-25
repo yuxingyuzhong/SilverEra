@@ -20,14 +20,14 @@ namespace engine
 
 	//递归方向计算
 	template <typename T>
-	void Quadtree<T>::recur_direct_calcu(const coord2D_int& target, const coord2D_range& node, int& recur_direct)
+	void Quadtree<T>::recur_direct_calcu(const Point2i& target, const Rect2i& node, int& recur_direct)
 	{
 		//因节点坐标为浮点坐标
 		//而查找坐标为整数坐标
 		//因而不存在坐标相等情况
 
 		//计算节点根坐标
-		coord2D_double node_coord = {};
+		Point2d node_coord = {};
 		node_coord.X = (node.left + node.right) / 2.0f;
 		node_coord.Y = (node.down + node.up) / 2.0f;
 
@@ -47,8 +47,8 @@ namespace engine
 
 	//子节点范围计算
 	template <typename T>
-	void Quadtree<T>::child_node_range_calcu(const int& recur_direct, coord2D_range& child_range,
-		const coord2D_range& parent_range)
+	void Quadtree<T>::child_node_range_calcu(const int& recur_direct, Rect2i& child_range,
+		const Rect2i& parent_range)
 	{
 		// 先计算正确的中间分割点（避免负数向零截断问题）
 		// X轴中间点 = left + (right - left) / 2  (right - left 恒为正)
@@ -92,7 +92,7 @@ namespace engine
 
 	//四叉树管理范围计算
 	template <typename T>
-	void Quadtree<T>::manage_range_calcu(coord2D_range& receiver, const coord2D_double& root, const uint64_t tree_size)
+	void Quadtree<T>::manage_range_calcu(Rect2i& receiver, const Point2d& root, const uint64_t tree_size)
 	{
 		//四叉树中心均为浮点坐标
 		//存在初始0.5偏移需先行将其抵消
@@ -104,7 +104,7 @@ namespace engine
 
 	//待查询范围格式化
 	template <typename T>
-	void Quadtree<T>::target_range_format(coord2D_range& target_range, const coord2D_double& root, const uint64_t block_size)
+	void Quadtree<T>::target_range_format(Rect2i& target_range, const Point2d& root, const uint64_t block_size)
 	{
 		//格式化目的:保证待查询范围严格包含内部区块
 
@@ -131,7 +131,7 @@ namespace engine
 
 	//待查询范围比较
 	template <typename T>
-	bool Quadtree<T>::range_relation_get(const coord2D_range& target_range, const coord2D_range& node_range)
+	bool Quadtree<T>::range_relation_get(const Rect2i& target_range, const Rect2i& node_range)
 	{
 		//简化表示路径
 		auto& t_left = target_range.left;
@@ -155,10 +155,10 @@ namespace engine
 
 	//可查询范围计算
 	template <typename T>
-	coord2D_double Quadtree<T>::seekable_range_calcu(const coord2D_range& target_range, coord2D_range& seekable_range)
+	Point2d Quadtree<T>::seekable_range_calcu(const Rect2i& target_range, Rect2i& seekable_range)
 	{
 		//是否申请扩大标记
-		coord2D_double coord_register = state.root;
+		Point2d coord_register = state.root;
 
 		//左边界比较
 		if (target_range.left < seekable_range.left)

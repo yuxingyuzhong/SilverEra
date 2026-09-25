@@ -6,7 +6,7 @@ namespace engine
 {
     //四叉树扩大管理_____回调管理四叉树查找
     template<typename T>
-    tree_record<T>* Quadtree_Manager<T>::callback_tree_seek(const coord2D_double& root)
+    tree_record<T>* Quadtree_Manager<T>::callback_tree_seek(const Point2d& root)
     {
         //简化表示路径
         auto& tree_group = X_sequence;
@@ -25,7 +25,7 @@ namespace engine
     //四叉树扩大管理_____新四叉树管理范围计算
     template<typename T>
     void Quadtree_Manager<T>::new_tree_range_calcu(const tree_record<T>* baseline_tree,
-        const coord2D_int& target, coord2D_range& new_tree)
+        const Point2i& target, Rect2i& new_tree)
     {
         //简化表示路径
         auto& min_tree_size = settings.min_tree_size;
@@ -97,7 +97,7 @@ namespace engine
 
     //四叉树扩大管理方法
     template<typename T>
-    bool Quadtree_Manager<T>::tree_expand_approve(const coord2D_double& root, const coord2D_int& target, bool internal)
+    bool Quadtree_Manager<T>::tree_expand_approve(const Point2d& root, const Point2i& target, bool internal)
     {
         //获取当前回调管理四叉树信息
         tree_record<T>* now_tree = nullptr;
@@ -114,7 +114,7 @@ namespace engine
         else if (now_tree->size < settings.max_tree_size)
         {
             //矩形筛选范围存储
-            coord2D_range rectan_range{};
+            Rect2i rectan_range{};
             //当前四叉树扩大区域四叉树根节点存储
             std::vector<tree_record<T>*> ptr_rectan_tree{};
             //筛选扩大后树管理范围
@@ -214,9 +214,9 @@ namespace engine
         //————若执行至此则构建新四叉树————//
 
         //新四叉树根节点存储
-        coord2D_double new_root = { 0.5,0.5 };
+        Point2d new_root = { 0.5,0.5 };
         //新四叉树管理范围存储
-        coord2D_range new_tree_range{};
+        Rect2i new_tree_range{};
         //获取新四叉树管理范围
         new_tree_range_calcu(now_tree, target, new_tree_range);
         //计算新四叉树根节点位置

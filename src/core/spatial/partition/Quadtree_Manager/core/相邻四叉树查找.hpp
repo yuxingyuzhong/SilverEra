@@ -7,7 +7,7 @@ namespace engine
     //相邻四叉树查找_____矩形筛选
     template<typename T>
     void Quadtree_Manager<T>::rectangle_filter(std::vector<tree_record<T>*>& receiver, const tree_record<T>* tree,
-        const coord2D_range& range, const std::vector<tree_record<T>*>* tree_group)
+        const Rect2i& range, const std::vector<tree_record<T>*>* tree_group)
     {
         /*/
         矩形筛选逻辑：选定待查找树，记录其根节点坐标，然后以根节点坐标为原点
@@ -75,7 +75,7 @@ namespace engine
         std::vector<tree_record<T>*> verify_candidate{};
 
         //根节点坐标差值
-        coord2D_int root_diff = { 0,0 };
+        Point2i root_diff = { 0,0 };
         //筛选条件命中次数
         int filter_hits = 0;
 
@@ -124,12 +124,12 @@ namespace engine
         /**/
 
         //中心四叉树边界存储
-        coord2D_range center_tree_range{};
+        Rect2i center_tree_range{};
         //计算中心四叉树边界
         tree->tree->manage_range_calcu(center_tree_range, tree->root, tree->size);
 
         //当前候选四叉树边界存储
-        coord2D_range candidate_tree_range{};
+        Rect2i candidate_tree_range{};
 
         for (int filter_time = 0; filter_time < candidate.size(); filter_time++)
         {
@@ -187,7 +187,7 @@ namespace engine
         //矩形四叉树筛选结果存储
         std::vector<tree_record<T>*> rectan_trees{};
         //筛选以四叉树为中心的矩形范围内是否存在相邻四叉树
-        coord2D_range tree_range{};
+        Rect2i tree_range{};
         //计算矩形筛选范围
         tree_range.left = tree->root.X - (tree->size + largest_tree_size) / 2;
         tree_range.right = tree->root.X + (tree->size + largest_tree_size) / 2;

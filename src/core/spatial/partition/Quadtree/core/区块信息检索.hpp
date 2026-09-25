@@ -6,7 +6,7 @@ namespace engine
 {
 	//单点查询可行性分析
 	template <typename T>
-	int Quadtree<T>::point_seekable_analyse(const coord2D_int& target)
+	int Quadtree<T>::point_seekable_analyse(const Point2i& target)
 	{
 		/*函数逻辑：
 				  0，代表分析已经结束，查找不可行
@@ -17,7 +17,7 @@ namespace engine
 		//简化表示路径
 		auto& root = state.root;
 		//四叉树管理范围存储
-		coord2D_range tree_range{};
+		Rect2i tree_range{};
 		//计算四叉树管理范围
 		manage_range_calcu(tree_range, state.root, state.size);
 
@@ -73,14 +73,14 @@ namespace engine
 
 	//范围查询可行性分析
 	template <typename T>
-	void Quadtree<T>::range_seekable_analyse(const coord2D_range& format_range, coord2D_range& seekable_range)
+	void Quadtree<T>::range_seekable_analyse(const Rect2i& format_range, Rect2i& seekable_range)
 	{
 		for (;;)
 		{
 			//计算四叉树当前查询范围
 			manage_range_calcu(seekable_range, state.root, state.size);
 			//获取是否扩大标记
-			coord2D_double expand_register = seekable_range_calcu(format_range, seekable_range);
+			Point2d expand_register = seekable_range_calcu(format_range, seekable_range);
 
 			//若返回坐标非树根节点坐标
 			//则进行扩大(若存在管理层则进行申请)
@@ -90,7 +90,7 @@ namespace engine
 				if (callback)
 				{
 					//若扩大申请通过通过则扩大
-					if (callback(state.root, expand_register))
+					if (callback(state.root, point_to_int(expand_register)))
 					{
 						//若扩大失败则直接结束计算
 						if (!tree_expand())
@@ -121,7 +121,7 @@ namespace engine
 	//递归栈操作
 	template <typename T>
 	void Quadtree<T>::recur_stack_operate(std::vector<recur_record>& recur_stack,
-		Node*& ptr, coord2D_range& range, int& level,
+		Node*& ptr, Rect2i& range, int& level,
 		bool push_back)
 	{
 		//若为弹栈操作
@@ -145,7 +145,7 @@ namespace engine
 
 	//最小区块单元查找
 	template <typename T>
-	void Quadtree<T>::block_seek(tree_chunk_data<T>*& receiver, const coord2D_int& target, bool stable)
+	void Quadtree<T>::block_seek(tree_chunk_data<T>*& receiver, const Point2i& target, bool stable)
 	{
 		//四叉树上限上限临时存储
 		int max_size = state.max_size;
@@ -182,7 +182,7 @@ namespace engine
 		//获取根节点指针
 		Node* child_node = &root;
 		//节点管理范围存储
-		coord2D_range node_range{};
+		Rect2i node_range{};
 		//初始化为四叉树管理范围
 		manage_range_calcu(node_range, state.root, state.size);
 		//路径递归方向标记存储
@@ -206,7 +206,7 @@ namespace engine
 				return;
 
 			//存储旧范围值
-			coord2D_range old_range = node_range;
+			Rect2i old_range = node_range;
 			//计算新范围值
 			child_node_range_calcu(recur_direct, node_range, old_range);
 		}
@@ -229,12 +229,12 @@ namespace engine
 	//范围区块单元查找
 	template <typename T>
 	void Quadtree<T>::range_seek(std::vector<tree_chunk_data<T>*>& receiver, 
-		const coord2D_range& target_range, bool stable)
+		const Rect2i& target_range, bool stable)
 	{
 		//可查询范围存储
-		coord2D_range seekable_range{};
+		Rect2i seekable_range{};
 		//格式化待查询范围存储
-		coord2D_range format_range = target_range;
+		Rect2i format_range = target_range;
 		//格式化待查询范围
 		target_range_format(format_range, state.root, state.block_size);
 		//分析获得可查询范围
@@ -253,11 +253,11 @@ namespace engine
 		//父节点指针存储
 		Node* parent_node = &root;
 		//父节点管理范围存储
-		coord2D_range parent_range{};
+		Rect2i parent_range{};
 		//父节点初始化为四叉树管理范围
 		manage_range_calcu(parent_range, state.root, state.size);
 		//子节点管理范围存储
-		coord2D_range child_range{};
+		Rect2i child_range{};
 
 		//递归查找子区块
 		for (int recur_level_now = 0; recur_level_now < recur_level_max;)
@@ -311,7 +311,7 @@ namespace engine
 				if (child_node_recur(parent_node, recur_direct, MIDDLE, stable))
 				{
 					//存储父节点范围
-					coord2D_range old_range = parent_range;
+					Rect2i old_range = parent_range;
 					//更新父节点范围
 					child_node_range_calcu(recur_direct, parent_range, old_range);
 					//更新递归级数

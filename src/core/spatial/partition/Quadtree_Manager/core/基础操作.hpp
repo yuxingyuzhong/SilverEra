@@ -6,10 +6,10 @@ namespace engine
 {
     //直属四叉树查找
     template<typename T>
-    tree_record<T>* Quadtree_Manager<T>::quadtree_inclusion_seek(const coord2D_int& target)
+    tree_record<T>* Quadtree_Manager<T>::quadtree_inclusion_seek(const Point2i& target)
     {
         //临时树边界存储
-        coord2D_range tree_range{};
+        Rect2i tree_range{};
 
         //简化表示路径
         auto& is_cache_enabled = settings.is_cache_enabled;
@@ -93,7 +93,7 @@ namespace engine
 
     //四叉树序列索引查找
     template<typename T>
-    int64_t Quadtree_Manager<T>::quadtree_index_seek(const coord2D_double& root)
+    int64_t Quadtree_Manager<T>::quadtree_index_seek(const Point2d& root)
     {
         //简化表示路径
         auto& tree_group = X_sequence;
@@ -116,7 +116,7 @@ namespace engine
 
     //四叉树创建
     template<typename T>
-    void Quadtree_Manager<T>::quadtree_build(coord2D_double root, uint64_t tree_size)
+    void Quadtree_Manager<T>::quadtree_build(Point2d root, uint64_t tree_size)
     {
         //简化表示路径
         auto& tree_group = X_sequence;
@@ -147,7 +147,7 @@ namespace engine
         //设置新四叉树最小区块单元大小
         new_tree->tree->set_block_size(settings.block_size);
         //设置新四叉树回调管理函数
-        auto manage = [this](const coord2D_double& root, const coord2D_int& seek)->bool
+        auto manage = [this](const Point2d& root, const Point2i& seek)->bool
             { return this->tree_expand_approve(root, seek); };
         new_tree->tree->set_callback_manage(manage);
 
@@ -210,7 +210,7 @@ namespace engine
 
     //卸载——根节点重载
     template<typename T>
-    void Quadtree_Manager<T>::quadtree_unload(const std::vector<coord2D_double>& root_set)
+    void Quadtree_Manager<T>::quadtree_unload(const std::vector<Point2d>& root_set)
     {
         //简化表示路径
         auto& tree_group = X_sequence;

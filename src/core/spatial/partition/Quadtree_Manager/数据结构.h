@@ -25,7 +25,7 @@ namespace engine
 		//四叉树管理器友元声明
 		friend Quadtree_Manager<T>;
 		//四叉树根节点坐标
-		coord2D_double root{ 0.5,0.5 };
+		Point2d root{ 0.5,0.5 };
 		//四叉树大小
 		uint64_t size = 256;
 	};

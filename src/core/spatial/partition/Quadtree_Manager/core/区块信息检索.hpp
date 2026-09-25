@@ -6,8 +6,8 @@ namespace engine
 {
     //查询范围列表修改
     template<typename T>
-    void Quadtree_Manager<T>::target_range_amaed(const coord2D_range& excel_range, bool* ptr_excel,
-        const coord2D_range& target_range)
+    void Quadtree_Manager<T>::target_range_amaed(const Rect2i& excel_range, bool* ptr_excel,
+        const Rect2i& target_range)
     {
         //简化表示路径
         auto& block_size = settings.block_size;
@@ -35,8 +35,8 @@ namespace engine
 
     //查询结果列表元素坐标化
     template<typename T>
-    void Quadtree_Manager<T>::excel_element_to_coord(const coord2D_range& excel_range, const int& element_ID,
-        coord2D_int& receiver)
+    void Quadtree_Manager<T>::excel_element_to_coord(const Rect2i& excel_range, const int& element_ID,
+        Point2i& receiver)
     {
         //表格宽度（列数）
         int width = (excel_range.right - excel_range.left + 1) / settings.block_size;
@@ -50,7 +50,7 @@ namespace engine
 
     //单区块信息查询
     template<typename T>
-    void Quadtree_Manager<T>::seek(tree_chunk_data<T>*& receiver, const coord2D_int& target, bool stable)
+    void Quadtree_Manager<T>::seek(tree_chunk_data<T>*& receiver, const Point2i& target, bool stable)
     {
         //查询四叉树记录
         tree_record<T>* tree_record = nullptr;
@@ -79,7 +79,7 @@ namespace engine
     //范围区块信息查询
     template<typename T>
     void Quadtree_Manager<T>::seek(std::vector<tree_chunk_data<T>*>& receiver,
-        const coord2D_range& target_range, bool stable)
+        const Rect2i& target_range, bool stable)
     {
         //简化表示路径
         auto& tree_group = X_sequence;
@@ -87,7 +87,7 @@ namespace engine
         auto& root = tree_group.front()->root;
         auto& block_size = settings.block_size;
         //可查询范围存储
-        coord2D_range seekable_range = target_range;
+        Rect2i seekable_range = target_range;
         //可查询范围格式化
         baseline_tree->target_range_format(seekable_range, root, block_size);
         //待查询区块数计算
@@ -101,9 +101,9 @@ namespace engine
             return;
 
         //查找坐标存储
-        coord2D_int target{};
+        Point2i target{};
         //四叉树管理范围存储
-        coord2D_range tree_range{};
+        Rect2i tree_range{};
         //四叉树返回结果存储
         std::vector<tree_chunk_data<T>*> buffer{};
 

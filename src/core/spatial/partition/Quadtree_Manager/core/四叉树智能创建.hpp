@@ -6,8 +6,8 @@ namespace engine
 {
     //四叉树智能创建——计算初始包围矩形及最大区块划分参数
     template<typename T>
-    void Quadtree_Manager<T>::prepare_smart_create_params(const std::vector<coord2D_int>& coord_set,
-        coord2D_range& recta_range, int& father_block_num_all,
+    void Quadtree_Manager<T>::prepare_smart_create_params(const std::vector<Point2i>& coord_set,
+        Rect2i& recta_range, int& father_block_num_all,
         int& father_block_size) const
     {
         //初始化包围矩形
@@ -64,20 +64,20 @@ namespace engine
 
     //四叉树智能创建——单个最大区块的深度划分（递归复制子集版，保持原接口）
     template<typename T>
-    void Quadtree_Manager<T>::divide_single_father_block(const std::vector<coord2D_int>& coord_set,
+    void Quadtree_Manager<T>::divide_single_father_block(const std::vector<Point2i>& coord_set,
         int block_left, int block_right, int block_up, int block_down,
         int block_size, int coord_count_in_parent,
-        std::vector<coord2D_double>& node_centers,
+        std::vector<Point2d>& node_centers,
         std::vector<uint64_t>& tree_sizes) const
     {
         // 辅助：判断点是否在当前区块内
-        auto in_block = [&](const coord2D_int& p) -> bool {
+        auto in_block = [&](const Point2i& p) -> bool {
             return p.X >= block_left && p.X <= block_right &&
                 p.Y >= block_down && p.Y <= block_up;
             };
 
         // 收集当前区块内的所有点（复制子集）
-        std::vector<coord2D_int> local_points;
+        std::vector<Point2i> local_points;
         for (const auto& p : coord_set)
             if (in_block(p))
                 local_points.push_back(p);
@@ -132,7 +132,7 @@ namespace engine
         };
 
         // 将 local_points 分配到四个子区块
-        std::vector<coord2D_int> sub_points[4];
+        std::vector<Point2i> sub_points[4];
         for (const auto& p : local_points)
         {
             if (p.X <= block_left + half - 1)   // 左半
@@ -184,7 +184,7 @@ namespace engine
 
     //四叉树智能创建主函数
     template<typename T>
-    void Quadtree_Manager<T>::qurdtree_build_smart(const std::vector<coord2D_int>& coord_set)
+    void Quadtree_Manager<T>::qurdtree_build_smart(const std::vector<Point2i>& coord_set)
     {
         // 智能创建逻辑：
         // 先用一个初始矩形包裹住所有坐标点
@@ -202,7 +202,7 @@ namespace engine
             // —————————— 第一步：准备包围矩形和最大区块参数 ——————————
 
             //点集分布范围存储
-            coord2D_range recta_range{};
+            Rect2i recta_range{};
             //最大区块数量
             int max_block_num_total = 0;
             //最大区块边长
@@ -218,7 +218,7 @@ namespace engine
             //访问索引记录
             int index = 0;
             //中转坐标存储
-            coord2D_int middle_store{};
+            Point2i middle_store{};
             //水平竖直方向包含区块数目计算
             int father_block_num_X = (recta_range.right - recta_range.left + 1) / max_block_size;
 
@@ -239,7 +239,7 @@ namespace engine
             // —————————— 第三步：对可递归区块进行划分 ——————————
 
             //各最大区块管理范围记录
-            coord2D_range block_range{};
+            Rect2i block_range{};
             //简化表示路径
             auto& left = block_range.left;
             auto& right = block_range.right;
@@ -247,7 +247,7 @@ namespace engine
             auto& down = block_range.down;
 
             //待创建四叉树树根节点记录
-            std::vector<coord2D_double> root{};
+            std::vector<Point2d> root{};
             //待创建四叉树大小记录
             std::vector<uint64_t> tree_size{};
 

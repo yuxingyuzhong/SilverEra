@@ -59,19 +59,19 @@ namespace engine
 			//节点
 			Node* node;
 			//节点范围
-			coord2D_range node_range{};
+			Rect2i node_range{};
 			//递归级别
 			int recur_level = 0;
 		};
 		//四叉树状态记录
 		tree_state state;
 		//外界上级管理对象回调管理方法----四叉树扩大行为权限申请
-		std::function<bool(const coord2D_double& root, const coord2D_int& target)> callback;
+		std::function<bool(const Point2d& root, const Point2i& target)> callback;
 
 		// ———— 公开接口 ————
 	public:
 		//构造函数
-		Quadtree(const uint64_t& size = 256, const coord2D_double& root = { 0.5,0.5 });
+		Quadtree(const uint64_t& size = 256, const Point2d& root = { 0.5,0.5 });
 		//析构函数
 		~Quadtree(void);
 
@@ -82,13 +82,13 @@ namespace engine
 		void set_max_size(const uint64_t& size);
 		//四叉树回调管理方法设置
 		void set_callback_manage
-		(const std::function<bool(coord2D_double root, coord2D_int target)>& cb);
+		(const std::function<bool(Point2d root, Point2i target)>& cb);
 
 		// ---- 查询 ----
 		//最小区块单元查找
-		void block_seek(tree_chunk_data<T>*& receiver, const coord2D_int& target, bool stable);
+		void block_seek(tree_chunk_data<T>*& receiver, const Point2i& target, bool stable);
 		//范围区块单元查找
-		void range_seek(std::vector<tree_chunk_data<T>*>& receiver, const coord2D_range& target_range, bool stable);
+		void range_seek(std::vector<tree_chunk_data<T>*>& receiver, const Rect2i& target_range, bool stable);
 
 		// ---- 读取 ----
 		//四叉树状态获取
@@ -104,23 +104,23 @@ namespace engine
 		void recur_level_calcu(int& address_series);
 
 		//递归方向计算
-		void recur_direct_calcu(const coord2D_int& target, const coord2D_range& node, int& recur_direct);
+		void recur_direct_calcu(const Point2i& target, const Rect2i& node, int& recur_direct);
 
 		//子节点范围计算
-		void child_node_range_calcu(const int& recur_direct, coord2D_range& child_range,
-			const coord2D_range& parent_range);
+		void child_node_range_calcu(const int& recur_direct, Rect2i& child_range,
+			const Rect2i& parent_range);
 	public:
 		//四叉树管理范围计算
-		void manage_range_calcu(coord2D_range& receiver,const coord2D_double& root,const uint64_t tree_size);
+		void manage_range_calcu(Rect2i& receiver,const Point2d& root,const uint64_t tree_size);
 
 		//待查询范围格式化
-		void target_range_format(coord2D_range& target_range,const coord2D_double& root, const uint64_t block_size);
+		void target_range_format(Rect2i& target_range,const Point2d& root, const uint64_t block_size);
 
 		//可查询范围计算
-		coord2D_double seekable_range_calcu(const coord2D_range& target_range, coord2D_range& seekable_range);
+		Point2d seekable_range_calcu(const Rect2i& target_range, Rect2i& seekable_range);
 	private:
 		//查询范围关系获取
-		bool range_relation_get(const coord2D_range& target_range, const coord2D_range& node_range);
+		bool range_relation_get(const Rect2i& target_range, const Rect2i& node_range);
 
 		// ———— 结构维护 ————
 	private:
@@ -133,14 +133,14 @@ namespace engine
 		// ———— 查询前置支撑 ————
 	private:
 		//单点查询可行性分析
-		int point_seekable_analyse(const coord2D_int& target);
+		int point_seekable_analyse(const Point2i& target);
 
 		//范围查询可行性分析
-		void range_seekable_analyse(const coord2D_range& format_range, coord2D_range& seekable_range);
+		void range_seekable_analyse(const Rect2i& format_range, Rect2i& seekable_range);
 
 		//递归栈操作
 		void recur_stack_operate(std::vector<recur_record>& recur_stack,
-			Node*& ptr, coord2D_range& range, int& level,
+			Node*& ptr, Rect2i& range, int& level,
 			bool push_back);
 
 	};

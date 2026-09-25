@@ -21,7 +21,7 @@ namespace engine
 		//为避免根节点中心偏移现象
 		//故采用小数坐标
 		//根节点坐标
-		coord2D_double root = { 0.5,0.5 };
+		Point2d root = { 0.5,0.5 };
 		//四叉树大小
 		uint64_t size = 256;
 		//四叉树大小上限
@@ -46,7 +46,7 @@ namespace engine
 		//默认析构函数
 		~tree_chunk_data() {}
 
-		coord2D_double node = { 0.5f, 0.5f };  // 使用 0.5f 强调 float 类型
+		Point2d node = { 0.5f, 0.5f };  // 使用 0.5f 强调 float 类型
 		T* ptr_data = nullptr;
 	};
 }
