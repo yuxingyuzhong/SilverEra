@@ -39,6 +39,13 @@ x86/
 *.tmp
 *.cache
 imgui.ini
+# 日志系统用例的落盘探针：用例结束时会尝试删除，但活跃输出流仍持有文件句柄，
+# Windows 下删除可能失败而残留，故纳入忽略
+engine_log_probe.txt
+
+# 资产目录：目录联接指向 游戏层/assets（单一真源，内容不入库）
+# 不加此规则时 git 会把联接当真实目录递归追踪，产生大量重复条目
+assets/
 
 # Cyrene agent
 .cyrene/

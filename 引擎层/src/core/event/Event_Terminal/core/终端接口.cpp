@@ -4,7 +4,7 @@ namespace engine
 { 
 	//函数包装器内存分配
 	template <typename... Args>
-	bool Terminal_Interface::memory_malloc(shared_ptr<function<void(Args ...)>>& target)
+	bool Terminal_Interface::memory_malloc(unique_ptr<function<void(Args ...)>>& target)
 	{
 		//为目标对象分配内存
 		target.reset(new(nothrow) function<void(Args ...)>);
@@ -14,7 +14,7 @@ namespace engine
 	//函数接口注册
 	template <typename... Args>
 	bool Terminal_Interface::function_register(interface_ID ID, 
-		std::shared_ptr<std::function<void(Args ...)>>& target,
+		std::unique_ptr<std::function<void(Args ...)>>& target,
 		std::function<void(Args ...)> function)
 	{
 		//若内存分配成功
@@ -45,8 +45,8 @@ namespace engine
 		//注册单事件交互接口
 		return function_register(interface_ID::EVENT_INTERACTOR, event_interactor, callback);
 	}
-	//中转站交互入口注册 —— 多事件重载
-	bool Terminal_Interface::event_interactor_register(events_handler callback)
+	//中转站交互入口注册
+	bool Terminal_Interface::events_interactor_register(events_handler callback)
 	{
 		//注册多事件交互接口
 		return function_register(interface_ID::EVENTS_INTERACTOR, events_interactor, callback);
@@ -81,6 +81,7 @@ namespace engine
 	//接口注入验证
 	bool Terminal_Interface::interface_check(const interface_ID& ID)
 	{
+		//匹配已接入接口ID集合
 		for (auto& inerface_ID : map)
 		{
 			//若目标接口ID已注册

@@ -2,12 +2,19 @@
 # 游戏层 —— 构建脚本
 # =============================================================================
 # 位置：白银纪元/游戏层
-# 依赖：系统层（SystemCore）—— 游戏层链接系统层
-# 产物：GameCore 静态库（本层当前尚无源码，目录内出现 .cpp/.c 后自动纳入）
-#       TestEngine 可执行文件（组合根：把引擎层与系统层接在一起）
-# 用法：
-#     - 作为 白银纪元 顶层构建的一部分（顶层 CMakeLists 已 add_subdirectory 本目录）
-#     - 或独立配置：cmake -S <本目录> -B <构建目录>
+# 依赖：系统层（SystemCore）—— 一律链接「已经构建好的」静态库
+# 产物：GameCore 静态库（本层当前尚无源码，src/ 下出现 .cpp/.c 后自动纳入）
+# 用法（本层独立配置与构建）：
+#     cmake -S <本目录> -B <本目录>/out/build/x64-Debug -G Ninja
+#     cmake --build <本目录>/out/build/x64-Debug
+# 前置条件：先构建系统层。本层不拉入任何下层源码，
+#           也没有源码回退路径（层级契约统一：层与层之间一律链接静态库）。
+# 层间契约：
+#     cmake/接入下层.cmake   通用接入函数 byjy_jieru_xiaceng()，系统层 / 测试层 / 本层逐字节相同
+# 说明：
+#     - 本层不产出可执行文件。宿主机制取消后，可执行文件只在测试层产生
+#       （EngineTests.exe）；游戏本体将来需要入口时，再在本层单独开一个可执行目标。
+#     - 静态库输出到构建目录 lib/，供更上层或测试层链接。
 # =============================================================================
 cmake_minimum_required(VERSION 3.20)
 
@@ -26,20 +33,27 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 get_filename_component(PROJECT_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}" ABSOLUTE)
 
 # =============================================================================
-# 1. 依赖：系统层
+# 1. 接入下层：系统层 —— 链接已构建好的静态库
 # =============================================================================
-# 系统层的 CMakeLists 内部会按需把引擎层一并拉入构建，此处无需重复处理。
-if(NOT TARGET SystemCore)
-    set(SYSTEM_LAYER_DIR "${PROJECT_ROOT_DIR}/../系统层")
-    # 依赖层的 CMakeLists 必须存在，否则给出明确报错
-    if(NOT EXISTS "${SYSTEM_LAYER_DIR}/CMakeLists.txt")
-        message(FATAL_ERROR
-            "未找到系统层工程：${SYSTEM_LAYER_DIR}\n"
-            "游戏层依赖系统层，请确认两层目录同级。"
-        )
-    endif()
-    add_subdirectory("${SYSTEM_LAYER_DIR}" "${CMAKE_BINARY_DIR}/系统层")
-endif()
+# 本层只消费下层「已经构建好的」静态库：下层源码不进入本次构建，
+# 也没有任何源码回退路径（层级契约统一）。
+#
+# 库定位顺序由 cmake/接入下层.cmake 的 byjy_jieru_xiaceng() 统一实现：
+#   ① 覆盖变量非空 → 用它；指向的文件不存在则直接报错
+#   ② 留空 → 自动探测 <下层>/out/build/*/lib/<库名>.lib，取时间戳最新的一份
+#   ③ 都没有 → FATAL_ERROR，并提示先构建下层
+#
+# 系统层的对外面已并入引擎层的对外面，接入系统层即同时取得两层的公共路径。
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/接入下层.cmake")
+
+set(BYJY_SYSTEM_LIB_PATH "" CACHE FILEPATH
+    "系统层静态库路径；留空则自动探测 系统层/out/build/*/lib/SystemCore.lib")
+
+byjy_jieru_xiaceng(
+    "${PROJECT_ROOT_DIR}/../系统层/cmake/对外接口.cmake"
+    "BYJY_SYSTEM"
+    "BYJY_SYSTEM_LIB_PATH"
+)
 
 # =============================================================================
 # 2. 源文件收集 —— 游戏逻辑（src/）
@@ -52,7 +66,7 @@ file(GLOB_RECURSE GAME_SOURCES CONFIGURE_DEPENDS
 if(GAME_SOURCES)
     # 排除构建目录下的文件
     string(REPLACE "\\" "/" SAFE_BINARY_DIR "${CMAKE_BINARY_DIR}")
-    string(REGEX REPLACE "([.+*?^$()])" "\\\\1" SAFE_BINARY_REGEX "${SAFE_BINARY_DIR}")
+    string(REGEX REPLACE "([.+*?^$()])" "\\\\\\1" SAFE_BINARY_REGEX "${SAFE_BINARY_DIR}")
     list(FILTER GAME_SOURCES EXCLUDE REGEX "^${SAFE_BINARY_REGEX}/")
 endif()
 
@@ -65,7 +79,7 @@ if(GAME_SOURCES)
     # 公共包含路径：本层根目录
     target_include_directories(GameCore PUBLIC "${PROJECT_ROOT_DIR}")
 
-    # 链接系统层（引擎层的依赖由 SystemCore 继续向上传递）
+    # 链接系统层：包含路径 / 编译定义 / 第三方库由导入目标传递过来
     target_link_libraries(GameCore PUBLIC SystemCore)
 
     # 编译选项与下层保持一致
@@ -89,41 +103,13 @@ else()
 endif()
 
 # =============================================================================
-# 4. 组合根可执行文件 —— TestEngine
+# 4. 可执行文件：本层不产出
 # =============================================================================
-# 主调文件把「事件中转站 + 配置加载器 + 属性槽分发器 + 实体管理器」接在一起，
-# 同时依赖引擎层与系统层，因此其可执行目标放在本层（而非引擎层）。
-#
-# 注意：Engine_Env 解析资源路径的基准是「可执行文件所在目录」（exe_dir / "assets"），
-#       因此 TestEngine.exe 需要与资产目录同级才能正确加载 assets/。
-file(GLOB_RECURSE ENTRY_SOURCES CONFIGURE_DEPENDS
-    "${PROJECT_ROOT_DIR}/主调文件/*.cpp"
-)
-
-if(ENTRY_SOURCES)
-    add_executable(TestEngine ${ENTRY_SOURCES})
-
-    # 链接系统层：其 PUBLIC 依赖会继续把 EngineCore、glfw3.lib、OpenGL 传递上来
-    target_link_libraries(TestEngine PRIVATE SystemCore)
-
-    # 编译选项与下层保持一致
-    if(MSVC)
-        target_compile_options(TestEngine PRIVATE /MP /utf-8)
-        target_compile_definitions(TestEngine PRIVATE _CRT_SECURE_NO_WARNINGS)
-    else()
-        target_compile_options(TestEngine PRIVATE -Wall -Wextra -pedantic)
-        target_compile_definitions(TestEngine PRIVATE _GNU_SOURCE)
-    endif()
-
-    # 输出到本层根目录
-    set_target_properties(TestEngine PROPERTIES
-        RUNTIME_OUTPUT_DIRECTORY "${PROJECT_ROOT_DIR}"
-    )
-
-    # Visual Studio 中作为默认启动工程（方便调试）
-    set_property(DIRECTORY PROPERTY VS_STARTUP_PROJECT "TestEngine")
-
-    message(STATUS "游戏层已添加: TestEngine.exe")
-else()
-    message(WARNING "未找到 '${PROJECT_ROOT_DIR}/主调文件/' 下的 .cpp 文件，将不会生成 TestEngine.exe。")
-endif()
+# 过去这里挂着一个组合根可执行文件（把引擎层与系统层接在一起，从本层启动），
+# 以及「把测试层宿主并入本构建树」的开关。两者都已移除：
+#     1) 宿主机制取消 —— 可执行文件只在测试层产生（EngineTests.exe），
+#        各层不再各自维护一个可运行的入口；
+#     2) 组合根与宿主职责重叠，且会把下层源码拉进本构建树重复编译，
+#        与「层间一律链接已构建静态库」的契约冲突。
+# 现在各层的分工：下层各自构建静态库（引擎层 EngineCore、系统层 SystemCore），
+# 本层构建 GameCore 静态库，测试层构建唯一可执行文件 EngineTests.exe。

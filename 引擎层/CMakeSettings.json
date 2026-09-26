@@ -9,7 +9,10 @@
       "installRoot": "${projectDir}\\out\\install\\${name}",
       "cmakeCommandArgs": "",
       "buildCommandArgs": "",
-      "ctestCommandArgs": ""
+      "ctestCommandArgs": "",
+      "cacheVariables": {
+        "BYJY_JOIN_TEST_HOST": true
+      }
     }
   ]
 }

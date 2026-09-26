@@ -154,9 +154,9 @@ D:\代码存储\代码仓库\游戏引擎\
     │       │       ├── 实体配置模型.h
     │       │       ├── 实体配置模型_内部工具.h
     │       │       └── core/             #     编辑器核心实现
-    │       └── Non_GUI/          #   非图形工具
+    │       └──           #   非图形工具
     │           ├── Auxi_Algorithm/       #     算法辅助（二分查找、路径字符串转换）
-    │           ├── Config_Checker/       #     配置检查器
+    │           ├── Data_Validator/       #     配置检查器
     │           ├── Config_Loader/        #     配置加载器
     │           ├── Engine_Env/           #     引擎环境
     │           ├── Logging/              #     日志系统
@@ -442,12 +442,12 @@ namespace engine {
 
 > 状态：骨架已就位，尚未接入实体系统与空间系统。
 
-### 5. 非图形工具（`src/tools/Non_GUI/`）
+### 5. 非图形工具（`src/tools/`）
 
 | 模块 | 职责 |
 | --- | --- |
 | `Auxi_Algorithm` | 算法辅助：`二分查找.h`、`路径字符串转换.h` |
-| `Config_Checker` | 配置检查器：校验 JSON 配置字段合法性 |
+| `Data_Validator` | 配置检查器：校验 JSON 配置字段合法性 |
 | `Config_Loader` | 配置加载器：启动时加载 `assets/config/` 全部配置并广播事件 |
 | `Engine_Env` | 引擎环境：路径、环境变量等运行环境信息 |
 | `Logging` | 日志系统：引擎运行日志 |
@@ -671,7 +671,7 @@ ImGui 布局保存于 `游戏引擎/imgui.ini`；编辑器封面、立绘与帮�
 
 ### 如何新增一个引擎模块
 
-1. 在 `src/core/` 或 `src/tools/Non_GUI/` 下创建模块目录（含 `局部命名空间使用.h`、核心头文件、`core/` 实现目录）；
+1. 在 `src/core/` 或 `src/tools/` 下创建模块目录（含 `局部命名空间使用.h`、核心头文件、`core/` 实现目录）；
 2. 若需要参与事件通信：持有公开成员 `Event_Terminal event_terminal`；
 3. 在 `common/引擎总头文件.h` 中登记该模块的头文件；
 4. 在 `主调文件.cpp` 中按「注册入口 → `attach()` 接入事件中枢 → 注入所需依赖通道」的顺序初始化；

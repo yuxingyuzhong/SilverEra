@@ -2,11 +2,11 @@
 //预编译头
 #include "common/前置头文件包含.h"
 //获取预定义事件类型
-#include "common/types/事件类型.h"
+#include "../Event/事件.h"
 //获取终端接口
 #include "终端接口.h"
 //获取随机数生成器(用于权限密钥生成)
-#include "src/tools/Non_GUI/Random/随机数生成器.h"
+#include "src/tools/Random/随机数生成器.h"
 
 //游戏引擎命名空间
 namespace engine
@@ -16,7 +16,7 @@ namespace engine
 	{
 	private:
 		//权限密钥
-		int64_t acl_key = 0;
+		std::optional<int64_t> acl_key;
 		//密钥生成器
 		Random_Generator key_generator{};
 
@@ -47,48 +47,31 @@ namespace engine
 		//中转站接入
 		bool attach(const std::string& module_name,const std::vector<event>& needed_events,
 			const int64_t& acl_key);
-		//目标对象接入检查
-		bool check(const std::string& module_name);
-		//目标对象呼叫
-		bool call(const std::string& module_name);
+		//中转站交互 —— 单事件重载
+		bool interact(std::shared_ptr<event> evt, const int64_t& acl_key);
+		//中转站交互 —— 多事件重载
+		bool interact(std::vector<std::shared_ptr<event>> events, const int64_t& acl_key);
 
 		//事件构造
-		std::shared_ptr<event> build();
+		std::shared_ptr<event> build(void);
+		//事件构造
+		std::shared_ptr<event> build(const std::string& category, const std::string& tag);
+		//事件构造
+		std::shared_ptr<event> build(const std::string& sender_object, const std::string& target_object,
+			const std::string& category, const std::string& tag);
 
 		//事件发送 —— 单事件重载
 		bool send(std::shared_ptr<event> evt, const int64_t& acl_key);
 		//事件发送 —— 多事件重载
 		bool send(std::vector<std::shared_ptr<event>> events,const int64_t& acl_key);
-
 		//事件接收 —— 单事件重载
 		void receive(std::shared_ptr<event> evt);
 		//事件接收 —— 多事件重载
 		void receive(std::vector<std::shared_ptr<event>> events);
-
-		//事件查阅 —— 全量查阅
-		const std::vector<std::shared_ptr<event>>& query(const int64_t& acl_key);
-
-		//事件删除 —— 指定事件
+		//事件查阅
+		const std::vector<std::shared_ptr<event>>* query(const int64_t& acl_key);
 		//事件清空
 		bool clear(const int64_t& acl_key);
 
-		//括号重载 —— 事件发送
-		bool operator()(std::shared_ptr<event> evt, const int64_t& acl_key)
-		{
-			return send(evt,acl_key);
-		}
-		bool operator()(std::vector<std::shared_ptr<event>> events, const int64_t& acl_key)
-		{
-			return send(events, acl_key);
-		}
-		//括号重载 —— 事件接收
-		void operator()(std::shared_ptr<event> evt)
-		{
-			receive(evt);
-		}
-		void operator()(std::vector<std::shared_ptr<event>> events)
-		{
-			receive(events);
-		}
 	};
 }
