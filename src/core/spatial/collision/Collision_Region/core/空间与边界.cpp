@@ -30,7 +30,7 @@ namespace engine
 			return;
 
 		//摘除空间边界碰撞对象
-		if (region_boundary.shape)
+		if (region_boundary.mounted_shape())
 			backend.world->removeCollisionObject(&region_boundary.object);
 		//摘除全部碰撞体碰撞对象（碰撞体先于碰撞世界析构）
 		for (auto& pair : mapping)
@@ -53,6 +53,12 @@ namespace engine
 	bool Collision_Region::state_check() const
 	{
 		return is_active;
+	}
+
+	//位移事件读取回调注入(由碰撞代理器注入)
+	void Collision_Region::displacement_reader_set(std::function<bool(uint64_t, Vector3&)> reader)
+	{
+		displacement_reader = std::move(reader);
 	}
 
 	//边界构建
@@ -78,10 +84,16 @@ namespace engine
 		//若已存在空间边界则先卸载
 		boundary_unload();
 
+		//空间边界视作仅含一个几何体的碰撞体
+		Geometry_Part part;
+		//移交网格数据与形状
+		part.mesh = std::move(mesh);
+		part.shape = std::move(shape);
 		//挂载边界形状与网格数据
-		region_boundary.mesh = std::move(mesh);
-		region_boundary.shape = std::move(shape);
-		region_boundary.object.setCollisionShape(region_boundary.shape.get());
+		region_boundary.parts.clear();
+		region_boundary.compound.reset();
+		region_boundary.parts.push_back(std::move(part));
+		region_boundary.object.setCollisionShape(region_boundary.mounted_shape());
 		//空间边界恒为静态对象
 		region_boundary.object.setCollisionFlags(Static_Object_Flag);
 		//空间边界置于原点
@@ -95,14 +107,14 @@ namespace engine
 	void Collision_Region::boundary_unload(void)
 	{
 		//若空间边界尚未构建
-		if (!region_boundary.shape)
+		if (!region_boundary.mounted_shape())
 			return;
 
 		//摘除空间边界碰撞对象
 		backend.world->removeCollisionObject(&region_boundary.object);
 		//卸载空间边界形状与网格数据
 		region_boundary.object.setCollisionShape(nullptr);
-		region_boundary.shape.reset();
-		region_boundary.mesh.reset();
+		region_boundary.compound.reset();
+		region_boundary.parts.clear();
 	}
 }

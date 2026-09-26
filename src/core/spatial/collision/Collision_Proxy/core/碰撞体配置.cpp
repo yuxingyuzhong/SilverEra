@@ -17,32 +17,6 @@ namespace engine
 			receiver = config[field].get<uint64_t>();
 			return true;
 		}
-
-		//三元数组字段读取
-		bool vector_read(const json& config, const string& field, Vector3& receiver)
-		{
-			//字段存在性检查
-			if (!config.is_object() || !config.contains(field))
-				return false;
-
-			try
-			{
-				//读取数组内容
-				vector<double> values = config[field].get<vector<double>>();
-				//数组长度检查
-				if (values.size() != 3)
-					return false;
-				//写入矢量
-				receiver.setValue(values[0], values[1], values[2]);
-			}
-			catch (const std::exception&)
-			{
-				//数组内容非法
-				return false;
-			}
-
-			return true;
-		}
 	}
 
 	//碰撞体设置分发
@@ -90,27 +64,42 @@ namespace engine
 		}
 
 		//若配置中带有几何体
-		if (config.contains("geometry") && config["geometry"].is_object())
+		if (config.contains("geometry"))
 		{
 			//几何配置（补齐碰撞体编号）
-			json geometry = config["geometry"];
-			//写入目标碰撞体编号
-			geometry["collider_ID"] = collider_ID;
-			//设置几何体
-			if (!target->collider_set(geometry))
-				Log::warn("Collision_Proxy::碰撞体({})几何体设置失败", collider_ID);
-		}
+			json geometry;
 
-		//若配置中带有位移向量
-		if (config.contains("displacement"))
-		{
-			//位移向量
-			Vector3 displacement;
-			//读取位移向量
-			if (vector_read(config, "displacement", displacement))
-				collider_set(collider_ID, displacement);
+			//对象形式：几何对象本体即为单个几何体（旧约定：位置与旋转写在几何对象内）
+			if (config["geometry"].is_object())
+			{
+				geometry = config["geometry"];
+				//写入目标碰撞体编号
+				geometry["collider_ID"] = collider_ID;
+			}
+			//数组形式：作为几何体集合收容（基准位置与基准旋转写在配置顶层）
+			else if (config["geometry"].is_array())
+			{
+				//写入目标碰撞体编号
+				geometry["collider_ID"] = collider_ID;
+				//收容几何体集合
+				geometry["geometries"] = config["geometry"];
+				//合并顶层基准位置与基准旋转
+				if (config.contains("position"))
+					geometry["position"] = config["position"];
+				if (config.contains("rotation"))
+					geometry["rotation"] = config["rotation"];
+			}
+			//其余形式视为未提供有效几何体
 			else
-				Log::warn("Collision_Proxy::碰撞体({})字段(displacement)非法", collider_ID);
+				geometry = json{};
+
+			//有效几何配置才下发
+			if (geometry.is_object() && !geometry.empty())
+			{
+				//设置几何体
+				if (!target->collider_set(geometry))
+					Log::warn("Collision_Proxy::碰撞体({})几何体设置失败", collider_ID);
+			}
 		}
 
 		//若配置中带有检测方式

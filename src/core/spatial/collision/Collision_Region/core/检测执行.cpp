@@ -79,53 +79,82 @@ namespace engine
 		//刷新碰撞世界内的包围盒（挂入后尚未执行过检测时需要）
 		backend.world->updateAabbs();
 
+		//---------- 位移重读：按最新位移事件刷新各碰撞体的位移向量 ----------
+		for (auto& [collider_ID, collider] : mapping)
+		{
+			//位移事件读取回调未注入时跳过
+			if (!displacement_reader)
+				continue;
+			//位移向量
+			Vector3 displacement;
+			//若该编号存在位移事件则重读事件配置内的位移向量
+			if (displacement_reader(collider_ID, displacement))
+				collider.displacement_vector = displacement;
+		}
+
 		//---------- 扫掠检测：位移途中命中的碰撞体 ----------
 		for (auto& [collider_ID, collider] : mapping)
 		{
 			//仅处理启用扫掠检测的碰撞体
 			if (!collider.detection_mode.is_swept_volume)
 				continue;
-			//仅处理已挂载且为凸包的形状
-			if (!collider.shape || !collider.shape->isConvex())
+			//位移已作废的碰撞体不再运动
+			if (collider.displacement_invalid)
 				continue;
 			//位移向量为零时无需扫掠
 			if (collider.displacement_vector.length2() <= 0)
 				continue;
 
-			//扫掠起点变换
-			Transform sweep_from = collider.object.getWorldTransform();
-			//扫掠终点变换
-			Transform sweep_to = sweep_from;
-			sweep_to.getOrigin() += collider.displacement_vector;
-
-			//扫掠命中收集器
-			Swept_Collector collector(&collider.object);
-			//执行凸包扫掠
-			backend.world->convexSweepTest(static_cast<const Convex_Shape*>(collider.shape.get()),
-				sweep_from, sweep_to, collector,
-				backend.world->getDispatchInfo().m_allowedCcdPenetration);
-
-			//汇总扫掠命中
-			for (const Collision_Object* hit_object : collector.hits)
+			//碰撞体世界变换
+			const Transform collider_transform = collider.object.getWorldTransform();
+			//逐个几何体部件执行扫掠（仅凸包部件可扫掠）
+			for (const Geometry_Part& part : collider.parts)
 			{
-				//反查命中碰撞体
-				const Collider* hit_collider = Collider::recover(hit_object);
-				//若无法反查则跳过
-				if (!hit_collider)
-					continue;
-				//同组豁免的碰撞对跳过
-				if (collider.exemption_flag != 0 &&
-					collider.exemption_flag == hit_collider->exemption_flag)
+				//仅处理已挂载且为凸包的部件
+				if (!part.shape || !part.shape->isConvex())
 					continue;
 
-				//记录碰撞对
-				pairs.push_back(pair_normalize(collider_ID, hit_collider->ID));
+				//扫掠起点变换（碰撞体世界变换 ∘ 部件相对变换）
+				Transform sweep_from = collider_transform * part.local_transform;
+				//扫掠终点变换
+				Transform sweep_to = sweep_from;
+				sweep_to.getOrigin() += collider.displacement_vector;
+
+				//扫掠命中收集器
+				Swept_Collector collector(&collider.object);
+				//执行凸包扫掠
+				backend.world->convexSweepTest(static_cast<const Convex_Shape*>(part.shape.get()),
+					sweep_from, sweep_to, collector,
+					backend.world->getDispatchInfo().m_allowedCcdPenetration);
+
+				//汇总扫掠命中
+				for (const Collision_Object* hit_object : collector.hits)
+				{
+					//反查命中碰撞体
+					const Collider* hit_collider = Collider::recover(hit_object);
+					//若无法反查则跳过
+					if (!hit_collider)
+						continue;
+					//空间边界不属于碰撞体，不参与碰撞对
+					if (hit_collider == &region_boundary)
+						continue;
+					//同组豁免的碰撞对跳过
+					if (collider.exemption_flag != 0 &&
+						collider.exemption_flag == hit_collider->exemption_flag)
+						continue;
+
+					//记录碰撞对
+					pairs.push_back(pair_normalize(collider_ID, hit_collider->ID));
+				}
 			}
 		}
 
 		//---------- 离散检测：就地平移后求交叉接触 ----------
 		for (auto& [collider_ID, collider] : mapping)
 		{
+			//位移已作废的碰撞体不再运动
+			if (collider.displacement_invalid)
+				continue;
 			//位移向量为零时无需平移
 			if (collider.displacement_vector.length2() <= 0)
 				continue;
@@ -134,13 +163,16 @@ namespace engine
 			Transform transform = collider.object.getWorldTransform();
 			transform.setOrigin(transform.getOrigin() + collider.displacement_vector);
 			collider.object.setWorldTransform(transform);
-			//清零位移向量（位移一次性生效）
-			collider.displacement_vector.setZero();
 		}
 
 		//执行离散碰撞检测
 		backend.world->performDiscreteCollisionDetection();
 
+		/*
+		与空间边界存在接触的碰撞体编号
+		供跨越状态判定使用：接触即视为部分跨越，无接触时再以射线奇偶判定内外。
+		*/
+		vector<uint64_t> boundary_contacts;
 		//碰撞流形数量
 		int manifold_count = backend.dispatcher->getNumManifolds();
 		//逐个流形提取碰撞对
@@ -158,6 +190,17 @@ namespace engine
 			//若任一侧无法反查则跳过
 			if (!collider_A || !collider_B)
 				continue;
+
+			//与空间边界接触：登记接触并跳过碰撞对（空间边界不属于碰撞体）
+			if (collider_A == &region_boundary || collider_B == &region_boundary)
+			{
+				//接触对中位于空间边界另一侧的碰撞体
+				const Collider* contacted = (collider_A == &region_boundary) ? collider_B : collider_A;
+				//登记该碰撞体与空间边界的接触
+				boundary_contacts.push_back(contacted->ID);
+				continue;
+			}
+
 			//同组豁免的碰撞对跳过
 			if (collider_A->exemption_flag != 0 &&
 				collider_A->exemption_flag == collider_B->exemption_flag)
@@ -169,6 +212,8 @@ namespace engine
 
 		//去重后返回检测结果
 		pair_unique(pairs);
+		//跨越状态判定（位置更新后比对旧状态并收集跨越通知）
+		cross_state_update(boundary_contacts);
 		return pairs;
 	}
 }

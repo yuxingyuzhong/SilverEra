@@ -159,10 +159,12 @@ C++20 特性在源码中的使用：`concepts`（`Object_Pool` 的 `requires std
 │   │       │   ├── Collider/碰撞体.h
 │   │       │   ├── Collision_Region/{碰撞空间.h, 局部命名空间使用.h,
 │   │       │   │                    core/{空间与边界.cpp, 碰撞体管理.cpp,
-│   │       │   │                          形状构建.cpp, 检测执行.cpp}}
+│   │       │   │                          形状构建.cpp, 检测执行.cpp,
+│   │       │   │                          跨越通知.cpp}}
 │   │       │   └── Collision_Proxy/{碰撞代理器.h, 局部命名空间使用.h,
 │   │       │                        core/{空间边界与配置.cpp, 空间管理.cpp,
 │   │       │                              碰撞体管理.cpp, 碰撞体配置.cpp,
+│   │       │                              位移管理.cpp, 碰撞响应.cpp,
 │   │       │                              事件交互.cpp}}
 │   │       └── partition/      #     空间分区
 │   │           ├── Quadtree/{四叉树.h, 函数预声明.h, 数据结构.h,
@@ -644,8 +646,8 @@ namespace engine
     using Bvh_Tree = btDbvtBroadphase;    //动态包围体层次树
     using SAP      = btAxisSweep3;        //扫描线剪枝
     //其余别名涵盖：世界对象、三角网格、向量 / 变换 / 四元数 / 标量、
-    //六种形状（盒体 / 球体 / 胶囊 / 圆柱 / 圆锥 / 凸包 / 三角网格）、持久流形、
-    //扫掠回调与扫掠结果等。
+    //六种形状（盒体 / 球体 / 胶囊 / 圆柱 / 圆锥 / 凸包 / 三角网格）、复合形状、
+    //持久流形、扫掠回调与扫掠结果、全命中射线检测回调等。
 
     inline constexpr int Static_Object_Flag = ...;   //静态碰撞对象标记
 
@@ -841,9 +843,9 @@ namespace engine
 
 ### 6.6 碰撞体（`src/core/spatial/collision/Collider/`）
 
-**涉及文件**：`碰撞体.h`（100 行）
+**涉及文件**：`碰撞体.h`（148 行）
 
-**功能**：描述一个碰撞体的全部属性：编号、子弹世界对象、可选的三角网格、形状、位移向量、检测方式、豁免标记、原始几何 JSON。
+**功能**：描述一个碰撞体的全部属性：编号、子弹世界对象、**几何体部件集合**、位移向量与位移作废标记、检测方式、豁免标记、原始几何 JSON。
 
 **对外接口（要点）**：
 
@@ -857,38 +859,51 @@ namespace engine
         uint32_t step_length     = 0;       //扫掠步长
     };
 
+    //几何体部件（碰撞体内一个带相对变换的几何体）
+    struct Geometry_Part
+    {
+        std::unique_ptr<Triangle_Mesh>   mesh;            //网格数据源（先于形状声明）
+        std::unique_ptr<Collision_Shape> shape;           //几何形状
+        Transform                        local_transform; //相对本体原点的变换
+    };
+
     //碰撞体
     struct Collider
     {
-        uint64_t                      ID = 0;              //碰撞体编号
-        Collision_Object              object;              //子弹世界对象
-        std::unique_ptr<Triangle_Mesh> mesh;               //三角网格（先于形状声明）
-        std::unique_ptr<Collision_Shape> shape;            //碰撞形状
-        Vector3                       displacement_vector; //位移向量
-        Detection_Mode                detection_mode;      //检测方式
-        uint64_t                      exemption_flag = 0;  //豁免标记
-        nlohmann::json                geometry;            //原始几何配置
+        uint64_t                         ID = 0;              //碰撞体编号
+        Collision_Object                 object;              //子弹世界对象
+        std::vector<Geometry_Part>       parts;               //几何体部件集合
+        std::unique_ptr<Collision_Shape> compound;            //复合形状（仅部件数 > 1 时持有）
+        Vector3                          displacement_vector; //位移向量
+        bool                             displacement_invalid = false; //位移作废标记
+        Detection_Mode                   detection_mode;      //检测方式
+        uint64_t                         exemption_flag = 0;  //豁免标记
+        nlohmann::json                   geometry;            //原始几何配置
 
-        static Collider* recover(const Collision_Object* object);  //由世界对象反查碰撞体
+        static Collider*  recover(const Collision_Object* object);  //由世界对象反查碰撞体
+        Collision_Shape*  mounted_shape(void) const;                //当前实际挂载到碰撞对象的形状
     };
 }
 ```
 
 **内部实现要点**：
 
-- **声明顺序即生命周期契约**：`mesh` 必须先于 `shape` 声明。原因是有形状（如三角网格形状）引用 mesh 的内存，析构顺序与声明顺序相反，把 `mesh` 放在前面可以保证形状先释放、mesh 后释放，避免悬挂引用。
-- **自指针重挂**：`Collider` 移动（容器扩容等）后内部指针仍需指向新的自身地址，故移动路径上会重新挂接自指针。
+- **几何体集合**：一个碰撞体可容纳多个几何体，各几何体的相对位置由 `Geometry_Part::local_transform` 描述；同一碰撞体的全部几何体共用同一个碰撞对象与世界变换，故整体具有相同的移动方向与速度。
+- **单部件不套复合形状**：`mounted_shape()` 在部件数大于一时返回复合形状（`compound`，各部件形状为其子形状），单部件时直接返回该部件形状本体，无部件时返回空指针。这样既保住凸包判断（凸包检测与扫掠检测要求形状本身是凸的）与旧配置语义，也避免无谓的复合形状开销。
+- **声明顺序即生命周期契约**：`Geometry_Part::mesh` 必须先于 `shape` 声明，`Collider::parts` / `compound` 必须先于其使用者声明。原因是有形状（如三角网格形状）只持有网格指针而不接管所有权，析构顺序与声明顺序相反，把网格放在前面可保证形状先释放、网格后释放，避免悬挂引用。
+- **自指针重挂**：`Collider` 移动（容器扩容等）后内部指针仍需指向新的自身地址，故移动构造与移动赋值都会重新挂接自指针，并清空源对象自指针。
 - **反查机制**：构建时对子弹世界对象调用 `setUserPointer(this)`，检测回调里用 `Collider::recover(const Collision_Object*)` 把世界对象还原成 `Collider*`，从而拿到编号与豁免标记。
 - **六种形状**：盒体、球体、胶囊、圆柱、圆锥、三角网格（OBJ），由 `Collision_Region` 的 `形状构建.cpp` 按 `geometry` JSON 装配。
+- `displacement_invalid` 由碰撞响应判定「停止运动」时置位，作废期间不再施加位移。
 - `exemption_flag` 供业务层标记「本碰撞体不参与某些配对检测」。
 
 ---
 
 ### 6.7 碰撞空间 `Collision_Region`（`src/core/spatial/collision/Collision_Region/`）
 
-**涉及文件**：`碰撞空间.h`（113 行）、`局部命名空间使用.h`、`core/空间与边界.cpp`（95 行）、`core/碰撞体管理.cpp`（250 行）、`core/形状构建.cpp`（288 行）、`core/检测执行.cpp`（155 行）
+**涉及文件**：`碰撞空间.h`（169 行）、`局部命名空间使用.h`、`core/空间与边界.cpp`（120 行）、`core/碰撞体管理.cpp`（304 行）、`core/形状构建.cpp`（412 行）、`core/检测执行.cpp`（219 行）、`core/跨越通知.cpp`（130 行）
 
-**功能**：一个独立的碰撞世界。持有一份 `Collision_Backend`（子弹后端），管理空间边界与其中的全部碰撞体，执行扫掠 + 离散两阶段检测。
+**功能**：一个独立的碰撞世界。持有一份 `Collision_Backend`（子弹后端），管理空间边界与其中的全部碰撞体，执行扫掠 + 离散两阶段检测，并在位置更新后跟踪各碰撞体的跨越状态。
 
 **对外接口（要点）**：
 
@@ -900,6 +915,21 @@ namespace engine
     {
         uint64_t collider_A;   //参与碰撞的碰撞体编号 A
         uint64_t collider_B;   //参与碰撞的碰撞体编号 B
+    };
+
+    //碰撞体相对碰撞空间的跨越状态
+    enum class cross_state
+    {
+        inside,     //完全位于碰撞空间内
+        crossing,   //部分位于碰撞空间内（跨越边界）
+        outside     //完全位于碰撞空间外
+    };
+
+    //跨越通知（碰撞体相对碰撞空间发生跨越状态转移）
+    struct Cross_Notice
+    {
+        uint64_t    collider_ID = 0;   //碰撞体编号
+        std::string kind;              //通知类型：cross / return / exit
     };
 
     //碰撞空间
@@ -921,38 +951,44 @@ namespace engine
 
         uint64_t collider_build(void);                                 //构建碰撞体（分配编号）
         bool collider_unload(uint64_t collider_ID);                    //卸载碰撞体
-        bool collider_set(const uint64_t collider_ID, const Vector3& vector);        //设置位移向量
         bool collider_set(const uint64_t collider_ID, const Detection_Mode& vector); //设置检测方式
         bool collider_set(const uint64_t collider_ID, const uint64_t& vector);       //设置豁免标记
-        bool collider_set(nlohmann::json geometry_config);             //追加几何体
+        bool collider_set(nlohmann::json geometry_config);             //设置几何体（单几何体或几何体集合）
         bool collider_find(uint64_t collider_id) const;                //编号是否存在于本空间
         std::vector<uint64_t> colliders(void);                         //列出全部编号
         bool collider_adopt(uint64_t collider_ID);                     //按编号接管（供空间间转移）
         nlohmann::json collider_geometry(uint64_t collider_ID) const;  //读取几何配置
 
+        void displacement_reader_set(std::function<bool(uint64_t, Vector3&)> reader); //注入位移事件读取回调
+        bool collider_displacement_void(uint64_t collider_ID);         //位移作废（停止运动）
+        bool collider_displacement_replace(uint64_t collider_ID, const Vector3& displacement); //位移改写
+
         std::optional<std::vector<Collision_Result>> detect(void);     //执行碰撞检测
         bool contains(uint64_t collider_ID) const;                     //编号是否归属本空间
+        std::vector<Cross_Notice> cross_notices_take(void);            //取走本帧跨越通知（取出并清空）
     };
 }
 ```
 
 **内部实现要点**：
 
-- 私有成员：`name`（空间名）、`is_active`（活跃标记）、`Number_Allocator ID_allocator`（碰撞体编号分配）、`Collider region_boundary`（空间边界本身也是一个碰撞体）、`Collision_Backend backend`（子弹后端四件套）、`std::unordered_map<uint64_t, Collider> mapping`（编号 → 碰撞体）。
-- **边界即碰撞体**：空间边界复用了 `Collider` 的表示（`region_boundary`），由 `boundary_build(mesh_path)` 按 OBJ 网格路径构建，因此边界与普通碰撞体走同一套检测机制。
+- 私有成员：`name`（空间名）、`is_active`（活跃标记）、`Number_Allocator ID_allocator`（碰撞体编号分配）、`Collider region_boundary`（空间边界本身也是一个碰撞体）、`Collision_Backend backend`（子弹后端四件套）、`std::unordered_map<uint64_t, Collider> mapping`（编号 → 碰撞体）、`std::function<bool(uint64_t, Vector3&)> displacement_reader`（位移事件读取回调）、`std::unordered_map<uint64_t, cross_state> cross_states`（各碰撞体的跨越状态记录）、`std::vector<Cross_Notice> cross_notices`（本帧收集的跨越通知）。
+- **位移来源只有事件通道**：位移向量由碰撞代理器的 `Collision/ColliderDisplacement` 事件提供，代理器经 `displacement_reader_set` 注入读取回调；`detect()` 开头按编号重读最新位移事件写入 `displacement_vector`，**位移持续生效**，直到被新事件覆盖或被响应流程作废，不再有「一次性生效后清零」与直接写位移的接口。
+- **边界即碰撞体**：空间边界复用了 `Collider` 的表示（`region_boundary`），由 `boundary_build(mesh_path)` 按 OBJ 网格路径构建，因此边界与普通碰撞体走同一套检测机制；但边界本身**不参与碰撞对**（见下）。
 - **析构顺序的硬约束**：碰撞体与空间边界都直接持有子弹对象，而碰撞世界内部记录的是这些对象的地址。`~Collision_Region()` 先把全部碰撞对象移出碰撞世界，再让映射与后端析构，否则碰撞世界析构时会解引用已释放的对象。同理，按值搬移（默认移动构造）之后须重新执行边界构建，否则边界会留下悬空指针；`Collision_Proxy` 用 `unique_ptr` 持有空间则不受此影响。
-- **两阶段检测**：`检测执行.cpp` 先做扫掠（对配置了 `is_swept_volume` 的碰撞体按其位移向量与步长推进），再做离散检测；豁免标记在配对阶段生效。
-- **形状构建**：`形状构建.cpp` 按 `geometry` JSON 构建六种形状；三角网格形状会调用 `Mesh_Loader` 读 OBJ，并把顶点数据转成子弹的三角网格。
-- 私有 `collider_seek` / `scalar_read` / `vector_read` / `quaternion_read` / `mesh_shape_build` / `shape_build` 是配置解析与形状装配的内部工具。
+- **两阶段检测**：`检测执行.cpp` 先做扫掠（对配置了 `is_swept_volume` 的碰撞体**逐几何体部件**按 `世界变换 ∘ local_transform` 与位移向量推进），再做离散检测；豁免标记在配对阶段生效。扫掠命中与离散流形两处都会**排除空间边界**，否则边界会被当作编号 0 的普通碰撞体写进碰撞对。
+- **形状构建**：`形状构建.cpp` 的 `geometry_build` 统一处理单几何体形式与几何体集合形式，按 `geometry` JSON 构建六种形状；部件数大于一时分配复合形状并逐部件 `addChildShape`；三角网格形状会调用 `Mesh_Loader` 读 OBJ，并把顶点数据转成子弹的三角网格。
+- **跨越状态跟踪**：`跨越通知.cpp` 在位置更新完毕（离散平移与 `performDiscreteCollisionDetection` 之后）逐碰撞体判定当前态——与边界接触即 `crossing`，否则以碰撞体包围盒中心为探针点对边界做**射线奇偶**包含性判定得出 `inside` / `outside`（射线奇偶用 `AllHits_Ray_Callback` 收集全部交点，交点数为奇数即在内部）。与上一帧记录比对，发生转移即收集一条 `Cross_Notice`：`cross`（首次部分跨越）/ `return`（完全回归）/ `exit`（完全超出跨越），**仅转移发一次、稳态不发**，首次判定只建基准。碰撞体卸载（含转移的源空间卸载）会抹除其状态记录，避免编号回收后被新碰撞体误继承。
+- 私有 `collider_seek` / `scalar_read` / `vector_read` / `quaternion_read` / `mesh_shape_build` / `shape_build` / `geometry_build` / `boundary_point_inside` / `cross_state_update` 是配置解析、形状装配与跨越判定的内部工具。
 - 编号由空间**自行分配**，因此不同空间可以持有相同编号（这正是 `Collision_Proxy` 用多重映射登记归属的原因）。
 
 ---
 
 ### 6.8 碰撞代理器 `Collision_Proxy`（`src/core/spatial/collision/Collision_Proxy/`）
 
-**涉及文件**：`碰撞代理器.h`（91 行）、`局部命名空间使用.h`、`core/空间边界与配置.cpp`（159 行）、`core/空间管理.cpp`（151 行）、`core/碰撞体管理.cpp`（176 行）、`core/碰撞体配置.cpp`（141 行）、`core/事件交互.cpp`（250 行）
+**涉及文件**：`碰撞代理器.h`（119 行）、`局部命名空间使用.h`、`core/空间边界与配置.cpp`（177 行）、`core/空间管理.cpp`（186 行）、`core/碰撞体管理.cpp`（190 行）、`core/碰撞体配置.cpp`（142 行）、`core/位移管理.cpp`（100 行）、`core/碰撞响应.cpp`（229 行）、`core/事件交互.cpp`（290 行）
 
-**功能**：本层对外唯一的碰撞门面。管理多个碰撞空间，维护「碰撞体编号 → 归属空间」映射，订阅配置与碰撞指令事件，发布检测结果事件。
+**功能**：本层对外唯一的碰撞门面。管理多个碰撞空间，维护「碰撞体编号 → 归属空间」映射，订阅配置与碰撞指令事件，执行碰撞响应时序，发布检测结果与跨越通知事件。
 
 **对外接口（要点）**：
 
@@ -978,7 +1014,6 @@ namespace engine
         bool collider_unload(const uint64_t collider_ID, const std::string& region);//卸载
         bool collider_transfer(const uint64_t collider_ID, const std::string& region);//转移
         bool collider_mirror(const uint64_t collider_ID, const std::string& region);  //镜像
-        bool collider_set(const uint64_t collider_ID, const Vector3& vector);        //设置位移
         bool collider_set(const uint64_t collider_ID, const Detection_Mode& mode);   //设置检测方式
         bool collider_set(const uint64_t collider_ID, const uint64_t& flag);         //设置豁免标记
 
@@ -987,7 +1022,7 @@ namespace engine
 }
 ```
 
-**订阅事件清单**（`attach()` 中登记，共 11 条）：
+**订阅事件清单**（`attach()` 中登记，共 13 条）：
 
 | category | tag | 含义 |
 | --- | --- | --- |
@@ -1002,13 +1037,18 @@ namespace engine
 | `Collision` | `ColliderTransfer` | 转移碰撞体归属 |
 | `Collision` | `ColliderMirror` | 镜像碰撞体 |
 | `Collision` | `ColliderSet` | 设置碰撞体参数 |
+| `Collision` | `ColliderDisplacement` | 提供碰撞体位移向量（持续生效） |
+| `Collision` | `ColliderCollisionResponse` | 碰撞体对碰撞事件的响应回复 |
 
 **内部实现要点**：
 
 - `inline static const std::string module_name = "Collision_Proxy"`：既是事件中转站的登记名，也是事件 `sender_object` 标识、以及 `Config/Load` 定向过滤的比对基准。
-- 私有成员：`std::unordered_map<std::string, std::unique_ptr<Collision_Region>> regions`（空间集合）、`std::unordered_multimap<uint64_t, std::string> collider_mapping`（碰撞体编号 → 归属空间名，**多重映射**）、`int64_t acl_key`（事件发送密钥）。
+- 私有成员：`std::unordered_map<std::string, std::unique_ptr<Collision_Region>> regions`（空间集合）、`std::unordered_multimap<uint64_t, std::string> collider_mapping`（碰撞体编号 → 归属空间名，**多重映射**）、`std::unordered_map<uint64_t, nlohmann::json> displacement_events`（位移事件保存，同编号新事件覆盖旧事件）、`std::unordered_map<uint64_t, nlohmann::json> collision_responses`（碰撞响应回复信箱）、`int64_t acl_key`（事件发送密钥）。
 - **多重映射的必要性**：编号由各空间自行分配，同一编号可能被不同空间分别持有，故用 `unordered_multimap`；`collider_set_dispatch()` 会把一次参数设置分发到所有持有该编号的空间。
-- **转移与镜像**：转移把碰撞体从一个空间移交给另一个空间（同时改动归属映射）；镜像在同一空间内按位位移向量生成对称的碰撞体，用于「成对出现」的几何体。
+- **位移与事件通道**：位移向量只由 `Collision/ColliderDisplacement` 事件提供，代理器把事件 `config` 存入 `displacement_events`，并向每个新建空间注入读取回调（`位移管理.cpp`），碰撞空间在更新位置时按编号重读，位移因此**持续生效直至被新事件覆盖**；通用设置指令 `Collision/ColliderSet` 不再承担位移字段。
+- **碰撞响应时序**（`碰撞响应.cpp`）：检测得出碰撞对后逐个发布碰撞事件，立即回查事件终端是否已收到 `Collision/ColliderCollisionResponse` 回复；未收到则先搁置该碰撞体继续处理其余碰撞体，其余处理完后再查一次，仍未收到则重发一次碰撞事件再查，最终仍无回复即日志报错并搁置。响应三选一——`stop`（位移作废，自下一帧起不再推进）、`keep`（位移保持）、`change`（改用回复给出的新位移）。
+- **跨越通知**：`region_detect` 在碰撞响应流程之后、发布 `DetectResult` 之前，取走空间的 `cross_notices_take()` 并逐个发布 `Collision/RegionCrossNotice`，供外界据以把碰撞体迁移到其余碰撞空间；该事件是代理器**自身的出站事件**，不登记订阅（订阅会导致自收自处理）。
+- **转移与镜像**：转移把碰撞体从一个空间移交给另一个空间（同时改动归属映射，并抹除源空间的跨越状态记录）；镜像在同一空间内按位位移向量生成对称的碰撞体，用于「成对出现」的几何体。
 - `attach()` 的顺序是：先 `interface_check(ATTACH_HANDLER)` 确认接入入口已注册 → `event_receiver_register()` 注册接收入口 → 组装 `needed_events` → `event_terminal.attach(module_name, needed_events, acl_key)`。
 - 发布侧统一走 `event_publish(tag, payload)`，内部用 `build(module_name, "", "Collision", tag)` 构造带有发送者标识的广播事件。
 
@@ -1131,11 +1171,11 @@ cmake --build out/build/x64-Debug
 - 事件系统：`event`、`Event_Terminal`、`Terminal_Interface`、`Event_Broker` 全部落地，含 ACL 权限密钥模型与订阅 / 发布投递。
 - 对象系统：`Object` 基类与 `Object_Pool<T, Key>`（双模式内存布局、编号分配回收）。
 - 空间系统：`Point2` / `Rect2` 坐标基元（含 ULP 容差）、四叉树与四叉树管理器（含 64 位尺寸层、原地扩大、智能建树、相邻查找、合并、缓存）。
-- 碰撞系统：`Collider`（六种形状）、`Collision_Region`（后端四件套 + 两阶段检测）、`Collision_Proxy`（多空间门面 + 事件订阅发布 + 编号多重映射）。
+- 碰撞系统：`Collider`（六种形状、几何体集合 + 相对变换 + 复合形状）、`Collision_Region`（后端四件套 + 两阶段检测 + 跨越三态跟踪）、`Collision_Proxy`（多空间门面 + 事件订阅发布 + 编号多重映射 + 位移事件通道 + 碰撞响应时序 + 跨越通知发布）。
 - 工具模块群：上表九个模块全部可用。
 - 层间契约：`cmake/对外接口.cmake` 五个变量齐备；本层可被上层以 `IMPORTED` 目标方式接入。
 - 构建工程化：MSVC + Ninja 下中文对象名归档问题已有 `ar_rsp_bom.ps1` 方案。
-- 测试现状（测试层视角）：22 个测试套件、338 个用例全部通过。
+- 测试现状（测试层视角）：22 个测试套件、349 个用例全部通过。
 
 ### 9.2 尚未完成
 

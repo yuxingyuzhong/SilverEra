@@ -19,6 +19,26 @@ namespace engine
 		uint64_t collider_B = 0;
 	};
 
+	//碰撞体相对碰撞空间的跨越状态
+	enum class cross_state
+	{
+		//完全位于碰撞空间内
+		inside,
+		//部分位于碰撞空间内(跨越边界)
+		crossing,
+		//完全位于碰撞空间外
+		outside
+	};
+
+	//跨越通知(碰撞体相对碰撞空间发生跨越状态转移)
+	struct Cross_Notice
+	{
+		//碰撞体编号
+		uint64_t collider_ID = 0;
+		//通知类型(部分跨越 cross / 完全回归 return / 完全超出跨越 exit)
+		std::string kind;
+	};
+
 	//碰撞空间
 	struct Collision_Region
 	{
@@ -36,6 +56,15 @@ namespace engine
 		Collision_Backend backend{};
 		//碰撞体映射
 		std::unordered_map<uint64_t, Collider> mapping;
+		/*
+		位移事件读取回调（返回false表示该编号尚无位移事件）
+		由碰撞代理器注入，用于在更新碰撞体位置时重读最新位移事件。
+		*/
+		std::function<bool(uint64_t, Vector3&)> displacement_reader;
+		//跨越状态记录（键为碰撞体编号，记录上一次判定所得的跨越状态）
+		std::unordered_map<uint64_t, cross_state> cross_states;
+		//本帧跨越通知（检测时收集，供碰撞代理器发布后取走）
+		std::vector<Cross_Notice> cross_notices;
 	public:
 		//默认构造
 		Collision_Region();
@@ -79,8 +108,6 @@ namespace engine
 		uint64_t collider_build(void);
 		//卸载碰卸载
 		bool collider_unload(uint64_t collider_ID);
-		//碰撞体设置 —— 位移向量重载
-		bool collider_set(const uint64_t collider_ID, const Vector3& vector);
 		//碰撞体设置 —— 检测方式重载
 		bool collider_set(const uint64_t collider_ID, const Detection_Mode& vector);
 		//碰撞体设置 —— 豁免标记重载
@@ -95,11 +122,19 @@ namespace engine
 		bool collider_adopt(uint64_t collider_ID);
 		//碰撞体几何配置读取(编号不存在时返回空配置)
 		nlohmann::json collider_geometry(uint64_t collider_ID) const;
+		//位移事件读取回调注入(由碰撞代理器注入)
+		void displacement_reader_set(std::function<bool(uint64_t, Vector3&)> reader);
+		//碰撞体位移作废(碰撞响应判定为停止运动)
+		bool collider_displacement_void(uint64_t collider_ID);
+		//碰撞体位移改写(碰撞响应判定为继续运动且位移变化)
+		bool collider_displacement_replace(uint64_t collider_ID, const Vector3& displacement);
 
 		//执行碰撞检测
 		std::optional<std::vector<Collision_Result>> detect(void);
 		//碰撞体包含性检测
 		bool contains(uint64_t collider_ID) const;
+		//跨越通知取走(取出并清空本帧收集的跨越通知)
+		std::vector<Cross_Notice> cross_notices_take(void);
 	private:
 		//碰撞体查找
 		Collider* collider_seek(uint64_t collider_ID);
@@ -120,6 +155,15 @@ namespace engine
 		bool shape_build(const nlohmann::json& geometry_config,
 			std::unique_ptr<Collision_Shape>& shape_receiver,
 			std::unique_ptr<Triangle_Mesh>& mesh_receiver);
+		//几何体集合构建(单几何体形式与集合形式统一处理，多部件时装配复合形状)
+		bool geometry_build(const nlohmann::json& geometry_config,
+			std::vector<Geometry_Part>& parts_receiver,
+			std::unique_ptr<Collision_Shape>& compound_receiver);
+
+		//边界点包含性判定(射线奇偶：与边界网格交点数为奇数则点在边界内部)
+		bool boundary_point_inside(const Vector3& point) const;
+		//跨越状态更新(位置更新后比对旧状态并收集跨越通知)
+		void cross_state_update(const std::vector<uint64_t>& boundary_contacts);
 	};
 
 }

@@ -168,16 +168,6 @@ namespace engine
 		return true;
 	}
 
-	//碰撞体设置 —— 位移向量重载
-	bool Collision_Proxy::collider_set(const uint64_t collider_ID, const Vector3& vector)
-	{
-		//对持有该编号的空间施加位移向量设置
-		return collider_set_dispatch(collider_ID, [collider_ID, &vector](Collision_Region& region)
-			{
-				return region.collider_set(collider_ID, vector);
-			});
-	}
-
 	//碰撞体设置 —— 检测方式重载
 	bool Collision_Proxy::collider_set(const uint64_t collider_ID, const Detection_Mode& vector)
 	{

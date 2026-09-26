@@ -29,6 +29,10 @@ namespace engine
 		编号由各碰撞空间自行分配，同一编号可被不同空间分别持有，故使用多重映射。
 		*/
 		std::unordered_multimap<uint64_t, std::string> collider_mapping;
+		//位移事件保存（键为碰撞体编号，同编号的新事件覆盖旧事件）
+		std::unordered_map<uint64_t, nlohmann::json> displacement_events;
+		//碰撞响应回复信箱（键为碰撞体编号，由事件接收入口存件，检测流程取件）
+		std::unordered_map<uint64_t, nlohmann::json> collision_responses;
 	public:
 		//事件终端
 		Event_Terminal event_terminal;
@@ -60,8 +64,6 @@ namespace engine
 		bool collider_transfer(const uint64_t collider_ID, const std::string& region);
 		//碰撞体镜像
 		bool collider_mirror(const uint64_t collider_ID, const std::string& region);
-		//碰撞体设置 —— 位移向量重载
-		bool collider_set(const uint64_t collider_ID, const Vector3& vector);
 		//碰撞体设置 —— 检测方式重载
 		bool collider_set(const uint64_t collider_ID, const Detection_Mode& vector);
 		//碰撞体设置 —— 豁免标记重载
@@ -86,9 +88,26 @@ namespace engine
 		//碰撞体设置分发（对所有持有该编号的空间生效）
 		bool collider_set_dispatch(const uint64_t collider_ID,
 			const std::function<bool(Collision_Region&)>& setter);
-		//碰撞体配置应用（几何体、位移向量、检测方式、豁免标记）
+		//碰撞体配置应用（几何体、检测方式、豁免标记）
 		void collider_config_apply(const std::string& region, uint64_t collider_ID,
 			const nlohmann::json& config);
+
+		//位移事件登记（保存位移事件配置，同编号的新事件覆盖旧事件）
+		void displacement_register(const nlohmann::json& config);
+		//位移向量查询（供碰撞空间在更新位置时读取最新位移事件）
+		bool displacement_seek(const uint64_t collider_ID, Vector3& receiver) const;
+		//位移读取回调注入（碰撞空间经此回调读取最新位移事件）
+		void region_displacement_link(Collision_Region& region);
+
+		//碰撞响应流程（发布碰撞事件、回查回复、搁置重发、施加响应）
+		void collision_protocol(const std::string& region,
+			const std::vector<Collision_Result>& pairs);
+		//碰撞响应登记（回复事件存入本地回复信箱）
+		void collision_response_register(const nlohmann::json& config);
+		//碰撞响应取件（取出并从信箱中移除）
+		bool collision_response_take(const uint64_t collider_ID, nlohmann::json& receiver);
+		//碰撞响应施加（按回复内容作废或改写位移）
+		bool collision_response_apply(const uint64_t collider_ID, const nlohmann::json& response);
 
 		//事件发布
 		bool event_publish(const std::string& tag, const nlohmann::json& payload);

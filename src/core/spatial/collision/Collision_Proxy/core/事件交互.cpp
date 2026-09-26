@@ -60,7 +60,9 @@ namespace engine
 			event("", "", "Collision", "ColliderUnload"),
 			event("", "", "Collision", "ColliderTransfer"),
 			event("", "", "Collision", "ColliderMirror"),
-			event("", "", "Collision", "ColliderSet")
+			event("", "", "Collision", "ColliderSet"),
+			event("", "", "Collision", "ColliderDisplacement"),
+			event("", "", "Collision", "ColliderCollisionResponse")
 		};
 
 		//接入事件中转站
@@ -203,6 +205,22 @@ namespace engine
 			payload["collider_ID"] = *collider_ID;
 			//发布碰撞体构建结果事件
 			event_publish("ColliderBuildResult", payload);
+			return;
+		}
+
+		//位移向量事件
+		if (evt->tag == "ColliderDisplacement")
+		{
+			//保存位移事件（供碰撞空间更新位置时重读）
+			displacement_register(evt->config);
+			return;
+		}
+
+		//碰撞响应事件（回复本地回复信箱，供检测流程回查）
+		if (evt->tag == "ColliderCollisionResponse")
+		{
+			//登记碰撞响应
+			collision_response_register(evt->config);
 			return;
 		}
 

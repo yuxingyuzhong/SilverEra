@@ -15,6 +15,22 @@ namespace engine
 		uint32_t step_length = 0;
 	};
 
+	//几何体部件（碰撞体内一个带相对变换的几何体）
+	struct Geometry_Part
+	{
+		/*
+		网格接口（网格形状的数据源）
+		注意：btBvhTriangleMeshShape 只持有网格指针而不接管所有权，
+		      故网格数据必须与形状同生共死；此处按成员声明顺序的逆序析构，
+		      网格先于形状声明，因此析构时形状先释放、网格后释放。
+		*/
+		std::unique_ptr<Triangle_Mesh> mesh;
+		//几何形状（由部件持有，碰撞对象只挂载指针）
+		std::unique_ptr<Collision_Shape> shape;
+		//相对变换（描述该几何体在碰撞体内的空间位置关系）
+		Transform local_transform = Transform::getIdentity();
+	};
+
 	//碰撞体
 	struct Collider
 	{
@@ -23,17 +39,23 @@ namespace engine
 		//碰撞对象
 		Collision_Object object;
 		/*
-		网格接口（网格形状的数据源）
-		注意：btBvhTriangleMeshShape 只持有网格指针而不接管所有权，
-		      故网格数据必须与形状同生共死；此处按成员声明顺序的逆序析构，
-		      网格先于形状声明，因此析构时形状先释放、网格后释放。
+		几何体部件集合
+		属于同一碰撞体的所有几何体共用同一个碰撞对象与世界变换，
+		故整体具有相同的移动方向与速度；各几何体的相对位置由 local_transform 描述。
 		*/
-		std::unique_ptr<Triangle_Mesh> mesh;
-		//几何形状（由碰撞体持有，碰撞对象只挂载指针）
-		std::unique_ptr<Collision_Shape> shape;
+		std::vector<Geometry_Part> parts;
+		/*
+		复合形状（仅当部件数大于一时持有）
+		多部件时碰撞对象挂载复合形状，各部件形状作为其子形状；
+		单部件时为空，碰撞对象直接挂载该部件形状本体，
+		以免复合形状破坏凸包判断与扫掠检测，并保持旧配置语义不变。
+		*/
+		std::unique_ptr<Collision_Shape> compound;
 
 		//位移向量
 		Vector3 displacement_vector{ 0.0f,0.0f,0.0f };
+		//位移作废标记（碰撞响应判定为停止运动时置位，作废期间不再施加位移）
+		bool displacement_invalid = false;
 		//检测方式
 		Detection_Mode detection_mode;
 		//豁免标记
@@ -66,9 +88,10 @@ namespace engine
 			//搬移编号与数据成员
 			ID = other.ID;
 			object = other.object;
-			mesh = std::move(other.mesh);
-			shape = std::move(other.shape);
+			parts = std::move(other.parts);
+			compound = std::move(other.compound);
 			displacement_vector = other.displacement_vector;
+			displacement_invalid = other.displacement_invalid;
 			detection_mode = other.detection_mode;
 			exemption_flag = other.exemption_flag;
 			geometry = std::move(other.geometry);
@@ -89,9 +112,10 @@ namespace engine
 			//搬移编号与数据成员
 			ID = other.ID;
 			object = other.object;
-			mesh = std::move(other.mesh);
-			shape = std::move(other.shape);
+			parts = std::move(other.parts);
+			compound = std::move(other.compound);
 			displacement_vector = other.displacement_vector;
+			displacement_invalid = other.displacement_invalid;
 			detection_mode = other.detection_mode;
 			exemption_flag = other.exemption_flag;
 			geometry = std::move(other.geometry);
@@ -102,6 +126,16 @@ namespace engine
 			other.object.setUserPointer(nullptr);
 
 			return *this;
+		}
+
+		//挂载形状获取（未挂载任何几何体时返回空指针）
+		Collision_Shape* mounted_shape(void) const
+		{
+			//多部件时挂载复合形状
+			if (compound)
+				return compound.get();
+			//单部件时直接挂载该部件形状本体
+			return parts.empty() ? nullptr : parts.front().shape.get();
 		}
 
 		//反查获取封装结构

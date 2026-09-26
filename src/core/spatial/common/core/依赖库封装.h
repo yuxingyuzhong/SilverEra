@@ -56,6 +56,8 @@ namespace engine
 	using Cylinder_Shape = btCylinderShape;
 	//圆锥形状别名
 	using Cone_Shape = btConeShape;
+	//复合形状别名
+	using Compound_Shape = btCompoundShape;
 	//三角形网格别名
 	using Triangle_Mesh = btTriangleMesh;
 	//持久流形别名
@@ -65,6 +67,9 @@ namespace engine
 	using Swept_Callback = Collision_World::ConvexResultCallback;
 	//扫掠检测命中结果别名
 	using Swept_Result = Collision_World::LocalConvexResult;
+
+	//全命中射线检测回调别名(用于空间边界的包含性判定)
+	using AllHits_Ray_Callback = Collision_World::AllHitsRayResultCallback;
 
 	//静态碰撞对象标记
 	inline constexpr int Static_Object_Flag = btCollisionObject::CF_STATIC_OBJECT;

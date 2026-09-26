@@ -30,7 +30,11 @@ namespace engine
 				return false;
 			}
 			else
+			{
+				//注入位移读取回调（碰撞空间更新位置时向本代理器重读位移事件）
+				region_displacement_link(*regions[region]);
 				return true;
+			}
 		}
 	}
 
@@ -75,6 +79,22 @@ namespace engine
 		{
 			Log::warn("Collision_Proxy::碰撞空间({})未激活，检测未执行", region);
 			return false;
+		}
+
+		//碰撞响应流程（发布碰撞事件并按回复调整位移）
+		collision_protocol(region, *detected);
+
+		//跨越通知发布（通知外界碰撞体已首次部分跨越/完全回归/完全超出跨越本空间）
+		for (const Cross_Notice& notice : target->cross_notices_take())
+		{
+			//跨越通知载荷
+			json cross_payload;
+			//写入空间名称、碰撞体编号与通知类型
+			cross_payload["region"] = region;
+			cross_payload["collider_ID"] = notice.collider_ID;
+			cross_payload["state"] = notice.kind;
+			//发布跨越通知事件
+			event_publish("RegionCrossNotice", cross_payload);
 		}
 
 		//检测结果载荷

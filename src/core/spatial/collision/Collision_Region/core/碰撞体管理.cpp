@@ -50,38 +50,23 @@ namespace engine
 			return false;
 		}
 
-		//若目标碰撞体已挂载形状
-		if (target->shape)
+		//若目标碰撞体已挂载几何体
+		if (target->mounted_shape())
 		{
 			//摘除碰撞对象
 			backend.world->removeCollisionObject(&target->object);
-			//卸载形状与网格数据
+			//卸载复合形状、部件形状与网格数据
 			target->object.setCollisionShape(nullptr);
-			target->shape.reset();
-			target->mesh.reset();
+			target->compound.reset();
+			target->parts.clear();
 		}
 
 		//注销碰撞体
 		mapping.erase(collider_ID);
+		//抹除跨越状态记录（避免编号回收后被新碰撞体误继承）
+		cross_states.erase(collider_ID);
 		//回收碰撞体编号
 		ID_allocator.recycle(collider_ID);
-		return true;
-	}
-
-	//碰撞体设置 —— 位移向量重载
-	bool Collision_Region::collider_set(const uint64_t collider_ID, const Vector3& vector)
-	{
-		//查找目标碰撞体
-		Collider* target = collider_seek(collider_ID);
-		//若目标碰撞体不存在
-		if (!target)
-		{
-			Log::warn("Collision_Region::待设置碰撞体({})不存在", collider_ID);
-			return false;
-		}
-
-		//写入位移向量
-		target->displacement_vector = vector;
 		return true;
 	}
 
@@ -145,10 +130,10 @@ namespace engine
 			return false;
 		}
 
-		//构建几何形状与其网格数据源
-		unique_ptr<Collision_Shape> shape;
-		unique_ptr<Triangle_Mesh> mesh;
-		if (!shape_build(geometry_config, shape, mesh))
+		//构建几何体部件集合与复合形状
+		vector<Geometry_Part> parts;
+		unique_ptr<Collision_Shape> compound;
+		if (!geometry_build(geometry_config, parts, compound))
 		{
 			Log::warn("Collision_Region::碰撞体({})几何配置非法", collider_ID);
 			return false;
@@ -157,56 +142,96 @@ namespace engine
 		//世界变换基准（未指定位置或旋转时沿用当前变换）
 		Transform transform = target->object.getWorldTransform();
 
-		//若指定了初始位置
+		/*
+		基准位置
+		单几何体形式下即为该几何体的世界位置；集合形式下为碰撞体的基准位置，
+		各几何体的相对位置由几何体集合元素内的 position 字段描述。
+		*/
 		if (geometry_config.contains("position"))
 		{
-			//初始位置
+			//基准位置
 			Vector3 position;
-			//读取初始位置
+			//读取基准位置
 			if (!vector_read(geometry_config, "position", position))
 			{
 				Log::warn("Collision_Region::碰撞体({})字段(position)非法", collider_ID);
 				return false;
 			}
-			//写入初始位置
+			//写入基准位置
 			transform.setOrigin(position);
 		}
-		//若指定了初始旋转
+		//基准旋转（语义同基准位置）
 		if (geometry_config.contains("rotation"))
 		{
-			//初始旋转
+			//基准旋转
 			Quaternion rotation;
-			//读取初始旋转
+			//读取基准旋转
 			if (!quaternion_read(geometry_config, "rotation", rotation))
 			{
 				Log::warn("Collision_Region::碰撞体({})字段(rotation)非法", collider_ID);
 				return false;
 			}
-			//写入初始旋转
+			//写入基准旋转
 			transform.setRotation(rotation);
 		}
 
-		//若目标碰撞体已挂载形状则先摘除
-		if (target->shape)
+		//若目标碰撞体已挂载几何体则先摘除
+		if (target->mounted_shape())
 		{
 			//摘除碰撞对象
 			backend.world->removeCollisionObject(&target->object);
-			//卸载形状与网格数据
+			//卸载旧复合形状、旧部件形状与网格数据
 			target->object.setCollisionShape(nullptr);
-			target->shape.reset();
-			target->mesh.reset();
+			target->compound.reset();
+			target->parts.clear();
 		}
 
-		//挂载几何形状与网格数据
-		target->mesh = std::move(mesh);
-		target->shape = std::move(shape);
-		target->object.setCollisionShape(target->shape.get());
+		//挂载几何体集合
+		target->parts = std::move(parts);
+		target->compound = std::move(compound);
+		target->object.setCollisionShape(target->mounted_shape());
 		//写入世界变换
 		target->object.setWorldTransform(transform);
 		//几何配置留档（供空间间镜像与转移复用）
 		target->geometry = geometry_config;
 		//加入碰撞世界
 		backend.world->addCollisionObject(&target->object);
+		return true;
+	}
+
+	//碰撞体位移作废(碰撞响应判定为停止运动)
+	bool Collision_Region::collider_displacement_void(uint64_t collider_ID)
+	{
+		//查找目标碰撞体
+		Collider* target = collider_seek(collider_ID);
+		//若目标碰撞体不存在
+		if (!target)
+		{
+			Log::warn("Collision_Region::待作废位移的碰撞体({})不存在", collider_ID);
+			return false;
+		}
+
+		//置位位移作废标记(作废期间检测不再施加位移)
+		target->displacement_invalid = true;
+		return true;
+	}
+
+	//碰撞体位移改写(碰撞响应判定为继续运动且位移变化)
+	bool Collision_Region::collider_displacement_replace(uint64_t collider_ID, const Vector3& displacement)
+	{
+		//查找目标碰撞体
+		Collider* target = collider_seek(collider_ID);
+		//若目标碰撞体不存在
+		if (!target)
+		{
+			Log::warn("Collision_Region::待改写位移的碰撞体({})不存在", collider_ID);
+			return false;
+		}
+
+		//写入新的位移向量
+		target->displacement_vector = displacement;
+		//解除位移作废(改写后继续运动)
+		target->displacement_invalid = false;
 		return true;
 	}
 
