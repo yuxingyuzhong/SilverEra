@@ -31,16 +31,16 @@ namespace engine
     bool Entity_Manager::config_field_parse(const json& config)
     {
         //若实体类型字段无效
-        if (!Config_Checker::field_check<string>(config, "type"))
+        if (!Data_Validator::field_check<string>(config, "type"))
             return false;
         //若属性槽配置脚本加载路径无效
-        if (!Config_Checker::field_check<string>(config, "prop_load_path"))
+        if (!Data_Validator::field_check<string>(config, "prop_load_path"))
             return false;
         //若行为脚本加载路径字段无效
-        if (!Config_Checker::field_check<string>(config, "action_load_path"))
+        if (!Data_Validator::field_check<string>(config, "action_load_path"))
             return false;
         //若订阅事件列表字段无效
-        if (!Config_Checker::field_check<vector<pair<string, string>>>(config, "needed_events"))
+        if (!Data_Validator::field_check<vector<pair<string, string>>>(config, "needed_events"))
             return false;
 
         //若所有检查均通过

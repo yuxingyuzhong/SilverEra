@@ -62,7 +62,11 @@ namespace engine
 		//注册事件信息
 		//register_event(action);
 		//注册事件集合引用
-		action.set("event_set", ref(event_terminal.query(acl_key)));
+		//事件终端按指针返回事件集合（密钥不合法时为空），此处仅在有效时注册引用
+		const vector<shared_ptr<event>>* event_set_ptr = event_terminal.query(acl_key);
+		//若事件集合可用则注册引用
+		if (event_set_ptr)
+			action.set("event_set", ref(*event_set_ptr));
 
 		//注册事件发送函数
 		action.set_function("send", [this](shared_ptr<event> evt)->void

@@ -20,19 +20,19 @@ namespace engine
     bool Prop_Effect::config_read(const json& config)
     {
         //若加载路径字段无效
-        if (!Config_Checker::field_check<string>(config, "path"))
+        if (!Data_Validator::field_check<string>(config, "path"))
             return false;
         //若归属字段无效
-        if (!Config_Checker::field_check<uint64_t>(config, "inclusion"))
+        if (!Data_Validator::field_check<uint64_t>(config, "inclusion"))
             return false;
         //若名称字段无效
-        if (!Config_Checker::field_check<string>(config, "name"))
+        if (!Data_Validator::field_check<string>(config, "name"))
             return false;
 
         //获取加载路径
         path config_path = Engine_Env::absolute_path_get(config["path"].get<string>());
         //若加载路径无效
-        if (!Config_Checker::path_check(config_path))
+        if (!Data_Validator::path_check(config_path))
             return false;
         //若读取路径有效
         else
@@ -79,7 +79,11 @@ namespace engine
         //注册配置事件信息
         //register_event(script);
         //注册事件集合引用
-        script.set("event_set", ref(event_terminal.query(acl_key)));
+        //事件终端按指针返回事件集合（密钥不合法时为空），此处仅在有效时注册引用
+        const vector<shared_ptr<event>>* event_set_ptr = event_terminal.query(acl_key);
+        //若事件集合可用则注册引用
+        if (event_set_ptr)
+            script.set("event_set", ref(*event_set_ptr));
 
         //注册事件发送函数
         script.set_function("send", [this](shared_ptr<event> evt)->void

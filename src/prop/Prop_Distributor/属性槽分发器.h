@@ -5,8 +5,8 @@
 #include "src/core/event/Event/事件.h"
 //获取事件终端
 #include "src/core/event/Event_Terminal/事件终端.h"
-//获取配置检查器
-#include "src/tools/Config_Checker/配置检查器.h"
+//获取数据校验器
+#include "src/tools/Data_Validator/数据校验器.h"
 //获取C++类型Lua端注册方法
 #include "common/external/Sol2/sol类型注册.h"
 //获取预定义sol2库类型别名

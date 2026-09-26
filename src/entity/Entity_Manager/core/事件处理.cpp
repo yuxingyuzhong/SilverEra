@@ -76,7 +76,7 @@ namespace engine
             auto& config = evt->config;
 
             //若实体类型字段无效
-            if (!Config_Checker::field_check<string>(config, "target_type"))
+            if (!Data_Validator::field_check<string>(config, "target_type"))
                 return;
             //获取目标实体类型
             string target_type = config["target_type"];
@@ -109,7 +109,7 @@ namespace engine
             else if (tag == "Unload")
             {
                 //若待卸载实体ID集合字段无效
-                if (!Config_Checker::field_check<vector<int64_t>>(config, "ID_set"))
+                if (!Data_Validator::field_check<vector<int64_t>>(config, "ID_set"))
                     return;
                 //获取待卸载实体ID
                 vector<uint64_t> ID_set = config["ID_set"];
@@ -121,14 +121,14 @@ namespace engine
             else if (tag == "Act")
             {
                 //若待卸载实体ID集合字段无效
-                if (!Config_Checker::field_check<vector<int64_t>>(config, "ID_set"))
+                if (!Data_Validator::field_check<vector<int64_t>>(config, "ID_set"))
                     return;
             }
             //若为其他事件
             else
             {
                 //若目标实体ID字段无效
-                if (!Config_Checker::field_check<string>(config, "target_ID"))
+                if (!Data_Validator::field_check<string>(config, "target_ID"))
                     return;
                 //获取目标实体ID
                 uint64_t target_ID = config["target_ID"];
