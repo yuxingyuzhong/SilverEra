@@ -126,6 +126,10 @@ namespace engine
     template<typename T>
     void Quadtree_Manager<T>::quadtree_build(Point2d root, uint64_t tree_size)
     {
+        //若树边长不大于区块单元则为退化树（无可寻址叶子），拒绝创建
+        if (tree_size <= settings.block_size)
+            return;
+
         //简化表示路径
         auto& tree_group = X_sequence;
 

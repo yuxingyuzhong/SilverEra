@@ -367,19 +367,22 @@ TEST_F(Quadtree_Test, 非稳定模式命中已建立路径)
 	EXPECT_EQ(hit->ptr_data, created->ptr_data);
 }
 
-//单点检索：边长等于区块大小时直接落在根区块
-TEST_F(Quadtree_Test, 最小树直接落在根区块)
+//退化树防御：边长等于区块大小时查询直接返回
+//退化树（无可寻址叶子）在管理器建树入口已被拦截
+//此处验证裸用 Quadtree 陷入该非法状态时查询不崩溃、不产出结果
+TEST_F(Quadtree_Test, 退化树查询直接返回)
 {
 	//边长为 16 的退化为单区块的四叉树
 	engine::Quadtree<int> tree(16, { 0.5, 0.5 });
 	//检索结果
 	std::shared_ptr<engine::Tree_Chunk_Data<int>> receiver;
-	//查询任意树内坐标
+	//单点查询不产出结果
 	tree.block_seek(receiver, { 0, 0 }, true);
-	ASSERT_NE(receiver, nullptr);
-	//管理范围为 [-7,8]，区块中心为 0.5
-	EXPECT_DOUBLE_EQ(receiver->node.X, 0.5);
-	EXPECT_DOUBLE_EQ(receiver->node.Y, 0.5);
+	EXPECT_EQ(receiver, nullptr);
+	//范围查询同样不产出结果
+	std::vector<std::shared_ptr<engine::Tree_Chunk_Data<int>>> range_receiver{};
+	tree.range_seek(range_receiver, { -7, 8, 8, -7 }, true);
+	EXPECT_TRUE(range_receiver.empty());
 }
 
 // ———— 越界与扩大联动 ————

@@ -145,13 +145,16 @@ namespace engine
 	void Quadtree<T>::block_seek(std::shared_ptr<Tree_Chunk_Data<T>>& receiver, const Point2l& target,
 		bool stable, std::shared_ptr<T> adopt)
 	{
+		//防御：边长不大于区块单元的退化树没有可寻址叶子
+		//管理器建树入口已拦截此类树，此处仅防裸用 Quadtree 时的非法状态
+		//防御置于分析之前：退化树经扩大分析会产生半初始化结构
+		if (state.size <= state.block_size)
+			return;
+
 		//四叉树上限上限临时存储
 		uint64_t max_size = state.max_size;
 		//最大检测次数存储
 		int exam_time_max = 1;
-		//若四叉树大小为零
-		if (state.size <= 0)
-			return;
 		//计算最大检测次数
 		for (; (max_size /= 2) / state.size > 1;)
 			exam_time_max++;
@@ -179,44 +182,6 @@ namespace engine
 		int recur_level_max = 0;
 		//递归总级数计算
 		recur_level_calcu(recur_level_max);
-
-		//若四叉树仅有一级(边长等于区块单元)
-		//则根节点本身即为唯一区块，无需向下递归
-		if (recur_level_max == 0)
-		{
-			//若根节点尚未持有区块数据(分支 0 为子节点指针列表)
-			if (root.data.index() == 0)
-			{
-				//非稳定查询模式下不创建区块
-				if (stable == false)
-					return;
-				//为根节点分配区块数据
-				root.data.template emplace<1>(std::shared_ptr<T>(new(std::nothrow) T()));
-			}
-			//若调用方提供待收养数据，则由根区块直接接管所有权
-			if (adopt != nullptr)
-				std::get<1>(root.data) = adopt;
-
-			//若接收器为空则分配结果对象
-			if (receiver == nullptr)
-				receiver = std::shared_ptr<Tree_Chunk_Data<T>>(new(std::nothrow) Tree_Chunk_Data<T>);
-			//若内存分配失败则返回
-			if (receiver == nullptr)
-				return;
-
-			//根节点管理范围存储
-			Rect2l root_range{};
-			//计算根节点管理范围
-			manage_range_calcu(root_range, state.root, state.size);
-			//记录查询结果
-			//结果对象与根区块数据共享所有权
-			receiver->ptr_data = std::get<1>(root.data);
-			//范围边界为 64 位整数，故以双精度求中点避免精度损失
-			receiver->node.X = static_cast<double>(root_range.left + root_range.right) / 2.0;
-			receiver->node.Y = static_cast<double>(root_range.down + root_range.up) / 2.0;
-			//查找结束
-			return;
-		}
 
 		//获取根节点指针
 		Node* child_node = &root;
@@ -275,6 +240,12 @@ namespace engine
 	void Quadtree<T>::range_seek(std::vector<std::shared_ptr<Tree_Chunk_Data<T>>>& receiver,
 		const Rect2l& target_range, bool stable)
 	{
+		//防御：边长不大于区块单元的退化树没有可寻址叶子
+		//管理器建树入口已拦截此类树，此处仅防裸用 Quadtree 时的非法状态
+		//防御置于分析之前：退化树经扩大分析会产生半初始化结构
+		if (state.size <= state.block_size)
+			return;
+
 		//可查询范围存储
 		Rect2l seekable_range{};
 		//格式化待查询范围存储
