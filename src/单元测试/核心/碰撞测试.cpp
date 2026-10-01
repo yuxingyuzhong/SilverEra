@@ -48,7 +48,7 @@ static std::string temp_mesh_write(void)
 {
 	//写入路径
 	std::filesystem::path mesh_path =
-		engine::Engine_Env::exe_dir_get() / engine::string_to_path(temp_mesh_name);
+		engine::Engine_Env::exe_dir_get() / engine::detail::string_to_path(temp_mesh_name);
 
 	//打开临时网格文件
 	std::ofstream file(mesh_path);
@@ -82,7 +82,7 @@ static std::string temp_boundary_write(const std::string& region, const std::str
 {
 	//写入路径
 	std::filesystem::path config_path =
-		engine::Engine_Env::exe_dir_get() / engine::string_to_path(temp_boundary_name);
+		engine::Engine_Env::exe_dir_get() / engine::detail::string_to_path(temp_boundary_name);
 
 	//打开临时边界配置文件
 	std::ofstream file(config_path);
@@ -384,7 +384,7 @@ TEST_F(Collision_Region_Test, 空间边界构建与卸载)
 	//清理临时网格文件
 	std::error_code ec;
 	std::filesystem::remove(
-		engine::Engine_Env::exe_dir_get() / engine::string_to_path(mesh_name), ec);
+		engine::Engine_Env::exe_dir_get() / engine::detail::string_to_path(mesh_name), ec);
 }
 
 //碰撞空间：跨越状态转移时收集通知，稳态不重复（接触判部分跨越，射线奇偶判内外）
@@ -452,7 +452,7 @@ TEST_F(Collision_Region_Test, 跨越状态转移与通知收集)
 	//清理临时网格文件
 	std::error_code ec;
 	std::filesystem::remove(
-		engine::Engine_Env::exe_dir_get() / engine::string_to_path(mesh_name), ec);
+		engine::Engine_Env::exe_dir_get() / engine::detail::string_to_path(mesh_name), ec);
 }
 
 //碰撞代理器测试夹具
@@ -1291,7 +1291,7 @@ TEST_F(Collision_Proxy_Test, 跨越通知事件发布)
 	//清理临时网格与边界配置文件
 	std::error_code ec;
 	std::filesystem::remove(
-		engine::Engine_Env::exe_dir_get() / engine::string_to_path(mesh_name), ec);
+		engine::Engine_Env::exe_dir_get() / engine::detail::string_to_path(mesh_name), ec);
 	std::filesystem::remove(
-		engine::Engine_Env::exe_dir_get() / engine::string_to_path(boundary_name), ec);
+		engine::Engine_Env::exe_dir_get() / engine::detail::string_to_path(boundary_name), ec);
 }
