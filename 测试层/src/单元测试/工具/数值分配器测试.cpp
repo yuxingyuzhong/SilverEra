@@ -171,3 +171,181 @@ TEST_F(Number_Allocator_Test, 回收复用不产生重复持有)
 	EXPECT_NE(reused, first);
 	EXPECT_NE(reused, third);
 }
+
+//分配方式：调用设置接口的默认参数后回到后进先出
+TEST_F(Number_Allocator_Test, 分配方式可复位为默认后进先出)
+{
+	//先切换为先进先出
+	allocator.allocate_order_set(engine::Allocate_Order::FIFO);
+	//再以默认参数复位分配方式
+	allocator.allocate_order_set();
+	//依次回收两个数值
+	allocator.recycle(1u);
+	allocator.recycle(2u);
+	//默认后进先出应先取回后回收的 2
+	EXPECT_EQ(allocator.get(), 2u);
+	//再取回先回收的 1
+	EXPECT_EQ(allocator.get(), 1u);
+}
+
+//先进先出：多个回收值按先进先出取回
+TEST_F(Number_Allocator_Test, 先进先出回收弹出顺序)
+{
+	//切换为先进先出分配方式
+	allocator.allocate_order_set(engine::Allocate_Order::FIFO);
+	//依次回收 1 与 2
+	allocator.recycle(1u);
+	allocator.recycle(2u);
+	//应先取回先回收的 1
+	EXPECT_EQ(allocator.get(), 1u);
+	//再取回后回收的 2
+	EXPECT_EQ(allocator.get(), 2u);
+}
+
+//分配方式切换：弹出顺序随当前设置改变
+TEST_F(Number_Allocator_Test, 先进先出与后进先出切换)
+{
+	//连续回收 1、2、3
+	allocator.recycle(1u);
+	allocator.recycle(2u);
+	allocator.recycle(3u);
+	//切换为先进先出后应取回最小的 1
+	allocator.allocate_order_set(engine::Allocate_Order::FIFO);
+	EXPECT_EQ(allocator.get(), 1u);
+	//切换为后进先出后应取回最大的 3
+	allocator.allocate_order_set(engine::Allocate_Order::LIFO);
+	EXPECT_EQ(allocator.get(), 3u);
+	//剩余数值按后进先出取回 2
+	EXPECT_EQ(allocator.get(), 2u);
+}
+
+//设置起点：从起点开始连续递增分配多个数值
+TEST_F(Number_Allocator_Test, 设置起点后连续递增分配)
+{
+	//把分配起点设为 1000
+	allocator.set(1000);
+	//连续取出四个数值应依次递增
+	EXPECT_EQ(allocator.get(), 1000u);
+	EXPECT_EQ(allocator.get(), 1001u);
+	EXPECT_EQ(allocator.get(), 1002u);
+	EXPECT_EQ(allocator.get(), 1003u);
+}
+
+//回收复用：取出的数值可被再次回收
+TEST_F(Number_Allocator_Test, 回收值取出后可再次回收)
+{
+	//取出数值
+	const uint64_t value = allocator.get();
+	//回收刚取出的数值成功
+	EXPECT_TRUE(allocator.recycle(value));
+	//再次取出后回收集合已空
+	EXPECT_EQ(allocator.get(), value);
+	//此时该数值已不在回收池，可再次回收
+	EXPECT_TRUE(allocator.recycle(value));
+}
+
+//批量回收：乱序含重复的数值被排序并去重后后进先出取回
+TEST_F(Number_Allocator_Test, 批量回收排序并去重)
+{
+	//批量回收含重复且乱序的数值
+	allocator.recycle(std::vector<uint64_t>{ 5u, 1u, 3u, 1u, 5u });
+	//去重排序后后进先出应先取回最大的 5
+	EXPECT_EQ(allocator.get(), 5u);
+	//再取回 3
+	EXPECT_EQ(allocator.get(), 3u);
+	//最后取回 1
+	EXPECT_EQ(allocator.get(), 1u);
+	//回收池已空，继续分配新的游标数值 0
+	EXPECT_EQ(allocator.get(), 0u);
+}
+
+//重置：分配游标归零并清空回收池
+TEST_F(Number_Allocator_Test, 重置后计数归零并连续递增)
+{
+	//连续取出三个数值使游标前进
+	allocator.get();
+	allocator.get();
+	allocator.get();
+	//回收一个数值进入回收池
+	allocator.recycle(2u);
+	//重置分配器
+	allocator.reset();
+	//重置后应从零重新连续递增
+	EXPECT_EQ(allocator.get(), 0u);
+	EXPECT_EQ(allocator.get(), 1u);
+	EXPECT_EQ(allocator.get(), 2u);
+}
+
+//游标交互：回收池优先分配且不影响新数值游标
+TEST_F(Number_Allocator_Test, 回收池与数值游标交互)
+{
+	//把起点设为 10
+	allocator.set(10);
+	//取出 10、11，游标前进到 12
+	EXPECT_EQ(allocator.get(), 10u);
+	EXPECT_EQ(allocator.get(), 11u);
+	//回收 10
+	EXPECT_TRUE(allocator.recycle(10u));
+	//回收池优先返回 10
+	EXPECT_EQ(allocator.get(), 10u);
+	//回收池耗尽后游标未被回收影响，返回 12
+	EXPECT_EQ(allocator.get(), 12u);
+}
+
+//空池分配：连续分配数值严格递增
+TEST_F(Number_Allocator_Test, 空池连续分配严格递增)
+{
+	//把起点设为 7
+	allocator.set(7);
+	//记录上一次取值
+	uint64_t previous = allocator.get();
+	//起点值应为 7
+	EXPECT_EQ(previous, 7u);
+	//连续分配九次并校验严格递增
+	for (uint64_t i = 0; i < 9; ++i)
+	{
+		//取出下一个数值
+		const uint64_t current = allocator.get();
+		//后取数值应比前取数值大 1
+		EXPECT_EQ(current, previous + 1);
+		//更新上一次取值
+		previous = current;
+	}
+}
+
+//回收池耗尽：回收值用尽后回到游标递增分配
+TEST_F(Number_Allocator_Test, 回收池耗尽后继续递增分配)
+{
+	//取出 0、1，游标前进到 2
+	allocator.get();
+	allocator.get();
+	//回收 0 与 1
+	allocator.recycle(0u);
+	allocator.recycle(1u);
+	//后进先出先取回 1
+	EXPECT_EQ(allocator.get(), 1u);
+	//再取回 0
+	EXPECT_EQ(allocator.get(), 0u);
+	//回收池耗尽后游标未回退，继续返回 2
+	EXPECT_EQ(allocator.get(), 2u);
+}
+
+//极值边界：起点为最大数值时分配后回绕到零
+TEST_F(Number_Allocator_Test, 起点为最大数值时分配后回绕)
+{
+	//把起点设为 uint64_t 最大值
+	allocator.set(UINT64_MAX);
+	//首个数值应为最大值本身
+	EXPECT_EQ(allocator.get(), UINT64_MAX);
+	//游标自增溢出后回绕为 0
+	EXPECT_EQ(allocator.get(), 0u);
+}
+
+//极值边界：回收最大数值后可原样取回
+TEST_F(Number_Allocator_Test, 回收最大数值后原样取回)
+{
+	//回收 uint64_t 最大值
+	EXPECT_TRUE(allocator.recycle(UINT64_MAX));
+	//分配应原样返回该最大值
+	EXPECT_EQ(allocator.get(), UINT64_MAX);
+}

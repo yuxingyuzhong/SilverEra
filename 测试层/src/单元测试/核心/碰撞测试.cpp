@@ -1295,3 +1295,169 @@ TEST_F(Collision_Proxy_Test, 跨越通知事件发布)
 	std::filesystem::remove(
 		engine::Engine_Env::exe_dir_get() / engine::detail::string_to_path(boundary_name), ec);
 }
+
+//碰撞代理器：空名称空间的构建与卸载全程不崩溃
+TEST_F(Collision_Proxy_Test, 空名称空间构建与卸载不崩溃)
+{
+	//空名称空间构建不应崩溃
+	bool 构建结果 = false;
+	EXPECT_NO_THROW(构建结果 = proxy.region_build(""));
+	//空名称可正常登记
+	EXPECT_TRUE(构建结果);
+	//空名称空间默认未激活，检测不执行
+	EXPECT_FALSE(proxy.region_detect(""));
+	//空名称空间可设置活跃性
+	EXPECT_TRUE(proxy.region_state_set("", true));
+	//空名称空间卸载不应崩溃
+	bool 卸载结果 = false;
+	EXPECT_NO_THROW(卸载结果 = proxy.region_unload(""));
+	//空名称可正常卸载
+	EXPECT_TRUE(卸载结果);
+}
+
+//碰撞代理器：卸载空间时级联注销其全部碰撞体编号
+TEST_F(Collision_Proxy_Test, 空间卸载级联注销碰撞体)
+{
+	//构建空间与两个碰撞体
+	ASSERT_TRUE(proxy.region_build("级联空间"));
+	std::optional<uint64_t> collider_A = proxy.collider_build("级联空间");
+	std::optional<uint64_t> collider_B = proxy.collider_build("级联空间");
+	ASSERT_TRUE(collider_A.has_value());
+	ASSERT_TRUE(collider_B.has_value());
+
+	//卸载空间应级联注销所属碰撞体
+	ASSERT_TRUE(proxy.region_unload("级联空间"));
+	//空间已不存在，剩余编号的设置失败
+	engine::Detection_Mode detection_mode;
+	EXPECT_FALSE(proxy.collider_set(*collider_A, detection_mode));
+	//空间已不存在，剩余编号的卸载失败
+	EXPECT_FALSE(proxy.collider_unload(*collider_B, "级联空间"));
+}
+
+//碰撞代理器：碰撞体重复卸载失败且卸载后编号设置失败
+TEST_F(Collision_Proxy_Test, 碰撞体重复卸载后设置失败)
+{
+	//构建空间与碰撞体
+	ASSERT_TRUE(proxy.region_build("重复卸载空间"));
+	std::optional<uint64_t> collider_ID = proxy.collider_build("重复卸载空间");
+	ASSERT_TRUE(collider_ID.has_value());
+
+	//首次卸载成功
+	EXPECT_TRUE(proxy.collider_unload(*collider_ID, "重复卸载空间"));
+	//重复卸载同一碰撞体失败
+	EXPECT_FALSE(proxy.collider_unload(*collider_ID, "重复卸载空间"));
+	//已注销编号的豁免标记设置失败
+	EXPECT_FALSE(proxy.collider_set(*collider_ID, static_cast<uint64_t>(1)));
+	//归属空间不存在时卸载失败
+	EXPECT_FALSE(proxy.collider_unload(*collider_ID, "未构建空间"));
+}
+
+//碰撞代理器：未构建空间时设置碰撞体失败且不崩溃
+TEST_F(Collision_Proxy_Test, 未构建空间时设置碰撞体不崩溃)
+{
+	//检测方式参数
+	engine::Detection_Mode detection_mode;
+	detection_mode.is_swept_volume = true;
+	detection_mode.step_length = 8;
+
+	//未登记编号的检测方式设置不崩溃
+	EXPECT_NO_THROW(proxy.collider_set(9999u, detection_mode));
+	//未登记编号的检测方式设置失败
+	EXPECT_FALSE(proxy.collider_set(9999u, detection_mode));
+	//未登记编号的豁免标记设置失败
+	EXPECT_FALSE(proxy.collider_set(9999u, static_cast<uint64_t>(2)));
+	//未构建空间无法构建碰撞体
+	EXPECT_FALSE(proxy.collider_build("未构建空间").has_value());
+	//未构建空间的检测与状态设置均失败
+	EXPECT_FALSE(proxy.region_detect("未构建空间"));
+	EXPECT_FALSE(proxy.region_state_set("未构建空间", true));
+}
+
+//碰撞代理器：经事件下发的空几何配置被忽略，碰撞体不进入碰撞世界
+TEST_F(Collision_Proxy_Test, 空几何配置经事件被忽略)
+{
+	//已发送事件集合
+	std::vector<std::shared_ptr<engine::Event>> sent;
+	//接入入口接到的接收通道
+	std::function<void(std::shared_ptr<engine::Event>)> entry;
+
+	//注册发送通道与接入入口
+	proxy.event_terminal->event_sender_register(
+		[&sent](std::shared_ptr<engine::Event> evt) { sent.push_back(evt); });
+	proxy.event_terminal->attach_handler_register(
+		[&entry](auto&&, auto&&, auto&& event_entry) { entry = event_entry; });
+	proxy.attach();
+	ASSERT_TRUE(static_cast<bool>(entry));
+
+	//空间构建事件载荷
+	nlohmann::json region_payload = nlohmann::json::object();
+	region_payload["region"] = "空几何空间";
+
+	//经事件构建空间与两个碰撞体
+	entry(make_event("RegionBuild", region_payload));
+	entry(make_event("ColliderBuild", region_payload));
+	entry(make_event("ColliderBuild", region_payload));
+	ASSERT_EQ(sent.size(), 2u);
+	const uint64_t collider_A = sent[0]->config["collider_ID"].get<uint64_t>();
+	const uint64_t collider_B = sent[1]->config["collider_ID"].get<uint64_t>();
+
+	//经事件把碰撞体A设置为空几何配置（应被忽略）
+	nlohmann::json set_A = collider_payload("空几何空间", collider_A);
+	set_A["geometry"] = nlohmann::json::object();
+	entry(make_event("ColliderSet", set_A));
+
+	//经事件把碰撞体B设置为位于原点的合法盒体
+	nlohmann::json set_B = collider_payload("空几何空间", collider_B);
+	set_B["geometry"] = box_config(collider_B, 0.0);
+	set_B["geometry"].erase("collider_ID");
+	entry(make_event("ColliderSet", set_B));
+
+	//经事件激活空间
+	nlohmann::json state_payload = region_payload;
+	state_payload["active"] = true;
+	entry(make_event("RegionState", state_payload));
+
+	//检测：A 未进入碰撞世界，仅有 B 参与，无碰撞对
+	sent.clear();
+	entry(make_event("RegionDetect", region_payload));
+	ASSERT_FALSE(sent.empty());
+	ASSERT_EQ(sent.back()->tag, "DetectResult");
+	EXPECT_TRUE(sent.back()->config["results"].empty());
+}
+
+//碰撞空间：形状字段类型非法与缺字段一律被拒
+TEST_F(Collision_Region_Test, 形状字段类型非法被拒)
+{
+	//构建碰撞体
+	const uint64_t collider_ID = region.collider_build();
+
+	//形状类型为数字（非字符串）被拒
+	nlohmann::json bad_type = nlohmann::json::object();
+	bad_type["collider_ID"] = collider_ID;
+	bad_type["type"] = 123;
+	EXPECT_FALSE(region.collider_set(bad_type));
+
+	//盒体缺少半长字段被拒
+	nlohmann::json box_no_extent = bad_type;
+	box_no_extent["type"] = "box";
+	EXPECT_FALSE(region.collider_set(box_no_extent));
+
+	//盒体半长字段为字符串（非数组）被拒
+	nlohmann::json box_bad_extent = box_no_extent;
+	box_bad_extent["half_extent"] = "非法半长";
+	EXPECT_FALSE(region.collider_set(box_bad_extent));
+
+	//几何体集合字段为对象（非数组）被拒
+	nlohmann::json bad_set = nlohmann::json::object();
+	bad_set["collider_ID"] = collider_ID;
+	bad_set["geometries"] = nlohmann::json::object();
+	EXPECT_FALSE(region.collider_set(bad_set));
+
+	//盒体碰撞边距为负被拒
+	nlohmann::json box_bad_margin = box_config(collider_ID, 0.0);
+	box_bad_margin["margin"] = -1.0;
+	EXPECT_FALSE(region.collider_set(box_bad_margin));
+
+	//全部非法配置均不得使碰撞体进入碰撞世界
+	EXPECT_FALSE(region.contains(collider_ID));
+}

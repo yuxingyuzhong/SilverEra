@@ -187,3 +187,172 @@ TEST_F(Random_Generator_Test, 无种子构造可用)
 	//两次取值应不同
 	EXPECT_NE(first, second);
 }
+
+//同种子多次重置：每次重新初始化都重现同一序列
+TEST_F(Random_Generator_Test, 同种子重置多次序列一致)
+{
+	//固定种子生成器
+	engine::Random_Generator<int64_t> generator(12345);
+	//记录基准序列
+	std::vector<int64_t> baseline;
+	for (int i = 0; i < 30; ++i)
+		baseline.push_back(generator());
+	//三轮重新初始化并比对
+	for (int round = 0; round < 3; ++round)
+	{
+		//以同一种子重置
+		generator.pcg32_seed_init(12345);
+		//逐位比对基准序列
+		for (int i = 0; i < 30; ++i)
+			EXPECT_EQ(generator(), baseline[i]);
+	}
+}
+
+//邻近种子：相差一的种子序列仍应不同
+TEST_F(Random_Generator_Test, 邻近种子序列差异)
+{
+	//相邻种子生成器
+	engine::Random_Generator<int64_t> first(100);
+	engine::Random_Generator<int64_t> second(101);
+	//差异标记
+	bool different = false;
+	//比较前二十个取值
+	for (int i = 0; i < 20; ++i)
+	{
+		if (first() != second())
+			different = true;
+	}
+	//相差一的种子不应产生相同序列
+	EXPECT_TRUE(different);
+}
+
+//小区间端点：零一两端均应可被取到
+TEST_F(Random_Generator_Test, 小区间端点均可达)
+{
+	//固定种子生成器
+	engine::Random_Generator<int64_t> generator(321);
+	//取值命中标记
+	std::set<int64_t> hit;
+	//抽样五百次
+	for (int i = 0; i < 500; ++i)
+		hit.insert(generator(0, 1));
+	//下界与上界都应出现
+	EXPECT_TRUE(hit.count(0) == 1);
+	EXPECT_TRUE(hit.count(1) == 1);
+}
+
+//负数单点区间：上下界相等时返回该负值
+TEST_F(Random_Generator_Test, 负数单点区间返回定值)
+{
+	//固定种子生成器
+	engine::Random_Generator<int64_t> generator(322);
+	//重复抽样一百次
+	for (int i = 0; i < 100; ++i)
+		EXPECT_EQ(generator(-3, -3), -3);
+}
+
+//全负大区间：两端均为负数且跨度较大时仍受约束
+TEST_F(Random_Generator_Test, 全负大区间受约束)
+{
+	//固定种子生成器
+	engine::Random_Generator<int64_t> generator(323);
+	//重复抽样一千次
+	for (int i = 0; i < 1000; ++i)
+	{
+		//获取全负大区间随机数
+		const int64_t value = generator(-1000, -1);
+		//下界检查
+		EXPECT_GE(value, -1000);
+		//上界检查
+		EXPECT_LE(value, -1);
+	}
+}
+
+//大跨度区间：跨度放大后仍不越界
+TEST_F(Random_Generator_Test, 大跨度区间受约束)
+{
+	//固定种子生成器
+	engine::Random_Generator<int64_t> generator(324);
+	//大跨度下界
+	const int64_t low = -4000000000000000000LL;
+	//大跨度上界
+	const int64_t high = 4000000000000000000LL;
+	//重复抽样一百次
+	for (int i = 0; i < 100; ++i)
+	{
+		//获取大跨度随机数
+		const int64_t value = generator(low, high);
+		//下界检查
+		EXPECT_GE(value, low);
+		//上界检查
+		EXPECT_LE(value, high);
+	}
+}
+
+//小范围直方：每个取值都应被覆盖
+TEST_F(Random_Generator_Test, 小范围直方覆盖全部取值)
+{
+	//固定种子生成器
+	engine::Random_Generator<int64_t> generator(325);
+	//取值命中标记
+	std::set<int64_t> hit;
+	//抽样五千次
+	for (int i = 0; i < 5000; ++i)
+		hit.insert(generator(0, 4));
+	//零至四共五个取值应全部出现
+	EXPECT_EQ(hit.size(), 5u);
+}
+
+//种子切换重现：切换后再切回原种子应重现原序列
+TEST_F(Random_Generator_Test, 种子切换后原种子重现)
+{
+	//原种子生成器
+	engine::Random_Generator<int64_t> generator(8080);
+	//记录原种子首批取值
+	std::vector<int64_t> origin_values;
+	for (int i = 0; i < 20; ++i)
+		origin_values.push_back(generator());
+	//切换到其它种子并丢弃若干取值
+	generator.pcg32_seed_init(6060);
+	for (int i = 0; i < 20; ++i)
+		(void)generator();
+	//切回原种子
+	generator.pcg32_seed_init(8080);
+	//序列应与原种子首批完全一致
+	for (int i = 0; i < 20; ++i)
+		EXPECT_EQ(generator(), origin_values[i]);
+}
+
+//整型类型：三十二位有符号类型同样受区间约束
+TEST_F(Random_Generator_Test, 三十二位整型区间受约束)
+{
+	//固定种子生成器
+	engine::Random_Generator<int32_t> generator(326);
+	//重复抽样一千次
+	for (int i = 0; i < 1000; ++i)
+	{
+		//获取三十二位区间随机数
+		const int32_t value = generator(-5, 5);
+		//下界检查
+		EXPECT_GE(value, -5);
+		//上界检查
+		EXPECT_LE(value, 5);
+	}
+}
+
+//大区间颠倒：逆序传入大区间仍受约束
+TEST_F(Random_Generator_Test, 大区间颠倒自动交换)
+{
+	//固定种子生成器
+	engine::Random_Generator<int64_t> generator(327);
+	//重复抽样一千次
+	for (int i = 0; i < 1000; ++i)
+	{
+		//以颠倒顺序传入大区间
+		const int64_t value = generator(100, -100);
+		//下界检查
+		EXPECT_GE(value, -100);
+		//上界检查
+		EXPECT_LE(value, 100);
+	}
+}

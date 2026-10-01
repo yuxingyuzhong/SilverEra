@@ -227,3 +227,110 @@ TEST_F(Mesh_Loader_Test, 面顶点不足三个时加载失败)
 	//清理临时网格文件
 	mesh_remove(mesh_path);
 }
+
+//空文件：不含任何内容时加载失败
+TEST_F(Mesh_Loader_Test, 空文件加载失败)
+{
+	//写入空内容的临时网格文件
+	const std::string mesh_path = mesh_write("空网格.obj", "");
+
+	//网格数据
+	engine::Mesh_Data mesh_data;
+	//加载网格应失败
+	EXPECT_FALSE(engine::Mesh_Loader::load_obj(mesh_path, mesh_data));
+	//失败后顶点输出应为空
+	EXPECT_TRUE(mesh_data.vertices.empty());
+	//失败后索引输出应为空
+	EXPECT_TRUE(mesh_data.indices.empty());
+
+	//清理临时网格文件
+	mesh_remove(mesh_path);
+}
+
+//目录路径：非普通文件时加载失败
+TEST_F(Mesh_Loader_Test, 目录路径加载失败)
+{
+	//网格数据
+	engine::Mesh_Data mesh_data;
+	//以临时文件目录本身作为网格路径
+	EXPECT_FALSE(engine::Mesh_Loader::load_obj(temp_dir, mesh_data));
+}
+
+//零起始索引：OBJ 索引自一起算，零索引越界加载失败
+TEST_F(Mesh_Loader_Test, 零起始面索引越界失败)
+{
+	//临时网格文件（面索引含零）
+	const std::string mesh_path = mesh_write("零索引网格.obj",
+		"v 0.0 0.0 0.0\nv 1.0 0.0 0.0\nv 0.0 1.0 0.0\nf 0 1 2\n");
+
+	//网格数据
+	engine::Mesh_Data mesh_data;
+	//加载网格应失败
+	EXPECT_FALSE(engine::Mesh_Loader::load_obj(mesh_path, mesh_data));
+
+	//清理临时网格文件
+	mesh_remove(mesh_path);
+}
+
+//负索引越界：超出顶点范围时加载失败
+TEST_F(Mesh_Loader_Test, 负索引越界时加载失败)
+{
+	//临时网格文件（负索引超出顶点范围）
+	const std::string mesh_path = mesh_write("负越界网格.obj",
+		"v 0.0 0.0 0.0\nv 1.0 0.0 0.0\nv 0.0 1.0 0.0\nf -4 -2 -1\n");
+
+	//网格数据
+	engine::Mesh_Data mesh_data;
+	//加载网格应失败
+	EXPECT_FALSE(engine::Mesh_Loader::load_obj(mesh_path, mesh_data));
+
+	//清理临时网格文件
+	mesh_remove(mesh_path);
+}
+
+//立方体网格：八个顶点与六个四边形面的计数正确
+TEST_F(Mesh_Loader_Test, 立方体顶点与面计数正确)
+{
+	//临时网格文件（立方体：八个顶点六个四边形面）
+	const std::string mesh_path = mesh_write("立方体网格.obj",
+		"v -1.0 -1.0 -1.0\nv 1.0 -1.0 -1.0\nv 1.0 1.0 -1.0\nv -1.0 1.0 -1.0\n"
+		"v -1.0 -1.0 1.0\nv 1.0 -1.0 1.0\nv 1.0 1.0 1.0\nv -1.0 1.0 1.0\n"
+		"f 1 2 3 4\nf 5 8 7 6\nf 1 5 6 2\nf 2 6 7 3\nf 3 7 8 4\nf 4 8 5 1\n");
+
+	//网格数据
+	engine::Mesh_Data mesh_data;
+	//加载网格
+	ASSERT_TRUE(engine::Mesh_Loader::load_obj(mesh_path, mesh_data));
+
+	//八个顶点共二十四个分量
+	EXPECT_EQ(mesh_data.vertices.size(), 24u);
+	//六个四边形面各三角化为两个三角面，共三十六个索引
+	EXPECT_EQ(mesh_data.indices.size(), 36u);
+
+	//清理临时网格文件
+	mesh_remove(mesh_path);
+}
+
+//重复加载：同一文件两次加载结果一致
+TEST_F(Mesh_Loader_Test, 重复加载同一文件结果一致)
+{
+	//临时网格文件
+	const std::string mesh_path = mesh_write("重复加载网格.obj",
+		"v 0.0 0.0 0.0\nv 1.0 0.0 0.0\nv 1.0 1.0 0.0\nv 0.0 1.0 0.0\nf 1 2 3 4\n");
+
+	//第一次加载结果
+	engine::Mesh_Data first_data;
+	//第二次加载结果
+	engine::Mesh_Data second_data;
+	//两次加载均应成功
+	ASSERT_TRUE(engine::Mesh_Loader::load_obj(mesh_path, first_data));
+	ASSERT_TRUE(engine::Mesh_Loader::load_obj(mesh_path, second_data));
+
+	//两次顶点数据应完全一致
+	EXPECT_EQ(first_data.vertices, second_data.vertices);
+	//两次索引数据应完全一致
+	EXPECT_EQ(first_data.indices, second_data.indices);
+
+	//清理临时网格文件
+	mesh_remove(mesh_path);
+}

@@ -292,3 +292,185 @@ TEST_F(测试选择模型测试, 控制台解析越界编号)
     //区间右端超出套件总数非法
     EXPECT_FALSE(engine::解析控制台选择("2-9", 3, 勾选表));
 }
+
+//空选择集：反选后全部用例转为勾选
+TEST_F(测试选择模型测试, 空选择集反选后全部勾选)
+{
+    //建立模型并清空全部勾选
+    engine::Test_Selection_Model 模型;
+    模型.suite_tree_build();
+    模型.all_clear();
+    //清空后确无勾选
+    EXPECT_EQ(模型.checked_case_count(), 0u);
+
+    //反选后全部用例转为勾选
+    模型.check_invert();
+    EXPECT_EQ(模型.checked_case_count(), 模型.case_count());
+    //每个套件均回到全选
+    for (std::size_t i = 0; i < 模型.suite_count(); ++i)
+        EXPECT_TRUE(模型.suite_all_checked(i));
+}
+
+//重复选择：重复勾选同一用例与整组均幂等
+TEST_F(测试选择模型测试, 重复选择幂等)
+{
+    //建立模型
+    engine::Test_Selection_Model 模型;
+    模型.suite_tree_build();
+
+    //取一个多用例套件并清空
+    std::size_t 序号 = 0;
+    ASSERT_TRUE(找多用例套件(模型, 序号));
+    模型.all_clear();
+
+    //重复勾选同一条用例
+    模型.case_check_set(序号, 0, true);
+    模型.case_check_set(序号, 0, true);
+    //重复勾选后仍只有一条被勾选
+    EXPECT_EQ(模型.checked_case_count(), 1u);
+    //该套件处于半选态
+    EXPECT_TRUE(模型.suite_half_checked(序号));
+
+    //重复整组勾选
+    模型.suite_check_set(序号, true);
+    模型.suite_check_set(序号, true);
+    //整组勾选数等于该套件用例数
+    EXPECT_EQ(模型.checked_case_count(), 模型.suite_table_get()[序号].case_list.size());
+    //该套件处于全选态
+    EXPECT_TRUE(模型.suite_all_checked(序号));
+}
+
+//越界索引：越界查询为假、越界设置为空操作且不改动勾选总数
+TEST_F(测试选择模型测试, 越界索引操作被忽略)
+{
+    //建立模型
+    engine::Test_Selection_Model 模型;
+    模型.suite_tree_build();
+
+    //越界套件序号与越界用例序号
+    const std::size_t 越界套件 = 模型.suite_count();
+    const std::size_t 越界用例 = 模型.case_count() + 1;
+    //记录操作前的已勾选数
+    const std::size_t 原勾选数 = 模型.checked_case_count();
+
+    //越界查询一律为假
+    EXPECT_FALSE(模型.suite_all_checked(越界套件));
+    EXPECT_FALSE(模型.suite_half_checked(越界套件));
+    EXPECT_FALSE(模型.suite_expanded(越界套件));
+
+    //越界设置不应崩溃
+    EXPECT_NO_THROW(模型.suite_check_set(越界套件, false));
+    EXPECT_NO_THROW(模型.suite_expand_set(越界套件, true));
+    EXPECT_NO_THROW(模型.case_check_set(越界套件, 0, false));
+    EXPECT_NO_THROW(模型.case_check_set(0, 越界用例, false));
+
+    //越界操作不改变勾选总数
+    EXPECT_EQ(模型.checked_case_count(), 原勾选数);
+}
+
+//全选：清空后再全选应恢复全部勾选
+TEST_F(测试选择模型测试, 清空后再全选恢复)
+{
+    //建立模型
+    engine::Test_Selection_Model 模型;
+    模型.suite_tree_build();
+
+    //清空全部勾选
+    模型.all_clear();
+    EXPECT_EQ(模型.checked_case_count(), 0u);
+
+    //再次全选应恢复全部勾选
+    模型.all_check();
+    EXPECT_EQ(模型.checked_case_count(), 模型.case_count());
+    //每个非空套件都应回到全选
+    for (std::size_t i = 0; i < 模型.suite_count(); ++i)
+    {
+        //空套件不参与判定
+        if (模型.suite_table_get()[i].case_list.empty())
+            continue;
+        EXPECT_TRUE(模型.suite_all_checked(i));
+    }
+}
+
+//全不选：全部清空后不存在全选与半选态
+TEST_F(测试选择模型测试, 全不选无半选态)
+{
+    //建立模型并清空全部勾选
+    engine::Test_Selection_Model 模型;
+    模型.suite_tree_build();
+    模型.all_clear();
+
+    //全不选后勾选数为零
+    EXPECT_EQ(模型.checked_case_count(), 0u);
+    //每个套件既不处于全选也不处于半选
+    for (std::size_t i = 0; i < 模型.suite_count(); ++i)
+    {
+        EXPECT_FALSE(模型.suite_all_checked(i));
+        EXPECT_FALSE(模型.suite_half_checked(i));
+    }
+}
+
+//按前缀筛选：多个整套件全选压缩为前缀通配并以冒号连接
+TEST_F(测试选择模型测试, 按前缀筛选多套件拼接)
+{
+    //建立模型
+    engine::Test_Selection_Model 模型;
+    模型.suite_tree_build();
+    //本用例需至少两个套件
+    ASSERT_GE(模型.suite_count(), 2u);
+    //前两个套件均非空
+    ASSERT_FALSE(模型.suite_table_get()[0].case_list.empty());
+    ASSERT_FALSE(模型.suite_table_get()[1].case_list.empty());
+
+    //清空后仅整组勾选前两个套件
+    模型.all_clear();
+    模型.suite_check_set(0, true);
+    模型.suite_check_set(1, true);
+
+    //两段应各自压缩为 套件.* 并以冒号连接
+    const std::string 期望 = 模型.suite_table_get()[0].name + ".*:"
+        + 模型.suite_table_get()[1].name + ".*";
+    EXPECT_EQ(模型.filter_string_build(), 期望);
+}
+
+//非法筛选串：非法输入判非法且勾选表被重置为全假
+TEST_F(测试选择模型测试, 非法筛选输入重置勾选表)
+{
+    //预填为全真的勾选表
+    std::vector<bool> 勾选表(3, true);
+
+    //非数字文本判非法
+    EXPECT_FALSE(engine::解析控制台选择("abc", 3, 勾选表));
+    //勾选表长度归位为套件数
+    EXPECT_EQ(勾选表.size(), 3u);
+    //非法输入后勾选表被重置为全假
+    for (bool 值 : 勾选表)
+        EXPECT_FALSE(值);
+
+    //空段判非法
+    EXPECT_FALSE(engine::解析控制台选择("1,,3", 3, 勾选表));
+    EXPECT_EQ(勾选表.size(), 3u);
+
+    //超长编号判非法（超出内部防御阈值）
+    EXPECT_FALSE(engine::解析控制台选择("9999999", 3, 勾选表));
+    EXPECT_EQ(勾选表.size(), 3u);
+}
+
+//选择结果：解析结果与输入编号一一对应
+TEST_F(测试选择模型测试, 选择结果与输入一一对应)
+{
+    //解析不连续编号
+    std::vector<bool> 勾选表;
+    ASSERT_TRUE(engine::解析控制台选择("2,4", 5, 勾选表));
+    const std::vector<bool> 期望 = { false, true, false, true, false };
+    EXPECT_EQ(勾选表, 期望);
+
+    //重复编号不产生额外勾选
+    ASSERT_TRUE(engine::解析控制台选择("3,3", 4, 勾选表));
+    const std::vector<bool> 期望重复 = { false, false, true, false };
+    EXPECT_EQ(勾选表, 期望重复);
+
+    //末位编号命中最后一项
+    ASSERT_TRUE(engine::解析控制台选择("4", 4, 勾选表));
+    EXPECT_TRUE(勾选表[3]);
+}

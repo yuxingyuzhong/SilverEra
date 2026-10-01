@@ -303,3 +303,149 @@ TEST_F(Event_Terminal_Test, 错误密钥查询返回空指针)
 	//以正确密钥查询应可用
 	EXPECT_NE(terminal.query(key), nullptr);
 }
+
+//零密钥访问：已生成非零密钥后，以零密钥调用各接口一律被拒绝
+TEST_F(Event_Terminal_Test, 零密钥访问被拒绝)
+{
+	//生成权限密钥
+	const int64_t key = terminal.acl_key_gen();
+	//密钥应为非零
+	EXPECT_NE(key, 0);
+	//注册发送通道
+	terminal->event_sender_register([](std::shared_ptr<engine::Event>) {});
+	//以零密钥发送被拒绝
+	EXPECT_FALSE(terminal.send(make_event("输入", "按键"), 0));
+	//以零密钥清空被拒绝
+	EXPECT_FALSE(terminal.clear(0));
+	//以零密钥接入被拒绝
+	EXPECT_FALSE(terminal.attach("模块", {}, 0));
+	//以零密钥查阅返回空指针
+	EXPECT_EQ(terminal.query(0), nullptr);
+}
+
+//空事件批量发送：空集合发送成功且统计数量为零
+TEST_F(Event_Terminal_Test, 空事件批量发送成功)
+{
+	//生成权限密钥
+	const int64_t key = terminal.acl_key_gen();
+	//批量送出事件数（初值设为他值以确认被刷新）
+	size_t sent_count = 999;
+	//注册批量发送通道
+	terminal->event_sender_register(
+		[&sent_count](std::vector<std::shared_ptr<engine::Event>> events)
+		{ sent_count = events.size(); });
+	//空事件集合
+	std::vector<std::shared_ptr<engine::Event>> events;
+	//空集合也应发送成功
+	EXPECT_TRUE(terminal.send(events, key));
+	//统计到的数量应为零
+	EXPECT_EQ(sent_count, 0u);
+}
+
+//大批量接收：多条事件整体落入原生集合
+TEST_F(Event_Terminal_Test, 大批量接收落入原生集合)
+{
+	//生成权限密钥
+	const int64_t key = terminal.acl_key_gen();
+	//构造大批量事件
+	std::vector<std::shared_ptr<engine::Event>> events;
+	for (int index = 0; index < 128; index++)
+		events.push_back(make_event("输入", "按键"));
+	//批量接收
+	terminal.receive(events);
+	//全部落入原生集合
+	EXPECT_EQ(terminal.query(key)->size(), 128u);
+}
+
+//重复注册接收通道：以最新注册的通道为准
+TEST_F(Event_Terminal_Test, 重复注册接收通道以最新为准)
+{
+	//生成权限密钥
+	const int64_t key = terminal.acl_key_gen();
+	//旧通道转发次数
+	int old_received = 0;
+	//新通道转发次数
+	int new_received = 0;
+	//注册旧接收通道
+	terminal->event_receiver_register(
+		[&old_received](std::shared_ptr<engine::Event>) { ++old_received; });
+	//注册新接收通道覆盖旧通道
+	terminal->event_receiver_register(
+		[&new_received](std::shared_ptr<engine::Event>) { ++new_received; });
+	//接收一条事件
+	terminal.receive(make_event("输入", "按键"));
+	//旧通道不应被调用
+	EXPECT_EQ(old_received, 0);
+	//新通道应被调用一次
+	EXPECT_EQ(new_received, 1);
+	//已注册接收通道时原生集合不应留存
+	EXPECT_EQ(terminal.query(key)->size(), 0u);
+}
+
+//接入后多次发送：接入成功后可连续发送并累计
+TEST_F(Event_Terminal_Test, 接入后多次发送累计)
+{
+	//生成权限密钥
+	const int64_t key = terminal.acl_key_gen();
+	//送出次数
+	int sent = 0;
+	//注册接收通道（接入时使用）
+	terminal->event_receiver_register([](std::shared_ptr<engine::Event>) {});
+	//注册接入入口
+	terminal->attach_handler_register([](auto&&, auto&&, auto&&) {});
+	//注册发送通道
+	terminal->event_sender_register([&sent](std::shared_ptr<engine::Event>) { ++sent; });
+	//接入中转站
+	EXPECT_TRUE(terminal.attach("模块", {}, key));
+	//连续发送三条事件
+	EXPECT_TRUE(terminal.send(make_event("输入", "按键"), key));
+	EXPECT_TRUE(terminal.send(make_event("输入", "松开"), key));
+	EXPECT_TRUE(terminal.send(make_event("输入", "摇杆"), key));
+	//三条都应被送出
+	EXPECT_EQ(sent, 3);
+}
+
+//错误密钥接入：接入信息不落地
+TEST_F(Event_Terminal_Test, 错误密钥接入信息不落地)
+{
+	//生成权限密钥
+	const int64_t key = terminal.acl_key_gen();
+	//接入入口收到的模块名
+	std::string received_name;
+	//注册接收通道（避免接入时使用未初始化的入口）
+	terminal->event_receiver_register([](std::shared_ptr<engine::Event>) {});
+	//注册接入入口
+	terminal->attach_handler_register(
+		[&received_name](auto&& name, auto&&, auto&&) { received_name = name; });
+	//以错误密钥接入
+	EXPECT_FALSE(terminal.attach("模块", {}, key + 1));
+	//接入信息不应被传递
+	EXPECT_TRUE(received_name.empty());
+}
+
+//清空后原密钥仍可用：清空事件后可继续接收与查阅
+TEST_F(Event_Terminal_Test, 清空后原密钥仍可用)
+{
+	//生成权限密钥
+	const int64_t key = terminal.acl_key_gen();
+	//接收两条事件
+	terminal.receive(make_event("输入", "按键"));
+	terminal.receive(make_event("输入", "松开"));
+	//清空事件集合
+	EXPECT_TRUE(terminal.clear(key));
+	//清空后集合应为空
+	EXPECT_EQ(terminal.query(key)->size(), 0u);
+	//再次接收一条事件
+	terminal.receive(make_event("输入", "摇杆"));
+	//原密钥仍可查阅，集合规模为一
+	EXPECT_EQ(terminal.query(key)->size(), 1u);
+}
+
+//未生成密钥时查询：返回空指针
+TEST_F(Event_Terminal_Test, 未生成密钥时查询返回空)
+{
+	//未生成密钥时以零查询返回空指针
+	EXPECT_EQ(terminal.query(0), nullptr);
+	//未生成密钥时以任意值查询返回空指针
+	EXPECT_EQ(terminal.query(12345), nullptr);
+}

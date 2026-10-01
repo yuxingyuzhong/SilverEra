@@ -179,3 +179,172 @@ TEST_F(Binary_Search_Test, 重复区间全序列等价)
 	EXPECT_EQ(range->first, 0u);
 	EXPECT_EQ(range->second, 3u);
 }
+
+//未命中：显式空容器迭代器区间查找
+TEST_F(Binary_Search_Test, 空容器迭代器重载返回空值)
+{
+	//空序列
+	std::vector<int> empty_set;
+	//以迭代器重载在空区间上查找
+	std::optional<uint64_t> index = engine::detail::binary_search(empty_set.begin(), empty_set.end(),
+		0, std::ranges::less());
+	//空区间查找应返回空值
+	EXPECT_EQ(index, std::nullopt);
+}
+
+//命中：单元素容器查找唯一元素
+TEST_F(Binary_Search_Test, 单元素容器命中)
+{
+	//仅含一个元素的序列
+	std::vector<int> single_set{ 42 };
+	//查找该唯一元素
+	std::optional<uint64_t> index = engine::detail::binary_search(single_set, 42, std::ranges::less());
+	//应命中索引 0
+	EXPECT_EQ(index, 0u);
+}
+
+//未命中：单元素容器查找不存在的元素
+TEST_F(Binary_Search_Test, 单元素容器未命中)
+{
+	//仅含一个元素的序列
+	std::vector<int> single_set{ 42 };
+	//查找比唯一元素大的目标
+	std::optional<uint64_t> index = engine::detail::binary_search(single_set, 43, std::ranges::less());
+	//应返回空值
+	EXPECT_EQ(index, std::nullopt);
+}
+
+//未命中：目标小于序列首元素
+TEST_F(Binary_Search_Test, 目标小于首元素返回空值)
+{
+	//升序序列
+	std::vector<int> price_set{ 10, 20, 30, 40 };
+	//查找比首元素还小的目标
+	std::optional<uint64_t> index = engine::detail::binary_search(price_set, 5, std::ranges::less());
+	//应返回空值
+	EXPECT_EQ(index, std::nullopt);
+}
+
+//未命中：目标大于序列尾元素
+TEST_F(Binary_Search_Test, 目标大于尾元素返回空值)
+{
+	//查找比尾元素还大的目标
+	std::optional<uint64_t> index = engine::detail::binary_search(ascending_set, 100, std::ranges::less());
+	//应返回空值
+	EXPECT_EQ(index, std::nullopt);
+}
+
+//未命中：目标位于两相邻元素之间
+TEST_F(Binary_Search_Test, 目标位于相邻元素之间)
+{
+	//目标 4 落在 3 与 5 之间
+	std::optional<uint64_t> index = engine::detail::binary_search(ascending_set, 4, std::ranges::less());
+	//相邻元素之间无对应元素，应返回空值
+	EXPECT_EQ(index, std::nullopt);
+}
+
+//命中：重复元素查找返回某个等价下标
+TEST_F(Binary_Search_Test, 重复元素返回等价下标)
+{
+	//在含三个 2 的序列中查找 2
+	std::optional<uint64_t> index = engine::detail::binary_search(duplicate_set, 2, std::ranges::less());
+	//应命中且下标处元素恰为 2
+	ASSERT_TRUE(index.has_value());
+	EXPECT_EQ(duplicate_set[*index], 2);
+}
+
+//重复区间：重复值位于序列首部的闭区间
+TEST_F(Binary_Search_Test, 重复区间首部连续重复值)
+{
+	//首部含三个 2 的序列
+	std::vector<int> head_set{ 2, 2, 2, 5, 6 };
+	//查找 2 的等价闭区间
+	std::optional<std::pair<uint64_t, uint64_t>> range =
+		engine::detail::range_binary_search(head_set, 2, std::ranges::less());
+	//闭区间应从索引 0 到索引 2
+	ASSERT_TRUE(range.has_value());
+	EXPECT_EQ(range->first, 0u);
+	EXPECT_EQ(range->second, 2u);
+}
+
+//重复区间：重复值位于序列尾部的闭区间
+TEST_F(Binary_Search_Test, 重复区间尾部连续重复值)
+{
+	//尾部含三个 5 的序列
+	std::vector<int> tail_set{ 1, 3, 5, 5, 5 };
+	//查找 5 的等价闭区间
+	std::optional<std::pair<uint64_t, uint64_t>> range =
+		engine::detail::range_binary_search(tail_set, 5, std::ranges::less());
+	//闭区间应从索引 2 到索引 4
+	ASSERT_TRUE(range.has_value());
+	EXPECT_EQ(range->first, 2u);
+	EXPECT_EQ(range->second, 4u);
+}
+
+//重复区间：仅含一个元素的序列等价区间退化为单点
+TEST_F(Binary_Search_Test, 单元素序列等价区间)
+{
+	//仅含一个元素的序列
+	std::vector<int> single_set{ 8 };
+	//查找该唯一元素
+	std::optional<std::pair<uint64_t, uint64_t>> range =
+		engine::detail::range_binary_search(single_set, 8, std::ranges::less());
+	//区间应退化为索引 0 的单点
+	ASSERT_TRUE(range.has_value());
+	EXPECT_EQ(range->first, 0u);
+	EXPECT_EQ(range->second, 0u);
+}
+
+//重复区间：重复值位于序列中部的等价闭区间
+TEST_F(Binary_Search_Test, 重复区间中部连续重复值)
+{
+	//中部含三个 2 的序列
+	std::vector<int> middle_set{ 1, 1, 2, 2, 2, 3, 3 };
+	//查找 2 的等价闭区间
+	std::optional<std::pair<uint64_t, uint64_t>> range =
+		engine::detail::range_binary_search(middle_set, 2, std::ranges::less());
+	//闭区间应从索引 2 到索引 4
+	ASSERT_TRUE(range.has_value());
+	EXPECT_EQ(range->first, 2u);
+	EXPECT_EQ(range->second, 4u);
+}
+
+//重载一致：迭代器重载与容器重载返回相同下标
+TEST_F(Binary_Search_Test, 迭代器与容器重载结果一致)
+{
+	//容器重载查找 9
+	std::optional<uint64_t> container_index = engine::detail::binary_search(ascending_set, 9, std::ranges::less());
+	//迭代器重载查找 9
+	std::optional<uint64_t> iterator_index = engine::detail::binary_search(ascending_set.begin(), ascending_set.end(),
+		9, std::ranges::less());
+	//两种重载应返回相同结果
+	ASSERT_TRUE(container_index.has_value());
+	ASSERT_TRUE(iterator_index.has_value());
+	EXPECT_EQ(container_index, iterator_index);
+}
+
+//重复区间：降序序列的等价闭区间
+TEST_F(Binary_Search_Test, 降序序列重复区间)
+{
+	//降序排列且含两个 7 的序列
+	std::vector<int> descending_set{ 9, 9, 7, 7, 2, 1 };
+	//以降序比较查找 7 的等价闭区间
+	std::optional<std::pair<uint64_t, uint64_t>> range =
+		engine::detail::range_binary_search(descending_set, 7, std::ranges::greater());
+	//闭区间应从索引 2 到索引 3
+	ASSERT_TRUE(range.has_value());
+	EXPECT_EQ(range->first, 2u);
+	EXPECT_EQ(range->second, 3u);
+}
+
+//投影查找：投影字段配合降序比较器
+TEST_F(Binary_Search_Test, 投影字段降序命中)
+{
+	//按分值降序排列的记录序列
+	std::vector<test_item> item_set{ {40, 40}, {30, 30}, {20, 20}, {10, 10} };
+	//以分值投影和降序比较器查找分值 20
+	std::optional<uint64_t> index = engine::detail::binary_search(item_set, 20, std::ranges::greater(),
+		[](const test_item& item) { return item.score; });
+	//应命中索引 2
+	EXPECT_EQ(index, 2u);
+}

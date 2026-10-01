@@ -177,3 +177,193 @@ TEST_F(Event_Test, 配置包支持嵌套结构)
 	//中文内容应保留
 	EXPECT_EQ(evt.config["路径"][1].get<std::string>(), "终点");
 }
+
+//默认构造：配置包为空语意的 null 而非空对象
+TEST_F(Event_Test, 默认构造配置包为空语意)
+{
+	//默认构造的事件
+	engine::Event evt;
+	//配置包应为 null
+	EXPECT_TRUE(evt.config.is_null());
+	//配置包不应为空对象
+	EXPECT_FALSE(evt.config.is_object());
+}
+
+//两参构造：仅写入分类与标签，其余字段保持默认
+TEST_F(Event_Test, 两参构造仅写入分类与标签)
+{
+	//仅传分类与标签构造
+	const engine::Event evt("输入", "按键");
+	//分类被赋值
+	EXPECT_EQ(evt.category, "输入");
+	//标签被赋值
+	EXPECT_EQ(evt.tag, "按键");
+	//发起者保持为空
+	EXPECT_TRUE(evt.sender_object.empty());
+	//目标保持为空
+	EXPECT_TRUE(evt.target_object.empty());
+	//配置包保持为 null
+	EXPECT_TRUE(evt.config.is_null());
+}
+
+//四参构造：可传入空源与空目标，分类与标签照常写入
+TEST_F(Event_Test, 四参构造可传空源与空目标)
+{
+	//空源与空目标的构造
+	const engine::Event evt("", "", "输入", "按键");
+	//发起者为空
+	EXPECT_TRUE(evt.sender_object.empty());
+	//目标为空
+	EXPECT_TRUE(evt.target_object.empty());
+	//分类被赋值
+	EXPECT_EQ(evt.category, "输入");
+	//标签被赋值
+	EXPECT_EQ(evt.tag, "按键");
+	//配置包保持为 null
+	EXPECT_TRUE(evt.config.is_null());
+}
+
+//五元构造：五个字段与入参逐项一致（含配置包整体相等）
+TEST_F(Event_Test, 五元构造各字段写入一致)
+{
+	//入参配置包
+	const nlohmann::json config = nlohmann::json::object({ {"键码", 90} });
+	//五元构造事件
+	const engine::Event evt("发送者", "接收者", "输入", "按键", config);
+	//发起者一致
+	EXPECT_EQ(evt.sender_object, "发送者");
+	//目标一致
+	EXPECT_EQ(evt.target_object, "接收者");
+	//分类一致
+	EXPECT_EQ(evt.category, "输入");
+	//标签一致
+	EXPECT_EQ(evt.tag, "按键");
+	//配置包整体一致
+	EXPECT_EQ(evt.config, config);
+}
+
+//载荷为空对象：判定为对象且内容为空，而不同于 null
+TEST_F(Event_Test, 载荷为空对象时为对象且为空)
+{
+	//空对象配置包
+	const nlohmann::json config = nlohmann::json::object();
+	//构造携带空对象的事件
+	const engine::Event evt("甲", "乙", "输入", "按键", config);
+	//配置包应为对象
+	EXPECT_TRUE(evt.config.is_object());
+	//配置包内容应为空
+	EXPECT_TRUE(evt.config.empty());
+	//配置包不应为 null
+	EXPECT_FALSE(evt.config.is_null());
+}
+
+//载荷含深层嵌套结构：多层对象与数组原样保留
+TEST_F(Event_Test, 载荷含深层嵌套结构可读)
+{
+	//多层嵌套配置包
+	nlohmann::json config = nlohmann::json::object();
+	config["层一"]["层二"]["层三"] = 42;
+	config["序列"] = nlohmann::json::array({ 1, 2, 3 });
+	//构造携带深层嵌套的事件
+	const engine::Event evt("甲", "乙", "输入", "按键", config);
+	//三层数值应保留
+	EXPECT_EQ(evt.config["层一"]["层二"]["层三"], 42);
+	//数组规模应保留
+	EXPECT_EQ(evt.config["序列"].size(), 3u);
+	//数组末元素应保留
+	EXPECT_EQ(evt.config["序列"][2], 3);
+}
+
+//超长标签：千字节级标签可完整承载
+TEST_F(Event_Test, 超长标签可承载)
+{
+	//千字节级长标签
+	const std::string long_tag(1024, 'L');
+	//构造携带长标签的事件
+	const engine::Event evt("甲", "乙", "输入", long_tag, nlohmann::json::object());
+	//标签长度应完整保留
+	EXPECT_EQ(evt.tag.size(), 1024u);
+	//标签内容应逐字一致
+	EXPECT_EQ(evt.tag, long_tag);
+}
+
+//中文标签：多字节中文标签可完整承载
+TEST_F(Event_Test, 中文标签可承载并保留)
+{
+	//中文标签事件
+	const engine::Event evt("甲", "乙", "输入", "按键按下事件", nlohmann::json::object());
+	//中文标签内容应保留
+	EXPECT_EQ(evt.tag, "按键按下事件");
+	//标签字节长度应与源串一致
+	EXPECT_EQ(evt.tag.size(), std::string("按键按下事件").size());
+}
+
+//标签互不相同：不同标签各自保留而互不覆盖
+TEST_F(Event_Test, 标签互不相同各自保留)
+{
+	//按键标签事件
+	const engine::Event first("甲", "乙", "输入", "按键", nlohmann::json::object());
+	//松开标签事件
+	const engine::Event second("甲", "乙", "输入", "松开", nlohmann::json::object());
+	//首个标签应保留
+	EXPECT_EQ(first.tag, "按键");
+	//次个标签应保留
+	EXPECT_EQ(second.tag, "松开");
+	//两者标签不相等
+	EXPECT_NE(first.tag, second.tag);
+}
+
+//拷贝构造：拷贝件与原件各字段一致
+TEST_F(Event_Test, 拷贝构造后字段一致)
+{
+	//原始事件
+	const engine::Event origin("甲", "乙", "输入", "按键",
+		nlohmann::json::object({ {"键码", 65} }));
+	//拷贝构造副本
+	engine::Event copy = origin;
+	//发起者一致
+	EXPECT_EQ(copy.sender_object, origin.sender_object);
+	//目标一致
+	EXPECT_EQ(copy.target_object, origin.target_object);
+	//分类一致
+	EXPECT_EQ(copy.category, origin.category);
+	//标签一致
+	EXPECT_EQ(copy.tag, origin.tag);
+	//配置包一致
+	EXPECT_EQ(copy.config, origin.config);
+	//副本与原件相等
+	EXPECT_TRUE(copy == origin);
+}
+
+//载荷改写独立性：改写原件的配置包不影响拷贝件
+TEST_F(Event_Test, 载荷改写后两份事件独立)
+{
+	//原始事件
+	engine::Event origin("甲", "乙", "输入", "按键",
+		nlohmann::json::object({ {"键码", 65} }));
+	//拷贝构造副本
+	engine::Event copy = origin;
+	//改写原件配置包
+	origin.config["键码"] = 99;
+	//原件应反映改写
+	EXPECT_EQ(origin.config["键码"], 99);
+	//副本应保持原值
+	EXPECT_EQ(copy.config["键码"], 65);
+}
+
+//重复构造同名事件：两份同名事件互相独立，改写其一不影响另一
+TEST_F(Event_Test, 重复构造同名事件互相独立)
+{
+	//首份同名事件
+	engine::Event first = make_event("甲", "乙", "输入", "按键", nlohmann::json::object());
+	//次份同名事件
+	engine::Event second = make_event("甲", "乙", "输入", "按键", nlohmann::json::object());
+	//改写首份的标签
+	first.tag = "松开";
+	//首份应反映改写
+	EXPECT_EQ(first.tag, "松开");
+	//次份应保持原标签
+	EXPECT_EQ(second.tag, "按键");
+	//两份已不再相等
+	EXPECT_FALSE(first == second);
+}

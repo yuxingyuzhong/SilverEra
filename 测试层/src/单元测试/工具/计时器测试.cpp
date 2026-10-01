@@ -198,3 +198,157 @@ TEST_F(Timer_Test, 零时长换算为零)
 	//纳秒级换算结果
 	EXPECT_EQ(engine::Timer::Nano_units(zero), 0LL);
 }
+
+//未构建任务：普通读取与重置读取均为零
+TEST_F(Timer_Test, 未构建任务重置读取仍为零)
+{
+	//未构建任务的普通读取
+	EXPECT_EQ(timer.elapsed("未建任务"), engine::Duration{});
+	//未构建任务的重置读取
+	EXPECT_EQ(timer.elapsed("未建任务", true), engine::Duration{});
+}
+
+//构建后立即读取：间隔非负
+TEST_F(Timer_Test, 构建后立即读取非负)
+{
+	//构建任务
+	timer.task_build("即时");
+	//立即读取间隔
+	const engine::Duration interval = timer.elapsed("即时");
+	//间隔不应为负
+	EXPECT_GE(interval, engine::Duration{});
+}
+
+//重复构建：不重置已累计的计时起点
+TEST_F(Timer_Test, 重复构建不重置计时起点)
+{
+	//构建任务
+	EXPECT_TRUE(timer.task_build("重复"));
+	//等待十毫秒
+	std::this_thread::sleep_for(std::chrono::milliseconds(10));
+	//读取首次累计
+	const engine::Duration before = timer.elapsed("重复");
+	//同名任务应构建失败
+	EXPECT_FALSE(timer.task_build("重复"));
+	//再次读取累计
+	const engine::Duration after = timer.elapsed("重复");
+	//重复构建不改变计时起点
+	EXPECT_GE(after, before);
+}
+
+//卸载重建：重新构建后计时原点归零
+TEST_F(Timer_Test, 卸载重建后计时归零)
+{
+	//构建任务并等待二十毫秒
+	timer.task_build("重建");
+	std::this_thread::sleep_for(std::chrono::milliseconds(20));
+	//记录重建前累计
+	const engine::Duration before = timer.elapsed("重建");
+	//卸载并重新构建
+	timer.task_unload("重建");
+	timer.task_build("重建");
+	//读取重建后累计
+	const engine::Duration after = timer.elapsed("重建");
+	//重建后累计应小于重建前
+	EXPECT_LT(after, before);
+}
+
+//卸载后等待：缺失任务不再累计
+TEST_F(Timer_Test, 卸载后等待不再累计)
+{
+	//构建后立即卸载
+	timer.task_build("零累计");
+	timer.task_unload("零累计");
+	//卸载后等待十五毫秒
+	std::this_thread::sleep_for(std::chrono::milliseconds(15));
+	//缺失任务读取应为零
+	EXPECT_EQ(timer.elapsed("零累计"), engine::Duration{});
+}
+
+//连续重置：多次重置均能清空累计
+TEST_F(Timer_Test, 连续重置均清空累计)
+{
+	//构建任务并等待二十毫秒
+	timer.task_build("幂等");
+	std::this_thread::sleep_for(std::chrono::milliseconds(20));
+	//记录重置前累计
+	const engine::Duration accumulated = timer.elapsed("幂等");
+	//第一次带重置读取
+	EXPECT_GE(timer.elapsed("幂等", true), engine::Duration{});
+	//第一次重置后立即读取应远小于累计
+	EXPECT_LT(timer.elapsed("幂等"), accumulated);
+	//第二次带重置读取
+	EXPECT_GE(timer.elapsed("幂等", true), engine::Duration{});
+	//第二次重置后立即读取仍应远小于累计
+	EXPECT_LT(timer.elapsed("幂等"), accumulated);
+}
+
+//跨阶段累计：多次读取的累计值单调不减
+TEST_F(Timer_Test, 跨阶段累计单调不减)
+{
+	//构建任务
+	timer.task_build("单调");
+	//上一次读取的间隔
+	engine::Duration previous{};
+	//分四个阶段推进并比对各阶段累计
+	for (int stage = 0; stage < 4; ++stage)
+	{
+		//每阶段等待五毫秒
+		std::this_thread::sleep_for(std::chrono::milliseconds(5));
+		//读取当前累计间隔
+		const engine::Duration current = timer.elapsed("单调");
+		//当前累计不应小于上一阶段
+		EXPECT_GE(current, previous);
+		//更新上一阶段累计
+		previous = current;
+	}
+}
+
+//状态一致：任务存在返回正值，卸载后归零，重建后恢复正值
+TEST_F(Timer_Test, 存在状态与间隔一致)
+{
+	//构建并等待十毫秒
+	timer.task_build("状态");
+	std::this_thread::sleep_for(std::chrono::milliseconds(10));
+	//存在时应有正间隔
+	EXPECT_GT(timer.elapsed("状态"), engine::Duration{});
+	//卸载后应归零
+	EXPECT_TRUE(timer.task_unload("状态"));
+	EXPECT_EQ(timer.elapsed("状态"), engine::Duration{});
+	//重建并等待后应恢复正间隔
+	timer.task_build("状态");
+	std::this_thread::sleep_for(std::chrono::milliseconds(10));
+	EXPECT_GT(timer.elapsed("状态"), engine::Duration{});
+}
+
+//独立计时器：实例之间互不共享任务
+TEST_F(Timer_Test, 独立计时器互不影响)
+{
+	//另一个计时器实例
+	engine::Timer other;
+	//仅在本计时器构建任务
+	timer.task_build("独占");
+	//等待十毫秒
+	std::this_thread::sleep_for(std::chrono::milliseconds(10));
+	//本计时器应有正间隔
+	EXPECT_GT(timer.elapsed("独占"), engine::Duration{});
+	//另一实例查询同名任务应为零
+	EXPECT_EQ(other.elapsed("独占"), engine::Duration{});
+}
+
+//局部计时器：离开作用域后新实例不含旧任务
+TEST_F(Timer_Test, 局部计时器析构不残留状态)
+{
+	{
+		//作用域内计时器
+		engine::Timer local;
+		//构建并等待十毫秒
+		local.task_build("局部");
+		std::this_thread::sleep_for(std::chrono::milliseconds(10));
+		//作用域内应有正间隔
+		EXPECT_GT(local.elapsed("局部"), engine::Duration{});
+	}
+	//新实例查询旧任务名应为零
+	engine::Timer fresh;
+	EXPECT_EQ(fresh.elapsed("局部"), engine::Duration{});
+}
