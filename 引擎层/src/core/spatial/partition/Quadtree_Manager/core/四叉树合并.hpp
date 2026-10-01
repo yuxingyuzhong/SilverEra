@@ -6,7 +6,7 @@ namespace engine
 {
     //四叉树合并_____收集候选组合
     template<typename T>
-    void Quadtree_Manager<T>::quedtree_merge_collect(std::vector<std::vector<Tree_Record<T>*>>& receiver)
+    void Quadtree_Manager<T>::quadtree_merge_collect(std::vector<std::vector<Tree_Record<T>*>>& receiver)
     {
         //简化表示路径
         auto& max_tree_size = settings.max_tree_size;
@@ -97,7 +97,7 @@ namespace engine
 
     //四叉树合并_____精确筛选组合
     template<typename T>
-    void Quadtree_Manager<T>::quedtree_merge_filter(const std::vector<std::vector<Tree_Record<T>*>>& candidate,
+    void Quadtree_Manager<T>::quadtree_merge_filter(const std::vector<std::vector<Tree_Record<T>*>>& candidate,
         std::vector<std::vector<Tree_Record<T>*>>& receiver)
     {
         //筛选思路：
@@ -152,10 +152,10 @@ namespace engine
             possible_root.push_back({ center_tree_root.X - offset, center_tree_root.Y - offset });
 
             //四叉树索引集合
-            int indexs[3];
+            int indices[3];
             //初始化索引集合
             for (int time = 0; time < 3; time++)
-                indexs[time] = (time + 1);
+                indices[time] = (time + 1);
             //四叉树集合平均根节点坐标存储
             Point2d average_root = { 0.5, 0.5 };
 
@@ -163,18 +163,18 @@ namespace engine
             bool is_mergeable_group_found = false;
 
             //寻找可合并组合
-            for (; indexs[0] < tree_group.size() - 2 && is_mergeable_group_found == false;)
+            for (; indices[0] < tree_group.size() - 2 && is_mergeable_group_found == false;)
             {
                 //重置四叉树集合根节点X坐标
                 average_root.X = (center_tree_root.X +
-                    tree_group[indexs[0]]->root.X +
-                    tree_group[indexs[1]]->root.X +
-                    tree_group[indexs[2]]->root.X) / 4.0f;
+                    tree_group[indices[0]]->root.X +
+                    tree_group[indices[1]]->root.X +
+                    tree_group[indices[2]]->root.X) / 4.0f;
                 //重置四叉树集合根节点Y坐标
                 average_root.Y = (center_tree_root.Y +
-                    tree_group[indexs[0]]->root.Y +
-                    tree_group[indexs[1]]->root.Y +
-                    tree_group[indexs[2]]->root.Y) / 4.0f;
+                    tree_group[indices[0]]->root.Y +
+                    tree_group[indices[1]]->root.Y +
+                    tree_group[indices[2]]->root.Y) / 4.0f;
 
                 //筛选可合并组合
                 for (int filter_index = 0; filter_index < possible_root.size(); filter_index++)
@@ -189,7 +189,7 @@ namespace engine
                         for (int filter_time = 0; filter_time < 3; filter_time++)
                         {
                             //若检查出被排除四叉树（指针在集合中）
-                            if (used_trees.count(tree_group[indexs[filter_time]]))
+                            if (used_trees.count(tree_group[indices[filter_time]]))
                             {
                                 //标记组合不可记录
                                 is_recordable = false;
@@ -204,9 +204,9 @@ namespace engine
                             std::vector<Tree_Record<T>*> buffer;
                             //拷贝目标四叉树
                             buffer.push_back(tree_group.front());
-                            buffer.push_back(tree_group[indexs[0]]);
-                            buffer.push_back(tree_group[indexs[1]]);
-                            buffer.push_back(tree_group[indexs[2]]);
+                            buffer.push_back(tree_group[indices[0]]);
+                            buffer.push_back(tree_group[indices[1]]);
+                            buffer.push_back(tree_group[indices[2]]);
                             //记录可合并组合
                             receiver.push_back(buffer);
                             //记录排除筛选组合（插入所有四棵树的指针）
@@ -221,16 +221,16 @@ namespace engine
                 }
 
                 // 索引自增
-                indexs[2]++;
+                indices[2]++;
 
                 // 校准进位（确保索引递增且不越界）
-                if (indexs[2] >= static_cast<int>(tree_group.size())) {
-                    ++indexs[1];
-                    indexs[2] = indexs[1] + 1;
-                    if (indexs[1] >= static_cast<int>(tree_group.size()) - 1) {
-                        ++indexs[0];
-                        indexs[1] = indexs[0] + 1;
-                        indexs[2] = indexs[1] + 1;
+                if (indices[2] >= static_cast<int>(tree_group.size())) {
+                    ++indices[1];
+                    indices[2] = indices[1] + 1;
+                    if (indices[1] >= static_cast<int>(tree_group.size()) - 1) {
+                        ++indices[0];
+                        indices[1] = indices[0] + 1;
+                        indices[2] = indices[1] + 1;
                     }
                 }
             }
@@ -239,7 +239,7 @@ namespace engine
 
     //四叉树合并总函数
     template<typename T>
-    void Quadtree_Manager<T>::qurdtree_merge(void)
+    void Quadtree_Manager<T>::quadtree_merge(void)
     {
         //若外界已经设置前置需求接口
         //则开始四叉树合并
@@ -261,13 +261,13 @@ namespace engine
             }
 
             //分类筛选合格四叉树
-            std::vector<std::vector<Tree_Record<T>*>> classfied_tree{};
+            std::vector<std::vector<Tree_Record<T>*>> classified_tree{};
             //确认筛选合格四叉树
-            std::vector<std::vector<Tree_Record<T>*>> varified_tree{};
+            std::vector<std::vector<Tree_Record<T>*>> verified_tree{};
             //待合并四叉树分类
-            quedtree_merge_collect(classfied_tree);
+            quadtree_merge_collect(classified_tree);
             //待合并四叉树确认筛选
-            quedtree_merge_filter(classfied_tree, varified_tree);
+            quadtree_merge_filter(classified_tree, verified_tree);
 
             //新四叉树根节点坐标存储
             Point2d new_root{ 0.5,0.5 };
@@ -277,10 +277,10 @@ namespace engine
             std::vector<int64_t> index_set{};
 
             //合并四叉树
-            for (int merge_time = 0; merge_time < varified_tree.size(); merge_time++)
+            for (int merge_time = 0; merge_time < verified_tree.size(); merge_time++)
             {
                 //简化表示路径
-                auto& tree_group = varified_tree[merge_time];
+                auto& tree_group = verified_tree[merge_time];
 
                 //重置四叉树根节点坐标
                 new_root.X = (tree_group[0]->root.X + tree_group[1]->root.X +

@@ -21,7 +21,7 @@ namespace engine
     //数据迁移方法设置
     template<typename T>
     void Quadtree_Manager<T>::callback_register(const std::function<void(Tree_Chunk_Data<T>& receiver,
-        Tree_Chunk_Data<T>& transmiter)>& cb_1)
+        Tree_Chunk_Data<T>& transmitter)>& cb_1)
     {
         //赋值函数注册
         copy = cb_1;
@@ -79,7 +79,7 @@ namespace engine
 
     //高速缓存条目上限设置
     template<typename T>
-    void Quadtree_Manager<T>::set_max_cach_records(const uint64_t max_entries)
+    void Quadtree_Manager<T>::set_max_cache_records(const uint64_t max_entries)
     {
         //设置高速缓存条目上限
         settings.max_cache_records = max_entries;

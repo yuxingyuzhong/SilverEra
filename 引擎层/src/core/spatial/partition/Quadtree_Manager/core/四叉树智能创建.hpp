@@ -195,7 +195,7 @@ namespace engine
 
     //四叉树智能创建主函数
     template<typename T>
-    void Quadtree_Manager<T>::qurdtree_build_smart(const std::vector<Point2i>& coord_set)
+    void Quadtree_Manager<T>::quadtree_build_smart(const std::vector<Point2i>& coord_set)
     {
         // 智能创建逻辑：
         // 先用一个初始矩形包裹住所有坐标点

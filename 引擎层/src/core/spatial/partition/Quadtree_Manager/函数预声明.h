@@ -25,7 +25,7 @@ namespace engine
         // ---- 设置 ----
         //数据迁移方法注册
         void callback_register(const std::function<void(Tree_Chunk_Data<T>& receiver, 
-            Tree_Chunk_Data<T>& transmiter)>& cb_1);
+            Tree_Chunk_Data<T>& transmitter)>& cb_1);
         //四叉树最小区块单元大小设置
         void set_block_size(const uint64_t& block_size);
         //四叉树边长上限设置
@@ -37,15 +37,15 @@ namespace engine
         //高速缓存启用阈值设置
         void set_cache_active_threshold(const uint64_t& threshold);
         //高速缓存条目上限设置
-        void set_max_cach_records(const uint64_t max_entries);
+        void set_max_cache_records(const uint64_t max_entries);
 
         // ---- 创建 ----
         //四叉树智能创建主函数
-        void qurdtree_build_smart(const std::vector<Point2i>& coord_set);
+        void quadtree_build_smart(const std::vector<Point2i>& coord_set);
 
         // ---- 查询 ----
         //单区块信息查询
-        void seek(Tree_Chunk_Data<T>*& reciver,const Point2i& target, bool stable);
+        void seek(Tree_Chunk_Data<T>*& receiver,const Point2i& target, bool stable);
         //范围区块信息查询
         void seek(std::vector<Tree_Chunk_Data<T>*>& receiver, const Rect2i& target_range, bool stable);
 
@@ -59,7 +59,7 @@ namespace engine
 
         // ---- 维护 ----
         //四叉树合并总函数
-        void qurdtree_merge(void);
+        void quadtree_merge(void);
         //清空高速缓存
         void cache_clear(void);
         //清空所有四叉树
@@ -88,7 +88,7 @@ namespace engine
         //管理器设置
         Tree_Manager_Settings settings;
         //外界上级管理对象回调管理方法
-        std::function<void(Tree_Chunk_Data<T>& receiver, Tree_Chunk_Data<T>& transmiter)> copy;  //数据迁移方法
+        std::function<void(Tree_Chunk_Data<T>& receiver, Tree_Chunk_Data<T>& transmitter)> copy;  //数据迁移方法
 
         // ---- 辅助函数（按功能分组） ----
 
@@ -125,9 +125,9 @@ namespace engine
         //四叉树创建
         void quadtree_build(Point2d root = {0.5,0.5}, uint64_t tree_size = 256);
         //合并：收集候选组合
-        void quedtree_merge_collect(std::vector<std::vector<Tree_Record<T>*>>& receiver);
+        void quadtree_merge_collect(std::vector<std::vector<Tree_Record<T>*>>& receiver);
         //合并：精确筛选组合
-        void quedtree_merge_filter(const std::vector<std::vector<Tree_Record<T>*>>& candidate,
+        void quadtree_merge_filter(const std::vector<std::vector<Tree_Record<T>*>>& candidate,
             std::vector<std::vector<Tree_Record<T>*>>& receiver);
         //卸载——序列索引重载
         void quadtree_unload(std::vector<int64_t>& index_set);

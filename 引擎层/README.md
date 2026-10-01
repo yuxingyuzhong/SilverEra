@@ -280,7 +280,7 @@ C++20 特性在源码中的使用：`concepts`（`Object_Pool` 的 `requires std
 ```
 调用方
   └ Quadtree_Manager::seek(单点检索) 或 seek(范围检索, stable)
-       ├ 从树缓存中定位覆盖目标的四叉树（无则 qurdtree_build_smart 新建）
+       ├ 从树缓存中定位覆盖目标的四叉树（无则 quadtree_build_smart 新建）
        ├ Quadtree::block_seek / range_seek
        │    ├ point_seekable_analyse / range_seekable_analyse 判断是否需要扩大
        │    ├ 需要扩大 → callback_register 回调交给管理器裁决 → tree_expand 原地加倍
@@ -773,17 +773,17 @@ namespace engine
 
         //数据迁移方法注册
         void callback_register(const std::function<void(Tree_Chunk_Data<T>& receiver,
-            Tree_Chunk_Data<T>& transmiter)>& cb_1);
+            Tree_Chunk_Data<T>& transmitter)>& cb_1);
         void set_block_size(const uint64_t& block_size);                 //最小区块单元边长
         void set_max_size(const uint64_t& max_size);                     //单树边长上限
         void set_min_size(const uint64_t& min_size);                     //单树边长下限
         void set_cache_state(bool enabled);                              //树缓存开关
         void set_cache_active_threshold(const uint64_t& threshold);      //缓存启用阈值
-        void set_max_cach_records(const uint64_t max_entries);           //缓存记录上限
+        void set_max_cache_records(const uint64_t max_entries);          //缓存记录上限
 
-        void qurdtree_build_smart(const std::vector<Point2i>& coord_set); //按点集智能建树
+        void quadtree_build_smart(const std::vector<Point2i>& coord_set); //按点集智能建树
 
-        void seek(Tree_Chunk_Data<T>*& reciver, const Point2i& target,
+        void seek(Tree_Chunk_Data<T>*& receiver, const Point2i& target,
                   bool stable);                                          //单点检索
         void seek(std::vector<Tree_Chunk_Data<T>*>& receiver,
                   const Rect2i& target_range, bool stable);              //范围检索
@@ -792,7 +792,7 @@ namespace engine
         const std::vector<Tree_Record<T>*>& records_get(void);           //读取树记录
         const uint64_t& largest_size_get(void);                          //最大单树边长
 
-        void qurdtree_merge(void);                                       //四叉树合并
+        void quadtree_merge(void);                                       //四叉树合并
         void cache_clear(void);                                          //清空树缓存
         void clear(void);                                                //清空全部树
         void quadtree_unload(const std::vector<Point2d>& root_set);      //按根集卸载
@@ -830,7 +830,7 @@ namespace engine
 **内部实现要点**：
 
 - **64 位契约延续**：管理器内部以 64 位承载树尺寸；修复了超大边长（2^33）在尺寸截断后导致的整数除零主崩点。
-- **智能建树** `qurdtree_build_smart(std::vector<Point2i>)`：依据待覆盖点集自动决定建树位置与边长，而非要求调用方指定根与尺寸。
+- **智能建树** `quadtree_build_smart(std::vector<Point2i>)`：依据待覆盖点集自动决定建树位置与边长，而非要求调用方指定根与尺寸。
 - **相邻树三级筛选查找**：`相邻四叉树查找.hpp` 以由粗到细的三级筛选定位与目标范围相邻的树，降低查找开销。
 - **四叉树合并**：`四叉树合并.hpp` 把可以合并的相邻同尺寸树归并为一棵，控制树的数量膨胀。
 - **扩大裁决**：四叉树把自己的扩大申请通过回调上报给管理器；管理器由 `四叉树扩大回调管理.hpp` 判断该次扩大会否与已在册的其它树发生管辖范围重叠，再决定批准与否——这是多树并存时避免相互重叠的关键。

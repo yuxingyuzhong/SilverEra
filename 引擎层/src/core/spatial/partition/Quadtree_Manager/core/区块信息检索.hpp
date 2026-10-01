@@ -126,7 +126,7 @@ namespace engine
             //重新查找
             else
                 //调用四叉树智能创建
-                qurdtree_build_smart({ target });
+                quadtree_build_smart({ target });
         }
     }
 
@@ -145,7 +145,7 @@ namespace engine
             else
             {
                 //创建基准四叉树
-                qurdtree_build_smart({ {target_range.left, target_range.down} });
+                quadtree_build_smart({ {target_range.left, target_range.down} });
                 //若创建失败
                 if (tree_group.empty())  
                     return;
@@ -212,7 +212,7 @@ namespace engine
                         target.Y < INT32_MIN || target.Y > INT32_MAX)
                         continue;
                     //智能创建合适四叉树
-                    qurdtree_build_smart({ Point2i{ static_cast<int>(target.X), static_cast<int>(target.Y) } });
+                    quadtree_build_smart({ Point2i{ static_cast<int>(target.X), static_cast<int>(target.Y) } });
                     //提取新创建四叉树
                     ptr_tree = quadtree_inclusion_seek(target);
                 }
