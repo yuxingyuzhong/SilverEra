@@ -140,10 +140,11 @@ namespace engine
 	}
 
 	//最小区块单元查找
-	//adopt 非空时，命中叶子直接接管该区块数据所有权（供四叉树合并迁移，无需 T 可拷贝）
+	//结果对象的 ptr_data 与命中叶子持有的 shared_ptr<T> 共享同一 T 对象
+	//故调用方可解引用修改叶子数据，但无法改变叶子 shared_ptr 的指向
 	template <typename T>
 	void Quadtree<T>::block_seek(std::shared_ptr<Tree_Chunk_Data<T>>& receiver, const Point2l& target,
-		bool stable, std::shared_ptr<T> adopt)
+		bool stable)
 	{
 		//防御：边长不大于区块单元的退化树没有可寻址叶子
 		//管理器建树入口已拦截此类树，此处仅防裸用 Quadtree 时的非法状态
@@ -214,11 +215,6 @@ namespace engine
 			//计算新范围值
 			child_node_range_calcu(recur_direct, node_range, old_range);
 		}
-
-		//若调用方提供待收养数据，则由命中叶子直接接管所有权
-		//（供四叉树合并迁移：叶子持有的 T 不变更地址，引用计数共享）
-		if (adopt != nullptr)
-			std::get<1>(child_node->data) = adopt;
 
 		//若接收器为空则分配结果对象
 		if (receiver == nullptr)
