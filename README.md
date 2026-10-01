@@ -83,13 +83,13 @@
 
 | 特性 | 说明 |
 | --- | --- |
-| 事件驱动架构 | 三个管理器（`Entity_Manager` / `Prop_Distributor` / `Effect_Manager`）均通过 `Event_Terminal` 接入引擎层 `Event_Broker`，以 `event` 为唯一协作媒介 |
+| 事件驱动架构 | 三个管理器（`Entity_Manager` / `Prop_Distributor` / `Effect_Manager`）均通过 `Event_Terminal` 接入引擎层 `Event_Broker`，以 `Event` 为唯一协作媒介 |
 | 数据与行为解耦 | 实体持有行为脚本（Lua 决策树）与属性槽**指针**；属性槽本体由 `Prop` 承载、由 `Entity_Manager` 统一管理 |
 | 对象池托管 | `Object_Pool<Entity>`（实体池）与 `Object_Pool<Prop>`（属性槽池）统一分配与回收，两池同 ID 对齐 |
 | Lua 脚本化 | 实体行为、效应逻辑全部由 Lua 脚本承载；Sol2 负责 C++/Lua 桥接，脚本可读写 `pros`、查阅 `event_set`、调用 `send()` |
 | 权限控制 | 事件发送与查阅需 `acl_key`（事件终端生成的权限密钥）；属性槽池借用需 `distribute_key`（64 位随机分发密钥） |
 | 配置驱动 | 实体类型与效应的行为/属性/订阅事件均从 JSON 配置加载，配置字段经引擎层数据校验器校验后注册为加载路径 |
-| 效应分组与优先级 | 效应按归属分组（`effect_group`），按执行阶段（`act_phase` 哈希）触发，按优先级（`priority` 降序）排序 |
+| 效应分组与优先级 | 效应按归属分组（`Effect_Group`），按执行阶段（`act_phase` 哈希）触发，按优先级（`priority` 降序）排序 |
 
 ---
 
@@ -302,15 +302,15 @@ public:
     bool distribute_key_gen(void);                       //属性槽分发密钥生成
     Object_Pool<Prop>* prop_slot_get(const uint64_t& distribute_key);  //属性槽获取（按密钥）
 
-    void event_broadcast(std::shared_ptr<event> evt);    //事件广播（向所有实体）
+    void event_broadcast(std::shared_ptr<Event> evt);    //事件广播（向所有实体）
     bool event_unicast(const std::string& type, const uint64_t& ID,
-        std::shared_ptr<event> evt);                     //事件定向发送
+        std::shared_ptr<Event> evt);                     //事件定向发送
 };
 ```
 
 **内部实现要点**：
 
-- 数据：`event_map`（`unordered_set<event>` 订阅集合）、`event_terminal`、`acl_key`、`distribute_key`、
+- 数据：`event_map`（`unordered_set<Event>` 订阅集合）、`event_terminal`、`acl_key`、`distribute_key`、
   `prop_config_paths`（类型 → 属性槽配置脚本 `LuaState`，**存的是状态机而非路径**）、`action_load_path`
   （类型 → 决策树脚本路径）、`props`（`Object_Pool<Prop>`）、`entities`（`Object_Pool<Entity>`）。
 - 实现按职责拆为 4 个编译单元：`core/配置处理.cpp`（构造 / attach / config_field_parse / 路径注册）、
@@ -435,19 +435,19 @@ public:
 
 **内部实现要点**：
 
-- 内部结构体：`effect_record : public Object`（含 `inclusion` / `act_phase` / `priority` / `pro_effect`，
-  可进对象池）；`effect_group`（含 `inclusion` 与 `vector<effect_record*> effects`，不进对象池）。
-- 数据：`effect_groups`（按 `inclusion` 升序，供二分）、`effect_set`（`Object_Pool<effect_record>`，按 `priority`
+- 内部结构体：`Effect_Record : public Object`（含 `inclusion` / `act_phase` / `priority` / `pro_effect`，
+  可进对象池）；`Effect_Group`（含 `inclusion` 与 `vector<Effect_Record*> effects`，不进对象池）。
+- 数据：`effect_groups`（按 `inclusion` 升序，供二分）、`effect_set`（`Object_Pool<Effect_Record>`，按 `priority`
   降序）、`bind_entry`（属性槽绑定通道）、`event_terminal`、`acl_key`。
 - `attach()`：订阅 4 类事件——`Config/Load`、`Effect/Build`、`Effect/Unload`、`Effect/Act`。
 - `effect_build()`：校验 `inclusion` / `act_phase` / `priority` → 池内建记录 → `config_read`（失败回滚）
   → 记录归属、绑定 ID → `act_phase = hash<string>{}(字符串)` → 解析 `priority`（`"max"` → `uint64` 最大值，
   其余字符串告警回滚）→ 经 `bind_entry` 绑定作用对象 → 注册事件发送入口 → 二分分组（找不到则建组）
-  → 把带 ID 的修饰事件通知组内已有效应后入组 → `effect_set.sort_order_set(true, &effect_record::priority)`。
+  → 把带 ID 的修饰事件通知组内已有效应后入组 → `effect_set.sort_order_set(true, &Effect_Record::priority)`。
 - `effect_unload()`：组内唯一 → 删整组；否则通知组内其它效应（携 `inclusion` / `name` 的卸载事件）后摘出，
   最后 `effect_set.unload(target_ID)`。
 - `effect_act(phase)`：遍历 `effect_set.data()`，对 `valid()` 且 `act_phase == phase` 的记录调用 `pro_effect.effect_act()`。
-- `effect_group_seek()`：以 `binary_search(effect_groups, inclusion, less(), &effect_group::inclusion)` 查分组索引。
+- `effect_group_seek()`：以 `binary_search(effect_groups, inclusion, less(), &Effect_Group::inclusion)` 查分组索引。
 
 **涉及文件**：`效应管理器.h`、`core/效应管理器.cpp`、`局部命名空间使用.h`。
 
@@ -588,9 +588,9 @@ cmake --build 系统层/out/build/x64-Debug
 
 - 两个头文件均只 `#include "common/前置头文件包含.h"` 后直接使用 `sol::` 类型，因此「谁提供 Sol2」由
   系统层预编译头兜住。
-- 原 `register_event`（把 C++ 的 `event` 类型注册到 Lua）已从 `sol类型注册.h` 移除，`实体.cpp` 与
-  `效应.cpp` 中留有 TODO 注释——脚本当前无法直接构造 `event` 对象，只能通过 `send` 接收已构造的
-  `shared_ptr<event>`。
+- 原 `register_event`（把 C++ 的 `Event` 类型注册到 Lua）已从 `sol类型注册.h` 移除，`实体.cpp` 与
+  `效应.cpp` 中留有 TODO 注释——脚本当前无法直接构造 `Event` 对象，只能通过 `send` 接收已构造的
+  `shared_ptr<Event>`。
 
 ### 9.2 实体行为脚本的调用方式（`Entity::action_load()`）
 
@@ -683,7 +683,7 @@ cmake --build 系统层/out/build/x64-Debug
 | 5 | `实体.cpp` / `core/事件处理.cpp` | `entity_type` 无写入路径（恒为空串），`event_unicast` 的 `it->type() == type` 过滤因此失效 |
 | 6 | `core/属性槽处理.cpp` `distribute_key_gen` | 返回类型 `bool` 但函数体无 `return` 语句（C4715 告警，行为未定义） |
 | 7 | `core/效应管理器.cpp` `event_process`(Build) | `optional<uint64_t> effect_ID = effect_build(evt)` 返回值被丢弃，调用方拿不到新效应 ID |
-| 8 | `效应管理器.h` `effect_group.effects` | 存的是**裸指针**；`effect_set.build()` 触发 `std::vector` 扩容会使旧 `effect_record` 地址失效，分组内指针可能悬垂 |
+| 8 | `效应管理器.h` `Effect_Group.effects` | 存的是**裸指针**；`effect_set.build()` 触发 `std::vector` 扩容会使旧 `Effect_Record` 地址失效，分组内指针可能悬垂 |
 | 9 | `core/属性槽分发器.cpp` vs `core/属性槽处理.cpp` | 发送端 `Entity_Manager` 构造的事件 tag 为 `"Distribute"`，接收端 `Prop_Distributor` 判断的是 `tag == "Distributor"`，**两者不一致**，密钥事件可能无法被接收 |
 | 10 | 4 个头文件的 include | **已关闭（2026-09-26）**：`实体管理器.h`、`属性槽分发器.h`、`效应.h`、`效应管理器.h` 的 include 已改为引擎层现名 `src/tools/Data_Validator/数据校验器.h`，源码内 19 处 `field_check<T>` / `path_check` 调用点已全部随之改名（纯改名，签名一致） |
 
@@ -719,7 +719,7 @@ cmake --build 系统层/out/build/x64-Debug
 ### 12.3 代码风格约定
 
 - 命名空间统一为 `engine`；类名首字母大写（`Entity_Manager`、`Prop_Distributor`）；struct/union/enum
-  首字母小写（`event`、`effect_group`）；变量/函数全小写 + 下划线分隔（`entity_build`、`acl_key`）；文件名中文。
+  同样单词首字母大写（`Event`、`Effect_Group`）；变量/函数全小写 + 下划线分隔（`entity_build`、`acl_key`）；文件名中文。
 - 目录级命名约定：`模块名_Manager`（管理器）、`模块名_Broker`（中转器）、`模块名_Distributor`（分发器）。
 - 注释：中文；少于三行用 `//`（无空格，如 `//绑定属性槽`），大于等于三行用 `/**/`；采用换行注释。
 - 事件 `category` / `tag` 使用英文（如 `Entity` / `Build` / `Config`）。
@@ -733,7 +733,7 @@ cmake --build 系统层/out/build/x64-Debug
 - [ ] 修复 Build / Act 事件分支：修正 `ID_set.empty()` 判定、补 `entity_act(ID_set)` 调用
 - [ ] 为实体补齐 `entity_type` 写入路径，恢复 `event_unicast` 的类型过滤
 - [ ] 统一 `distribute_key_gen` 的返回值与 Key 事件的 tag 口径，打通属性槽分发链路
-- [ ] 治理效应分组裸指针悬垂：`effect_group.effects` 改存 ID / 索引
+- [ ] 治理效应分组裸指针悬垂：`Effect_Group.effects` 改存 ID / 索引
 - [ ] 按 TODO 补回 `register_event`（C++ 事件类型注册到 Lua）
 - [ ] 接入配置编辑器：在 `CMakeLists.txt` 追加 `add_executable`，并在对外面补 ImGui / stb 包含路径
 - [ ] 在测试层补齐系统层单元测试用例

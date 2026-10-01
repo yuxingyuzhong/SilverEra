@@ -30,7 +30,7 @@ namespace engine
 			}();
 
 		//构造密钥传送事件
-		shared_ptr<event> evt(new(nothrow) event());
+		shared_ptr<Event> evt(new(nothrow) Event());
 		//记录事件发送者
 		evt->sender_object = "Entity_Manager";
 		//记录事件接收者

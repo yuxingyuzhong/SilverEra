@@ -22,7 +22,7 @@ namespace engine
 	void Effect_Manager::attach(void)
 	{
 		//订阅事件集合记录
-		vector<event> needed_events;
+		vector<Event> needed_events;
 
 		//构造配置加载事件
 		needed_events.emplace_back("", "Effect_Manager", "Config", "Load", json::object());
@@ -33,7 +33,7 @@ namespace engine
 		//构造效应执行事件
 		needed_events.emplace_back("", "", "Effect", "Act", json::object());
 		//构建事件接收入口
-		auto receive_entry = [this](shared_ptr<event> evt)->void
+		auto receive_entry = [this](shared_ptr<Event> evt)->void
 			{
 				this->event_process(evt);
 			};
@@ -47,11 +47,11 @@ namespace engine
 	//效应分组查找
 	int64_t Effect_Manager::effect_group_seek(const uint64_t& inclusion)
 	{
-		return binary_search(effect_groups,inclusion,less(), &effect_group::inclusion);
+		return binary_search(effect_groups,inclusion,less(), &Effect_Group::inclusion);
 	}
 
 	//效应构建
-	optional<uint64_t> Effect_Manager::effect_build(shared_ptr<event> evt)
+	optional<uint64_t> Effect_Manager::effect_build(shared_ptr<Event> evt)
 	{
 		//简化表示路径
 		auto& config = evt->config;
@@ -125,7 +125,7 @@ namespace engine
 			//获取事件终端
 			auto& terminal = new_effect.event_terminal;
 			//构造事件入口
-			auto event_send_entry = [this](std::vector<std::shared_ptr<event>> events)->void
+			auto event_send_entry = [this](std::vector<std::shared_ptr<Event>> events)->void
 				{
 					//直接转发至其余模块
 					this->event_terminal.send(events,acl_key);
@@ -155,7 +155,7 @@ namespace engine
 			group.effects.push_back(new_record);
 
 			//按执行优先级设置降序排列
-			effect_set.sort_order_set(true, &effect_record::priority);
+			effect_set.sort_order_set(true, &Effect_Record::priority);
 			
 			//返回新效应ID
 			return new_record->ID();
@@ -163,7 +163,7 @@ namespace engine
 	}
 
 	//效应卸载
-	bool Effect_Manager::effect_unload(std::shared_ptr<event> evt)
+	bool Effect_Manager::effect_unload(std::shared_ptr<Event> evt)
 	{
 		//简化表示路径
 		auto& config = evt->config;
@@ -242,7 +242,7 @@ namespace engine
 	}
 
 	//事件处理
-	void Effect_Manager::event_process(std::shared_ptr<event> evt)
+	void Effect_Manager::event_process(std::shared_ptr<Event> evt)
 	{
 		//若为效应大类分支
 		if (evt->category == "Effect")

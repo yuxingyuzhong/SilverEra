@@ -59,6 +59,6 @@ namespace engine
 		const std::unordered_map<std::string, double>* const_prop_slot_get(const uint64_t& ID) const;
 	private:
 		//事件处理
-		void event_process(std::shared_ptr<event> evt);
+		void event_process(std::shared_ptr<Event> evt);
 	};
 }

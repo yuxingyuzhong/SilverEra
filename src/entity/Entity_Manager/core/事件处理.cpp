@@ -5,7 +5,7 @@
 namespace engine
 {
     //事件广播
-    void Entity_Manager::event_broadcast(shared_ptr<event> evt)
+    void Entity_Manager::event_broadcast(shared_ptr<Event> evt)
     {
         //向所有实体发送事件
         for (auto& entity_record : entities.data())
@@ -14,7 +14,7 @@ namespace engine
 
     //事件定向发送
     bool Entity_Manager::event_unicast(const std::string& type, const uint64_t& ID,
-        std::shared_ptr<event> evt)
+        std::shared_ptr<Event> evt)
     {
         //获取实体迭代器
         auto it = entities.find(ID);
@@ -32,7 +32,7 @@ namespace engine
     }
 
     //事件处理
-    void Entity_Manager::event_process(shared_ptr<event> evt)
+    void Entity_Manager::event_process(shared_ptr<Event> evt)
     {
         //若当前为配置事件
         if (evt->category == "Config")
@@ -58,7 +58,7 @@ namespace engine
                     //简化表示路径
                     auto& tag = buffer[transform_time];
                     //构造事件
-                    event needed_event("Entity_Manager","", tag.first, tag.second, json::object());
+                    Event needed_event("Entity_Manager","", tag.first, tag.second, json::object());
                     //若该事件不存在
                     if (!event_map.count(needed_event))
                         event_map.insert(needed_event);

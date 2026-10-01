@@ -26,7 +26,7 @@ namespace engine
     {
     private:
         //效应记录
-        struct effect_record : public Object
+        struct Effect_Record : public Object
         {
             //效应归属
             uint64_t inclusion;
@@ -39,12 +39,12 @@ namespace engine
             Prop_Effect pro_effect;
         };
         //效应组
-        struct effect_group
+        struct Effect_Group
         {
             //效应归属
             uint64_t inclusion;
             //效应组
-            std::vector<effect_record*> effects{};
+            std::vector<Effect_Record*> effects{};
         };
     public:
         //构造函数
@@ -64,14 +64,14 @@ namespace engine
         //效应分组查找
         int64_t effect_group_seek(const uint64_t& inclusion);
         //效应构建
-        std::optional<uint64_t> effect_build(std::shared_ptr<event> evt);
+        std::optional<uint64_t> effect_build(std::shared_ptr<Event> evt);
         //效应卸载
-        bool effect_unload(std::shared_ptr<event> evt);
+        bool effect_unload(std::shared_ptr<Event> evt);
         //效应执行
         void effect_act(uint64_t phase);
 
         //事件处理
-        void event_process(std::shared_ptr<event> evt);
+        void event_process(std::shared_ptr<Event> evt);
 
     public:
         //事件终端
@@ -84,8 +84,8 @@ namespace engine
         std::function<std::unordered_map<std::string, double>* (const uint64_t& ID)> bind_entry;
 
         //分组效应集合
-        std::vector<effect_group> effect_groups;
+        std::vector<Effect_Group> effect_groups;
         //效应总集合
-        Object_Pool<effect_record> effect_set;
+        Object_Pool<Effect_Record> effect_set;
     };
 }
