@@ -186,14 +186,17 @@ TEST_F(Quadtree_Manager_Test, 智能创建不重复覆盖已建区域)
 	EXPECT_EQ(manager.records_get().size(), 1u);
 }
 
-//智能创建：首次创建不更新最大规模记录
-TEST_F(Quadtree_Manager_Test, 智能创建后最大规模仍为零)
+//智能创建：建树后最大规模记录为本批最大树边长
+TEST_F(Quadtree_Manager_Test, 智能创建后最大规模为最大树边长)
 {
 	//默认构造的管理器
 	engine::Quadtree_Manager<int> manager;
-	//按单点建树
+	//按单点建树（上限 256，建成边长 256 的树）
 	build_one_tree(manager, make_coord(0, 0));
-	//最大规模只在"扩大审批"路径上写入，首次建树不经过该路径
+	//建树入口即维护最大边长，供相邻树矩形筛选与合并分级使用
+	EXPECT_EQ(manager.largest_size_get(), 256u);
+	//卸载唯一一棵树后最大规模归零
+	manager.quadtree_unload({ manager.records_get().front()->root });
 	EXPECT_EQ(manager.largest_size_get(), 0u);
 }
 
@@ -517,8 +520,8 @@ TEST_F(Quadtree_Manager_Test, 清空缓存不影响序列)
 	EXPECT_EQ(manager.records_get().size(), 1u);
 }
 
-//合并：未注册数据迁移方法时不做任何处理
-TEST_F(Quadtree_Manager_Test, 未注册迁移方法时合并不生效)
+//合并：同级树不足四棵时合并不改变序列
+TEST_F(Quadtree_Manager_Test, 不足四棵同级树时合并不改变序列)
 {
 	//默认构造的管理器
 	engine::Quadtree_Manager<int> manager;
@@ -526,31 +529,23 @@ TEST_F(Quadtree_Manager_Test, 未注册迁移方法时合并不生效)
 	manager.set_max_size(256);
 	manager.quadtree_build_smart({ make_coord(0, 0), make_coord(300, 300) });
 	ASSERT_EQ(manager.records_get().size(), 2u);
-	//未注册迁移方法即请求合并
+	//无需注册任何回调，直接请求合并
 	manager.quadtree_merge();
-	//序列保持不变
+	//不足四棵同级树，序列保持不变
 	EXPECT_EQ(manager.records_get().size(), 2u);
 }
 
-//合并：注册迁移方法但树数量不足时同样不做处理
-TEST_F(Quadtree_Manager_Test, 树数量不足时合并不生效)
+//合并：仅有一棵树时合并不产生副作用
+TEST_F(Quadtree_Manager_Test, 单棵树合并不改变序列)
 {
 	//默认构造的管理器
 	engine::Quadtree_Manager<int> manager;
-	//注册数据迁移方法（本用例中不会被调用）
-	int copy_times = 0;
-	manager.callback_register([&copy_times](engine::Tree_Chunk_Data<int>& receiver,
-		engine::Tree_Chunk_Data<int>& transmitter)
-		{
-			++copy_times;
-		});
 	//建立一棵四叉树
 	build_one_tree(manager, make_coord(0, 0));
 	ASSERT_EQ(manager.records_get().size(), 1u);
 	//请求合并
 	manager.quadtree_merge();
-	//不足四棵同级树，未发生任何数据迁移
-	EXPECT_EQ(copy_times, 0);
+	//序列保持不变
 	EXPECT_EQ(manager.records_get().size(), 1u);
 }
 
@@ -757,20 +752,65 @@ TEST_F(Quadtree_Manager_Test, 超大边长上限下区块检索次数正常)
 	chunk_clean(receiver);
 }
 
-//合并：拷贝前检查区块指针
-//修复后语义：quadtree_merge 的数据拷贝段已加 if (ptr_data) 判断，
-//          区块创建失败时跳过拷贝并计入失败统计。
-TEST_F(Quadtree_Manager_Test, 合并拷贝前检查区块指针)
+//合并：四棵相邻同级树合并为一棵，区块数据以共享所有权迁移
+//新语义：区块数据 T 由叶子以 shared_ptr 持有，合并时新树叶子直接共享旧区块
+//        所有权，不再依赖 T 的拷贝方法或外界注册的数据迁移回调。
+TEST_F(Quadtree_Manager_Test, 四棵相邻树合并后区块数据共享迁移)
 {
 	//默认构造的管理器
 	engine::Quadtree_Manager<int> manager;
-	//设定边长上限
+	//边长上限压到 256，使四角坐标落入四个不同的 256 父区块
 	manager.set_max_size(256);
-	//注册数据迁移方法
-	manager.callback_register([](engine::Tree_Chunk_Data<int>& receiver,
-		engine::Tree_Chunk_Data<int>& transmitter) {});
-	//执行合并
+	//四棵树的覆盖点（分别对应根坐标 127.5 / 383.5 的 2×2 布局）
+	std::vector<engine::Point2i> corners =
+	{
+		make_coord(0, 0), make_coord(300, 0),
+		make_coord(0, 300), make_coord(300, 300)
+	};
+	//智能建树
+	manager.quadtree_build_smart(corners);
+	ASSERT_EQ(manager.records_get().size(), 4u);
+
+	//向每棵树覆盖点所在区块写入区分值，并记录数据对象地址
+	std::vector<int*> data_address{};
+	std::vector<int> data_value{ 11, 22, 33, 44 };
+	for (int write_time = 0; write_time < 4; write_time++)
+	{
+		//查询结果存储
+		std::shared_ptr<engine::Tree_Chunk_Data<int>> receiver;
+		//稳定查询取到区块
+		manager.seek(receiver, corners[write_time], true);
+		ASSERT_NE(receiver, nullptr);
+		ASSERT_NE(receiver->ptr_data, nullptr);
+		//写入区分值
+		*receiver->ptr_data = data_value[write_time];
+		//记录区块数据对象地址
+		data_address.push_back(receiver->ptr_data.get());
+	}
+
+	//放宽边长上限至 512，允许合并出双倍边长的新树
+	manager.set_max_size(512);
+	//执行合并（无需注册任何回调）
 	manager.quadtree_merge();
-	//无崩溃即为通过
-	SUCCEED();
+
+	//四棵旧树合并为一棵
+	ASSERT_EQ(manager.records_get().size(), 1u);
+	//新树根为四旧树根的平均坐标，边长翻倍
+	EXPECT_EQ(manager.records_get()[0]->root, (engine::Point2d(255.5, 255.5)));
+	EXPECT_EQ(manager.records_get()[0]->size, 512u);
+
+	//逐点校验：数据值正确且仍是同一个 T 对象（共享所有权而非拷贝）
+	for (int check_time = 0; check_time < 4; check_time++)
+	{
+		//查询结果存储
+		std::shared_ptr<engine::Tree_Chunk_Data<int>> receiver;
+		//在新树中原坐标处稳定查询
+		manager.seek(receiver, corners[check_time], true);
+		ASSERT_NE(receiver, nullptr);
+		ASSERT_NE(receiver->ptr_data, nullptr);
+		//数据值与合并前一致
+		EXPECT_EQ(*receiver->ptr_data, data_value[check_time]);
+		//数据对象地址与合并前一致（证明是同一份 T，未发生拷贝）
+		EXPECT_EQ(receiver->ptr_data.get(), data_address[check_time]);
+	}
 }

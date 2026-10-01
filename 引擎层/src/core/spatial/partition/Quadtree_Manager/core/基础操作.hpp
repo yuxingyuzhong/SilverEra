@@ -148,6 +148,11 @@ namespace engine
 
         //记录新四叉树大小
         new_tree->size = tree_size;
+        //维护当前最大四叉树边长
+        //智能建树与合并建树均经此入口
+        //该值供相邻树矩形筛选半径与合并分级计算使用
+        if (tree_size > largest_tree_size)
+            largest_tree_size = tree_size;
         //记录新四叉树根节点坐标
         new_tree->root = root;
         //设置新四叉树大小上限
@@ -215,6 +220,12 @@ namespace engine
             //从四叉树序列中移除
             tree_group.erase(tree_group.begin() + index_set[unload_time]);
         }
+
+        //按剩余四叉树重算最大边长
+        largest_tree_size = 0;
+        for (int rescan_time = 0; rescan_time < tree_group.size(); rescan_time++)
+            if (tree_group[rescan_time]->size > largest_tree_size)
+                largest_tree_size = tree_group[rescan_time]->size;
     }
 
     //卸载——根节点重载
@@ -268,6 +279,12 @@ namespace engine
             //从序列中移除记录
             tree_group.erase(tree_group.begin() + index);
         }
+
+        //按剩余四叉树重算最大边长
+        largest_tree_size = 0;
+        for (int rescan_time = 0; rescan_time < tree_group.size(); rescan_time++)
+            if (tree_group[rescan_time]->size > largest_tree_size)
+                largest_tree_size = tree_group[rescan_time]->size;
     }
 
 }

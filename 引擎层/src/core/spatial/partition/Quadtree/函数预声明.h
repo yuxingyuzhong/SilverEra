@@ -104,7 +104,9 @@ namespace engine
 		// ---- 查询 ----
 		//最小区块单元查找
 		//目标坐标为待查询区块坐标，来自范围推导，按 64 位整数接收
-		void block_seek(std::shared_ptr<Tree_Chunk_Data<T>>& receiver, const Point2l& target, bool stable);
+		//adopt 非空时，命中叶子直接接管该区块数据所有权（供四叉树合并迁移，无需 T 可拷贝）
+		void block_seek(std::shared_ptr<Tree_Chunk_Data<T>>& receiver, const Point2l& target, bool stable,
+			std::shared_ptr<T> adopt = nullptr);
 		//范围区块单元查找
 		void range_seek(std::vector<std::shared_ptr<Tree_Chunk_Data<T>>>& receiver, const Rect2l& target_range, bool stable);
 

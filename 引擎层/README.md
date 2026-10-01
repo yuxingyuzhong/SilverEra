@@ -284,8 +284,8 @@ C++20 特性在源码中的使用：`concepts`（`Object_Pool` 的 `requires std
   └ Quadtree_Manager::seek(单点检索) 或 seek(范围检索, stable)
        ├ 从树缓存中定位覆盖目标的四叉树（无则 quadtree_build_smart 新建）
        ├ Quadtree::block_seek / range_seek
-       │    ├ point_seekable_analyse / range_seekable_analyse 判断是否需要扩大
-       │    ├ 需要扩大 → callback_register 回调交给管理器裁决 → tree_expand 原地加倍
+       │    ├ seekable_analyse 判断是否需要扩大
+       │    ├ 需要扩大 → 扩大回调交给管理器裁决（tree_expand_approve）→ tree_expand 原地加倍
        │    └ 沿递归路径下钻，产出 Tree_Chunk_Data<T>
        └ 多树命中时用布尔表去重后返回
 ```
@@ -697,9 +697,10 @@ namespace engine
         void set_callback_manage(const std::function<bool(Point2d root,
                                      Point2l target)>& cb);                 //扩大权限回调
 
-        void block_seek(Tree_Chunk_Data<T>*& receiver,
-                        const Point2l& target, bool stable);                 //单点区块查询
-        void range_seek(std::vector<Tree_Chunk_Data<T>*>& receiver,
+        void block_seek(std::shared_ptr<Tree_Chunk_Data<T>>& receiver,
+                        const Point2l& target, bool stable,
+                        std::shared_ptr<T> adopt = nullptr);               //单点区块查询（adopt：叶子接管数据）
+        void range_seek(std::vector<std::shared_ptr<Tree_Chunk_Data<T>>>& receiver,
                         const Rect2l& target_range, bool stable);            //范围区块查询
 
         const Tree_State& tree_state_get(void);                             //读取树状态
@@ -773,9 +774,6 @@ namespace engine
         Quadtree_Manager(void);
         ~Quadtree_Manager(void);
 
-        //数据迁移方法注册
-        void callback_register(const std::function<void(Tree_Chunk_Data<T>& receiver,
-            Tree_Chunk_Data<T>& transmitter)>& cb_1);
         void set_block_size(const uint64_t& block_size);                 //最小区块单元边长
         void set_max_size(const uint64_t& max_size);                     //单树边长上限
         void set_min_size(const uint64_t& min_size);                     //单树边长下限
@@ -785,9 +783,9 @@ namespace engine
 
         void quadtree_build_smart(const std::vector<Point2i>& coord_set); //按点集智能建树
 
-        void seek(Tree_Chunk_Data<T>*& receiver, const Point2i& target,
-                  bool stable);                                          //单点检索
-        void seek(std::vector<Tree_Chunk_Data<T>*>& receiver,
+        void seek(std::shared_ptr<Tree_Chunk_Data<T>>& receiver,
+                  const Point2i& target, bool stable);                   //单点检索
+        void seek(std::vector<std::shared_ptr<Tree_Chunk_Data<T>>>& receiver,
                   const Rect2i& target_range, bool stable);              //范围检索
 
         const Tree_Manager_Settings& settings_get(void);                 //读取设置
@@ -836,7 +834,8 @@ namespace engine
 - **相邻树三级筛选查找**：`相邻四叉树查找.hpp` 以由粗到细的三级筛选定位与目标范围相邻的树，降低查找开销。
 - **四叉树合并**：`四叉树合并.hpp` 把可以合并的相邻同尺寸树归并为一棵，控制树的数量膨胀。
 - **扩大裁决**：四叉树把自己的扩大申请通过回调上报给管理器；管理器由 `四叉树扩大回调管理.hpp` 判断该次扩大会否与已在册的其它树发生管辖范围重叠，再决定批准与否——这是多树并存时避免相互重叠的关键。
-- **数据迁移回调**：`callback_register()` 注册的是 `void(Tree_Chunk_Data<T>&, Tree_Chunk_Data<T>&)` 形式的迁移方法，供合并 / 扩大时把源区块数据搬运到目标区块，业务层借此决定数据如何随空间重组而迁移。
+- **合并时数据迁移**：区块数据 `T` 由叶子以 `std::shared_ptr<T>` 持有；合并时 `block_seek` 经新增的 `adopt` 形参让新树命中叶子**直接接管**旧区块的 shared_ptr（`std::get<1>(叶子.data) = adopt`），旧树卸载后由新树独占持有，`T` 对象地址不变。`T` 无需提供拷贝方法，管理器也不再提供任何数据迁移注册接口（原 `callback_register` 已移除，合并无条件执行）。
+- **最大边长随建树/卸载维护**：`largest_tree_size` 现于 `quadtree_build` 取入树边长的最大值、于两个 `quadtree_unload` 重载末尾按剩余树重算（`clear` 经卸载重载归零）；此前该值仅在扩大审批路径更新，智能建树后恒为 0，会使合并的相邻树矩形筛选半径塌缩而永远找不到可合并组合。
 - **缓存**：管理器维护 `tree_cache { records, ranges }`，缓存近期使用过的树；缓存启用阈值与记录上限可配置，`cache_clear()` 可手动清空。
 - **对外检索的坐标仍受 32 位约束**：`seek` 使用 `Point2i` / `Rect2i`（详见第九节已知问题）。
 - 工程内以 `Quadtree_Manager<int>` 实例化（见 `core/四叉树管理器实例化.cpp`）。

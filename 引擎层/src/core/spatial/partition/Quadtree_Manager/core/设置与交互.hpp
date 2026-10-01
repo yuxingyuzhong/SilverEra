@@ -18,15 +18,6 @@ namespace engine
         clear();
     }
 
-    //数据迁移方法设置
-    template<typename T>
-    void Quadtree_Manager<T>::callback_register(const std::function<void(Tree_Chunk_Data<T>& receiver,
-        Tree_Chunk_Data<T>& transmitter)>& cb_1)
-    {
-        //赋值函数注册
-        copy = cb_1;
-    }
-
     //四叉树最小区块单元大小设置
     template<typename T>
     void Quadtree_Manager<T>::set_block_size(const uint64_t& block_size)
