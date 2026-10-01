@@ -7,7 +7,7 @@ namespace engine
     //查询范围列表修改
     template<typename T>
     void Quadtree_Manager<T>::target_range_amend(const Rect2l& excel_range, bool* ptr_excel,
-        const Rect2l& target_range)
+        const Rect2l& target_range) const
     {
         //空指针防御
         if (ptr_excel == nullptr)
@@ -70,7 +70,7 @@ namespace engine
     //查询结果列表元素坐标化
     template<typename T>
     void Quadtree_Manager<T>::excel_element_to_coord(const Rect2l& excel_range, const int64_t& element_ID,
-        Point2l& receiver)
+        Point2l& receiver) const
     {
         //区块大小非正防御
         //区块尺寸为零时下方取模会抛整数除零异常

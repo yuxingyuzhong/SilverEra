@@ -7,7 +7,7 @@ namespace engine
     //相邻四叉树查找_____矩形筛选
     template<typename T>
     void Quadtree_Manager<T>::rectangle_filter(std::vector<Tree_Record<T>*>& receiver, const Tree_Record<T>* tree,
-        const Rect2l& range, const std::vector<Tree_Record<T>*>* tree_group)
+        const Rect2l& range, const std::vector<Tree_Record<T>*>* tree_group) const
     {
         /*/
         矩形筛选逻辑：选定待查找树，记录其根节点坐标，然后以根节点坐标为原点
@@ -62,7 +62,7 @@ namespace engine
     //相邻四叉树查找___分类筛选
     template<typename T>
     std::vector<Tree_Record<T>*> Quadtree_Manager<T>::next_tree_classify(std::vector<Tree_Record<T>*>& receiver, const Tree_Record<T>* tree,
-        const std::vector<Tree_Record<T>*>& candidate)
+        const std::vector<Tree_Record<T>*>& candidate) const
     {
         /*/
         分类筛选逻辑：
@@ -116,7 +116,7 @@ namespace engine
     template<typename T>
     template<typename Screen>
     void Quadtree_Manager<T>::next_tree_verify(std::vector<Tree_Record<T>*>& receiver, const Tree_Record<T>* tree,
-        const std::vector<Tree_Record<T>*>& candidate, Screen way)
+        const std::vector<Tree_Record<T>*>& candidate, Screen way) const
     {
         /*/
         确认筛选逻辑：
@@ -158,7 +158,7 @@ namespace engine
     //候选树筛选
     template<typename T>
     void Quadtree_Manager<T>::candidate_tree_filter(std::vector<Tree_Record<T>*>& receiver, const Tree_Record<T>* tree,
-        const std::vector<Tree_Record<T>*>& candidate)
+        const std::vector<Tree_Record<T>*>& candidate) const
     {
         //若筛选出候选四叉树
         //则进行进一步的相邻四叉树分类
@@ -183,7 +183,7 @@ namespace engine
     //相邻四叉树查找总函数
     template<typename T>
     void Quadtree_Manager<T>::next_tree_seek(std::vector<Tree_Record<T>*>& receiver, const Tree_Record<T>* tree,
-        const std::vector<Tree_Record<T>*>* tree_group)
+        const std::vector<Tree_Record<T>*>* tree_group) const
     {
         //矩形四叉树筛选结果存储
         std::vector<Tree_Record<T>*> rectan_trees{};

@@ -41,8 +41,10 @@ namespace engine
 		}
 
 		//注册本模块事件接收入口（事件送达后交由事件处理分派）
-		if (!event_terminal->event_receiver_register(
-			[this](shared_ptr<Event> evt) { this->event_process(evt); }))
+		event_terminal->event_receiver_register(
+			[this](shared_ptr<Event> evt) { this->event_process(evt); });
+		//若事件接收入口注册失败
+		if (!event_terminal->interface_check(Interface_ID::EVENT_RECEIVER))
 		{
 			Log::error("Collision_Proxy::事件接收入口注册失败，接入中止");
 			return;

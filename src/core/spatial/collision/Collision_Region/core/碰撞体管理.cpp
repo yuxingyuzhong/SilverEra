@@ -243,7 +243,7 @@ namespace engine
 	}
 
 	//碰撞体全量获取
-	std::vector<uint64_t> Collision_Region::colliders(void)
+	std::vector<uint64_t> Collision_Region::colliders(void) const
 	{
 		//碰撞体编号集合
 		vector<uint64_t> collider_IDs;

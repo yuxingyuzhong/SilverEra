@@ -117,7 +117,7 @@ namespace engine
 		//碰撞体查询
 		bool collider_find(uint64_t collider_id) const;
 		//碰撞体全量获取
-		std::vector<uint64_t> colliders(void);
+		std::vector<uint64_t> colliders(void) const;
 		//碰撞体接管(按指定编号登记，供空间间转移使用)
 		bool collider_adopt(uint64_t collider_ID);
 		//碰撞体几何配置读取(编号不存在时返回空配置)
@@ -140,17 +140,17 @@ namespace engine
 		Collider* collider_seek(uint64_t collider_ID);
 
 		//浮点字段读取
-		bool scalar_read(const nlohmann::json& config, const std::string& field, double& receiver);
+		bool scalar_read(const nlohmann::json& config, const std::string& field, double& receiver) const;
 		//三元数组字段读取
-		bool vector_read(const nlohmann::json& config, const std::string& field, Vector3& receiver);
+		bool vector_read(const nlohmann::json& config, const std::string& field, Vector3& receiver) const;
 		//四元数组字段读取
 		bool quaternion_read(const nlohmann::json& config, const std::string& field,
-			Quaternion& receiver);
+			Quaternion& receiver) const;
 
 		//网格形状构建
 		bool mesh_shape_build(const std::string& mesh_path,
 			std::unique_ptr<Collision_Shape>& shape_receiver,
-			std::unique_ptr<Triangle_Mesh>& mesh_receiver);
+			std::unique_ptr<Triangle_Mesh>& mesh_receiver) const;
 		//几何形状构建
 		bool shape_build(const nlohmann::json& geometry_config,
 			std::unique_ptr<Collision_Shape>& shape_receiver,

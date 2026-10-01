@@ -37,7 +37,7 @@ namespace engine
 
 	//浮点字段读取
 	bool Collision_Region::scalar_read(const nlohmann::json& config, const std::string& field,
-		double& receiver)
+		double& receiver) const
 	{
 		//浮点格式检查
 		if (Data_Validator::field_check<double>(config, field))
@@ -54,7 +54,7 @@ namespace engine
 
 	//三元数组字段读取
 	bool Collision_Region::vector_read(const nlohmann::json& config, const std::string& field,
-		Vector3& receiver)
+		Vector3& receiver) const
 	{
 		//数组格式检查
 		if (!Data_Validator::field_check<std::vector<double>>(config, field))
@@ -76,7 +76,7 @@ namespace engine
 
 	//四元数组字段读取
 	bool Collision_Region::quaternion_read(const nlohmann::json& config, const std::string& field,
-		Quaternion& receiver)
+		Quaternion& receiver) const
 	{
 		//数组格式检查
 		if (!Data_Validator::field_check<std::vector<double>>(config, field))
@@ -99,7 +99,7 @@ namespace engine
 	//网格形状构建
 	bool Collision_Region::mesh_shape_build(const string& mesh_path,
 		std::unique_ptr<Collision_Shape>& shape_receiver,
-		std::unique_ptr<Triangle_Mesh>& mesh_receiver)
+		std::unique_ptr<Triangle_Mesh>& mesh_receiver) const
 	{
 		//网格数据
 		Mesh_Data mesh_data;

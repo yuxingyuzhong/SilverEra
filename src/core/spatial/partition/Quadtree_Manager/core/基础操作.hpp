@@ -97,7 +97,7 @@ namespace engine
 
     //四叉树序列索引查找
     template<typename T>
-    int64_t Quadtree_Manager<T>::quadtree_index_seek(const Point2d& root)
+    int64_t Quadtree_Manager<T>::quadtree_index_seek(const Point2d& root) const
     {
         //简化表示路径
         auto& tree_group = X_sequence;

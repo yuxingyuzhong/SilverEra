@@ -89,7 +89,7 @@ namespace engine
 	}
 
 	//位移读取回调注入（碰撞空间经此回调读取最新位移事件）
-	void Collision_Proxy::region_displacement_link(Collision_Region& region)
+	void Collision_Proxy::region_displacement_link(Collision_Region& region) const
 	{
 		//注入读取回调（每次调用都取当前保存的最新位移事件）
 		region.displacement_reader_set([this](const uint64_t collider_ID, Vector3& receiver)

@@ -53,23 +53,23 @@ namespace engine
 		bool interact(std::vector<std::shared_ptr<Event>> events, const int64_t& acl_key);
 
 		//事件构造
-		std::shared_ptr<Event> build(void);
+		std::shared_ptr<Event> build(void) const;
 		//事件构造
-		std::shared_ptr<Event> build(const std::string& category, const std::string& tag);
+		std::shared_ptr<Event> build(const std::string& category, const std::string& tag) const;
 		//事件构造
 		std::shared_ptr<Event> build(const std::string& sender_object, const std::string& target_object,
-			const std::string& category, const std::string& tag);
+			const std::string& category, const std::string& tag) const;
 
 		//事件发送 —— 单事件重载
-		bool send(std::shared_ptr<Event> evt, const int64_t& acl_key);
+		bool send(std::shared_ptr<Event> evt, const int64_t& acl_key) const;
 		//事件发送 —— 多事件重载
-		bool send(std::vector<std::shared_ptr<Event>> events,const int64_t& acl_key);
+		bool send(std::vector<std::shared_ptr<Event>> events,const int64_t& acl_key) const;
 		//事件接收 —— 单事件重载
 		void receive(std::shared_ptr<Event> evt);
 		//事件接收 —— 多事件重载
 		void receive(std::vector<std::shared_ptr<Event>> events);
 		//事件查阅
-		const std::vector<std::shared_ptr<Event>>* query(const int64_t& acl_key);
+		const std::vector<std::shared_ptr<Event>>* query(const int64_t& acl_key) const;
 		//事件清空
 		bool clear(const int64_t& acl_key);
 

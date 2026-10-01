@@ -124,7 +124,7 @@ namespace engine
 	template <typename T>
 	void Quadtree<T>::recur_stack_operate(std::vector<Recur_Record>& recur_stack,
 		Node*& ptr, Rect2l& range, int& level,
-		bool push_back)
+		bool push_back) const
 	{
 		//若为弹栈操作
 		if (push_back == true)

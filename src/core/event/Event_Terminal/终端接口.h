@@ -60,7 +60,7 @@ namespace engine
 
 		//函数包装器内存分配
 		template <typename... Args>
-		bool memory_malloc(std::unique_ptr<std::function<void(Args ...)>>& target);
+		bool memory_malloc(std::unique_ptr<std::function<void(Args ...)>>& target) const;
 
 		//函数接口注册
 		template <typename... Args>
@@ -71,23 +71,25 @@ namespace engine
 		friend class Event_Terminal;
 
 		//中转站接入入口注册
-		bool attach_handler_register(Attach_Handler callback);
+		Terminal_Interface& attach_handler_register(Attach_Handler callback);
 		//中转站交互入口注册
-		bool event_interactor_register(Event_Handler callback);
+		Terminal_Interface& event_interactor_register(Event_Handler callback);
 		//中转站交互入口注册
-		bool events_interactor_register(Events_Handler callback);
+		Terminal_Interface& events_interactor_register(Events_Handler callback);
 
 		//事件发送入口注册 —— 单事件重载
-		bool event_sender_register(Event_Handler callback);
+		Terminal_Interface& event_sender_register(Event_Handler callback);
 		//事件发送入口注册 —— 多事件重载
-		bool event_sender_register(Events_Handler callback);
+		Terminal_Interface& event_sender_register(Events_Handler callback);
 
 		//事件接收入口注册 —— 单事件重载
-		bool event_receiver_register(Event_Handler callback);
+		Terminal_Interface& event_receiver_register(Event_Handler callback);
 		//事件接收入口注册 —— 多事件重载
-		bool event_receiver_register(Events_Handler callback);
+		Terminal_Interface& event_receiver_register(Events_Handler callback);
 
 		//接口注入验证
-		bool interface_check(const Interface_ID& ID);
+		bool interface_check(const Interface_ID& ID) const;
+		//已注册接口返回
+		std::vector<Interface_ID> interface_state_get(void) const;
 	};
 }

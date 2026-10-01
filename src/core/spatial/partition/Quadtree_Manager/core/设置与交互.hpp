@@ -87,7 +87,7 @@ namespace engine
 
     //四叉树管理器设置获取
     template<typename T>
-    const Tree_Manager_Settings& Quadtree_Manager<T>::settings_get(void)
+    const Tree_Manager_Settings& Quadtree_Manager<T>::settings_get(void) const
     {
         //返回四叉树设置
         return settings;
@@ -95,7 +95,7 @@ namespace engine
 
     //四叉树序列档案信息获取
     template<typename T>
-    const std::vector<Tree_Record<T>*>& Quadtree_Manager<T>::records_get(void)
+    const std::vector<Tree_Record<T>*>& Quadtree_Manager<T>::records_get(void) const
     {
         //返回四叉树序列档案
         return X_sequence;
@@ -103,7 +103,7 @@ namespace engine
 
     //最大四叉树大小获取
     template<typename T>
-    const uint64_t& Quadtree_Manager<T>::largest_size_get(void)
+    const uint64_t& Quadtree_Manager<T>::largest_size_get(void) const
     {
         return largest_tree_size;
     }

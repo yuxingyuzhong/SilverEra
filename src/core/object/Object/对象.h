@@ -30,7 +30,7 @@ namespace engine
 			return this->object_ID;
 		}
 		//对象有效性获取
-		bool valid(void) 
+		bool valid(void) const
 		{
 			return is_valid;
 		}
