@@ -1,4 +1,4 @@
-#include "src/tools/Config_Loader/局部命名空间使用.h"
+#include "../局部命名空间使用.h"
 #include "src/tools/Logging/日志系统.h"
 
 //引擎命名空间
@@ -249,7 +249,7 @@ namespace engine
                 }
 
                 //构造配置事件
-                shared_ptr<event> evt(new(nothrow) event());
+                shared_ptr<Event> evt(new(nothrow) Event());
                 //若配置事件构造失败
                 if (evt == nullptr)
                     return;

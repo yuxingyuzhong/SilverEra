@@ -20,7 +20,7 @@ namespace engine
 	};
 
 	//碰撞体相对碰撞空间的跨越状态
-	enum class cross_state
+	enum class Cross_State
 	{
 		//完全位于碰撞空间内
 		inside,
@@ -62,7 +62,7 @@ namespace engine
 		*/
 		std::function<bool(uint64_t, Vector3&)> displacement_reader;
 		//跨越状态记录（键为碰撞体编号，记录上一次判定所得的跨越状态）
-		std::unordered_map<uint64_t, cross_state> cross_states;
+		std::unordered_map<uint64_t, Cross_State> cross_states;
 		//本帧跨越通知（检测时收集，供碰撞代理器发布后取走）
 		std::vector<Cross_Notice> cross_notices;
 	public:

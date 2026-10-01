@@ -122,7 +122,7 @@ namespace engine
 
 	//递归栈操作
 	template <typename T>
-	void Quadtree<T>::recur_stack_operate(std::vector<recur_record>& recur_stack,
+	void Quadtree<T>::recur_stack_operate(std::vector<Recur_Record>& recur_stack,
 		Node*& ptr, Rect2l& range, int& level,
 		bool push_back)
 	{
@@ -147,7 +147,7 @@ namespace engine
 
 	//最小区块单元查找
 	template <typename T>
-	void Quadtree<T>::block_seek(tree_chunk_data<T>*& receiver, const Point2l& target, bool stable)
+	void Quadtree<T>::block_seek(Tree_Chunk_Data<T>*& receiver, const Point2l& target, bool stable)
 	{
 		//四叉树上限上限临时存储
 		uint64_t max_size = state.max_size;
@@ -219,7 +219,7 @@ namespace engine
 		//若指针为空则分配内存
 		if (receiver == nullptr)
 		{
-			receiver = new(std::nothrow) tree_chunk_data<T>;
+			receiver = new(std::nothrow) Tree_Chunk_Data<T>;
 			//若内存分配失败则返回
 			if (receiver == nullptr)
 				return;
@@ -234,7 +234,7 @@ namespace engine
 
 	//范围区块单元查找
 	template <typename T>
-	void Quadtree<T>::range_seek(std::vector<tree_chunk_data<T>*>& receiver, 
+	void Quadtree<T>::range_seek(std::vector<Tree_Chunk_Data<T>*>& receiver, 
 		const Rect2l& target_range, bool stable)
 	{
 		//可查询范围存储
@@ -252,7 +252,7 @@ namespace engine
 		recur_level_calcu(recur_level_max);
 
 		//矢量模拟堆栈
-		std::vector<recur_record> stack{};
+		std::vector<Recur_Record> stack{};
 		//递归路径存储
 		std::vector<int> recur_path(recur_level_max, NW);
 
@@ -372,7 +372,7 @@ namespace engine
 					//记录查询结果
 					//区块中心坐标由 64 位范围求得
 					//先以双精度求中点再落单精度，尽量减少精度损失
-					auto* new_data = new(std::nothrow) tree_chunk_data<T>
+					auto* new_data = new(std::nothrow) Tree_Chunk_Data<T>
 						(static_cast<float>((child_range.left + child_range.right) / 2.0),
 							static_cast<float>((child_range.up + child_range.down) / 2.0),
 							&child_node->leaf);

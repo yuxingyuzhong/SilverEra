@@ -6,22 +6,22 @@
 namespace engine
 {
     //事件
-    struct event
+    struct Event
     {
         //默认构造函数
-        event()
+        Event()
         {
 
         }
         //含参构造函数 —— 构造事件标签
-        event(const std::string& category, const std::string& tag)
+        Event(const std::string& category, const std::string& tag)
         {
             this->category = category;
             this->tag = tag;
         }
 
         //含参构造函数 —— 构造对象标签
-        event(const std::string& sender_object, const std::string& target_object,
+        Event(const std::string& sender_object, const std::string& target_object,
             const std::string& category, const std::string& tag)
         {
             this->sender_object = sender_object;
@@ -31,7 +31,7 @@ namespace engine
         }
 
         //含参构造函数 —— 全量构造
-        event(const std::string& sender_object,const std::string& target_object,
+        Event(const std::string& sender_object,const std::string& target_object,
             const std::string& category,const std::string& tag,
             const nlohmann::json& config)
         {
@@ -43,7 +43,7 @@ namespace engine
         }
 
         //默认析构函数
-        ~event()
+        ~Event()
         {
 
         }
@@ -52,7 +52,7 @@ namespace engine
         std::string sender_object{};
         //事件目标
         std::string target_object{};
-        //事件大类
+        //事件分类
         std::string category;
         //类内标签
         std::string tag;
@@ -60,7 +60,7 @@ namespace engine
         nlohmann::json config;
 
         //使用默认等于运算符
-        bool operator==(const event& other) const
+        bool operator==(const Event& other) const
         {
             if (this->category == other.category &&
                 this->tag == other.tag &&
@@ -84,14 +84,14 @@ namespace engine
 namespace std
 {
     template<>
-    struct hash<engine::event>
+    struct hash<engine::Event>
     {
-        size_t operator()(const engine::event& evt) const noexcept
+        size_t operator()(const engine::Event& evt) const noexcept
         {
             std::hash<std::string> str_hasher;
             size_t seed = 0;
 
-            // 1. 哈希基类成员（与 event 一致）
+            // 1. 哈希基类成员（与 Event 一致）
             seed = str_hasher(evt.category);
             engine::detail::hash_combine(seed, str_hasher(evt.tag));
             engine::detail::hash_combine(seed, str_hasher(evt.target_object));

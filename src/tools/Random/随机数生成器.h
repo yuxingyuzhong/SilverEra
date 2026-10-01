@@ -7,7 +7,7 @@ namespace engine
 	class Random_Generator
 	{
 		// PCG32 状态结构体
-		struct pcg32
+		struct Pcg32
 		{
 			uint64_t state = 0;
 			uint64_t inc = 0;

@@ -73,7 +73,7 @@ namespace engine
 
 	private:
 		//事件处理
-		void event_process(std::shared_ptr<event> evt);
+		void event_process(std::shared_ptr<Event> evt);
 
 		//碰撞空间查找（不存在的返回空指针）
 		Collision_Region* region_seek(const std::string& region);

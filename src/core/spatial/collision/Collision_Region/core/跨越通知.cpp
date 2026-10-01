@@ -74,11 +74,11 @@ namespace engine
 				continue;
 
 			//当前跨越状态
-			cross_state current = cross_state::outside;
+			Cross_State current = Cross_State::outside;
 			//与空间边界存在接触则判定为部分跨越
 			if (std::find(boundary_contacts.begin(), boundary_contacts.end(), collider_ID)
 				!= boundary_contacts.end())
-				current = cross_state::crossing;
+				current = Cross_State::crossing;
 			else
 			{
 				//碰撞体世界包围盒
@@ -89,7 +89,7 @@ namespace engine
 				//探针点（取包围盒中心）
 				Vector3 probe = (aabb_min + aabb_max) * 0.5f;
 				//无接触时以射线奇偶判定探针点在边界内还是边界外
-				current = boundary_point_inside(probe) ? cross_state::inside : cross_state::outside;
+				current = boundary_point_inside(probe) ? Cross_State::inside : Cross_State::outside;
 			}
 
 			//查找该碰撞体的跨越状态记录
@@ -109,8 +109,8 @@ namespace engine
 			//写入碰撞体编号
 			notice.collider_ID = collider_ID;
 			//按转移后的状态命名（首次部分跨越/完全回归/完全超出跨越）
-			notice.kind = (current == cross_state::crossing) ? "cross"
-				: (current == cross_state::inside) ? "return" : "exit";
+			notice.kind = (current == Cross_State::crossing) ? "cross"
+				: (current == Cross_State::inside) ? "return" : "exit";
 			//收集本帧通知
 			cross_notices.push_back(notice);
 			//更新状态记录

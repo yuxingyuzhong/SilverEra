@@ -26,7 +26,7 @@ namespace engine
 	}
 
 	//中转站接入
-	bool Event_Terminal::attach(const string& module_name, const vector<event>& needed_events,
+	bool Event_Terminal::attach(const string& module_name, const vector<Event>& needed_events,
 		const int64_t& acl_key)
 	{
 		//若当前尚未生成密钥
@@ -46,7 +46,7 @@ namespace engine
 		if(!Tinterface.event_receiver)
 		{
 			//包装单事件接收入口
-			auto it = [this](shared_ptr<event> evt) -> void
+			auto it = [this](shared_ptr<Event> evt) -> void
 				{
 					this->receive(evt);
 				};
@@ -61,7 +61,7 @@ namespace engine
 	}
 
 	//中转站交互 —— 单事件重载
-	bool Event_Terminal::interact(std::shared_ptr<event> evt, const int64_t& acl_key)
+	bool Event_Terminal::interact(std::shared_ptr<Event> evt, const int64_t& acl_key)
 	{
 		//若当前尚未生成密钥
 		if (!this->acl_key.has_value())
@@ -74,7 +74,7 @@ namespace engine
 		if (this->acl_key == acl_key)
 		{
 			//若未注册单事件交互接口则返回
-			if (!terminal_interface.interface_check(interface_ID::EVENT_INTERACTOR))
+			if (!terminal_interface.interface_check(Interface_ID::EVENT_INTERACTOR))
 				return false;
 			else
 			{
@@ -87,7 +87,7 @@ namespace engine
 	}
 
 	//中转站交互 —— 多事件重载
-	bool Event_Terminal::interact(std::vector<std::shared_ptr<event>> events, const int64_t& acl_key)
+	bool Event_Terminal::interact(std::vector<std::shared_ptr<Event>> events, const int64_t& acl_key)
 	{
 		//若当前尚未生成密钥
 		if (!this->acl_key.has_value())
@@ -99,13 +99,13 @@ namespace engine
 		if (this->acl_key == acl_key)
 		{
 			//若已注册多事件交互接口
-			if (terminal_interface.interface_check(interface_ID::EVENTS_INTERACTOR))
+			if (terminal_interface.interface_check(Interface_ID::EVENTS_INTERACTOR))
 			{
 				(*terminal_interface.events_interactor)(events);
 				return true;
 			}
 			//若已注册单事件交互接口则返回
-			else if (terminal_interface.interface_check(interface_ID::EVENT_INTERACTOR))
+			else if (terminal_interface.interface_check(Interface_ID::EVENT_INTERACTOR))
 			{
 				//分多次发送事件
 				for (auto& evt : events)
@@ -120,26 +120,26 @@ namespace engine
 	}
 
 	//事件构造
-	shared_ptr<event> Event_Terminal::build(void)
+	shared_ptr<Event> Event_Terminal::build(void)
 	{
-		return shared_ptr<event> (new(nothrow)event());
+		return shared_ptr<Event> (new(nothrow)Event());
 	}
 
 	//事件构造
-	shared_ptr<event> Event_Terminal::build(const string& category, const string& tag)
+	shared_ptr<Event> Event_Terminal::build(const string& category, const string& tag)
 	{
-		return shared_ptr<event>(new(nothrow)event(category,tag));
+		return shared_ptr<Event>(new(nothrow)Event(category,tag));
 	}
 
 	//事件构造
-	shared_ptr<event> Event_Terminal::build(const string& sender_object, const string& target_object,
+	shared_ptr<Event> Event_Terminal::build(const string& sender_object, const string& target_object,
 		const string& category, const string& tag)
 	{
-		return shared_ptr<event>(new(nothrow)event(sender_object,target_object,category,tag));
+		return shared_ptr<Event>(new(nothrow)Event(sender_object,target_object,category,tag));
 	}
 
 	//事件发送 —— 单事件重载
-	bool Event_Terminal::send(shared_ptr<event> evt, const int64_t& acl_key)
+	bool Event_Terminal::send(shared_ptr<Event> evt, const int64_t& acl_key)
 	{
 		//若当前尚未生成密钥
 		if (!this->acl_key.has_value())
@@ -167,7 +167,7 @@ namespace engine
 	}
 
 	//事件发送 —— 多事件重载
-	bool Event_Terminal::send(vector<shared_ptr<event>> events, const int64_t& acl_key)
+	bool Event_Terminal::send(vector<shared_ptr<Event>> events, const int64_t& acl_key)
 	{
 		//若当前尚未生成密钥
 		if (!this->acl_key.has_value())
@@ -195,7 +195,7 @@ namespace engine
 	}
 
 	//事件接收 —— 单事件重载
-	void Event_Terminal::receive(shared_ptr<event> evt)
+	void Event_Terminal::receive(shared_ptr<Event> evt)
 	{
 		//若事件接收入口已额外注册
 		if (terminal_interface.event_receiver)
@@ -206,7 +206,7 @@ namespace engine
 	}
 
 	//事件接收 —— 多事件重载
-	void Event_Terminal::receive(vector<shared_ptr<event>> events)
+	void Event_Terminal::receive(vector<shared_ptr<Event>> events)
 	{
 		//若事件接收入口已额外注册
 		if (terminal_interface.events_receiver)
@@ -217,7 +217,7 @@ namespace engine
 	}
 
 	//事件查阅
-	const vector<shared_ptr<event>>* Event_Terminal::query(const int64_t& acl_key)
+	const vector<shared_ptr<Event>>* Event_Terminal::query(const int64_t& acl_key)
 	{
 		//若当前尚未生成密钥
 		if (!this->acl_key.has_value())

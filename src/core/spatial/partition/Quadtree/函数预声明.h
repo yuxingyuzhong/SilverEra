@@ -17,7 +17,7 @@ namespace engine
 		// ———— 内部类型定义 ————
 
 		//节点类型枚举
-		enum Node_type
+		enum Node_Type
 		{
 			//中间节点
 			MIDDLE,
@@ -27,7 +27,7 @@ namespace engine
 		//节点信息联合体
 		union Node
 		{
-			Node(const Node_type& mode = MIDDLE)
+			Node(const Node_Type& mode = MIDDLE)
 			{
 				//默认激活ptr_child成员并置空指针
 				if (mode == MIDDLE)
@@ -46,15 +46,15 @@ namespace engine
 
 		}root;
 		//查找区域分布情况枚举
-		enum range_relation
+		enum Range_Relation
 		{
 			PART_IN,
 			NONE_IN
 		};
 		//节点递归方向枚举
-		enum recur_direct { NW, NE, SW, SE };
+		enum Recur_Direct { NW, NE, SW, SE };
 		//节点递归记录结构体
-		struct recur_record
+		struct Recur_Record
 		{
 			//节点
 			Node* node;
@@ -66,7 +66,7 @@ namespace engine
 			int recur_level = 0;
 		};
 		//四叉树状态记录
-		tree_state state;
+		Tree_State state;
 		//外界上级管理对象回调管理方法----四叉树扩大行为权限申请
 		//目标坐标取自范围推导结果，同样按 64 位整数通报
 		std::function<bool(const Point2d& root, const Point2l& target)> callback;
@@ -90,12 +90,12 @@ namespace engine
 		// ---- 查询 ----
 		//最小区块单元查找
 		//目标坐标为待查询区块坐标，来自范围推导，按 64 位整数接收
-		void block_seek(tree_chunk_data<T>*& receiver, const Point2l& target, bool stable);
+		void block_seek(Tree_Chunk_Data<T>*& receiver, const Point2l& target, bool stable);
 		//范围区块单元查找
-		void range_seek(std::vector<tree_chunk_data<T>*>& receiver, const Rect2l& target_range, bool stable);
+		void range_seek(std::vector<Tree_Chunk_Data<T>*>& receiver, const Rect2l& target_range, bool stable);
 
 		//四叉树状态获取
-		const tree_state& tree_state_get(void);
+		const Tree_State& tree_state_get(void);
 
 		//四叉树扩大
 		bool tree_expand(void);
@@ -130,7 +130,7 @@ namespace engine
 		void unload(int now_level, const int& max_level, Node* ptr_now);
 
 		//子节点递归
-		bool child_node_recur(Node*& this_node, const int& direct, const Node_type& type, bool stable);
+		bool child_node_recur(Node*& this_node, const int& direct, const Node_Type& type, bool stable);
 
 		// ———— 查询前置支撑 ————
 	private:
@@ -141,7 +141,7 @@ namespace engine
 		void range_seekable_analyse(const Rect2l& format_range, Rect2l& seekable_range);
 
 		//递归栈操作
-		void recur_stack_operate(std::vector<recur_record>& recur_stack,
+		void recur_stack_operate(std::vector<Recur_Record>& recur_stack,
 			Node*& ptr, Rect2l& range, int& level,
 			bool push_back);
 

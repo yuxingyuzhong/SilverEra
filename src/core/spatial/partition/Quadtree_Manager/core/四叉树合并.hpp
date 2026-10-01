@@ -6,7 +6,7 @@ namespace engine
 {
     //四叉树合并_____收集候选组合
     template<typename T>
-    void Quadtree_Manager<T>::quedtree_merge_collect(std::vector<std::vector<tree_record<T>*>>& receiver)
+    void Quadtree_Manager<T>::quedtree_merge_collect(std::vector<std::vector<Tree_Record<T>*>>& receiver)
     {
         //简化表示路径
         auto& max_tree_size = settings.max_tree_size;
@@ -26,7 +26,7 @@ namespace engine
             expand_level++;
 
         //不同扩大级数四叉树存储
-        std::vector<std::vector<tree_record<T>*>> level_tree_group(expand_level + 1);
+        std::vector<std::vector<Tree_Record<T>*>> level_tree_group(expand_level + 1);
         //四叉树大小存储
         uint64_t tree_size;
 
@@ -48,7 +48,7 @@ namespace engine
         }
 
         //数量筛选通过四叉树存储——同级四叉树
-        std::vector<std::vector<tree_record<T>*>> level_qualified_tree{};
+        std::vector<std::vector<Tree_Record<T>*>> level_qualified_tree{};
 
         //筛选数量符合可合并最低条件的四叉树组合
         for (int filter_index = 0; filter_index < level_tree_group.size(); filter_index++)
@@ -60,7 +60,7 @@ namespace engine
         }
 
         //相邻四叉树存储
-        std::vector<tree_record<T>*> next_trees{};
+        std::vector<Tree_Record<T>*> next_trees{};
 
         //筛选相邻四叉树数量符合要求的四叉树
         for (int group_index = 0; group_index < level_qualified_tree.size(); group_index++)
@@ -72,7 +72,7 @@ namespace engine
             for (int filter_index = 0; filter_index < candidate_trees.size(); filter_index++)
             {
                 //获取当前主体四叉树信息
-                tree_record<T>* center_tree = candidate_trees[filter_index];
+                Tree_Record<T>* center_tree = candidate_trees[filter_index];
 
                 //重置相邻四叉树集合
                 next_trees.clear();
@@ -97,8 +97,8 @@ namespace engine
 
     //四叉树合并_____精确筛选组合
     template<typename T>
-    void Quadtree_Manager<T>::quedtree_merge_filter(const std::vector<std::vector<tree_record<T>*>>& candidate,
-        std::vector<std::vector<tree_record<T>*>>& receiver)
+    void Quadtree_Manager<T>::quedtree_merge_filter(const std::vector<std::vector<Tree_Record<T>*>>& candidate,
+        std::vector<std::vector<Tree_Record<T>*>>& receiver)
     {
         //筛选思路：
                 //穷举法----提前计算各种可能出现合并四叉树中心
@@ -119,7 +119,7 @@ namespace engine
         uint64_t offset;
 
         // ===== 修改点：改为按指针去重 =====
-        std::unordered_set<tree_record<T>*> used_trees{};
+        std::unordered_set<Tree_Record<T>*> used_trees{};
 
         //计算可能根节点坐标并筛选符合条件的四叉树
         for (int calcu_index = 0; calcu_index < candidate.size(); calcu_index++)
@@ -201,7 +201,7 @@ namespace engine
                         if (is_recordable == true)
                         {
                             //四叉树拷贝缓冲区
-                            std::vector<tree_record<T>*> buffer;
+                            std::vector<Tree_Record<T>*> buffer;
                             //拷贝目标四叉树
                             buffer.push_back(tree_group.front());
                             buffer.push_back(tree_group[indexs[0]]);
@@ -261,9 +261,9 @@ namespace engine
             }
 
             //分类筛选合格四叉树
-            std::vector<std::vector<tree_record<T>*>> classfied_tree{};
+            std::vector<std::vector<Tree_Record<T>*>> classfied_tree{};
             //确认筛选合格四叉树
-            std::vector<std::vector<tree_record<T>*>> varified_tree{};
+            std::vector<std::vector<Tree_Record<T>*>> varified_tree{};
             //待合并四叉树分类
             quedtree_merge_collect(classfied_tree);
             //待合并四叉树确认筛选
@@ -272,7 +272,7 @@ namespace engine
             //新四叉树根节点坐标存储
             Point2d new_root{ 0.5,0.5 };
             //区块数据缓冲区
-            std::vector<tree_chunk_data<T>*> buffer{};
+            std::vector<Tree_Chunk_Data<T>*> buffer{};
             //待合并/卸载四叉树序列索引存储
             std::vector<int64_t> index_set{};
 
@@ -294,7 +294,7 @@ namespace engine
                 auto& new_tree = X_sequence[quadtree_index_seek(new_root)];
 
                 //数据拷贝指针
-                tree_chunk_data<T>* ptr_data = nullptr;
+                Tree_Chunk_Data<T>* ptr_data = nullptr;
                 //待合并四叉树范围存储
                 Rect2l merged_tree_range{};
                 //重置待合并四叉树索引集合

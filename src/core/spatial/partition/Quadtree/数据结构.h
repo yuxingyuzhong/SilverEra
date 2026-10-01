@@ -15,7 +15,7 @@ namespace engine
 	class Quadtree;
 
 	//四叉树状态结构体
-	struct tree_state
+	struct Tree_State
 	{
 	public:
 		//为避免根节点中心偏移现象
@@ -32,19 +32,19 @@ namespace engine
 
 	//节点数据结构体
 	template<typename T>
-	struct tree_chunk_data
+	struct Tree_Chunk_Data
 	{
 		//默认构造函数
-		tree_chunk_data() {}
+		Tree_Chunk_Data() {}
 		//列表构造函数：直接接收坐标和 T* 指针
-		tree_chunk_data(float x, float y, T* ptr)
+		Tree_Chunk_Data(float x, float y, T* ptr)
 		{
 			node.X = x;
 			node.Y = y;
 			ptr_data = ptr;
 		}
 		//默认析构函数
-		~tree_chunk_data() {}
+		~Tree_Chunk_Data() {}
 
 		Point2d node = { 0.5f, 0.5f };  // 使用 0.5f 强调 float 类型
 		T* ptr_data = nullptr;

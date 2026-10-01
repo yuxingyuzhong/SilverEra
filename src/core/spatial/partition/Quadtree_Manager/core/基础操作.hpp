@@ -6,7 +6,7 @@ namespace engine
 {
     //直属四叉树查找
     template<typename T>
-    tree_record<T>* Quadtree_Manager<T>::quadtree_inclusion_seek(const Point2l& target)
+    Tree_Record<T>* Quadtree_Manager<T>::quadtree_inclusion_seek(const Point2l& target)
     {
         //临时树边界存储
         Rect2l tree_range{};
@@ -129,7 +129,7 @@ namespace engine
         auto& tree_group = X_sequence;
 
         //分配新四叉树节点内存
-        tree_record<T>* new_tree = new(std::nothrow) tree_record<T>;
+        Tree_Record<T>* new_tree = new(std::nothrow) Tree_Record<T>;
         //若内存分配失败则直接返回
         if (new_tree == nullptr)
         {
@@ -164,7 +164,7 @@ namespace engine
 
         //按根节点X坐标降序排序
         std::ranges::sort(tree_group.begin(), tree_group.end(),
-            std::ranges::greater(), [](const tree_record<T>* node) { return node->root.X; });
+            std::ranges::greater(), [](const Tree_Record<T>* node) { return node->root.X; });
     }
 
     //四叉树卸载

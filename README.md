@@ -70,7 +70,7 @@
 
 ### 2.2 核心特性
 
-1. **事件驱动、模块解耦**：模块之间不互相持有指针，统一通过 `Event_Terminal`（事件终端）接入 `Event_Broker`（事件中转器），以 `event` 为统一载荷完成订阅 / 发布。每个终端持有一枚 ACL 权限密钥，越权发送会被拒绝。
+1. **事件驱动、模块解耦**：模块之间不互相持有指针，统一通过 `Event_Terminal`（事件终端）接入 `Event_Broker`（事件中转器），以 `Event` 为统一载荷完成订阅 / 发布。每个终端持有一枚 ACL 权限密钥，越权发送会被拒绝。
 2. **层间契约化**：本层对外暴露的内容全部写在 `cmake/对外接口.cmake` 中（包含目录、编译定义、第三方库、系统库），上层据此建立 `IMPORTED STATIC GLOBAL` 目标，无需任何 `add_subdirectory`。
 3. **零上层感知**：本层是唯一「无下层」的层，构建顺序上处于分层构建链的第一步，可独立构建、独立测试。
 4. **内存与生命周期自持**：对象池的编号分配器同时提供「稳定索引」与「排序检索」两种内存布局；四叉树支持原地加倍扩大；碰撞后端的四件套装配采用 `new(nothrow)` 并带失败回滚。
@@ -141,7 +141,7 @@ C++20 特性在源码中的使用：`concepts`（`Object_Pool` 的 `requires std
 ├── external/                   # 第三方库副本：Json / bullet3 / glfw / glm
 ├── src/
 │   ├── core/                   # 核心能力
-│   │   ├── event/              #   事件系统
+│   │   ├── Event/              #   事件系统
 │   │   │   ├── 事件系统运行包.h
 │   │   │   ├── Event/事件.h
 │   │   │   ├── Event_Broker/{事件中转器.h, 局部命名空间使用.h, core/事件中转器.cpp}
@@ -219,9 +219,9 @@ C++20 特性在源码中的使用：`concepts`（`Object_Pool` 的 `requires std
   订阅方模块（持有 Event_Terminal，注册过 event_receiver）
 ```
 
-- **订阅**：模块在 `attach()` 中声明自己关心的事件清单（`vector<event>`，只有 `category` 与 `tag` 参与匹配），事件中转器为其分配订阅者编号并登记。
+- **订阅**：模块在 `attach()` 中声明自己关心的事件清单（`vector<Event>`，只有 `category` 与 `tag` 参与匹配），事件中转器为其分配订阅者编号并登记。
 - **发布**：模块用 `build()` 构造事件，用 `send()` 投出；`send()` 需要携带自己的 ACL 密钥。
-- **投递**：中转器在 `process()` 中遍历订阅表，把事件逐个送入订阅方注册的 `std::function<void(std::shared_ptr<event>)>` 入口；订阅方通常在入口里再按 `tag` 分派到各 `event_process` 私有方法。
+- **投递**：中转器在 `process()` 中遍历订阅表，把事件逐个送入订阅方注册的 `std::function<void(std::shared_ptr<Event>)>` 入口；订阅方通常在入口里再按 `tag` 分派到各 `event_process` 私有方法。
 - **权限**：`Event_Terminal::attach()` 会校验终端接口中「事件发送入口」是否注册；只有持有合法密钥的终端才能发送，未分配的密钥会被拒绝。密钥由 `acl_key_gen()` 基于 PCG32 随机数生成器产生。
 - **定向与广播**：事件的 `target_object` 为空表示广播，非空表示定向；接收方（如 `Collision_Proxy`）在 `event_process()` 开头用 `evt->target_object != module_name` 过滤掉不属于自己的定向事件。
 
@@ -284,7 +284,7 @@ C++20 特性在源码中的使用：`concepts`（`Object_Pool` 的 `requires std
        ├ Quadtree::block_seek / range_seek
        │    ├ point_seekable_analyse / range_seekable_analyse 判断是否需要扩大
        │    ├ 需要扩大 → callback_register 回调交给管理器裁决 → tree_expand 原地加倍
-       │    └ 沿递归路径下钻，产出 tree_chunk_data<T>
+       │    └ 沿递归路径下钻，产出 Tree_Chunk_Data<T>
        └ 多树命中时用布尔表去重后返回
 ```
 
@@ -303,13 +303,13 @@ Collider::geometry（JSON）→ Mesh_Loader::load_obj(path, Mesh_Data)
 
 > 本节各模块的路径均以本层根为基准；行数为该版次源码的实际规模，用于衡量模块复杂度。
 
-### 6.1 事件系统（`src/core/event/`）
+### 6.1 事件系统（`src/core/Event/`）
 
 本层模块间通信的枢纽。三个子件 + 一个聚合头。
 
-#### 6.1.1 `event` 结构体
+#### 6.1.1 `Event` 结构体
 
-**涉及文件**：`src/core/event/Event/事件.h`（95 行）
+**涉及文件**：`src/core/Event/Event/事件.h`（95 行）
 
 **功能**：定义模块间传递的统一事件载荷。
 
@@ -319,7 +319,7 @@ Collider::geometry（JSON）→ Mesh_Loader::load_obj(path, Mesh_Data)
 namespace engine
 {
     //事件
-    struct event
+    struct Event
     {
         std::string sender_object;   //发起事件的对象名
         std::string target_object;   //事件的目标对象名（为空表示广播）
@@ -327,29 +327,29 @@ namespace engine
         std::string tag;             //事件标签（英文，如 Load / RegionBuild）
         nlohmann::json config;       //事件载荷
 
-        event() = default;                                                  //默认构造
-        event(const std::string& category, const std::string& tag);         //构造大类与标签
-        event(const std::string& sender_object, const std::string& target_object,
+        Event() = default;                                                  //默认构造
+        Event(const std::string& category, const std::string& tag);         //构造大类与标签
+        Event(const std::string& sender_object, const std::string& target_object,
               const std::string& category, const std::string& tag);         //对象标签构造
-        event(const std::string& sender_object, const std::string& target_object,
+        Event(const std::string& sender_object, const std::string& target_object,
               const std::string& category, const std::string& tag,
               const nlohmann::json& config);                                //全量构造
 
-        bool operator==(const event& other) const;                          //判等
+        bool operator==(const Event& other) const;                          //判等
     };
 }
 ```
 
 **内部实现要点**：
 
-- 三类含参构造逐级补全信息：只给大类与标签 → 再给发送者与目标 → 再给 `config` 载荷，便于订阅清单写得简洁（订阅清单里通常写 `event("", "", "Collision", "RegionBuild")`）。
+- 三类含参构造逐级补全信息：只给大类与标签 → 再给发送者与目标 → 再给 `config` 载荷，便于订阅清单写得简洁（订阅清单里通常写 `Event("", "", "Collision", "RegionBuild")`）。
 - `operator==` 比较 `category`、`tag`、`target_object`、`config` 四项，**不比较 `sender_object`**——这样同一个事件无论由谁发出都可被同一订阅规则命中。
-- 文件内提供 `std::hash<engine::event>` 特化：对 `category`、`tag`、`target_object` 做 `hash_combine`，再叠加 `config.dump()` 的哈希，使事件可作为 `unordered_*` 的键。
+- 文件内提供 `std::hash<engine::Event>` 特化：对 `category`、`tag`、`target_object` 做 `hash_combine`，再叠加 `config.dump()` 的哈希，使事件可作为 `unordered_*` 的键。
 - `namespace detail` 中的 `hash_combine` 为内部工具，供上述特化使用。
 
 #### 6.1.2 事件终端 `Event_Terminal` 与终端接口 `Terminal_Interface`
 
-**涉及文件**：`src/core/event/Event_Terminal/事件终端.h`（68 行）、`终端接口.h`（80 行）、`core/事件终端.cpp`（239 行）、`core/终端接口.cpp`（88 行）、`局部命名空间使用.h`
+**涉及文件**：`src/core/Event/Event_Terminal/事件终端.h`（68 行）、`终端接口.h`（80 行）、`core/事件终端.cpp`（239 行）、`core/终端接口.cpp`（88 行）、`局部命名空间使用.h`
 
 **功能**：`Event_Terminal` 是模块持有的事件收发把手，负责密钥管理、事件构造、发送、接收与查阅；`Terminal_Interface` 是终端的「入口注册表」，把各类回调以 `std::function` 形式登记在案，供 `Event_Terminal` 转发调用。
 
@@ -372,26 +372,26 @@ namespace engine
         int64_t acl_key_gen(void);                                                //权限密钥生成
 
         bool attach(const std::string& module_name,
-                    const std::vector<event>& needed_events,
+                    const std::vector<Event>& needed_events,
                     const int64_t& acl_key);                                      //中转站接入
-        bool interact(std::shared_ptr<event> evt, const int64_t& acl_key);        //中转站交互（单事件）
-        bool interact(std::vector<std::shared_ptr<event>> events,
+        bool interact(std::shared_ptr<Event> evt, const int64_t& acl_key);        //中转站交互（单事件）
+        bool interact(std::vector<std::shared_ptr<Event>> events,
                       const int64_t& acl_key);                                    //中转站交互（多事件）
 
-        std::shared_ptr<event> build(void);                                       //事件构造（空）
-        std::shared_ptr<event> build(const std::string& category,
+        std::shared_ptr<Event> build(void);                                       //事件构造（空）
+        std::shared_ptr<Event> build(const std::string& category,
                                      const std::string& tag);                     //事件构造（大类标签）
-        std::shared_ptr<event> build(const std::string& sender_object,
+        std::shared_ptr<Event> build(const std::string& sender_object,
                                      const std::string& target_object,
                                      const std::string& category,
                                      const std::string& tag);                     //事件构造（全量）
 
-        bool send(std::shared_ptr<event> evt, const int64_t& acl_key);            //事件发送（单事件）
-        bool send(std::vector<std::shared_ptr<event>> events,
+        bool send(std::shared_ptr<Event> evt, const int64_t& acl_key);            //事件发送（单事件）
+        bool send(std::vector<std::shared_ptr<Event>> events,
                   const int64_t& acl_key);                                        //事件发送（多事件）
-        void receive(std::shared_ptr<event> evt);                                 //事件接收（单事件）
-        void receive(std::vector<std::shared_ptr<event>> events);                 //事件接收（多事件）
-        const std::vector<std::shared_ptr<event>>* query(const int64_t& acl_key); //事件查阅
+        void receive(std::shared_ptr<Event> evt);                                 //事件接收（单事件）
+        void receive(std::vector<std::shared_ptr<Event>> events);                 //事件接收（多事件）
+        const std::vector<std::shared_ptr<Event>>* query(const int64_t& acl_key); //事件查阅
         bool clear(const int64_t& acl_key);                                       //事件清空
     };
 }
@@ -403,7 +403,7 @@ namespace engine
 namespace engine
 {
     //终端接口列表
-    enum class interface_ID
+    enum class Interface_ID
     {
         NONE, ATTACH_HANDLER, EVENT_INTERACTOR, EVENTS_INTERACTOR,
         EVENT_SENDOR, EVENTS_SENDOR, EVENT_RECEIVER, EVENTS_RECEIVER
@@ -413,39 +413,39 @@ namespace engine
     class Terminal_Interface
     {
         //（私有）类型别名
-        using needed_events  = const std::vector<event>&;
-        using event_handler  = std::function<void(std::shared_ptr<event> evt)>;
-        using events_handler = std::function<void(std::vector<std::shared_ptr<event>>)>;
-        using attch_handler  = std::function<void(const std::string& name,
-                                   needed_events events, event_handler receiver)>;
+        using Needed_Events  = const std::vector<Event>&;
+        using Event_Handler  = std::function<void(std::shared_ptr<Event> evt)>;
+        using Events_Handler = std::function<void(std::vector<std::shared_ptr<Event>>)>;
+        using Attach_Handler  = std::function<void(const std::string& name,
+                                   Needed_Events events, Event_Handler receiver)>;
         friend class Event_Terminal;
     public:
-        bool attach_handler_register(attch_handler callback);           //中转站接入入口注册
-        bool event_interactor_register(event_handler callback);         //中转站交互入口注册（单事件）
-        bool events_interactor_register(events_handler callback);       //中转站交互入口注册（多事件）
+        bool attach_handler_register(Attach_Handler callback);           //中转站接入入口注册
+        bool event_interactor_register(Event_Handler callback);         //中转站交互入口注册（单事件）
+        bool events_interactor_register(Events_Handler callback);       //中转站交互入口注册（多事件）
 
-        bool event_sender_register(event_handler callback);             //事件发送入口注册（单事件）
-        bool event_sender_register(events_handler callback);            //事件发送入口注册（多事件）
+        bool event_sender_register(Event_Handler callback);             //事件发送入口注册（单事件）
+        bool event_sender_register(Events_Handler callback);            //事件发送入口注册（多事件）
 
-        bool event_receiver_register(event_handler callback);           //事件接收入口注册（单事件）
-        bool event_receiver_register(events_handler callback);          //事件接收入口注册（多事件）
+        bool event_receiver_register(Event_Handler callback);           //事件接收入口注册（单事件）
+        bool event_receiver_register(Events_Handler callback);          //事件接收入口注册（多事件）
 
-        bool interface_check(const interface_ID& ID);                   //入口是否已注册
+        bool interface_check(const Interface_ID& ID);                   //入口是否已注册
     };
 }
 ```
 
 **内部实现要点**：
 
-- `Event_Terminal` 私有成员：`std::optional<int64_t> acl_key`（本终端密钥）、`Random_Generator key_generator`（密钥生成器）、`std::vector<std::shared_ptr<event>> event_set`（待发 / 已收事件集合）、`Terminal_Interface terminal_interface`（接口表）。
+- `Event_Terminal` 私有成员：`std::optional<int64_t> acl_key`（本终端密钥）、`Random_Generator key_generator`（密钥生成器）、`std::vector<std::shared_ptr<Event>> event_set`（待发 / 已收事件集合）、`Terminal_Interface terminal_interface`（接口表）。
 - `operator->()` 返回 `Terminal_Interface*`，于是模块可以写 `event_terminal->event_receiver_register(...)`，把注册工作直接穿透到接口表，而不必先取 `terminal_interface` 成员。
-- `Terminal_Interface` 用 `std::vector<interface_ID> map` 记录各入口的注册顺序，配以 7 个 `std::unique_ptr<std::function<...>>` 成员（`attach_handler`、`event_interactor`、`events_interactor`、`event_sender`、`events_sender`、`event_receiver`、`events_receiver`）保存回调；公开的注册入口是 5 个名字、共 7 个重载（发送与接收各有单事件 / 多事件两个重载）。`interface_check(ID)` 供调用方在转发前确认入口已就位（`Collision_Proxy::attach()` 就是先检查 `ATTACH_HANDLER` 再注册接收入口）。
+- `Terminal_Interface` 用 `std::vector<Interface_ID> map` 记录各入口的注册顺序，配以 7 个 `std::unique_ptr<std::function<...>>` 成员（`attach_handler`、`event_interactor`、`events_interactor`、`event_sender`、`events_sender`、`event_receiver`、`events_receiver`）保存回调；公开的注册入口是 5 个名字、共 7 个重载（发送与接收各有单事件 / 多事件两个重载）。`interface_check(ID)` 供调用方在转发前确认入口已就位（`Collision_Proxy::attach()` 就是先检查 `ATTACH_HANDLER` 再注册接收入口）。
 - `memory_malloc` / `function_register` 是 `Terminal_Interface` 的内部模板工具，负责在 `new(nothrow)` 失败时安全退出。
 - **持有者责任**：`attach()` 用的「中转站接入入口」由事件中转站的持有者（宿主组合根）注册；终端本身只负责调用。
 
 #### 6.1.3 事件中转器 `Event_Broker`
 
-**涉及文件**：`src/core/event/Event_Broker/事件中转器.h`（40 行）、`core/事件中转器.cpp`（209 行）、`局部命名空间使用.h`
+**涉及文件**：`src/core/Event/Event_Broker/事件中转器.h`（40 行）、`core/事件中转器.cpp`（209 行）、`局部命名空间使用.h`
 
 **功能**：订阅表 + 投递中枢。记录「谁订阅了哪些事件」，并在事件到来时逐个投递。
 
@@ -459,14 +459,14 @@ namespace engine
     {
     public:
         //订阅者登记注册
-        void info_register(const std::string& module_name,
-                           const std::vector<event>& needed_events,
-                           std::function<void(std::shared_ptr<event>)> event_entry);
-        void receive(std::shared_ptr<event> evt);                                  //单事件接收
-        void receive(std::vector<std::shared_ptr<event>> event_set);               //多事件接收
-        std::shared_ptr<event> process(std::shared_ptr<event> evt);                //单事件处理
-        std::vector<std::shared_ptr<event>> process(
-            std::vector<std::shared_ptr<event>> event_set);                        //多事件处理
+        void attach(const std::string& module_name,
+                           const std::vector<Event>& needed_events,
+                           std::function<void(std::shared_ptr<Event>)> event_entry);
+        void receive(std::shared_ptr<Event> evt);                                  //单事件接收
+        void receive(std::vector<std::shared_ptr<Event>> event_set);               //多事件接收
+        std::shared_ptr<Event> process(std::shared_ptr<Event> evt);                //单事件处理
+        std::vector<std::shared_ptr<Event>> process(
+            std::vector<std::shared_ptr<Event>> event_set);                        //多事件处理
     };
 }
 ```
@@ -474,13 +474,13 @@ namespace engine
 **内部实现要点**：
 
 - 嵌套私有结构 `event_acl { std::string tag; std::vector<int32_t> ID_set; }`：用一个「事件标签 + 订阅者编号集合」表示一条订阅记录（匹配粒度是 `tag`）。
-- 三张表：`acl_set`（`unordered_map<string, vector<event_acl>>`，大类 → 订阅记录集）、`mapping_set`（`unordered_map<string, int32_t>`，模块名 → 订阅者编号）、`event_entries`（`unordered_map<int32_t, function<void(shared_ptr<event>)>>`，编号 → 投递入口）。
-- `info_register()` 分配 / 复用模块编号，登记投递入口，并把 `needed_events` 逐条写入 `acl_set`。
+- 三张表：`acl_set`（`unordered_map<string, vector<event_acl>>`，大类 → 订阅记录集）、`mapping_set`（`unordered_map<string, int32_t>`，模块名 → 订阅者编号）、`event_entries`（`unordered_map<int32_t, function<void(shared_ptr<Event>)>>`，编号 → 投递入口）。
+- `attach()` 分配 / 复用模块编号，登记投递入口，并把 `needed_events` 逐条写入 `acl_set`。
 - `process()` 按事件的 `category` 取出候选订阅记录，再用 `tag` 精确比对，最后按 `ID_set` 逐项调用投递入口。
 
 #### 6.1.4 事件系统运行包
 
-**涉及文件**：`src/core/event/事件系统运行包.h`
+**涉及文件**：`src/core/Event/事件系统运行包.h`
 
 一行聚合头：包含 `Event/事件.h` 与 `Event_Terminal/事件终端.h`。`common/引擎.h` 目前就只聚合了这一个运行包。
 
@@ -695,12 +695,12 @@ namespace engine
         void set_callback_manage(const std::function<bool(Point2d root,
                                      Point2l target)>& cb);                 //扩大权限回调
 
-        void block_seek(tree_chunk_data<T>*& receiver,
+        void block_seek(Tree_Chunk_Data<T>*& receiver,
                         const Point2l& target, bool stable);                 //单点区块查询
-        void range_seek(std::vector<tree_chunk_data<T>*>& receiver,
+        void range_seek(std::vector<Tree_Chunk_Data<T>*>& receiver,
                         const Rect2l& target_range, bool stable);            //范围区块查询
 
-        const tree_state& tree_state_get(void);                             //读取树状态
+        const Tree_State& tree_state_get(void);                             //读取树状态
         bool tree_expand(void);                                             //原地扩大（边长翻倍）
 
         //底层计算工具（供 Quadtree_Manager 复用）
@@ -720,7 +720,7 @@ namespace engine
 namespace engine
 {
     //树状态
-    struct tree_state
+    struct Tree_State
     {
         Point2d  root       { 0.5, 0.5 };               //根坐标
         uint64_t size       = 256;                      //当前边长
@@ -730,7 +730,7 @@ namespace engine
 
     //区块数据（查询结果）
     template <typename T>
-    struct tree_chunk_data
+    struct Tree_Chunk_Data
     {
         Point2d node;      //区块中心坐标
         T*      ptr_data;  //区块叶子数据指针
@@ -741,11 +741,11 @@ namespace engine
 **内部实现要点**：
 
 - **64 位尺寸层契约**（由前序版次 `fa8459a` 引入）：区块节点范围用 `Rect2l`、回调目标坐标用 `Point2l`，内部几何运算全走 64 位整数，从而使边长可以配置到 `INT_MAX` 以上而不溢出；对外暴露的区块中心仍回落为 `Point2d`，保持与上层浮点接口兼容。
-- `range_seek` 采用**显式栈迭代而非递归**：以 `std::vector<recur_record>` 模拟栈、`std::vector<int> recur_path` 记录当前路径，规避深递归导致的栈溢出。
+- `range_seek` 采用**显式栈迭代而非递归**：以 `std::vector<Recur_Record>` 模拟栈、`std::vector<int> recur_path` 记录当前路径，规避深递归导致的栈溢出。
 - **原地扩大** `tree_expand()`：分配 4 个新的中间节点，把原根 4 个槽位的子树按反方向（`NW→SE、NE→SW、SW→NE、SE→NW`）下沉挂到新节点，再把新节点挂回根，最后 `size *= 2`；O(1) 完成「向上加一层」。
 - **扩大权限受控**：四叉树不擅自扩大，`set_callback_manage()` 注册的 `callback` 向 `Quadtree_Manager` 申请权限，批准后才执行 `tree_expand()`；未注册回调时若 `size < max_size` 则自行扩大。
 - **单点查询三态分析**：`point_seekable_analyse` 返回 0（不可行，终止）/ 1（可能可行，继续尝试扩大）/ 2（可行，直接寻址）。
-- 节点 `Node` 是联合体：中间节点用 `ptr_child[4]`，叶子节点用 `leaf`（类型 `T`），按 `Node_type` 用 placement new 激活对应成员。
+- 节点 `Node` 是联合体：中间节点用 `ptr_child[4]`，叶子节点用 `leaf`（类型 `T`），按 `Node_Type` 用 placement new 激活对应成员。
 - **范围查询可能返回重复区块**：同一坐标的区块在相邻多次查询边界重叠时会被重复创建，去重由 `Quadtree_Manager` 用布尔表负责。
 - 调用方注意：`block_seek` 的 `stable == false` 不分配缺失节点；`stable == true` 会即时 `new` 补齐路径，保证结果必定存在。
 - 工程内以 `Quadtree<int>` 实例化（见 `core/四叉树实例化.cpp`），并在头文件末尾以 `using engine::Quadtree;` 引出命名空间。
@@ -772,8 +772,8 @@ namespace engine
         ~Quadtree_Manager(void);
 
         //数据迁移方法注册
-        void callback_register(const std::function<void(tree_chunk_data<T>& receiver,
-            tree_chunk_data<T>& transmiter)>& cb_1);
+        void callback_register(const std::function<void(Tree_Chunk_Data<T>& receiver,
+            Tree_Chunk_Data<T>& transmiter)>& cb_1);
         void set_block_size(const uint64_t& block_size);                 //最小区块单元边长
         void set_max_size(const uint64_t& max_size);                     //单树边长上限
         void set_min_size(const uint64_t& min_size);                     //单树边长下限
@@ -783,13 +783,13 @@ namespace engine
 
         void qurdtree_build_smart(const std::vector<Point2i>& coord_set); //按点集智能建树
 
-        void seek(tree_chunk_data<T>*& reciver, const Point2i& target,
+        void seek(Tree_Chunk_Data<T>*& reciver, const Point2i& target,
                   bool stable);                                          //单点检索
-        void seek(std::vector<tree_chunk_data<T>*>& receiver,
+        void seek(std::vector<Tree_Chunk_Data<T>*>& receiver,
                   const Rect2i& target_range, bool stable);              //范围检索
 
-        const tree_manager_settings& settings_get(void);                 //读取设置
-        const std::vector<tree_record<T>*>& records_get(void);           //读取树记录
+        const Tree_Manager_Settings& settings_get(void);                 //读取设置
+        const std::vector<Tree_Record<T>*>& records_get(void);           //读取树记录
         const uint64_t& largest_size_get(void);                          //最大单树边长
 
         void qurdtree_merge(void);                                       //四叉树合并
@@ -807,7 +807,7 @@ namespace engine
 {
     //单棵树记录
     template <typename T>
-    struct tree_record
+    struct Tree_Record
     {
         Quadtree<T>* tree;              //树指针
         Point2d      root { 0.5, 0.5 }; //树根坐标
@@ -815,7 +815,7 @@ namespace engine
     };
 
     //管理器设置
-    struct tree_manager_settings
+    struct Tree_Manager_Settings
     {
         uint64_t block_size            = 16;     //最小区块单元边长
         uint64_t max_tree_size         = 65536;  //单树边长上限
@@ -834,7 +834,7 @@ namespace engine
 - **相邻树三级筛选查找**：`相邻四叉树查找.hpp` 以由粗到细的三级筛选定位与目标范围相邻的树，降低查找开销。
 - **四叉树合并**：`四叉树合并.hpp` 把可以合并的相邻同尺寸树归并为一棵，控制树的数量膨胀。
 - **扩大裁决**：四叉树把自己的扩大申请通过回调上报给管理器；管理器由 `四叉树扩大回调管理.hpp` 判断该次扩大会否与已在册的其它树发生管辖范围重叠，再决定批准与否——这是多树并存时避免相互重叠的关键。
-- **数据迁移回调**：`callback_register()` 注册的是 `void(tree_chunk_data<T>&, tree_chunk_data<T>&)` 形式的迁移方法，供合并 / 扩大时把源区块数据搬运到目标区块，业务层借此决定数据如何随空间重组而迁移。
+- **数据迁移回调**：`callback_register()` 注册的是 `void(Tree_Chunk_Data<T>&, Tree_Chunk_Data<T>&)` 形式的迁移方法，供合并 / 扩大时把源区块数据搬运到目标区块，业务层借此决定数据如何随空间重组而迁移。
 - **缓存**：管理器维护 `tree_cache { records, ranges }`，缓存近期使用过的树；缓存启用阈值与记录上限可配置，`cache_clear()` 可手动清空。
 - **对外检索的坐标仍受 32 位约束**：`seek` 使用 `Point2i` / `Rect2i`（详见第九节已知问题）。
 - 工程内以 `Quadtree_Manager<int>` 实例化（见 `core/四叉树管理器实例化.cpp`）。
@@ -918,7 +918,7 @@ namespace engine
     };
 
     //碰撞体相对碰撞空间的跨越状态
-    enum class cross_state
+    enum class Cross_State
     {
         inside,     //完全位于碰撞空间内
         crossing,   //部分位于碰撞空间内（跨越边界）
@@ -1077,7 +1077,7 @@ namespace engine
 - `Auxi_Algorithm`：`binary_search(first, last, target, comp, proj)` 返回相对 `first` 的全局下标（未找到返回 `-1`），另有容器重载；`range_binary_search` 返回闭区间 `std::pair<int,int>`（未找到返回 `{-1,-1}`）。`path_to_string()` / `string_to_path()` 经 `std::filesystem::path::u8string()` 往返，用于处理包含中文的文件路径。
 - `Engine_Env`：`exe_path_get()`、`exe_dir_get()`、`absolute_path_get(path/string)`；可执行路径的获取按平台分派（Windows `GetModuleFileNameW` / Linux `/proc/self/exe` / macOS `_NSGetExecutablePath`），失败时回退到当前工作目录。
 - `Timer`：`using Clock = std::chrono::steady_clock`，`task_build()` 建任务、`elapsed(task, restart = false)` 读耗时，静态 `units()` / `Milli_units()` / `Micro_units()` / `Nano_units()` 提供单位换算。
-- `Random`：内核是结构 `pcg32 { uint64_t state, inc; }`，`operator()()` 生成全范围值，`operator()(min, max)` 生成无偏区间值；构造函数可传种子；`acl_key_gen()` 就是它的使用者。
+- `Random`：内核是结构 `Pcg32 { uint64_t state, inc; }`，`operator()()` 生成全范围值，`operator()(min, max)` 生成无偏区间值；构造函数可传种子；`acl_key_gen()` 就是它的使用者。
 - `Number_Allocator`：`set(min)` 设下限、`get()` 取号、`recycle(单/多)` 回收、`reset()` 复位；回收时用二分查找查重，重复回收会打 `Log::warn("Number_Pool::待回收数值已被回收!!!")`。
 
 ---
@@ -1168,7 +1168,7 @@ cmake --build out/build/x64-Debug
 
 ### 9.1 已完成
 
-- 事件系统：`event`、`Event_Terminal`、`Terminal_Interface`、`Event_Broker` 全部落地，含 ACL 权限密钥模型与订阅 / 发布投递。
+- 事件系统：`Event`、`Event_Terminal`、`Terminal_Interface`、`Event_Broker` 全部落地，含 ACL 权限密钥模型与订阅 / 发布投递。
 - 对象系统：`Object` 基类与 `Object_Pool<T, Key>`（双模式内存布局、编号分配回收）。
 - 空间系统：`Point2` / `Rect2` 坐标基元（含 ULP 容差）、四叉树与四叉树管理器（含 64 位尺寸层、原地扩大、智能建树、相邻查找、合并、缓存）。
 - 碰撞系统：`Collider`（六种形状、几何体集合 + 相对变换 + 复合形状）、`Collision_Region`（后端四件套 + 两阶段检测 + 跨越三态跟踪）、`Collision_Proxy`（多空间门面 + 事件订阅发布 + 编号多重映射 + 位移事件通道 + 碰撞响应时序 + 跨越通知发布）。
@@ -1188,7 +1188,7 @@ cmake --build out/build/x64-Debug
 | 位置 | 现象 |
 | --- | --- |
 | `src/core/spatial/partition/Quadtree/core/区块信息检索.hpp` | 既有 `warning C4715`：非 void 函数存在未覆盖的返回路径（历史遗留，尚未消除） |
-| `src/core/event/Event_Broker/core/事件中转器.cpp` | 同上，存在既有 `warning C4715` |
+| `src/core/Event/Event_Broker/core/事件中转器.cpp` | 同上，存在既有 `warning C4715` |
 | `Quadtree_Manager::seek` / 对外检索接口 | 使用 `Point2i` / `Rect2i`（32 位整数），对外世界坐标仍受 `int`（± 2^31）约束；超大尺寸层仅在树内部以 64 位整数承载 |
 | 编译告警面 | 第三方头（尤其 bullet3 / Windows 头）会引入 `C4005`（宏重定义）一类的既有告警；`/WX-` 保证其不阻断构建 |
 | 浮点比较语义 | `Point2::operator==` 使用 ≤ 4 ULP 容差，而 `Rect2::operator==` 为精确比较，两者语义不同，调用方须明确区分 |
@@ -1202,7 +1202,7 @@ cmake --build out/build/x64-Debug
 
 - 命名空间统一为 `engine`，内部工具放 `engine::detail`。
 - 文件命名以中文优先；英文文件名单词间以下划线分隔、首字母小写。
-- 类名单词首字母大写（如 `Event_Terminal`）；结构体 / 联合体 / 枚举首字母小写（如 `tree_state`、`event_acl`）。
+- 类名单词首字母大写（如 `Event_Terminal`）；结构体 / 联合体 / 枚举同样单词首字母大写（如 `Event`、`Event_Identity`、`Tree_State`）。
 - 变量 / 函数名英文、单词间下划线分隔、首字母小写（如 `region_boundary_set`）。
 - 目录级命名约定：`模块名_Manager`（管理器）、`模块名_Broker`（中转器）、`模块名_Terminal`（终端）、`模块名_Proxy`（代理器）、`模块名_Region`（区域）、`模块名_Pool`（池）、`模块名_Loader`（加载器）、`模块名_Validator`（校验器）、`模块名_Allocator`（分配器）、`模块名_Generator`（生成器）。
 - 注释使用中文，采用换行注释；预计少于三行用 `//`，三行及以上用 `/* */`；`//` 后不留空格。
@@ -1251,7 +1251,7 @@ cmake --build out/build/x64-Debug
 | 仓库 / 工程名「游戏引擎」 | 「白银纪元 · 引擎层」 | 一体工程拆分为四层，本层只是基础能力层 |
 | 根目录下嵌套 `游戏引擎/` 子目录 | 本层根即 `引擎层/` | 源码不再嵌套一层 |
 | `common/types/对象类型.h`（`Object` + `Prop`） | `Object` → `src/core/object/Object/对象.h`（本层）；`Prop` 属性槽 → 系统层 | 对象基类留在本层，属性槽随实体体系迁出 |
-| `common/types/事件类型.h` | `src/core/event/Event/事件.h` | 事件类型定义位置调整 |
+| `common/types/事件类型.h` | `src/core/Event/Event/事件.h` | 事件类型定义位置调整 |
 | `common/types/坐标类型.h`、`几何体类型.h`、`计时器类型.h` | `src/core/spatial/common/core/坐标类型.h`（本层）；`几何体类型.h` 已不存在 | 计时器类型并入 `src/tools/Timer/计时器.h` 内部；几何体相关定义已不保留 |
 | `common/引擎总头文件.h` | `common/引擎.h` | 聚合范围收窄为事件系统运行包 |
 | `common/external/Sol2/`（sol 类型别名 / 注册） | Lua 绑定层 → 游戏层 | 脚本绑定迁出本层 |
@@ -1269,7 +1269,7 @@ cmake --build out/build/x64-Debug
 | `排除编译代码/effect/`（旧效应系统） | 效应系统 → 系统层 | 效应系统从本层移出 |
 | `external/` 下的 `Dear_ImGui`、`glad`、`Lua`、`Sol2`、`stb` | 已移出本层 | 本层现仅保留 `Json`、`glfw`、`glm`、`bullet3` |
 | 旧坐标类型命名（如 `coord2D_int`） | `Point2i` / `Point2d` / `Point2l`、`Rect2i` / `Rect2d` / `Rect2l`（均在 `namespace engine`） | 统一收敛到模板 + 精度别名 |
-| `四叉树通信结构体.h` / `四叉树管理器通信结构体.h` | `Quadtree/数据结构.h` / `Quadtree_Manager/数据结构.h` | 通信结构体更名为数据结构，并统一为 `tree_chunk_data` / `tree_state` / `tree_record` / `tree_manager_settings` |
+| `四叉树通信结构体.h` / `四叉树管理器通信结构体.h` | `Quadtree/数据结构.h` / `Quadtree_Manager/数据结构.h` | 通信结构体更名为数据结构，并统一为 `Tree_Chunk_Data` / `Tree_State` / `Tree_Record` / `Tree_Manager_Settings` |
 | `Object::ID_bind` | `Object::ID_set` | 方法更名 |
 | 旧版次 `0b8dbd27` 所描述的模块布局 | 已被 `089b070`、`65fc74f` 取代 | 旧版次的目录 / 命名不再适用 |
 
