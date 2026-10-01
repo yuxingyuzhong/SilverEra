@@ -15,5 +15,5 @@ namespace engine
 {
     //运行控制台选择菜单，过滤串写入 过滤串
     //输入流结束或多次非法输入时按「全选」处理
-    void 控制台选择菜单_运行(测试选择模型& 模型, std::string& 过滤串);
+    void 控制台选择菜单_运行(Test_Selection_Model& 模型, std::string& 过滤串);
 }

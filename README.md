@@ -238,19 +238,19 @@
 namespace engine
 {
     // 选择树的两级条目
-    struct 用例条目 { std::string 名称; bool 已勾选 = true; };
-    struct 套件条目 { std::string 名称; std::vector<用例条目> 用例表; bool 已展开 = false; };
+    struct Case_Entry { std::string name; bool checked = true; };
+    struct Suite_Entry { std::string name; std::vector<Case_Entry> case_list; bool expanded = false; };
 
-    class 测试选择模型
+    class Test_Selection_Model
     {
     public:
-        void 建立套件树();                              // 反射建树（默认全部勾选）
-        const std::vector<套件条目>& 套件表() const;
-        std::size_t 套件数() const;                     // 另有 用例总数 / 已勾选用例数
-        bool 套件全选(std::size_t 套件序号) const;       // 另有 套件半选 / 套件已展开
-        void 设置套件勾选(std::size_t 套件序号, bool 勾选);  // 另有 设置用例勾选 / 设置套件展开
-        void 全部勾选();                                // 另有 全部清空 / 反向勾选
-        std::string 生成过滤串() const;                  // 三态压缩（见实现要点）
+        void suite_tree_build();                        // 反射建树（默认全部勾选）
+        const std::vector<Suite_Entry>& suite_table_get() const;
+        std::size_t suite_count() const;                // 另有 case_count / checked_case_count
+        bool suite_all_checked(std::size_t 套件序号) const;   // 另有 suite_half_checked / suite_expanded
+        void suite_check_set(std::size_t 套件序号, bool 勾选); // 另有 case_check_set / suite_expand_set
+        void all_check();                               // 另有 all_clear / check_invert
+        std::string filter_string_build() const;         // 三态压缩（见实现要点）
     };
 
     bool 解析控制台选择(const std::string& 输入, std::size_t 套件数, std::vector<bool>& 勾选表);
@@ -266,7 +266,7 @@ namespace engine
 ### 6.3 控制台选择菜单（`src/主调/控制台选择菜单.h` / `.cpp`）
 
 - **功能**：无图形环境（或用户显式指定）时的文本交互入口：打印套件编号列表，读取用户输入，把选择结果应用到模型并输出过滤串。
-- **对外接口**：`void engine::控制台选择菜单_运行(测试选择模型& 模型, std::string& 过滤串);`
+- **对外接口**：`void engine::控制台选择菜单_运行(Test_Selection_Model& 模型, std::string& 过滤串);`
 - **实现要点**：
   - 打印标题与逐条编号列表（`N) 套件名（M 个用例）`）。
   - 最多接受三次非法输入，其后兜底全跑；输入流结束（管道/重定向）与空输入（直接回车）均按全选处理。
@@ -276,7 +276,7 @@ namespace engine
 ### 6.4 图形选择窗口（`src/主调/图形选择窗口.h` / `.cpp`）
 
 - **功能**：默认交互入口，GLFW + OpenGL3 + Dear ImGui 的树形勾选窗口：展示套件与用例、支持搜索过滤与批量勾选、Esc / 关窗视为全跑。
-- **对外接口**：`bool engine::图形选择窗口_运行(测试选择模型& 模型, std::string& 过滤串);`（窗口创建失败返回 `false`，调用方退控制台菜单）
+- **对外接口**：`bool engine::图形选择窗口_运行(Test_Selection_Model& 模型, std::string& 过滤串);`（窗口创建失败返回 `false`，调用方退控制台菜单）
 - **实现要点**：
   - 初始化时序：`glfwInit` → 请求 OpenGL 3.3 核心上下文建窗 → `gladLoadGL` → 创建 ImGui 上下文 → 应用蓝色渐变主题 → 加载中文字体 → 主循环；三处失败点（GLFW 初始化、建窗、glad 加载）均返回 `false` 触发降级。
   - 界面：铺满视口的无标题面板；工具条含全选 / 清空 / 反选、搜索框与「已选 N / M」计数；选择树为「套件节点 + 用例复选」；底部为「开始测试」（或 Enter）与「取消（全跑）」（或 Esc）。
@@ -324,7 +324,7 @@ namespace engine
 
 | 子树 | 套件（夹具类名） | 被测对象 |
 | --- | --- | --- |
-| 主调 | `测试选择模型测试`（16 例）、`退出暂停判定测试`（8 例） | 本层 `测试选择模型`、`需要等待退出` |
+| 主调 | `测试选择模型测试`（16 例）、`退出暂停判定测试`（8 例） | 本层 `Test_Selection_Model`、`需要等待退出` |
 | 工具 | `Binary_Search_Test`、`Engine_Env_Test`、`Number_Allocator_Test`、`Data_Validator_Test`、`Log_Test`、`Mesh_Loader_Test`、`Timer_Test`、`Path_String_Test`、`Random_Generator_Test` | 系统层工具模块组：二分查找、引擎环境、数值分配器、数据校验器、日志系统、网格加载器、计时器、路径字符串转换、随机数生成器 |
 | 核心 | `Event_Test`、`Event_Broker_Test`、`Event_Terminal_Test`、`Quadtree_Test`、`Quadtree_Manager_Test`、`Coord_Type_Test`、`Object_Pool_Test`、`Object_Test`、`Collider_Test`、`Collision_Region_Test`、`Collision_Proxy_Test` | 引擎层核心模块：事件结构体、事件中转器、事件终端、四叉树、四叉树管理器、坐标类型、对象池、对象基类、碰撞系统三件套 |
 
