@@ -244,7 +244,7 @@ namespace engine
         bool 删除格式(const std::string& module, std::string& error);
         //扫描并删除未被任何路由表引用的孤儿配置文件（config/entities、config/property、config/custom 下）
         //返回删除的文件数量，被删文件相对路径写入 删除列表；失败返回 -1 并写入 error
-        int 清理孤儿配置(std::vector<std::string>& 删除列表, std::string& error);
+        int 清理孤儿配置(std::vector<std::string>& 删除列表, std::string& error) const;
         //字段类型 → 显示名（如 文本/脚本路径/文本列表/事件对列表/整数/浮点数/布尔）
         static const char* 字段类型名称(配置字段类型 type);
         //字段类型 → JSON 序列化键名（string/script/string_list/pair_list/int/float/bool）
@@ -299,9 +299,9 @@ namespace engine
         //读取路由表（route/entity.json）
         bool 读取路由();
         //写入路由表（route/entity.json）
-        bool 写入路由();
+        bool 写入路由() const;
         //解析单个实体 JSON（兼容旧格式：acls 可为对象/数组，needed_events 可为对象数组）
-        bool 解析实体配置(const nlohmann::json& data, 实体配置& out, std::string& error);
+        bool 解析实体配置(const nlohmann::json& data, 实体配置& out, std::string& error) const;
         //序列化实体配置为标准 JSON（引擎期望格式）
         nlohmann::json 序列化实体配置(const 实体配置& cfg) const;
         //按类型生成默认配置路径（config/entities/<type>.json）
@@ -312,27 +312,27 @@ namespace engine
         //读取属性槽路由表（route/property.json）
         bool 读取属性槽路由();
         //写入属性槽路由表（route/property.json）
-        bool 写入属性槽路由();
+        bool 写入属性槽路由() const;
         //解析单个属性槽 JSON
-        bool 解析属性槽配置(const nlohmann::json& data, 属性槽配置& out, std::string& error);
+        bool 解析属性槽配置(const nlohmann::json& data, 属性槽配置& out, std::string& error) const;
         //序列化属性槽配置为标准 JSON
         nlohmann::json 序列化属性槽配置(const 属性槽配置& cfg) const;
         //按类型生成属性槽默认配置路径（config/property/<type>.json）
         std::string 生成属性槽配置路径(const std::string& type) const;
 
         //读取单个格式定义文件（path 为 format/ 下文件，解析失败返回 false）
-        bool 读取格式文件(const std::filesystem::path& path, 配置格式& out);
+        bool 读取格式文件(const std::filesystem::path& path, 配置格式& out) const;
         //写入单个格式定义文件（format/<模块名>.json）
-        bool 写入格式文件(const 配置格式& fmt);
+        bool 写入格式文件(const 配置格式& fmt) const;
         //确保内置格式种子存在（Entity_Manager / Property_Manager，缺失时自动生成）
-        void 确保内置格式();
+        void 确保内置格式() const;
         //加载单个自定义模块的全部通用配置（读取路由 + 各配置 JSON）
         //返回本次跳过的损坏/缺失配置数量（路由条目损坏 / 文件缺失 / JSON 解析失败等）
         int 加载模块通用配置(const 配置格式& fmt);
         //读取自定义模块路由表（route/custom_<模块名>.json，缓存到 自定义路由表）
-        bool 读取自定义路由(const std::string& module, nlohmann::json& out);
+        bool 读取自定义路由(const std::string& module, nlohmann::json& out) const;
         //写入自定义模块路由表（route/custom_<模块名>.json）
-        bool 写入自定义路由(const std::string& module, const nlohmann::json& data);
+        bool 写入自定义路由(const std::string& module, const nlohmann::json& data) const;
         //按模块名生成通用配置路径（config/custom/<模块名>/<条目名>.json）
         std::string 生成通用配置路径(const std::string& module, const std::string& name) const;
     };

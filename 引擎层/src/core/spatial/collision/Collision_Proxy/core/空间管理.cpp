@@ -137,7 +137,7 @@ namespace engine
 	}
 
 	//碰撞空间查找
-	Collision_Region* Collision_Proxy::region_seek(const string& region)
+	Collision_Region* Collision_Proxy::region_seek(const string& region) const
 	{
 		//查找目标碰撞空间
 		auto it = regions.find(region);

@@ -6,7 +6,7 @@ namespace engine
 {
     //四叉树合并_____收集候选组合
     template<typename T>
-    void Quadtree_Manager<T>::quadtree_merge_collect(std::vector<std::vector<Tree_Record<T>*>>& receiver)
+    void Quadtree_Manager<T>::quadtree_merge_collect(std::vector<std::vector<Tree_Record<T>*>>& receiver) const
     {
         //简化表示路径
         auto& max_tree_size = settings.max_tree_size;
@@ -98,7 +98,7 @@ namespace engine
     //四叉树合并_____精确筛选组合
     template<typename T>
     void Quadtree_Manager<T>::quadtree_merge_filter(const std::vector<std::vector<Tree_Record<T>*>>& candidate,
-        std::vector<std::vector<Tree_Record<T>*>>& receiver)
+        std::vector<std::vector<Tree_Record<T>*>>& receiver) const
     {
         //筛选思路：
                 //穷举法----提前计算各种可能出现合并四叉树中心

@@ -105,7 +105,7 @@ namespace engine
 
 	//四叉树状态获取
 	template <typename T>
-	const Tree_State& Quadtree<T>::tree_state_get(void)
+	const Tree_State& Quadtree<T>::tree_state_get(void) const
 	{
 		return state;
 	}

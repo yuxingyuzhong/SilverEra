@@ -6,7 +6,7 @@ namespace engine
 {
     //四叉树扩大管理_____回调管理四叉树查找
     template<typename T>
-    Tree_Record<T>* Quadtree_Manager<T>::callback_tree_seek(const Point2d& root)
+    Tree_Record<T>* Quadtree_Manager<T>::callback_tree_seek(const Point2d& root) const
     {
         //简化表示路径
         auto& tree_group = X_sequence;
@@ -25,7 +25,7 @@ namespace engine
     //四叉树扩大管理_____新四叉树管理范围计算
     template<typename T>
     void Quadtree_Manager<T>::new_tree_range_calcu(const Tree_Record<T>* baseline_tree,
-        const Point2l& target, Rect2l& new_tree)
+        const Point2l& target, Rect2l& new_tree) const
     {
         //简化表示路径
         auto& min_tree_size = settings.min_tree_size;

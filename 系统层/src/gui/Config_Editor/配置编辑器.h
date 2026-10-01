@@ -194,18 +194,18 @@ namespace engine
         //渲染右侧属性面板
         void 渲染属性面板();
         //渲染状态栏
-        void 渲染状态栏();
+        void 渲染状态栏() const;
         //渲染校验结果
-        void 渲染校验结果(const 实体配置& cfg);
+        void 渲染校验结果(const 实体配置& cfg) const;
         //渲染校验结果通用块（错误/警告列表限高滚动；id 用于避免多个面板的 Child ID 冲突）
         void 渲染校验结果块(const char* id,
             const std::vector<std::string>& errors,
             const std::vector<std::string>& warnings,
             float 错误高度, float 警告高度);
         //渲染 acls 编辑列表
-        void 渲染权限列表(实体配置& cfg);
+        void 渲染权限列表(实体配置& cfg) const;
         //渲染 needed_events 编辑列表
-        void 渲染事件列表(实体配置& cfg);
+        void 渲染事件列表(实体配置& cfg) const;
         //渲染脚本选择器（文本输入 + 脚本下拉，label 用于避免多个选择器 ID 冲突，path 为要编辑的目标路径字段）
         void 渲染脚本选择器(const char* label, std::string& path);
 
@@ -224,7 +224,7 @@ namespace engine
         //渲染通用配置的单个字段编辑器（按格式字段定义动态生成控件）
         void 渲染通用字段编辑器(通用配置& cfg, const 配置格式& fmt);
         //渲染通用配置校验结果
-        void 渲染通用校验结果(const 配置格式& fmt, const 通用配置& cfg);
+        void 渲染通用校验结果(const 配置格式& fmt, const 通用配置& cfg) const;
         //渲染配置格式管理窗口（工具菜单打开：新建模块 + 自定义字段）
         void 渲染格式管理窗口();
         //把当前格式编辑副本写回仓库（保存到磁盘 + 更新内存）

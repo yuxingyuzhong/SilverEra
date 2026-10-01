@@ -354,7 +354,7 @@ namespace engine
     }
 
     //读取自定义模块路由表
-    bool 实体配置仓库::读取自定义路由(const std::string& module, nlohmann::json& out)
+    bool 实体配置仓库::读取自定义路由(const std::string& module, nlohmann::json& out) const
     {
         std::filesystem::path route_path = assets_dir / "config" / "route" /
             ("custom_" + 文件名清理(module) + ".json");
@@ -378,7 +378,7 @@ namespace engine
     }
 
     //写入自定义模块路由表（原子写入）
-    bool 实体配置仓库::写入自定义路由(const std::string& module, const nlohmann::json& data)
+    bool 实体配置仓库::写入自定义路由(const std::string& module, const nlohmann::json& data) const
     {
         std::filesystem::path route_path = assets_dir / "config" / "route" /
             ("custom_" + 文件名清理(module) + ".json");

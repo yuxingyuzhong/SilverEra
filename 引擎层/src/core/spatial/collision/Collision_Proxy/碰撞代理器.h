@@ -76,7 +76,7 @@ namespace engine
 		void event_process(std::shared_ptr<Event> evt);
 
 		//碰撞空间查找（不存在的返回空指针）
-		Collision_Region* region_seek(const std::string& region);
+		Collision_Region* region_seek(const std::string& region) const;
 		//碰撞体归属查找（同一编号被多个空间持有时取其中任一个）
 		bool collider_owner_seek(const uint64_t collider_ID, std::string& receiver) const;
 
@@ -97,7 +97,7 @@ namespace engine
 		//位移向量查询（供碰撞空间在更新位置时读取最新位移事件）
 		bool displacement_seek(const uint64_t collider_ID, Vector3& receiver) const;
 		//位移读取回调注入（碰撞空间经此回调读取最新位移事件）
-		void region_displacement_link(Collision_Region& region);
+		void region_displacement_link(Collision_Region& region) const;
 
 		//碰撞响应流程（发布碰撞事件、回查回复、搁置重发、施加响应）
 		void collision_protocol(const std::string& region,

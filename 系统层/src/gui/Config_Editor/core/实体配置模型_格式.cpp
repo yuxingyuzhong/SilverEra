@@ -95,7 +95,7 @@ namespace engine
 
     //确保内置格式种子存在（Entity_Manager / Property_Manager）
     //引擎契约演进时自动升级已存在的内置格式文件（原子写入会保留 .bak 兜底）
-    void 实体配置仓库::确保内置格式()
+    void 实体配置仓库::确保内置格式() const
     {
         //内置格式定义（与引擎 Entity_Manager / Property_Manager 期望的字段一致）
         const 配置格式 内置格式[] =
@@ -146,7 +146,7 @@ namespace engine
     }
 
     //读取单个格式定义文件
-    bool 实体配置仓库::读取格式文件(const std::filesystem::path& path, 配置格式& out)
+    bool 实体配置仓库::读取格式文件(const std::filesystem::path& path, 配置格式& out) const
     {
         try
         {
@@ -190,7 +190,7 @@ namespace engine
     }
 
     //写入单个格式定义文件（原子写入）
-    bool 实体配置仓库::写入格式文件(const 配置格式& fmt)
+    bool 实体配置仓库::写入格式文件(const 配置格式& fmt) const
     {
         nlohmann::json data;
         data["module"] = fmt.模块名;
@@ -333,7 +333,7 @@ namespace engine
     }
 
     //扫描并删除未被任何路由表引用的孤儿配置文件
-    int 实体配置仓库::清理孤儿配置(std::vector<std::string>& 删除列表, std::string& error)
+    int 实体配置仓库::清理孤儿配置(std::vector<std::string>& 删除列表, std::string& error) const
     {
         删除列表.clear();
         try

@@ -120,26 +120,26 @@ namespace engine
 	}
 
 	//事件构造
-	shared_ptr<Event> Event_Terminal::build(void)
+	shared_ptr<Event> Event_Terminal::build(void) const
 	{
 		return shared_ptr<Event> (new(nothrow)Event());
 	}
 
 	//事件构造
-	shared_ptr<Event> Event_Terminal::build(const string& category, const string& tag)
+	shared_ptr<Event> Event_Terminal::build(const string& category, const string& tag) const
 	{
 		return shared_ptr<Event>(new(nothrow)Event(category,tag));
 	}
 
 	//事件构造
 	shared_ptr<Event> Event_Terminal::build(const string& sender_object, const string& target_object,
-		const string& category, const string& tag)
+		const string& category, const string& tag) const
 	{
 		return shared_ptr<Event>(new(nothrow)Event(sender_object,target_object,category,tag));
 	}
 
 	//事件发送 —— 单事件重载
-	bool Event_Terminal::send(shared_ptr<Event> evt, const int64_t& acl_key)
+	bool Event_Terminal::send(shared_ptr<Event> evt, const int64_t& acl_key) const
 	{
 		//若当前尚未生成密钥
 		if (!this->acl_key.has_value())
@@ -167,7 +167,7 @@ namespace engine
 	}
 
 	//事件发送 —— 多事件重载
-	bool Event_Terminal::send(vector<shared_ptr<Event>> events, const int64_t& acl_key)
+	bool Event_Terminal::send(vector<shared_ptr<Event>> events, const int64_t& acl_key) const
 	{
 		//若当前尚未生成密钥
 		if (!this->acl_key.has_value())
@@ -217,7 +217,7 @@ namespace engine
 	}
 
 	//事件查阅
-	const vector<shared_ptr<Event>>* Event_Terminal::query(const int64_t& acl_key)
+	const vector<shared_ptr<Event>>* Event_Terminal::query(const int64_t& acl_key) const
 	{
 		//若当前尚未生成密钥
 		if (!this->acl_key.has_value())

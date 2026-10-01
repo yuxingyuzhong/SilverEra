@@ -12,14 +12,14 @@ namespace engine
     }
 
     //基目录获取
-    const path Config_Loader::base_dir_get(void)
+    const path Config_Loader::base_dir_get(void) const
     {
         //返回配置基目录
         return Engine_Env::exe_dir_get();
     }
 
     //目录递归扫描
-    void Config_Loader::content_scan(vector<u8string>& receiver)
+    void Config_Loader::content_scan(vector<u8string>& receiver) const
     {
         //构建实际扫描目录
         path actual_scan_dir = base_dir_get() / scan_content;
@@ -51,7 +51,7 @@ namespace engine
     }
 
     //路径安全检查
-    bool Config_Loader::skip_safety_inspect(const u8string& config_path)
+    bool Config_Loader::skip_safety_inspect(const u8string& config_path) const
     {
         //转化变量格式
         path suspect_path = config_path;
@@ -113,7 +113,7 @@ namespace engine
     }
 
     //文件读取
-    void Config_Loader::file_read(const path& file_path, json& receiver)
+    void Config_Loader::file_read(const path& file_path, json& receiver) const
     {
         try
         {
@@ -144,7 +144,7 @@ namespace engine
     }
 
     //异常信息输出
-    bool Config_Loader::error_out(error_code& error_info)
+    bool Config_Loader::error_out(error_code& error_info) const
     {
         //若异常信息不存在
         if (!error_info)
@@ -163,7 +163,7 @@ namespace engine
     }
 
     //任务执行
-    void Config_Loader::act(void)
+    void Config_Loader::act(void) const
     {
         //跳转路由记录
         json route_config;

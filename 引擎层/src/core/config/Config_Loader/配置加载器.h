@@ -32,21 +32,21 @@ namespace engine
         ~Config_Loader() = default;
 
         //任务执行
-        void act(void);
+        void act(void) const;
     private:
         //基目录获取
-        const std::filesystem::path base_dir_get(void);
+        const std::filesystem::path base_dir_get(void) const;
 
         //目录递归扫描
-        void content_scan(std::vector<std::u8string>& receiver);
+        void content_scan(std::vector<std::u8string>& receiver) const;
 
         //路径安全检查
-        bool skip_safety_inspect(const std::u8string& config_path);
+        bool skip_safety_inspect(const std::u8string& config_path) const;
 
         //文件读取
-        void file_read(const std::filesystem::path& file_path, nlohmann::json& receiver);
+        void file_read(const std::filesystem::path& file_path, nlohmann::json& receiver) const;
 
         //异常信息输出
-        bool error_out(std::error_code& info);
+        bool error_out(std::error_code& info) const;
     };
 }

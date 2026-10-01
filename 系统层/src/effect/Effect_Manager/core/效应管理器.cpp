@@ -45,7 +45,7 @@ namespace engine
 	}
 
 	//效应分组查找
-	int64_t Effect_Manager::effect_group_seek(const uint64_t& inclusion)
+	int64_t Effect_Manager::effect_group_seek(const uint64_t& inclusion) const
 	{
 		return binary_search(effect_groups,inclusion,less(), &Effect_Group::inclusion);
 	}

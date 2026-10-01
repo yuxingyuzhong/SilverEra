@@ -51,11 +51,11 @@ namespace engine
 
         // ---- 读取 ----
         //四叉树管理器设置获取
-        const Tree_Manager_Settings& settings_get(void);
+        const Tree_Manager_Settings& settings_get(void) const;
         //四叉树序列档案信息获取
-        const std::vector<Tree_Record<T>*>& records_get(void);
+        const std::vector<Tree_Record<T>*>& records_get(void) const;
         //最大四叉树大小获取
-        const uint64_t& largest_size_get(void);
+        const uint64_t& largest_size_get(void) const;
 
         // ---- 维护 ----
         //四叉树合并总函数
@@ -96,28 +96,28 @@ namespace engine
         //直属四叉树查找
         Tree_Record<T>* quadtree_inclusion_seek(const Point2l& target);
         //四叉树序列索引查找
-        int64_t quadtree_index_seek(const Point2d& root);
+        int64_t quadtree_index_seek(const Point2d& root) const;
         //矩形筛选
         void rectangle_filter(std::vector<Tree_Record<T>*>& receiver, const Tree_Record<T>* tree,
-            const Rect2l& range, const std::vector<Tree_Record<T>*>* tree_group = nullptr);
+            const Rect2l& range, const std::vector<Tree_Record<T>*>* tree_group = nullptr) const;
         //分类筛选
         std::vector<Tree_Record<T>*> next_tree_classify(std::vector<Tree_Record<T>*>& receiver, const Tree_Record<T>* tree,
-            const std::vector<Tree_Record<T>*>& candidate);
+            const std::vector<Tree_Record<T>*>& candidate) const;
         //验证确认（模板）
         template<typename Screen>
         void next_tree_verify(std::vector<Tree_Record<T>*>& receiver, const Tree_Record<T>* tree,
-            const std::vector<Tree_Record<T>*>& candidate, Screen way);
+            const std::vector<Tree_Record<T>*>& candidate, Screen way) const;
         //候选树筛选
         void candidate_tree_filter(std::vector<Tree_Record<T>*>& receiver, const Tree_Record<T>* tree,
-            const std::vector<Tree_Record<T>*>& candidate);
+            const std::vector<Tree_Record<T>*>& candidate) const;
         //相邻四叉树查找总函数
-        void next_tree_seek(std::vector<Tree_Record<T>*>& receiver, const Tree_Record<T>* tree, const std::vector<Tree_Record<T>*>* tree_group = nullptr);
+        void next_tree_seek(std::vector<Tree_Record<T>*>& receiver, const Tree_Record<T>* tree, const std::vector<Tree_Record<T>*>* tree_group = nullptr) const;
 
         // ---------- 四叉树扩大管理 ----------
         //回调管理四叉树查找
-        Tree_Record<T>* callback_tree_seek(const Point2d& root);
+        Tree_Record<T>* callback_tree_seek(const Point2d& root) const;
         //新四叉树管理范围计算
-        void new_tree_range_calcu(const Tree_Record<T>* primary_tree, const Point2l& seek, Rect2l& new_tree);
+        void new_tree_range_calcu(const Tree_Record<T>* primary_tree, const Point2l& seek, Rect2l& new_tree) const;
         //扩大管理方法
         bool tree_expand_approve(const Point2d& root, const Point2l& seek, bool internal = false);
 
@@ -125,10 +125,10 @@ namespace engine
         //四叉树创建
         void quadtree_build(Point2d root = {0.5,0.5}, uint64_t tree_size = 256);
         //合并：收集候选组合
-        void quadtree_merge_collect(std::vector<std::vector<Tree_Record<T>*>>& receiver);
+        void quadtree_merge_collect(std::vector<std::vector<Tree_Record<T>*>>& receiver) const;
         //合并：精确筛选组合
         void quadtree_merge_filter(const std::vector<std::vector<Tree_Record<T>*>>& candidate,
-            std::vector<std::vector<Tree_Record<T>*>>& receiver);
+            std::vector<std::vector<Tree_Record<T>*>>& receiver) const;
         //卸载——序列索引重载
         void quadtree_unload(std::vector<int64_t>& index_set);
 
@@ -147,9 +147,9 @@ namespace engine
         // ---------- 查询辅助 ----------
         //查询范围列表修改
         void target_range_amend(const Rect2l& excel_range, bool* ptr_excel,
-            const Rect2l& target_range);
+            const Rect2l& target_range) const;
         //查询结果列表元素坐标化
         void excel_element_to_coord(const Rect2l& excel_range, const int64_t& element_ID,
-            Point2l& receiver);
+            Point2l& receiver) const;
     };
 }

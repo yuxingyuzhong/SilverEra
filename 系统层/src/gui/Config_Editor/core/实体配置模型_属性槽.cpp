@@ -229,14 +229,14 @@ namespace engine
     }
 
     //写入属性槽路由表（原子写入）
-    bool 实体配置仓库::写入属性槽路由()
+    bool 实体配置仓库::写入属性槽路由() const
     {
         std::string write_error;
         return 原子写入文件(property_route_path, property_route_json.dump(2), write_error);
     }
 
     //解析单个属性槽 JSON
-    bool 实体配置仓库::解析属性槽配置(const nlohmann::json& data, 属性槽配置& out, std::string& error)
+    bool 实体配置仓库::解析属性槽配置(const nlohmann::json& data, 属性槽配置& out, std::string& error) const
     {
         if (!data.is_object())
         {

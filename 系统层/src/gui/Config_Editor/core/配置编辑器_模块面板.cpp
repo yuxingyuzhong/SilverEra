@@ -612,7 +612,7 @@ namespace engine
     }
 
     //渲染通用配置校验结果
-    void 配置编辑器::渲染通用校验结果(const 配置格式& fmt, const 通用配置& cfg)
+    void 配置编辑器::渲染通用校验结果(const 配置格式& fmt, const 通用配置& cfg) const
     {
         std::vector<std::string> errors, warnings;
         bool 通过 = 仓库.校验通用配置(fmt, cfg, errors, warnings);

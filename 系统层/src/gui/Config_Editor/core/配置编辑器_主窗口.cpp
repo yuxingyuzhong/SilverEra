@@ -484,7 +484,7 @@ namespace engine
     }
 
     //渲染状态栏
-    void 配置编辑器::渲染状态栏()
+    void 配置编辑器::渲染状态栏() const
     {
         ImGui::Separator();
         //左侧：当前模块数量 + 加载消息

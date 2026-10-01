@@ -97,7 +97,7 @@ namespace engine
     }
 
     //渲染校验结果
-    void 配置编辑器::渲染校验结果(const 实体配置& cfg)
+    void 配置编辑器::渲染校验结果(const 实体配置& cfg) const
     {
         std::vector<std::string> errors, warnings;
         bool 通过 = 仓库.校验(cfg, errors, warnings);
@@ -133,7 +133,7 @@ namespace engine
     }
 
     //渲染 acls 编辑列表
-    void 配置编辑器::渲染权限列表(实体配置& cfg)
+    void 配置编辑器::渲染权限列表(实体配置& cfg) const
     {
         int 删除索引 = -1;
 
@@ -158,7 +158,7 @@ namespace engine
 
 
     //渲染 needed_events 编辑列表
-    void 配置编辑器::渲染事件列表(实体配置& cfg)
+    void 配置编辑器::渲染事件列表(实体配置& cfg) const
     {
         int 删除索引 = -1;
 
