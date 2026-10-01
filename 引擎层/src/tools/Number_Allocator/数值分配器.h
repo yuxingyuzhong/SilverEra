@@ -8,10 +8,19 @@
 
 namespace engine
 {
+	//分配方式
+	enum Allocate_Order
+	{
+		LIFO,
+		FIFO
+	};
+
 	//数值池
 	class Number_Allocator
 	{
 	private:
+		//数值分配方式
+		Allocate_Order order = Allocate_Order::LIFO;
 		//可分配新数值
 		uint64_t next_number = 0;
 		//回收数值集合
@@ -30,10 +39,20 @@ namespace engine
 			//若回收数值集合不为空
 			if (!recycle_numbers.empty())
 			{
-				//获取回收数值集合末尾元素
-				index = recycle_numbers.back();
-				//弹出该元素
-				recycle_numbers.pop_back();
+				//若为后进后出分配机制
+				if(order == Allocate_Order::LIFO)
+				{
+					//弹出末元素
+					index = recycle_numbers.back();
+					recycle_numbers.pop_back();
+				}
+				//若为后进先出分配机制
+				else
+				{
+					//弹出首元素
+					index = recycle_numbers.front();
+					recycle_numbers.erase(recycle_numbers.begin());
+				}
 			}
 			else
 				//获取可分配新数值
@@ -67,6 +86,11 @@ namespace engine
 			//循环调用单数值重载
 			for (auto number : recycle_numbers)
 				recycle(number);
+		}
+		//数值分配方式设置
+		void allocate_order_set(Allocate_Order order = Allocate_Order::LIFO)
+		{
+			this->order = order;
 		}
 		//重置分配器
 		void reset(void)

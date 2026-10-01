@@ -134,8 +134,8 @@ namespace engine
         // 中心聚集 -> 尝试细分
         int64_t half = block_size / 2;
         // 四个子区块边界
-        struct SubRect { int64_t l, r, d, u; };
-        SubRect subs[4] = {
+        struct Sub_Rect { int64_t l, r, d, u; };
+        Sub_Rect subs[4] = {
             { block_left, block_left + half - 1, block_down + half, block_up },           // NW
             { block_left + half, block_right,     block_down + half, block_up },          // NE
             { block_left, block_left + half - 1, block_down, block_down + half - 1 },      // SW

@@ -13,7 +13,7 @@ namespace engine
 	}
 	//函数接口注册
 	template <typename... Args>
-	bool Terminal_Interface::function_register(interface_ID ID, 
+	bool Terminal_Interface::function_register(Interface_ID ID, 
 		std::unique_ptr<std::function<void(Args ...)>>& target,
 		std::function<void(Args ...)> function)
 	{
@@ -34,52 +34,52 @@ namespace engine
 	}
 
 	//中转站接入入口注册
-	bool Terminal_Interface::attach_handler_register(attch_handler callback)
+	bool Terminal_Interface::attach_handler_register(Attach_Handler callback)
 	{
 		//注册中转站接入入口
-		return function_register(interface_ID::ATTACH_HANDLER,attach_handler, callback);
+		return function_register(Interface_ID::ATTACH_HANDLER,attach_handler, callback);
 	}
 	//中转站交互入口注册 —— 单事件重载
-	bool Terminal_Interface::event_interactor_register(event_handler callback)
+	bool Terminal_Interface::event_interactor_register(Event_Handler callback)
 	{
 		//注册单事件交互接口
-		return function_register(interface_ID::EVENT_INTERACTOR, event_interactor, callback);
+		return function_register(Interface_ID::EVENT_INTERACTOR, event_interactor, callback);
 	}
 	//中转站交互入口注册
-	bool Terminal_Interface::events_interactor_register(events_handler callback)
+	bool Terminal_Interface::events_interactor_register(Events_Handler callback)
 	{
 		//注册多事件交互接口
-		return function_register(interface_ID::EVENTS_INTERACTOR, events_interactor, callback);
+		return function_register(Interface_ID::EVENTS_INTERACTOR, events_interactor, callback);
 	}
 
 	//事件发送入口注册 —— 单事件重载
-	bool Terminal_Interface::event_sender_register(event_handler callback)
+	bool Terminal_Interface::event_sender_register(Event_Handler callback)
 	{
 		//注册单事件发送入口
-		return function_register(interface_ID::EVENT_SENDOR,event_sender, callback);
+		return function_register(Interface_ID::EVENT_SENDOR,event_sender, callback);
 	}
 	//事件发送入口注册 —— 多事件重载
-	bool Terminal_Interface::event_sender_register(events_handler callback)
+	bool Terminal_Interface::event_sender_register(Events_Handler callback)
 	{
 		//注册多事件发送入口
-		return function_register(interface_ID::EVENTS_SENDOR,events_sender, callback);
+		return function_register(Interface_ID::EVENTS_SENDOR,events_sender, callback);
 	}
 
 	//事件接收入口注册 —— 单事件重载
-	bool Terminal_Interface::event_receiver_register(event_handler callback)
+	bool Terminal_Interface::event_receiver_register(Event_Handler callback)
 	{
 		//注册单事件接收入口
-		return function_register(interface_ID::EVENT_RECEIVER,event_receiver, callback);
+		return function_register(Interface_ID::EVENT_RECEIVER,event_receiver, callback);
 	}
 	//事件接收入口注册 —— 多事件重载
-	bool Terminal_Interface::event_receiver_register(events_handler callback)
+	bool Terminal_Interface::event_receiver_register(Events_Handler callback)
 	{
 		//注册多事件接收入口
-		return function_register(interface_ID::EVENTS_RECEIVER,events_receiver, callback);
+		return function_register(Interface_ID::EVENTS_RECEIVER,events_receiver, callback);
 	}
 
 	//接口注入验证
-	bool Terminal_Interface::interface_check(const interface_ID& ID)
+	bool Terminal_Interface::interface_check(const Interface_ID& ID)
 	{
 		//匹配已接入接口ID集合
 		for (auto& inerface_ID : map)

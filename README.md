@@ -40,7 +40,7 @@
 | `main` | 顶层仓库（本目录） | `main` | `main` | 顶层总览 ＋ 四层源码快照 | 无 | 只作合并线 |
 | `engine` | `引擎层/` | `engine` | `main` | 事件、对象、空间分区、碰撞、工具集 | `EngineCore.lib` | 可用 |
 | `system` | `系统层/` | `system` | `main` | 实体、属性、效应运行时系统 | `SystemCore.lib` | 可构建 |
-| `test` | `测试层/` | `test` | `test` | 单元测试体系 ＋ 测试模块选择器 | `EngineTests.exe` | 22 套件 / 338 用例全绿 |
+| `test` | `测试层/` | `test` | `test` | 单元测试体系 ＋ 测试模块选择器 | `EngineTests.exe` | 22 套件 / 349 用例全绿 |
 | `game` | `游戏层/` | `game` | `main` | 游戏内容与资源 | 无（当前无源码） | 骨架 |
 | `doc` | 工作站（工作区之外） | `doc` | `main` | 工作站文档：任务报告 ＋ 项目导航 | 无 | 文档索引 |
 
@@ -70,7 +70,7 @@
 
 | 模块 | 路径 | 说明 |
 | --- | --- | --- |
-| 事件系统 | `src/core/event/` | `event` 结构体、事件终端 `Event_Terminal`、终端接口 `Terminal_Interface`、事件中转器 `Event_Broker` |
+| 事件系统 | `src/core/event/` | `Event` 结构体、事件终端 `Event_Terminal`、终端接口 `Terminal_Interface`、事件中转器 `Event_Broker` |
 | 对象系统 | `src/core/object/` | 对象基类 `Object`、对象池 `Object_Pool` |
 | 坐标类型与依赖封装 | `src/core/spatial/common/` | 模板坐标类型 `Point2i` / `Point2d` / `Point2l`、`Rect2i` / `Rect2d` / `Rect2l`；第三方依赖的封装头 |
 | 四叉树 | `src/core/spatial/partition/Quadtree/` | 空间分区本体：建树、插入、区域检索、合并 |
@@ -176,7 +176,7 @@ cmake --build 系统层/out/build/x64-Debug
 
 **构建目标**：`TestCore`（STATIC）、`TestGui`（STATIC）、`TestLauncher`（STATIC）、`EngineTestObjects`（**OBJECT**）、`EngineTests`（EXECUTABLE）。`EngineTestObjects` 特意用 OBJECT 库，防止未被引用的 `.obj` 被丢弃而导致 `TEST_F` 的静态注册失效。
 
-**测试规模**：**22 个套件 / 338 个用例 / 0 失败 / 0 禁用**（主调 2 套件 24 例、工具 9 套件 120 例、核心 11 套件 194 例）。
+**测试规模**：**22 个套件 / 349 个用例 / 0 失败 / 0 禁用**（主调 2 套件 24 例、工具 9 套件 120 例、核心 11 套件 205 例）。
 
 **构建与运行**（先构建引擎层与系统层）：
 
@@ -191,7 +191,7 @@ EngineTests.exe --selector=off        # 不开窗，全量运行（ctest 走这�
 EngineTests.exe --gtest_filter=...    # 已带 gtest 参数时直接透传，不弹窗
 ```
 
-**当前状态**：全量 338 / 338 通过，`ctest` 1/1 通过。遗留：图形窗口的鼠标点选交互尚未自动化，回归只覆盖「窗口创建失败降级」路径。
+**当前状态**：全量 349 / 349 通过，`ctest` 1/1 通过。遗留：图形窗口的鼠标点选交互尚未自动化，回归只覆盖「窗口创建失败降级」路径。
 
 > 详见 [测试层/README.md](测试层/README.md)
 

@@ -16,7 +16,7 @@ namespace engine
 
 	//四叉树记录结构体
 	template<typename T>
-	struct tree_record
+	struct Tree_Record
 	{
 	private:
 		//四叉树指针
@@ -31,7 +31,7 @@ namespace engine
 	};
 
 	//四叉树管理器设置结构体
-	struct tree_manager_settings
+	struct Tree_Manager_Settings
 	{
 		//最小区块单元大小
 		uint64_t block_size = 16;

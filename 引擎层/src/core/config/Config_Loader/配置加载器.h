@@ -13,9 +13,9 @@ namespace engine
     class Config_Loader
     {
     private:
-        //扫描子目录（相对于基目录）
+        //扫描子目录(相对于基目录)
         std::u8string scan_content = u8"assets/config/route/";
-        //允许的根目录（相对于基目录）
+        //允许的根目录(相对于基目录)
         std::u8string allowed_root = u8"assets/config/";
     public:
         //事件终端

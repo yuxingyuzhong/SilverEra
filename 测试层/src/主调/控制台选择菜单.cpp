@@ -11,15 +11,15 @@ namespace engine
     //========================================================================
     // 控制台选择菜单
     //========================================================================
-    void 控制台选择菜单_运行(测试选择模型& 模型, std::string& 过滤串)
+    void 控制台选择菜单_运行(Test_Selection_Model& 模型, std::string& 过滤串)
     {
-        const std::vector<套件条目>& 套件表 = 模型.套件表();
+        const std::vector<Suite_Entry>& 套件表 = 模型.suite_table_get();
 
         //打印标题与编号列表
         std::cout << "===== 白银纪元 · 测试模块选择（控制台）=====" << std::endl;
         for (std::size_t i = 0; i < 套件表.size(); ++i)
-            std::cout << "  " << (i + 1) << ") " << 套件表[i].名称
-                << "（" << 套件表[i].用例表.size() << " 个用例）" << std::endl;
+            std::cout << "  " << (i + 1) << ") " << 套件表[i].name
+                << "（" << 套件表[i].case_list.size() << " 个用例）" << std::endl;
         std::cout << "请输入要测试的编号（如 1,3-5），或输入 all 全选；直接回车表示全跑：" << std::endl;
 
         //最多接受三次非法输入，其后兜底全跑
@@ -29,8 +29,8 @@ namespace engine
             //输入流结束（管道 / 重定向）时按全选处理
             if (!std::getline(std::cin, 输入))
             {
-                模型.全部勾选();
-                过滤串 = 模型.生成过滤串();
+                模型.all_check();
+                过滤串 = 模型.filter_string_build();
                 std::cout << "未读到输入，按全选处理。" << std::endl;
                 return;
             }
@@ -38,8 +38,8 @@ namespace engine
             //空输入：全跑
             if (输入.find_first_not_of(" \t\r\n") == std::string::npos)
             {
-                模型.全部勾选();
-                过滤串 = 模型.生成过滤串();
+                模型.all_check();
+                过滤串 = 模型.filter_string_build();
                 std::cout << "空输入，按全选处理。" << std::endl;
                 return;
             }
@@ -54,15 +54,15 @@ namespace engine
 
             //把解析结果应用到模型
             for (std::size_t i = 0; i < 套件表.size(); ++i)
-                模型.设置套件勾选(i, 勾选表[i]);
+                模型.suite_check_set(i, 勾选表[i]);
 
-            过滤串 = 模型.生成过滤串();
+            过滤串 = 模型.filter_string_build();
             std::cout << "已生成过滤串：" << 过滤串 << std::endl;
             return;
         }
 
         //多次非法输入：兜底全跑
-        模型.全部勾选();
-        过滤串 = 模型.生成过滤串();
+        模型.all_check();
+        过滤串 = 模型.filter_string_build();
     }
 }

@@ -6,7 +6,7 @@
 
 本层是**全项目唯一产出可执行文件的层**：`EngineTests.exe` 既是单元测试入口，也是整套工程的启动项。「宿主机制」（把下层组件按由浅到深的范围接在一起、各自产出启动项）已经取消，各层不再各自维护运行入口，可执行文件只由本层产生。
 
-本层承载两件事：一是 **googletest 单元测试体系**（22 个套件 / 338 个用例，覆盖引擎层与系统层的核心模块，以及本层主调自身的逻辑）；二是**测试模块选择器**（图形窗口 / 控制台菜单 / 命令行开关三种交互形态），让同一份可执行文件同时服务「开发期按模块精准复跑」与「CI 一键全量回归」两类场景。
+本层承载两件事：一是 **googletest 单元测试体系**（22 个套件 / 349 个用例，覆盖引擎层与系统层的核心模块，以及本层主调自身的逻辑）；二是**测试模块选择器**（图形窗口 / 控制台菜单 / 命令行开关三种交互形态），让同一份可执行文件同时服务「开发期按模块精准复跑」与「CI 一键全量回归」两类场景。
 
 ---
 
@@ -75,7 +75,7 @@
 | 特性 | 说明 |
 | --- | --- |
 | 唯一可执行入口 | 全项目只此一份 `EngineTests.exe`；`main` 由本层主调提供，不链接 googletest 自带的 `gtest_main` |
-| 全量单元测试 | 22 个套件 / 338 个用例，覆盖引擎层与系统层核心模块，外加本层主调逻辑自测 |
+| 全量单元测试 | 22 个套件 / 349 个用例，覆盖引擎层与系统层核心模块，外加本层主调逻辑自测 |
 | 反射驱动的选择树 | 通过 googletest 反射枚举已注册的套件与用例，运行时建立「套件 → 用例」两层选择树，新增用例自动可见，无需维护名单 |
 | 三种交互形态 | 图形窗口（GLFW + OpenGL3 + Dear ImGui）、控制台编号菜单、命令行开关全跑；无图形环境时自动降级 |
 | 所见即所测 | 勾选结果压缩成 googletest 原生 `--gtest_filter` 过滤串执行；执行前打印过滤串与复跑命令 |
@@ -206,7 +206,7 @@
 [构建] 引擎层 EngineCore.lib → 系统层 SystemCore.lib → 本层 EngineTests.exe
 [启动] EngineTests.exe（可带 --selector=... / --gtest_*）
    ├─ 交互路径（默认 window / console）：
-   │     建立选择模型 → 反射 22 套件 / 338 用例 → 用户勾选 → 生成过滤串
+   │     建立选择模型 → 反射 22 套件 / 349 用例 → 用户勾选 → 生成过滤串
    └─ 自动化路径（--gtest_* 透传 / --selector=off）：不建模型、不开窗
 [执行] GTEST_FLAG(filter) = 过滤串 → RUN_ALL_TESTS() → 逐用例 SetUp / 用例体 / TearDown
 [收尾] 交互运行打印提示并等待按键；自动化运行立即返回退出码（0 全过 / 非 0 有失败）
@@ -238,19 +238,19 @@
 namespace engine
 {
     // 选择树的两级条目
-    struct 用例条目 { std::string 名称; bool 已勾选 = true; };
-    struct 套件条目 { std::string 名称; std::vector<用例条目> 用例表; bool 已展开 = false; };
+    struct Case_Entry { std::string name; bool checked = true; };
+    struct Suite_Entry { std::string name; std::vector<Case_Entry> case_list; bool expanded = false; };
 
-    class 测试选择模型
+    class Test_Selection_Model
     {
     public:
-        void 建立套件树();                              // 反射建树（默认全部勾选）
-        const std::vector<套件条目>& 套件表() const;
-        std::size_t 套件数() const;                     // 另有 用例总数 / 已勾选用例数
-        bool 套件全选(std::size_t 套件序号) const;       // 另有 套件半选 / 套件已展开
-        void 设置套件勾选(std::size_t 套件序号, bool 勾选);  // 另有 设置用例勾选 / 设置套件展开
-        void 全部勾选();                                // 另有 全部清空 / 反向勾选
-        std::string 生成过滤串() const;                  // 三态压缩（见实现要点）
+        void suite_tree_build();                        // 反射建树（默认全部勾选）
+        const std::vector<Suite_Entry>& suite_table_get() const;
+        std::size_t suite_count() const;                // 另有 case_count / checked_case_count
+        bool suite_all_checked(std::size_t 套件序号) const;   // 另有 suite_half_checked / suite_expanded
+        void suite_check_set(std::size_t 套件序号, bool 勾选); // 另有 case_check_set / suite_expand_set
+        void all_check();                               // 另有 all_clear / check_invert
+        std::string filter_string_build() const;         // 三态压缩（见实现要点）
     };
 
     bool 解析控制台选择(const std::string& 输入, std::size_t 套件数, std::vector<bool>& 勾选表);
@@ -266,7 +266,7 @@ namespace engine
 ### 6.3 控制台选择菜单（`src/主调/控制台选择菜单.h` / `.cpp`）
 
 - **功能**：无图形环境（或用户显式指定）时的文本交互入口：打印套件编号列表，读取用户输入，把选择结果应用到模型并输出过滤串。
-- **对外接口**：`void engine::控制台选择菜单_运行(测试选择模型& 模型, std::string& 过滤串);`
+- **对外接口**：`void engine::控制台选择菜单_运行(Test_Selection_Model& 模型, std::string& 过滤串);`
 - **实现要点**：
   - 打印标题与逐条编号列表（`N) 套件名（M 个用例）`）。
   - 最多接受三次非法输入，其后兜底全跑；输入流结束（管道/重定向）与空输入（直接回车）均按全选处理。
@@ -276,7 +276,7 @@ namespace engine
 ### 6.4 图形选择窗口（`src/主调/图形选择窗口.h` / `.cpp`）
 
 - **功能**：默认交互入口，GLFW + OpenGL3 + Dear ImGui 的树形勾选窗口：展示套件与用例、支持搜索过滤与批量勾选、Esc / 关窗视为全跑。
-- **对外接口**：`bool engine::图形选择窗口_运行(测试选择模型& 模型, std::string& 过滤串);`（窗口创建失败返回 `false`，调用方退控制台菜单）
+- **对外接口**：`bool engine::图形选择窗口_运行(Test_Selection_Model& 模型, std::string& 过滤串);`（窗口创建失败返回 `false`，调用方退控制台菜单）
 - **实现要点**：
   - 初始化时序：`glfwInit` → 请求 OpenGL 3.3 核心上下文建窗 → `gladLoadGL` → 创建 ImGui 上下文 → 应用蓝色渐变主题 → 加载中文字体 → 主循环；三处失败点（GLFW 初始化、建窗、glad 加载）均返回 `false` 触发降级。
   - 界面：铺满视口的无标题面板；工具条含全选 / 清空 / 反选、搜索框与「已选 N / M」计数；选择树为「套件节点 + 用例复选」；底部为「开始测试」（或 Enter）与「取消（全跑）」（或 Esc）。
@@ -307,7 +307,7 @@ namespace engine
 
 ## 七、单元测试体系
 
-用例统一放在 `src/单元测试/` 下，按被测层分**三棵子树**，共 **20 个用例源文件**、**22 个套件**、**338 个用例**。套件名 = googletest 夹具类名。
+用例统一放在 `src/单元测试/` 下，按被测层分**三棵子树**，共 **20 个用例源文件**、**22 个套件**、**349 个用例**。套件名 = googletest 夹具类名。
 
 ### 7.1 规模统计
 
@@ -315,16 +315,16 @@ namespace engine
 | --- | --- | --- | --- | --- |
 | 主调 | `src/单元测试/主调/` | 2 | 2 | 24 |
 | 工具 | `src/单元测试/工具/` | 9 | 9 | 120 |
-| 核心 | `src/单元测试/核心/` | 9 | 11 | 194 |
-| **合计** | — | **20** | **22** | **338** |
+| 核心 | `src/单元测试/核心/` | 9 | 11 | 205 |
+| **合计** | — | **20** | **22** | **349** |
 
-全量回归结果：**338 / 338 通过 / 0 失败 / 0 禁用**。
+全量回归结果：**349 / 349 通过 / 0 失败 / 0 禁用**。
 
 ### 7.2 覆盖内容
 
 | 子树 | 套件（夹具类名） | 被测对象 |
 | --- | --- | --- |
-| 主调 | `测试选择模型测试`（16 例）、`退出暂停判定测试`（8 例） | 本层 `测试选择模型`、`需要等待退出` |
+| 主调 | `测试选择模型测试`（16 例）、`退出暂停判定测试`（8 例） | 本层 `Test_Selection_Model`、`需要等待退出` |
 | 工具 | `Binary_Search_Test`、`Engine_Env_Test`、`Number_Allocator_Test`、`Data_Validator_Test`、`Log_Test`、`Mesh_Loader_Test`、`Timer_Test`、`Path_String_Test`、`Random_Generator_Test` | 系统层工具模块组：二分查找、引擎环境、数值分配器、数据校验器、日志系统、网格加载器、计时器、路径字符串转换、随机数生成器 |
 | 核心 | `Event_Test`、`Event_Broker_Test`、`Event_Terminal_Test`、`Quadtree_Test`、`Quadtree_Manager_Test`、`Coord_Type_Test`、`Object_Pool_Test`、`Object_Test`、`Collider_Test`、`Collision_Region_Test`、`Collision_Proxy_Test` | 引擎层核心模块：事件结构体、事件中转器、事件终端、四叉树、四叉树管理器、坐标类型、对象池、对象基类、碰撞系统三件套 |
 
@@ -457,7 +457,7 @@ cmake -S . -B out/build/x64-Debug -G Ninja \
 
 - 四步分流固化：透传 / `off` / `console` / `window` 四条路径与失败降级均已实现并有回归。
 - 过滤串三态压缩与退出等待三参数判定均有专门用例覆盖。
-- 单元测试体系 22 套件 / 338 用例全绿，`ctest` 1/1 通过。
+- 单元测试体系 22 套件 / 349 用例全绿，`ctest` 1/1 通过。
 - 产物落层根目录，资源相对路径解析与游戏层一致。
 - 层间契约就位：只链接两层已构建静态库，无源码回退路径。
 

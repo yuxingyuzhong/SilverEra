@@ -6,7 +6,7 @@ namespace engine
 {
     //四叉树扩大管理_____回调管理四叉树查找
     template<typename T>
-    tree_record<T>* Quadtree_Manager<T>::callback_tree_seek(const Point2d& root)
+    Tree_Record<T>* Quadtree_Manager<T>::callback_tree_seek(const Point2d& root)
     {
         //简化表示路径
         auto& tree_group = X_sequence;
@@ -24,7 +24,7 @@ namespace engine
 
     //四叉树扩大管理_____新四叉树管理范围计算
     template<typename T>
-    void Quadtree_Manager<T>::new_tree_range_calcu(const tree_record<T>* baseline_tree,
+    void Quadtree_Manager<T>::new_tree_range_calcu(const Tree_Record<T>* baseline_tree,
         const Point2l& target, Rect2l& new_tree)
     {
         //简化表示路径
@@ -102,7 +102,7 @@ namespace engine
     bool Quadtree_Manager<T>::tree_expand_approve(const Point2d& root, const Point2l& target, bool internal)
     {
         //获取当前回调管理四叉树信息
-        tree_record<T>* now_tree = nullptr;
+        Tree_Record<T>* now_tree = nullptr;
         now_tree = this->callback_tree_seek(root);
         //若回调管理四叉树查询失败则直接返回
         if (now_tree == nullptr)
@@ -118,7 +118,7 @@ namespace engine
             //矩形筛选范围存储
             Rect2l rectan_range{};
             //当前四叉树扩大区域四叉树根节点存储
-            std::vector<tree_record<T>*> ptr_rectan_tree{};
+            std::vector<Tree_Record<T>*> ptr_rectan_tree{};
             //筛选扩大后树管理范围
             //与当前树管理范围的非交集范围(即将管理区域)
             //是否存在其他四叉树根节点
@@ -136,7 +136,7 @@ namespace engine
             if (ptr_rectan_tree.size() == 0)
             {
                 //存储相邻四叉树
-                std::vector<tree_record<T>*> next_trees{};
+                std::vector<Tree_Record<T>*> next_trees{};
                 //重定义四叉树大小以满足筛选需要
                 now_tree->size *= 2;
                 //查找相邻区域四叉树
@@ -146,7 +146,7 @@ namespace engine
                 if (next_trees.size() > 0)
                 {
                     //重置四叉树存储
-                    std::vector<tree_record<T>*> ptr_overlap_tree{};
+                    std::vector<Tree_Record<T>*> ptr_overlap_tree{};
                     //重定义筛选方式确保筛选出重叠四叉树
                     auto screen_method = [](double coord_1, double coord_2, double coord_3, double coord_4) -> bool
                         {

@@ -18,7 +18,7 @@ namespace engine
 	void Prop_Distributor::attach(void)
 	{
 		//构造事件接收入口
-		auto event_receive_entry = [this](shared_ptr<event> evt)-> void
+		auto event_receive_entry = [this](shared_ptr<Event> evt)-> void
 			{
 				this->event_process(evt);
 			};
@@ -61,7 +61,7 @@ namespace engine
 	}
 
 	//事件处理
-	void Prop_Distributor::event_process(std::shared_ptr<event> evt)
+	void Prop_Distributor::event_process(std::shared_ptr<Event> evt)
 	{
 		//若当前为密钥传送事件
 		if (evt->category == "Key" && evt->tag == "Distributor")

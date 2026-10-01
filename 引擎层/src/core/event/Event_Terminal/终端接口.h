@@ -9,7 +9,7 @@
 namespace engine
 {
 	//终端接口列表
-	enum class interface_ID
+	enum class Interface_ID
 	{
 		NONE,
 		ATTACH_HANDLER,
@@ -29,34 +29,34 @@ namespace engine
 	{
 	private:
 		//订阅事件类型别名
-		using needed_events = const std::vector<event>&;
+		using Needed_Events = const std::vector<Event>&;
 		//事件入口类型别名 —— 单事件重载
-		using event_handler = std::function<void(std::shared_ptr<event> evt)>;
+		using Event_Handler = std::function<void(std::shared_ptr<Event> evt)>;
 		//事件入口类型别名 —— 多事件重载
-		using events_handler = std::function<void(std::vector<std::shared_ptr<event>>)>;
+		using Events_Handler = std::function<void(std::vector<std::shared_ptr<Event>>)>;
 		//接口入口类型别名
-		using attch_handler = std::function<void(const std::string& name,needed_events events,
-			event_handler receiver)>;
+		using Attach_Handler = std::function<void(const std::string& name,Needed_Events events,
+			Event_Handler receiver)>;
 
 		//接口注册表
-		std::vector<interface_ID> map{};
+		std::vector<Interface_ID> map{};
 
 		//中转站接入入口
-		std::unique_ptr<attch_handler> attach_handler;
+		std::unique_ptr<Attach_Handler> attach_handler;
 		//中转站交互入口 —— 单事件重载
-		std::unique_ptr<event_handler> event_interactor;
+		std::unique_ptr<Event_Handler> event_interactor;
 		//中转站交互入口 —— 单事件重载
-		std::unique_ptr<events_handler> events_interactor;
+		std::unique_ptr<Events_Handler> events_interactor;
 
 		//事件发送入口 —— 单事件重载
-		std::unique_ptr<event_handler> event_sender;
+		std::unique_ptr<Event_Handler> event_sender;
 		//事件发送入口 —— 多事件重载
-		std::unique_ptr<events_handler> events_sender;
+		std::unique_ptr<Events_Handler> events_sender;
 
 		//事件接收入口 —— 单事件重载
-		std::unique_ptr<event_handler> event_receiver;
+		std::unique_ptr<Event_Handler> event_receiver;
 		//事件接收入口 —— 多事件重载
-		std::unique_ptr<events_handler> events_receiver;
+		std::unique_ptr<Events_Handler> events_receiver;
 
 		//函数包装器内存分配
 		template <typename... Args>
@@ -64,30 +64,30 @@ namespace engine
 
 		//函数接口注册
 		template <typename... Args>
-		bool function_register(interface_ID ID,std::unique_ptr<std::function<void(Args ...)>>& target,
+		bool function_register(Interface_ID ID,std::unique_ptr<std::function<void(Args ...)>>& target,
 			std::function<void(Args ...)> function);
 	public:
 		//事件终端友元
 		friend class Event_Terminal;
 
 		//中转站接入入口注册
-		bool attach_handler_register(attch_handler callback);
+		bool attach_handler_register(Attach_Handler callback);
 		//中转站交互入口注册
-		bool event_interactor_register(event_handler callback);
+		bool event_interactor_register(Event_Handler callback);
 		//中转站交互入口注册
-		bool events_interactor_register(events_handler callback);
+		bool events_interactor_register(Events_Handler callback);
 
 		//事件发送入口注册 —— 单事件重载
-		bool event_sender_register(event_handler callback);
+		bool event_sender_register(Event_Handler callback);
 		//事件发送入口注册 —— 多事件重载
-		bool event_sender_register(events_handler callback);
+		bool event_sender_register(Events_Handler callback);
 
 		//事件接收入口注册 —— 单事件重载
-		bool event_receiver_register(event_handler callback);
+		bool event_receiver_register(Event_Handler callback);
 		//事件接收入口注册 —— 多事件重载
-		bool event_receiver_register(events_handler callback);
+		bool event_receiver_register(Events_Handler callback);
 
 		//接口注入验证
-		bool interface_check(const interface_ID& ID);
+		bool interface_check(const Interface_ID& ID);
 	};
 }

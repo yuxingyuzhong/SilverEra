@@ -6,7 +6,7 @@ namespace engine
 {
 	//子节点递归
 	template <typename T>
-	bool Quadtree<T>::child_node_recur(Node*& this_node, const int& direct, const Node_type& type, bool stable)
+	bool Quadtree<T>::child_node_recur(Node*& this_node, const int& direct, const Node_Type& type, bool stable)
 	{
 		//若当前子节点为空且为稳定查询模式
 		//则为子节点分配内存

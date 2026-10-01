@@ -20,8 +20,8 @@ namespace engine
 
     //数据迁移方法设置
     template<typename T>
-    void Quadtree_Manager<T>::callback_register(const std::function<void(tree_chunk_data<T>& receiver,
-        tree_chunk_data<T>& transmiter)>& cb_1)
+    void Quadtree_Manager<T>::callback_register(const std::function<void(Tree_Chunk_Data<T>& receiver,
+        Tree_Chunk_Data<T>& transmiter)>& cb_1)
     {
         //赋值函数注册
         copy = cb_1;
@@ -87,7 +87,7 @@ namespace engine
 
     //四叉树管理器设置获取
     template<typename T>
-    const tree_manager_settings& Quadtree_Manager<T>::settings_get(void)
+    const Tree_Manager_Settings& Quadtree_Manager<T>::settings_get(void)
     {
         //返回四叉树设置
         return settings;
@@ -95,7 +95,7 @@ namespace engine
 
     //四叉树序列档案信息获取
     template<typename T>
-    const std::vector<tree_record<T>*>& Quadtree_Manager<T>::records_get(void)
+    const std::vector<Tree_Record<T>*>& Quadtree_Manager<T>::records_get(void)
     {
         //返回四叉树序列档案
         return X_sequence;

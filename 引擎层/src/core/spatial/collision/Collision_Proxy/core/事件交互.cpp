@@ -34,7 +34,7 @@ namespace engine
 	void Collision_Proxy::attach(void)
 	{
 		//若事件中转站接入入口尚未注册（接入入口由事件中转站的持有者注册）
-		if (!event_terminal->interface_check(interface_ID::ATTACH_HANDLER))
+		if (!event_terminal->interface_check(Interface_ID::ATTACH_HANDLER))
 		{
 			Log::error("Collision_Proxy::事件中转站接入入口未注册，接入中止");
 			return;
@@ -42,25 +42,27 @@ namespace engine
 
 		//注册本模块事件接收入口（事件送达后交由事件处理分派）
 		if (!event_terminal->event_receiver_register(
-			[this](shared_ptr<event> evt) { this->event_process(evt); }))
+			[this](shared_ptr<Event> evt) { this->event_process(evt); }))
 		{
 			Log::error("Collision_Proxy::事件接收入口注册失败，接入中止");
 			return;
 		}
 
 		//待订阅事件清单
-		vector<event> needed_events{
-			event("", "", "Config", "Load"),
-			event("", "", "Collision", "RegionBuild"),
-			event("", "", "Collision", "RegionUnload"),
-			event("", "", "Collision", "RegionState"),
-			event("", "", "Collision", "RegionBoundary"),
-			event("", "", "Collision", "RegionDetect"),
-			event("", "", "Collision", "ColliderBuild"),
-			event("", "", "Collision", "ColliderUnload"),
-			event("", "", "Collision", "ColliderTransfer"),
-			event("", "", "Collision", "ColliderMirror"),
-			event("", "", "Collision", "ColliderSet")
+		vector<Event> needed_events{
+			Event("", "", "Config", "Load"),
+			Event("", "", "Collision", "RegionBuild"),
+			Event("", "", "Collision", "RegionUnload"),
+			Event("", "", "Collision", "RegionState"),
+			Event("", "", "Collision", "RegionBoundary"),
+			Event("", "", "Collision", "RegionDetect"),
+			Event("", "", "Collision", "ColliderBuild"),
+			Event("", "", "Collision", "ColliderUnload"),
+			Event("", "", "Collision", "ColliderTransfer"),
+			Event("", "", "Collision", "ColliderMirror"),
+			Event("", "", "Collision", "ColliderSet"),
+			Event("", "", "Collision", "ColliderDisplacement"),
+			Event("", "", "Collision", "ColliderCollisionResponse")
 		};
 
 		//接入事件中转站
@@ -69,7 +71,7 @@ namespace engine
 	}
 
 	//事件处理
-	void Collision_Proxy::event_process(std::shared_ptr<event> evt)
+	void Collision_Proxy::event_process(std::shared_ptr<Event> evt)
 	{
 		//空事件检查
 		if (!evt)
@@ -206,6 +208,22 @@ namespace engine
 			return;
 		}
 
+		//位移向量事件
+		if (evt->tag == "ColliderDisplacement")
+		{
+			//保存位移事件（供碰撞空间更新位置时重读）
+			displacement_register(evt->config);
+			return;
+		}
+
+		//碰撞响应事件（回复本地回复信箱，供检测流程回查）
+		if (evt->tag == "ColliderCollisionResponse")
+		{
+			//登记碰撞响应
+			collision_response_register(evt->config);
+			return;
+		}
+
 		//碰撞体卸载、转移、镜像与设置
 		if (evt->tag == "ColliderUnload" || evt->tag == "ColliderTransfer" ||
 			evt->tag == "ColliderMirror" || evt->tag == "ColliderSet")
@@ -250,7 +268,7 @@ namespace engine
 	bool Collision_Proxy::event_publish(const string& tag, const json& payload)
 	{
 		//构造发布事件
-		shared_ptr<event> evt = event_terminal.build(module_name, "", "Collision", tag);
+		shared_ptr<Event> evt = event_terminal.build(module_name, "", "Collision", tag);
 		//若事件内存分配失败
 		if (!evt)
 		{

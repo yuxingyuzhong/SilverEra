@@ -45,7 +45,7 @@ namespace engine
             new_prop_slot.clear();
 
             //构造待注入依赖
-            auto event_entry = [this](vector<shared_ptr<event>> events)->void
+            auto event_entry = [this](vector<shared_ptr<Event>> events)->void
                 {
                     //直接转发事件至外部
                     event_terminal.receive(events);

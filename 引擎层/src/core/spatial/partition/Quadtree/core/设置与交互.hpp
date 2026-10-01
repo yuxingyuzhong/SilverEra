@@ -58,7 +58,7 @@ namespace engine
 		}
 
 		//默认下级节点为中间节点
-		Node_type type = MIDDLE;
+		Node_Type type = MIDDLE;
 		//若当前为最后一次递归寻址
 		if (now_level == max_level - 1)
 			type = LEAF;
@@ -105,7 +105,7 @@ namespace engine
 
 	//四叉树状态获取
 	template <typename T>
-	const tree_state& Quadtree<T>::tree_state_get(void)
+	const Tree_State& Quadtree<T>::tree_state_get(void)
 	{
 		return state;
 	}

@@ -5,13 +5,13 @@
 #include "src/core/event/Event_Terminal/事件终端.h"
 
 //构造测试事件
-static std::shared_ptr<engine::event> make_event(const std::string& category,
+static std::shared_ptr<engine::Event> make_event(const std::string& category,
 	const std::string& tag)
 {
 	//空配置包
 	const nlohmann::json config = nlohmann::json::object();
 	//返回共享事件
-	return std::make_shared<engine::event>("", "", category, tag, config);
+	return std::make_shared<engine::Event>("", "", category, tag, config);
 }
 
 //事件终端测试夹具
@@ -50,7 +50,7 @@ TEST_F(Event_Terminal_Test, 错误密钥发送失败)
 	//生成权限密钥
 	const int64_t key = terminal.acl_key_gen();
 	//注册发送通道
-	terminal->event_sender_register([](std::shared_ptr<engine::event>) {});
+	terminal->event_sender_register([](std::shared_ptr<engine::Event>) {});
 	//以错误密钥发送
 	EXPECT_FALSE(terminal.send(make_event("输入", "按键"), key + 1));
 }
@@ -73,7 +73,7 @@ TEST_F(Event_Terminal_Test, 注册后发送成功)
 	int sent = 0;
 	//注册发送通道
 	EXPECT_TRUE(terminal->event_sender_register(
-		[&sent](std::shared_ptr<engine::event>) { ++sent; }));
+		[&sent](std::shared_ptr<engine::Event>) { ++sent; }));
 	//发送事件
 	EXPECT_TRUE(terminal.send(make_event("输入", "按键"), key));
 	//事件应被送出一次
@@ -89,10 +89,10 @@ TEST_F(Event_Terminal_Test, 批量发送重载可用)
 	size_t sent_count = 0;
 	//注册批量发送通道（多事件重载）
 	EXPECT_TRUE(terminal->event_sender_register(
-		[&sent_count](std::vector<std::shared_ptr<engine::event>> events)
+		[&sent_count](std::vector<std::shared_ptr<engine::Event>> events)
 		{ sent_count = events.size(); }));
 	//批量发送两条事件
-	std::vector<std::shared_ptr<engine::event>> events{
+	std::vector<std::shared_ptr<engine::Event>> events{
 		make_event("输入", "按键"), make_event("输入", "松开")
 	};
 	EXPECT_TRUE(terminal.send(events, key));
@@ -120,7 +120,7 @@ TEST_F(Event_Terminal_Test, 注册接收通道后事件被转发)
 	int received = 0;
 	//注册接收通道
 	EXPECT_TRUE(terminal->event_receiver_register(
-		[&received](std::shared_ptr<engine::event>) { ++received; }));
+		[&received](std::shared_ptr<engine::Event>) { ++received; }));
 	//接收一条事件
 	terminal.receive(make_event("输入", "按键"));
 	//事件应被转发
@@ -138,10 +138,10 @@ TEST_F(Event_Terminal_Test, 批量接收入口可用)
 	size_t received_count = 0;
 	//注册批量接收通道（多事件重载）
 	EXPECT_TRUE(terminal->event_receiver_register(
-		[&received_count](std::vector<std::shared_ptr<engine::event>> events)
+		[&received_count](std::vector<std::shared_ptr<engine::Event>> events)
 		{ received_count = events.size(); }));
 	//批量接收两条事件
-	std::vector<std::shared_ptr<engine::event>> events{
+	std::vector<std::shared_ptr<engine::Event>> events{
 		make_event("输入", "按键"), make_event("输入", "松开")
 	};
 	terminal.receive(events);
@@ -188,7 +188,7 @@ TEST_F(Event_Terminal_Test, 发送走通道且接收落入原生集合)
 	//送出次数
 	int sent = 0;
 	//注册发送通道
-	terminal->event_sender_register([&sent](std::shared_ptr<engine::event>) { ++sent; });
+	terminal->event_sender_register([&sent](std::shared_ptr<engine::Event>) { ++sent; });
 	//发送：走发送通道，计数应增加
 	EXPECT_TRUE(terminal.send(make_event("输入", "按键"), key));
 	EXPECT_EQ(sent, 1);
@@ -216,11 +216,11 @@ TEST_F(Event_Terminal_Test, 接入信息被传递给接入入口)
 	//接入入口收到的订阅事件数
 	size_t received_count = 0;
 	//接入入口接到的接收通道
-	std::function<void(std::shared_ptr<engine::event>)> received_entry;
+	std::function<void(std::shared_ptr<engine::Event>)> received_entry;
 
 	//先注册单事件接收入口，避免接入时解引用未初始化的入口指针
 	EXPECT_TRUE(terminal->event_receiver_register(
-		[](std::shared_ptr<engine::event>) {}));
+		[](std::shared_ptr<engine::Event>) {}));
 	//注册中转站接入入口
 	EXPECT_TRUE(terminal->attach_handler_register(
 		[&](auto&& module_name, auto&& needed_events, auto&& entry)
@@ -234,7 +234,7 @@ TEST_F(Event_Terminal_Test, 接入信息被传递给接入入口)
 		}));
 
 	//待订阅事件清单
-	std::vector<engine::event> needed{ engine::event("", "", "输入", "按键",
+	std::vector<engine::Event> needed{ engine::Event("", "", "输入", "按键",
 		nlohmann::json::object()) };
 	//接入中转站
 	EXPECT_TRUE(terminal.attach("模块", needed, key));
@@ -252,13 +252,13 @@ TEST_F(Event_Terminal_Test, 接入后经通道送入事件)
 	//生成权限密钥
 	const int64_t key = terminal.acl_key_gen();
 	//接入入口接到的接收通道
-	std::function<void(std::shared_ptr<engine::event>)> received_entry;
+	std::function<void(std::shared_ptr<engine::Event>)> received_entry;
 	//已注册接收通道的转发次数
 	int forwarded = 0;
 
 	//注册单事件接收入口
 	terminal->event_receiver_register(
-		[&forwarded](std::shared_ptr<engine::event>) { ++forwarded; });
+		[&forwarded](std::shared_ptr<engine::Event>) { ++forwarded; });
 	//注册中转站接入入口
 	terminal->attach_handler_register(
 		[&received_entry](auto&&, auto&&, auto&& entry) { received_entry = entry; });
@@ -279,7 +279,7 @@ TEST_F(Event_Terminal_Test, 接入后经通道送入事件)
 TEST_F(Event_Terminal_Test, 密钥未生成时接口全部锁定)
 {
 	//注册发送通道（仅注册，不涉及权限校验）
-	terminal->event_sender_register([](std::shared_ptr<engine::event>) {});
+	terminal->event_sender_register([](std::shared_ptr<engine::Event>) {});
 	//未生成密钥时发送被拒绝
 	EXPECT_FALSE(terminal.send(make_event("输入", "按键"), 0));
 	//未生成密钥时清空被拒绝

@@ -170,7 +170,7 @@ namespace engine
     //========================================================================
     // 图形选择窗口
     //========================================================================
-    bool 图形选择窗口_运行(测试选择模型& 模型, std::string& 过滤串)
+    bool 图形选择窗口_运行(Test_Selection_Model& 模型, std::string& 过滤串)
     {
         //—— GLFW 初始化 ——
         if (!glfwInit())
@@ -246,36 +246,36 @@ namespace engine
 
             //—— 工具条：批量操作 + 搜索 + 计数 ——
             if (ImGui::Button("全选"))
-                模型.全部勾选();
+                模型.all_check();
             ImGui::SameLine();
             if (ImGui::Button("清空"))
-                模型.全部清空();
+                模型.all_clear();
             ImGui::SameLine();
             if (ImGui::Button("反选"))
-                模型.反向勾选();
+                模型.check_invert();
             ImGui::SameLine();
             ImGui::SetNextItemWidth(260.0f);
             ImGui::InputTextWithHint("##搜索", "搜索模块或用例名…", 搜索缓冲, sizeof(搜索缓冲));
             ImGui::SameLine();
-            ImGui::Text("已选 %zu / %zu", 模型.已勾选用例数(), 模型.用例总数());
+            ImGui::Text("已选 %zu / %zu", 模型.checked_case_count(), 模型.case_count());
             ImGui::Separator();
 
             const std::string 关键词 = 搜索缓冲;
-            const std::vector<套件条目>& 套件表 = 模型.套件表();
+            const std::vector<Suite_Entry>& 套件表 = 模型.suite_table_get();
 
             //—— 选择树 ——
             ImGui::BeginChild("##选择树", ImVec2(0.0f, -44.0f), ImGuiChildFlags_Borders);
             for (std::size_t 套件序号 = 0; 套件序号 < 套件表.size(); ++套件序号)
             {
-                const 套件条目& 套件 = 套件表[套件序号];
+                const Suite_Entry& 套件 = 套件表[套件序号];
 
                 //判断套件名是否命中关键词
-                const bool 套件命中 = 含关键词(套件.名称, 关键词);
+                const bool 套件命中 = 含关键词(套件.name, 关键词);
                 //判断是否有用例命中关键词
                 bool 有用例命中 = false;
-                for (const 用例条目& 用例 : 套件.用例表)
+                for (const Case_Entry& 用例 : 套件.case_list)
                 {
-                    if (含关键词(用例.名称, 关键词))
+                    if (含关键词(用例.name, 关键词))
                     {
                         有用例命中 = true;
                         break;
@@ -288,43 +288,43 @@ namespace engine
                 ImGui::PushID(static_cast<int>(套件序号));
 
                 //套件级复选框：勾选整组
-                bool 套件勾选 = 模型.套件全选(套件序号);
+                bool 套件勾选 = 模型.suite_all_checked(套件序号);
                 if (ImGui::Checkbox("##套件勾选", &套件勾选))
-                    模型.设置套件勾选(套件序号, 套件勾选);
+                    模型.suite_check_set(套件序号, 套件勾选);
                 ImGui::SameLine();
 
                 //统计本套件已勾选数，与总数一起显示
                 std::size_t 套件已选 = 0;
-                for (const 用例条目& 用例 : 套件.用例表)
+                for (const Case_Entry& 用例 : 套件.case_list)
                 {
-                    if (用例.已勾选)
+                    if (用例.checked)
                         ++套件已选;
                 }
-                const std::string 节点标签 = 套件.名称 + "（" + std::to_string(套件已选)
-                    + "/" + std::to_string(套件.用例表.size()) + "）";
+                const std::string 节点标签 = 套件.name + "（" + std::to_string(套件已选)
+                    + "/" + std::to_string(套件.case_list.size()) + "）";
 
                 //展开态由模型持有，避免每帧被复位
-                ImGui::SetNextItemOpen(模型.套件已展开(套件序号), ImGuiCond_Always);
+                ImGui::SetNextItemOpen(模型.suite_expanded(套件序号), ImGuiCond_Always);
                 const bool 展开 = ImGui::TreeNodeEx("##节点",
                     ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_SpanAvailWidth,
                     "%s", 节点标签.c_str());
-                if (展开 != 模型.套件已展开(套件序号))
-                    模型.设置套件展开(套件序号, 展开);
+                if (展开 != 模型.suite_expanded(套件序号))
+                    模型.suite_expand_set(套件序号, 展开);
 
                 //展开时逐个用例渲染勾选框
                 if (展开)
                 {
-                    for (std::size_t 用例序号 = 0; 用例序号 < 套件.用例表.size(); ++用例序号)
+                    for (std::size_t 用例序号 = 0; 用例序号 < 套件.case_list.size(); ++用例序号)
                     {
-                        const 用例条目& 用例 = 套件.用例表[用例序号];
+                        const Case_Entry& 用例 = 套件.case_list[用例序号];
                         //套件名未命中且该用例也未命中时隐藏
-                        if (!套件命中 && !含关键词(用例.名称, 关键词))
+                        if (!套件命中 && !含关键词(用例.name, 关键词))
                             continue;
 
                         ImGui::PushID(static_cast<int>(用例序号));
-                        bool 用例勾选 = 用例.已勾选;
-                        if (ImGui::Checkbox(用例.名称.c_str(), &用例勾选))
-                            模型.设置用例勾选(套件序号, 用例序号, 用例勾选);
+                        bool 用例勾选 = 用例.checked;
+                        if (ImGui::Checkbox(用例.name.c_str(), &用例勾选))
+                            模型.case_check_set(套件序号, 用例序号, 用例勾选);
                         ImGui::PopID();
                     }
                     ImGui::TreePop();
@@ -337,7 +337,7 @@ namespace engine
             //—— 底部按钮：确认 / 取消 ——
             if (ImGui::Button("开始测试", ImVec2(160.0f, 32.0f)) || ImGui::IsKeyPressed(ImGuiKey_Enter))
             {
-                过滤串 = 模型.生成过滤串();
+                过滤串 = 模型.filter_string_build();
                 已确认 = true;
             }
             ImGui::SameLine();

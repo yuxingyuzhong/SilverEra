@@ -303,4 +303,110 @@ namespace engine
 		shape_receiver->setMargin(static_cast<Scalar>(margin));
 		return true;
 	}
+
+	//几何体集合构建
+	bool Collision_Region::geometry_build(const nlohmann::json& geometry_config,
+		vector<Geometry_Part>& parts_receiver, unique_ptr<Collision_Shape>& compound_receiver)
+	{
+		//集合形式判定（含几何体数组字段即为几何体集合）
+		bool is_geometry_set = geometry_config.contains("geometries") &&
+			geometry_config["geometries"].is_array();
+
+		//待构建的几何体部件集合
+		vector<Geometry_Part> parts;
+
+		//---------- 几何体集合形式：逐个构建带相对变换的部件 ----------
+		if (is_geometry_set)
+		{
+			//逐个处理几何体元素
+			for (const auto& item : geometry_config["geometries"])
+			{
+				//几何体元素格式检查
+				if (!item.is_object())
+				{
+					Log::warn("Collision_Region::几何体集合含非对象元素");
+					return false;
+				}
+
+				//几何体部件
+				Geometry_Part part;
+				//构建该部件的形状与其网格数据源
+				if (!shape_build(item, part.shape, part.mesh))
+					return false;
+
+				//若指定了相对位置
+				if (item.contains("position"))
+				{
+					//相对位置
+					Vector3 position;
+					//读取相对位置
+					if (!vector_read(item, "position", position))
+					{
+						Log::warn("Collision_Region::几何体集合元素字段(position)非法");
+						return false;
+					}
+					//写入部件相对位置
+					part.local_transform.setOrigin(position);
+				}
+				//若指定了相对旋转
+				if (item.contains("rotation"))
+				{
+					//相对旋转
+					Quaternion rotation;
+					//读取相对旋转
+					if (!quaternion_read(item, "rotation", rotation))
+					{
+						Log::warn("Collision_Region::几何体集合元素字段(rotation)非法");
+						return false;
+					}
+					//写入部件相对旋转
+					part.local_transform.setRotation(rotation);
+				}
+
+				//收容该部件
+				parts.push_back(std::move(part));
+			}
+
+			//几何体集合不可为空
+			if (parts.empty())
+			{
+				Log::warn("Collision_Region::几何体集合为空");
+				return false;
+			}
+		}
+		//---------- 单几何体形式：视作仅含一个几何体的集合（旧语义） ----------
+		else
+		{
+			//几何体部件
+			Geometry_Part part;
+			//构建几何形状与其网格数据源
+			if (!shape_build(geometry_config, part.shape, part.mesh))
+				return false;
+			//单几何体形式下基准位置与朝向已由调用方写入世界变换，部件相对变换保持单位变换
+			parts.push_back(std::move(part));
+		}
+
+		//---------- 装配：单部件直接挂载，多部件装配为复合形状 ----------
+		//多部件时的复合形状
+		unique_ptr<Collision_Shape> compound;
+		//多部件时分配复合形状
+		if (parts.size() > 1)
+		{
+			//分配复合形状内存
+			if (!memory_malloc<Compound_Shape>(compound))
+			{
+				Log::warn("Collision_Region::复合形状分配失败");
+				return false;
+			}
+			//逐个加入子形状（子形状所有权仍由各部件持有）
+			for (const Geometry_Part& part : parts)
+				static_cast<Compound_Shape*>(compound.get())->addChildShape(part.local_transform,
+					part.shape.get());
+		}
+
+		//移交构建结果
+		parts_receiver = std::move(parts);
+		compound_receiver = std::move(compound);
+		return true;
+	}
 }

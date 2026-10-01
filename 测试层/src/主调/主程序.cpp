@@ -113,8 +113,8 @@ int main(int argc, char** argv)
         return RUN_ALL_TESTS();
 
     //—— 第四步：建立选择模型，按模式取得过滤串 ——
-    engine::测试选择模型 模型;
-    模型.建立套件树();
+    engine::Test_Selection_Model 模型;
+    模型.suite_tree_build();
 
     std::string 过滤串;
     if (选择模式 == "console")

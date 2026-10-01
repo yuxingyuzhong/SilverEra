@@ -38,9 +38,9 @@ namespace engine
     //========================================================================
     // 建立套件树
     //========================================================================
-    void 测试选择模型::建立套件树()
+    void Test_Selection_Model::suite_tree_build()
     {
-        套件表_.clear();
+        suite_table_.clear();
 
         //取 googletest 单例（用例在静态初始化期已完成注册）
         ::testing::UnitTest* 单元测试 = ::testing::UnitTest::GetInstance();
@@ -53,8 +53,8 @@ namespace engine
             if (套件 == nullptr)
                 continue;
 
-            套件条目 条目;
-            条目.名称 = 套件->name();
+            Suite_Entry 条目;
+            条目.name = 套件->name();
 
             //逐条登记用例，默认全部勾选
             const int 用例总数 = 套件->total_test_count();
@@ -64,167 +64,167 @@ namespace engine
                 if (用例 == nullptr)
                     continue;
 
-                用例条目 用例记录;
-                用例记录.名称 = 用例->name();
-                用例记录.已勾选 = true;
-                条目.用例表.push_back(用例记录);
+                Case_Entry 用例记录;
+                用例记录.name = 用例->name();
+                用例记录.checked = true;
+                条目.case_list.push_back(用例记录);
             }
 
-            套件表_.push_back(条目);
+            suite_table_.push_back(条目);
         }
     }
 
     //========================================================================
     // 查询
     //========================================================================
-    const std::vector<套件条目>& 测试选择模型::套件表() const
+    const std::vector<Suite_Entry>& Test_Selection_Model::suite_table_get() const
     {
-        return 套件表_;
+        return suite_table_;
     }
 
-    std::size_t 测试选择模型::套件数() const
+    std::size_t Test_Selection_Model::suite_count() const
     {
-        return 套件表_.size();
+        return suite_table_.size();
     }
 
-    std::size_t 测试选择模型::用例总数() const
+    std::size_t Test_Selection_Model::case_count() const
     {
         std::size_t 总数 = 0;
-        for (const 套件条目& 套件 : 套件表_)
-            总数 += 套件.用例表.size();
+        for (const Suite_Entry& 套件 : suite_table_)
+            总数 += 套件.case_list.size();
         return 总数;
     }
 
-    std::size_t 测试选择模型::已勾选用例数() const
+    std::size_t Test_Selection_Model::checked_case_count() const
     {
         std::size_t 总数 = 0;
-        for (const 套件条目& 套件 : 套件表_)
+        for (const Suite_Entry& 套件 : suite_table_)
         {
-            for (const 用例条目& 用例 : 套件.用例表)
+            for (const Case_Entry& 用例 : 套件.case_list)
             {
-                if (用例.已勾选)
+                if (用例.checked)
                     ++总数;
             }
         }
         return 总数;
     }
 
-    bool 测试选择模型::套件全选(std::size_t 套件序号) const
+    bool Test_Selection_Model::suite_all_checked(std::size_t 套件序号) const
     {
         //越界或空套件一律视为未全选
-        if (套件序号 >= 套件表_.size() || 套件表_[套件序号].用例表.empty())
+        if (套件序号 >= suite_table_.size() || suite_table_[套件序号].case_list.empty())
             return false;
 
-        for (const 用例条目& 用例 : 套件表_[套件序号].用例表)
+        for (const Case_Entry& 用例 : suite_table_[套件序号].case_list)
         {
-            if (!用例.已勾选)
+            if (!用例.checked)
                 return false;
         }
         return true;
     }
 
-    bool 测试选择模型::套件半选(std::size_t 套件序号) const
+    bool Test_Selection_Model::suite_half_checked(std::size_t 套件序号) const
     {
         //越界或空套件不存在半选态
-        if (套件序号 >= 套件表_.size() || 套件表_[套件序号].用例表.empty())
+        if (套件序号 >= suite_table_.size() || suite_table_[套件序号].case_list.empty())
             return false;
 
         //统计本套件已勾选数
         std::size_t 已选 = 0;
-        for (const 用例条目& 用例 : 套件表_[套件序号].用例表)
+        for (const Case_Entry& 用例 : suite_table_[套件序号].case_list)
         {
-            if (用例.已勾选)
+            if (用例.checked)
                 ++已选;
         }
         //部分勾选即为半选
-        return 已选 > 0 && 已选 < 套件表_[套件序号].用例表.size();
+        return 已选 > 0 && 已选 < suite_table_[套件序号].case_list.size();
     }
 
-    bool 测试选择模型::套件已展开(std::size_t 套件序号) const
+    bool Test_Selection_Model::suite_expanded(std::size_t 套件序号) const
     {
         //越界视为未展开
-        if (套件序号 >= 套件表_.size())
+        if (套件序号 >= suite_table_.size())
             return false;
-        return 套件表_[套件序号].已展开;
+        return suite_table_[套件序号].expanded;
     }
 
     //========================================================================
     // 修改
     //========================================================================
-    void 测试选择模型::设置套件勾选(std::size_t 套件序号, bool 勾选)
+    void Test_Selection_Model::suite_check_set(std::size_t 套件序号, bool 勾选)
     {
         //越界忽略
-        if (套件序号 >= 套件表_.size())
+        if (套件序号 >= suite_table_.size())
             return;
 
-        for (用例条目& 用例 : 套件表_[套件序号].用例表)
-            用例.已勾选 = 勾选;
+        for (Case_Entry& 用例 : suite_table_[套件序号].case_list)
+            用例.checked = 勾选;
     }
 
-    void 测试选择模型::设置用例勾选(std::size_t 套件序号, std::size_t 用例序号, bool 勾选)
+    void Test_Selection_Model::case_check_set(std::size_t 套件序号, std::size_t 用例序号, bool 勾选)
     {
         //越界忽略
-        if (套件序号 >= 套件表_.size())
+        if (套件序号 >= suite_table_.size())
             return;
-        if (用例序号 >= 套件表_[套件序号].用例表.size())
+        if (用例序号 >= suite_table_[套件序号].case_list.size())
             return;
 
-        套件表_[套件序号].用例表[用例序号].已勾选 = 勾选;
+        suite_table_[套件序号].case_list[用例序号].checked = 勾选;
     }
 
-    void 测试选择模型::设置套件展开(std::size_t 套件序号, bool 展开)
+    void Test_Selection_Model::suite_expand_set(std::size_t 套件序号, bool 展开)
     {
         //越界忽略
-        if (套件序号 >= 套件表_.size())
+        if (套件序号 >= suite_table_.size())
             return;
 
-        套件表_[套件序号].已展开 = 展开;
+        suite_table_[套件序号].expanded = 展开;
     }
 
-    void 测试选择模型::全部勾选()
+    void Test_Selection_Model::all_check()
     {
-        for (套件条目& 套件 : 套件表_)
+        for (Suite_Entry& 套件 : suite_table_)
         {
-            for (用例条目& 用例 : 套件.用例表)
-                用例.已勾选 = true;
+            for (Case_Entry& 用例 : 套件.case_list)
+                用例.checked = true;
         }
     }
 
-    void 测试选择模型::全部清空()
+    void Test_Selection_Model::all_clear()
     {
-        for (套件条目& 套件 : 套件表_)
+        for (Suite_Entry& 套件 : suite_table_)
         {
-            for (用例条目& 用例 : 套件.用例表)
-                用例.已勾选 = false;
+            for (Case_Entry& 用例 : 套件.case_list)
+                用例.checked = false;
         }
     }
 
-    void 测试选择模型::反向勾选()
+    void Test_Selection_Model::check_invert()
     {
-        for (套件条目& 套件 : 套件表_)
+        for (Suite_Entry& 套件 : suite_table_)
         {
-            for (用例条目& 用例 : 套件.用例表)
-                用例.已勾选 = !用例.已勾选;
+            for (Case_Entry& 用例 : 套件.case_list)
+                用例.checked = !用例.checked;
         }
     }
 
     //========================================================================
     // 生成过滤串
     //========================================================================
-    std::string 测试选择模型::生成过滤串() const
+    std::string Test_Selection_Model::filter_string_build() const
     {
         //全不选视为全跑（与 gtest 的 "*" 语义一致）
-        if (已勾选用例数() == 0)
+        if (checked_case_count() == 0)
             return "*";
 
         std::vector<std::string> 片段;
-        for (const 套件条目& 套件 : 套件表_)
+        for (const Suite_Entry& 套件 : suite_table_)
         {
             //统计本套件的勾选数
             std::size_t 已选 = 0;
-            for (const 用例条目& 用例 : 套件.用例表)
+            for (const Case_Entry& 用例 : 套件.case_list)
             {
-                if (用例.已勾选)
+                if (用例.checked)
                     ++已选;
             }
 
@@ -233,17 +233,17 @@ namespace engine
                 continue;
 
             //整组全选：压缩成 套件.*
-            if (已选 == 套件.用例表.size())
+            if (已选 == 套件.case_list.size())
             {
-                片段.push_back(套件.名称 + ".*");
+                片段.push_back(套件.name + ".*");
                 continue;
             }
 
             //部分勾选：逐条列出
-            for (const 用例条目& 用例 : 套件.用例表)
+            for (const Case_Entry& 用例 : 套件.case_list)
             {
-                if (用例.已勾选)
-                    片段.push_back(套件.名称 + "." + 用例.名称);
+                if (用例.checked)
+                    片段.push_back(套件.name + "." + 用例.name);
             }
         }
 

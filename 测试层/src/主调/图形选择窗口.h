@@ -17,5 +17,5 @@ namespace engine
     //运行图形选择窗口
     //成功返回 true，过滤串写入 过滤串（按 Esc 或关闭窗口视为全跑，写入 "*"）
     //窗口创建失败返回 false
-    bool 图形选择窗口_运行(测试选择模型& 模型, std::string& 过滤串);
+    bool 图形选择窗口_运行(Test_Selection_Model& 模型, std::string& 过滤串);
 }

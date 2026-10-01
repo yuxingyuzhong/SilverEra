@@ -21,7 +21,7 @@ namespace engine
 		Random_Generator key_generator{};
 
 		//事件集合
-		std::vector<std::shared_ptr<event>> event_set{};
+		std::vector<std::shared_ptr<Event>> event_set{};
 		//终端接口
 		Terminal_Interface terminal_interface;
 
@@ -45,31 +45,31 @@ namespace engine
 		int64_t acl_key_gen(void);
 
 		//中转站接入
-		bool attach(const std::string& module_name,const std::vector<event>& needed_events,
+		bool attach(const std::string& module_name,const std::vector<Event>& needed_events,
 			const int64_t& acl_key);
 		//中转站交互 —— 单事件重载
-		bool interact(std::shared_ptr<event> evt, const int64_t& acl_key);
+		bool interact(std::shared_ptr<Event> evt, const int64_t& acl_key);
 		//中转站交互 —— 多事件重载
-		bool interact(std::vector<std::shared_ptr<event>> events, const int64_t& acl_key);
+		bool interact(std::vector<std::shared_ptr<Event>> events, const int64_t& acl_key);
 
 		//事件构造
-		std::shared_ptr<event> build(void);
+		std::shared_ptr<Event> build(void);
 		//事件构造
-		std::shared_ptr<event> build(const std::string& category, const std::string& tag);
+		std::shared_ptr<Event> build(const std::string& category, const std::string& tag);
 		//事件构造
-		std::shared_ptr<event> build(const std::string& sender_object, const std::string& target_object,
+		std::shared_ptr<Event> build(const std::string& sender_object, const std::string& target_object,
 			const std::string& category, const std::string& tag);
 
 		//事件发送 —— 单事件重载
-		bool send(std::shared_ptr<event> evt, const int64_t& acl_key);
+		bool send(std::shared_ptr<Event> evt, const int64_t& acl_key);
 		//事件发送 —— 多事件重载
-		bool send(std::vector<std::shared_ptr<event>> events,const int64_t& acl_key);
+		bool send(std::vector<std::shared_ptr<Event>> events,const int64_t& acl_key);
 		//事件接收 —— 单事件重载
-		void receive(std::shared_ptr<event> evt);
+		void receive(std::shared_ptr<Event> evt);
 		//事件接收 —— 多事件重载
-		void receive(std::vector<std::shared_ptr<event>> events);
+		void receive(std::vector<std::shared_ptr<Event>> events);
 		//事件查阅
-		const std::vector<std::shared_ptr<event>>* query(const int64_t& acl_key);
+		const std::vector<std::shared_ptr<Event>>* query(const int64_t& acl_key);
 		//事件清空
 		bool clear(const int64_t& acl_key);
 

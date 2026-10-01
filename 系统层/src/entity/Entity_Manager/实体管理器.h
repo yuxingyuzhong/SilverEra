@@ -13,8 +13,8 @@
 #include "entity/Entity/实体.h"
 //获取预定义sol2库类型别名
 #include "common/external/Sol2/sol类型别名.h"
-//获取配置检查器
-#include "src/tools/Config_Checker/配置检查器.h"
+//获取数据校验器
+#include "src/tools/Data_Validator/数据校验器.h"
 //获取对象池
 #include "src/core/object/Object_Pool/对象池.h"
 //获取引擎环境
@@ -31,7 +31,7 @@ namespace engine
     {       
     private:
         //订阅事件集合
-        std::unordered_set<event> event_map{};
+        std::unordered_set<Event> event_map{};
     public:
         //事件终端
         Event_Terminal event_terminal;
@@ -82,13 +82,13 @@ namespace engine
 
     public:
         //事件广播
-        void event_broadcast(std::shared_ptr<event> evt);
+        void event_broadcast(std::shared_ptr<Event> evt);
         //事件定向发送
         bool event_unicast(const std::string& type,const uint64_t& ID,
-            std::shared_ptr<event> evt);
+            std::shared_ptr<Event> evt);
     private:
         //事件处理
-        void event_process(std::shared_ptr<event> evt);
+        void event_process(std::shared_ptr<Event> evt);
     };
 
 }

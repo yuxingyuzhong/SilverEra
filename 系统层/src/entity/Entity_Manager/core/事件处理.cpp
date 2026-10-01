@@ -5,7 +5,7 @@
 namespace engine
 {
     //事件广播
-    void Entity_Manager::event_broadcast(shared_ptr<event> evt)
+    void Entity_Manager::event_broadcast(shared_ptr<Event> evt)
     {
         //向所有实体发送事件
         for (auto& entity_record : entities.data())
@@ -14,7 +14,7 @@ namespace engine
 
     //事件定向发送
     bool Entity_Manager::event_unicast(const std::string& type, const uint64_t& ID,
-        std::shared_ptr<event> evt)
+        std::shared_ptr<Event> evt)
     {
         //获取实体迭代器
         auto it = entities.find(ID);
@@ -32,7 +32,7 @@ namespace engine
     }
 
     //事件处理
-    void Entity_Manager::event_process(shared_ptr<event> evt)
+    void Entity_Manager::event_process(shared_ptr<Event> evt)
     {
         //若当前为配置事件
         if (evt->category == "Config")
@@ -58,7 +58,7 @@ namespace engine
                     //简化表示路径
                     auto& tag = buffer[transform_time];
                     //构造事件
-                    event needed_event("Entity_Manager","", tag.first, tag.second, json::object());
+                    Event needed_event("Entity_Manager","", tag.first, tag.second, json::object());
                     //若该事件不存在
                     if (!event_map.count(needed_event))
                         event_map.insert(needed_event);
@@ -76,7 +76,7 @@ namespace engine
             auto& config = evt->config;
 
             //若实体类型字段无效
-            if (!Config_Checker::field_check<string>(config, "target_type"))
+            if (!Data_Validator::field_check<string>(config, "target_type"))
                 return;
             //获取目标实体类型
             string target_type = config["target_type"];
@@ -109,7 +109,7 @@ namespace engine
             else if (tag == "Unload")
             {
                 //若待卸载实体ID集合字段无效
-                if (!Config_Checker::field_check<vector<int64_t>>(config, "ID_set"))
+                if (!Data_Validator::field_check<vector<int64_t>>(config, "ID_set"))
                     return;
                 //获取待卸载实体ID
                 vector<uint64_t> ID_set = config["ID_set"];
@@ -121,14 +121,14 @@ namespace engine
             else if (tag == "Act")
             {
                 //若待卸载实体ID集合字段无效
-                if (!Config_Checker::field_check<vector<int64_t>>(config, "ID_set"))
+                if (!Data_Validator::field_check<vector<int64_t>>(config, "ID_set"))
                     return;
             }
             //若为其他事件
             else
             {
                 //若目标实体ID字段无效
-                if (!Config_Checker::field_check<string>(config, "target_ID"))
+                if (!Data_Validator::field_check<string>(config, "target_ID"))
                     return;
                 //获取目标实体ID
                 uint64_t target_ID = config["target_ID"];
