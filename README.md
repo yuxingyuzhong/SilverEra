@@ -78,20 +78,20 @@
 | 碰撞体 | `src/core/spatial/collision/Collider/` | 碰撞形状（含网格形状） |
 | 碰撞空间 | `src/core/spatial/collision/Collision_Region/` | 碰撞空间容器 |
 | 碰撞代理器 | `src/core/spatial/collision/Collision_Proxy/` | 碰撞检测调度入口 |
-| 工具模块群 | `src/tools/` | 见下表，共 9 个模块 |
+| 配置加载 | `src/core/config/Config_Loader/` | 配置加载器 `Config_Loader`：扫描路由目录读取配置并广播 `Config/Load` 事件 |
+| 工具模块群 | `src/tools/` | 见下表，共 8 个工具模块 |
 
-`src/tools/` 下的 9 个工具模块：
+`src/tools/` 下的 8 个工具模块：
 
 | 模块 | 头文件 | 职责 |
 | --- | --- | --- |
-| `Data_Validator`（数据校验器） | `src/tools/Data_Validator/数据校验器.h` | JSON 字段存在性与类型校验、路径有效性校验 |
-| `Config_Loader`（配置加载器） | `src/tools/Config_Loader/配置加载器.h` | 扫描路由目录读取配置并广播 `Config/Load` 事件 |
+| `Detail`（辅助算法与校验细节） | `src/tools/Detail/二分查找.h`、`路径字符串转换.h`、`哈希混合.h`、`json字段可用性校验.h`、`文件路径可用性校验.h` | 容器二分/区间查找；中文路径与字符串互转；哈希混合；JSON 字段与文件路径可用性校验 |
+| `Detail/package`（数据校验工具聚合头） | `src/tools/Detail/package/数据校验工具.h` | 聚合 JSON 字段校验与文件路径校验头，供上层一行引入 |
 | `Logging`（日志系统） | `src/tools/Logging/日志系统.h` | 分级日志格式化输出，活跃流可切换 |
 | `Mesh_Loader`（网格加载器） | `src/tools/Mesh_Loader/网格加载器.h` | 解析 OBJ 为 `Mesh_Data`，供碰撞网格形状使用 |
-| `Auxi_Algorithm`（辅助算法） | `src/tools/Auxi_Algorithm/二分查找.h`、`路径字符串转换.h` | 容器二分/区间查找；中文路径与字符串互转 |
 | `Engine_Env`（引擎环境） | `src/tools/Engine_Env/引擎环境.h` | 获取可执行文件路径/目录，拼接绝对路径 |
 | `Timer`（计时器） | `src/tools/Timer/计时器.h` | 多任务命名计时 |
-| `Random`（随机数生成器） | `src/tools/Random/随机数生成器.h` | 基于 PCG32 的全范围/无偏区间随机数 |
+| `Random_Generator`（随机数生成器） | `src/tools/Random_Generator/随机数生成器.h` | 基于 PCG32 的全范围/无偏区间随机数（模板类） |
 | `Number_Allocator`（数值分配器） | `src/tools/Number_Allocator/数值分配器.h` | 编号分配与回收（复用池） |
 
 **对外接口**（`引擎层/cmake/对外接口.cmake` 导出的五个变量，前缀 `ENGINE`）：
@@ -149,7 +149,7 @@ cmake --build 系统层/out/build/x64-Debug
 
 配置期会自动定位引擎层已产出的 `EngineCore.lib`，找不到即**硬失败**（契约不允许回退编译引擎层源码）。
 
-**当前状态**：已接入层间静态库契约，可独立配置并构建。遗留：`src/entity/Entity_Manager/实体管理器.h`、`src/prop/Prop_Distributor/属性槽分发器.h`、`src/effect/Effect/效应.h`、`src/effect/Effect_Manager/效应管理器.h` 四个头文件仍按引擎层**旧路径** `src/tools/Config_Checker/配置检查器.h` 引用（引擎层该模块已更名 `Data_Validator`），待同步改名。
+**当前状态**：已接入层间静态库契约，可独立配置并构建。`src/entity/Entity_Manager/实体管理器.h`、`src/prop/Prop_Distributor/属性槽分发器.h`、`src/effect/Effect/效应.h`、`src/effect/Effect_Manager/效应管理器.h` 四个头文件已随引擎层工具重组同步为 `src/tools/Detail/package/数据校验工具.h` 与 `src/tools/Detail/二分查找.h`，源码内 `field_check` / `path_check` / `binary_search` 调用点亦已改为 `engine::detail::` 命名空间自由函数。
 
 > 详见 [系统层/README.md](系统层/README.md)
 

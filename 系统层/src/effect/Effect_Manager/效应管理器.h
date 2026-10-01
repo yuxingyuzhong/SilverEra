@@ -13,10 +13,10 @@
 #include "src/core/object/Object/对象.h"
 //获取对象池
 #include "src/core/object/Object_Pool/对象池.h"
-//获取数据校验器
-#include "src/tools/Data_Validator/数据校验器.h"
+//获取数据校验工具
+#include "src/tools/Detail/package/数据校验工具.h"
 //获取辅助算法
-#include "src/tools/Auxi_Algorithm/二分查找.h"
+#include "src/tools/Detail/二分查找.h"
 
 //脚本系统模块
 namespace engine

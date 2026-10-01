@@ -1,6 +1,8 @@
 #pragma once
 //预编译头
 #include "common/前置头文件包含.h"
+//获取哈希混合工具
+#include "src/tools/Detail/哈希混合.h"
 
 //游戏引擎命名空间
 namespace engine
@@ -71,14 +73,6 @@ namespace engine
                 return false;
         }
     };
-
-    // 哈希组合工具
-    namespace detail
-    {
-        inline void hash_combine(size_t& seed, size_t val) noexcept {
-            seed ^= val + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-        }
-    }
 }
 
 namespace std

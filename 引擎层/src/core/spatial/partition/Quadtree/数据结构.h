@@ -36,8 +36,8 @@ namespace engine
 	{
 		//默认构造函数
 		Tree_Chunk_Data() {}
-		//列表构造函数：直接接收坐标和 T* 指针
-		Tree_Chunk_Data(float x, float y, T* ptr)
+		//列表构造函数：直接接收坐标和 T shared_ptr
+		Tree_Chunk_Data(float x, float y, std::shared_ptr<T> ptr)
 		{
 			node.X = x;
 			node.Y = y;
@@ -47,6 +47,6 @@ namespace engine
 		~Tree_Chunk_Data() {}
 
 		Point2d node = { 0.5f, 0.5f };  // 使用 0.5f 强调 float 类型
-		T* ptr_data = nullptr;
+		std::shared_ptr<T> ptr_data = nullptr;
 	};
 }

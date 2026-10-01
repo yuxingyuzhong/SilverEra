@@ -47,7 +47,14 @@ namespace engine
 	//效应分组查找
 	int64_t Effect_Manager::effect_group_seek(const uint64_t& inclusion) const
 	{
-		return binary_search(effect_groups,inclusion,less(), &Effect_Group::inclusion);
+		//按归属字段二分查找效应分组下标
+		optional<uint64_t> index = detail::binary_search(effect_groups, inclusion, less(), &Effect_Group::inclusion);
+		//若未命中分组
+		if (index == nullopt)
+			//返回无效下标
+			return -1;
+		//返回分组下标
+		return static_cast<int64_t>(index.value());
 	}
 
 	//效应构建
@@ -57,20 +64,20 @@ namespace engine
 		auto& config = evt->config;
 
 		//若效应归属字段无效
-		if (!Data_Validator::field_check<uint64_t>(config, "inclusion"))
+		if (!detail::field_check<uint64_t>(config, "inclusion"))
 		{
 			Log::warn("Effect_Manager::未指定效应归属\n效应构建事件已驳回");
 			return nullopt;
 		}
 		//若效应执行阶段字段无效
-		if (!Data_Validator::field_check<uint64_t>(config, "act_phase"))
+		if (!detail::field_check<uint64_t>(config, "act_phase"))
 		{
 			Log::warn("Effect_Manager::未指定效应执行阶段\n效应构建事件已驳回");
 			return nullopt;
 		}
 		//若执行优先级字段非字符串和无符号整数
-		if (!Data_Validator::field_check<string>(config, "priority") &&
-			!Data_Validator::field_check<uint64_t>(config, "priority"))
+		if (!detail::field_check<string>(config, "priority") &&
+			!detail::field_check<uint64_t>(config, "priority"))
 		{
 			Log::warn("Prop_Effect::未定义执行优先级字段\n效应无法加载");
 			return nullopt;
@@ -169,7 +176,7 @@ namespace engine
 		auto& config = evt->config;
 
 		//若效应ID字段无效
-		if (!Data_Validator::field_check<uint64_t>(config, "target_ID"))
+		if (!detail::field_check<uint64_t>(config, "target_ID"))
 		{
 			Log::warn("Effect_Manager::效应ID未定义\n效应卸载事件已驳回");
 			return false;
@@ -263,7 +270,7 @@ namespace engine
 			else if (tag == "Act")
 			{
 				//若效应执行阶段字段未定义
-				if (!Data_Validator::field_check<string>(config, "act_phase"))
+				if (!detail::field_check<string>(config, "act_phase"))
 				{
 					Log::warn("Effect_Manager::效应执行阶段未定义\n效应触发事件已驳回");
 					return;
@@ -278,7 +285,7 @@ namespace engine
 			else
 			{
 				//若效应ID字段未定义
-				if (!Data_Validator::field_check<uint64_t>(config, "target_ID"))
+				if (!detail::field_check<uint64_t>(config, "target_ID"))
 				{
 					Log::warn("Effect_Manager::目标效应ID未定义\n未知事件已驳回");
 					return;

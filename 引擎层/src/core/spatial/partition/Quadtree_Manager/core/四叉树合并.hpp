@@ -272,7 +272,7 @@ namespace engine
             //新四叉树根节点坐标存储
             Point2d new_root{ 0.5,0.5 };
             //区块数据缓冲区
-            std::vector<Tree_Chunk_Data<T>*> buffer{};
+            std::vector<std::shared_ptr<Tree_Chunk_Data<T>>> buffer{};
             //待合并/卸载四叉树序列索引存储
             std::vector<int64_t> index_set{};
 
@@ -293,8 +293,8 @@ namespace engine
                 //获取新四叉树
                 auto& new_tree = X_sequence[quadtree_index_seek(new_root)];
 
-                //数据拷贝指针
-                Tree_Chunk_Data<T>* ptr_data = nullptr;
+                //数据拷贝结果
+                std::shared_ptr<Tree_Chunk_Data<T>> ptr_data;
                 //待合并四叉树范围存储
                 Rect2l merged_tree_range{};
                 //重置待合并四叉树索引集合
@@ -317,8 +317,8 @@ namespace engine
                     //拷贝区块数据
                     for (int copy_time = 0; copy_time < buffer.size(); copy_time++)
                     {
-                        //重置数据拷贝指针
-                        ptr_data = nullptr;
+                        //重置数据拷贝结果
+                        ptr_data.reset();
                         //稳定查询创建新区块（节点坐标为双精度，按 64 位整数取整）
                         new_tree->tree->block_seek(ptr_data, point_to_l(buffer[copy_time]->node), true);
                         //若区块创建成功

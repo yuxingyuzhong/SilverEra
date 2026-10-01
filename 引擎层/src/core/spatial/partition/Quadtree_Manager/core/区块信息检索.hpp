@@ -102,7 +102,7 @@ namespace engine
 
     //单区块信息查询
     template<typename T>
-    void Quadtree_Manager<T>::seek(Tree_Chunk_Data<T>*& receiver, const Point2i& target, bool stable)
+    void Quadtree_Manager<T>::seek(std::shared_ptr<Tree_Chunk_Data<T>>& receiver, const Point2i& target, bool stable)
     {
         //待查坐标提升为 64 位整数精度
         Point2l seek_coord{ target.X, target.Y };
@@ -132,7 +132,7 @@ namespace engine
 
     //范围区块信息查询
     template<typename T>
-    void Quadtree_Manager<T>::seek(std::vector<Tree_Chunk_Data<T>*>& receiver,
+    void Quadtree_Manager<T>::seek(std::vector<std::shared_ptr<Tree_Chunk_Data<T>>>& receiver,
         const Rect2i& target_range, bool stable)    {
         //获取四叉树序列
         auto& tree_group = X_sequence;
@@ -191,7 +191,7 @@ namespace engine
         //四叉树管理范围存储
         Rect2l tree_range{};
         //四叉树返回结果存储
-        std::vector<Tree_Chunk_Data<T>*> buffer{};
+        std::vector<std::shared_ptr<Tree_Chunk_Data<T>>> buffer{};
 
         //内层循环查找结果
         for (int64_t seek_time = 0; seek_time < total_num; seek_time++)

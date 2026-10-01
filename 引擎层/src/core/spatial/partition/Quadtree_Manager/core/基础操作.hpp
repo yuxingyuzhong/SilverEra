@@ -102,14 +102,15 @@ namespace engine
         //简化表示路径
         auto& tree_group = X_sequence;
         //获取根节点X轴坐标与目标坐标相同的索引范围
-        std::pair<int, int> range = range_binary_search(tree_group.begin(), tree_group.end(),
-            root.X, std::ranges::greater(), [](auto* p) { return p->root.X; });
+        std::optional<std::pair<uint64_t, uint64_t>> range = detail::range_binary_search
+        (tree_group.begin(), tree_group.end(),root.X, 
+            std::ranges::greater(), [](auto* p) { return p->root.X; });
         //若返回区间无效
-        if (range.first < 0 && range.second < 0)
+        if (!range.has_value())
             return -1;
 
         //检测是否存在符合要求的四叉树
-        for (int begin = range.first, end = range.second; begin <= end; begin++)
+        for (int begin = range.value().first, end = range.value().second; begin <= end; begin++)
         {
             //若根节点坐标相同则返回当前索引
             if (root == tree_group[begin]->root)

@@ -1,6 +1,6 @@
 #include "../局部命名空间使用.h"
 //获取数据校验器
-#include "src/tools/Data_Validator/数据校验器.h"
+#include "src/tools/Detail/package/数据校验工具.h"
 //获取日志系统
 #include "src/tools/Logging/日志系统.h"
 //获取网格加载器
@@ -40,10 +40,10 @@ namespace engine
 		double& receiver) const
 	{
 		//浮点格式检查
-		if (Data_Validator::field_check<double>(config, field))
+		if (detail::field_check<double>(config, field))
 			receiver = config[field].get<double>();
 		//整数格式检查（整数可作浮点使用）
-		else if (Data_Validator::field_check<int64_t>(config, field))
+		else if (detail::field_check<int64_t>(config, field))
 			receiver = static_cast<double>(config[field].get<int64_t>());
 		//其余格式一律判为非法
 		else
@@ -57,7 +57,7 @@ namespace engine
 		Vector3& receiver) const
 	{
 		//数组格式检查
-		if (!Data_Validator::field_check<std::vector<double>>(config, field))
+		if (!detail::field_check<std::vector<double>>(config, field))
 			return false;
 
 		//读取数组内容
@@ -79,7 +79,7 @@ namespace engine
 		Quaternion& receiver) const
 	{
 		//数组格式检查
-		if (!Data_Validator::field_check<std::vector<double>>(config, field))
+		if (!detail::field_check<std::vector<double>>(config, field))
 			return false;
 
 		//读取数组内容
@@ -144,7 +144,7 @@ namespace engine
 		std::unique_ptr<Triangle_Mesh>& mesh_receiver)
 	{
 		//形状类型字段检查
-		if (!Data_Validator::field_check<std::string>(geometry_config, "type"))
+		if (!detail::field_check<std::string>(geometry_config, "type"))
 		{
 			Log::warn("Collision_Region::几何配置缺少有效字段(type)");
 			return false;
@@ -265,7 +265,7 @@ namespace engine
 		else if (shape_type == "mesh")
 		{
 			//网格路径字段检查
-			if (!Data_Validator::field_check<std::string>(geometry_config, "mesh_path"))
+			if (!detail::field_check<std::string>(geometry_config, "mesh_path"))
 			{
 				Log::warn("Collision_Region::网格缺少有效字段(mesh_path)");
 				return false;

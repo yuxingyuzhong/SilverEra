@@ -2,7 +2,7 @@
 #include <gtest/gtest.h>
 
 //获取随机数生成器
-#include "src/tools/Random/随机数生成器.h"
+#include "src/tools/Random_Generator/随机数生成器.h"
 
 //随机数生成器测试夹具
 class Random_Generator_Test : public ::testing::Test
@@ -13,8 +13,8 @@ class Random_Generator_Test : public ::testing::Test
 TEST_F(Random_Generator_Test, 同种子序列一致)
 {
 	//同种子生成器
-	engine::Random_Generator first(12345);
-	engine::Random_Generator second(12345);
+	engine::Random_Generator<int64_t> first(12345);
+	engine::Random_Generator<int64_t> second(12345);
 	//逐位比较一百个随机数
 	for (int i = 0; i < 100; ++i)
 		EXPECT_EQ(first(), second());
@@ -24,8 +24,8 @@ TEST_F(Random_Generator_Test, 同种子序列一致)
 TEST_F(Random_Generator_Test, 不同种子序列不同)
 {
 	//不同种子生成器
-	engine::Random_Generator first(1);
-	engine::Random_Generator second(2);
+	engine::Random_Generator<int64_t> first(1);
+	engine::Random_Generator<int64_t> second(2);
 	//至少有一位取值不同
 	bool different = false;
 	for (int i = 0; i < 10; ++i)
@@ -41,7 +41,7 @@ TEST_F(Random_Generator_Test, 不同种子序列不同)
 TEST_F(Random_Generator_Test, 重设种子后复现序列)
 {
 	//固定种子生成器
-	engine::Random_Generator generator(777);
+	engine::Random_Generator<int64_t> generator(777);
 	//记录首批取值
 	std::vector<int64_t> first_round;
 	for (int i = 0; i < 20; ++i)
@@ -57,7 +57,7 @@ TEST_F(Random_Generator_Test, 重设种子后复现序列)
 TEST_F(Random_Generator_Test, 闭区间内取值)
 {
 	//固定种子生成器
-	engine::Random_Generator generator(2024);
+	engine::Random_Generator<int64_t> generator(2024);
 	//重复抽样一千次
 	for (int i = 0; i < 1000; ++i)
 	{
@@ -74,7 +74,7 @@ TEST_F(Random_Generator_Test, 闭区间内取值)
 TEST_F(Random_Generator_Test, 负区间内取值)
 {
 	//固定种子生成器
-	engine::Random_Generator generator(2025);
+	engine::Random_Generator<int64_t> generator(2025);
 	//重复抽样一千次
 	for (int i = 0; i < 1000; ++i)
 	{
@@ -91,7 +91,7 @@ TEST_F(Random_Generator_Test, 负区间内取值)
 TEST_F(Random_Generator_Test, 全负区间内取值)
 {
 	//固定种子生成器
-	engine::Random_Generator generator(2026);
+	engine::Random_Generator<int64_t> generator(2026);
 	//重复抽样一千次
 	for (int i = 0; i < 1000; ++i)
 	{
@@ -108,7 +108,7 @@ TEST_F(Random_Generator_Test, 全负区间内取值)
 TEST_F(Random_Generator_Test, 单点区间返回定值)
 {
 	//固定种子生成器
-	engine::Random_Generator generator(7);
+	engine::Random_Generator<int64_t> generator(7);
 	//重复抽样一百次
 	for (int i = 0; i < 100; ++i)
 		EXPECT_EQ(generator(7, 7), 7);
@@ -118,7 +118,7 @@ TEST_F(Random_Generator_Test, 单点区间返回定值)
 TEST_F(Random_Generator_Test, 区间颠倒自动交换)
 {
 	//固定种子生成器
-	engine::Random_Generator generator(11);
+	engine::Random_Generator<int64_t> generator(11);
 	//重复抽样一千次
 	for (int i = 0; i < 1000; ++i)
 	{
@@ -135,7 +135,7 @@ TEST_F(Random_Generator_Test, 区间颠倒自动交换)
 TEST_F(Random_Generator_Test, 小范围抽样覆盖全部取值)
 {
 	//固定种子生成器
-	engine::Random_Generator generator(99);
+	engine::Random_Generator<int64_t> generator(99);
 	//取值命中标记
 	std::set<int64_t> hit;
 	//抽样一万次
@@ -149,7 +149,7 @@ TEST_F(Random_Generator_Test, 小范围抽样覆盖全部取值)
 TEST_F(Random_Generator_Test, 全范围生成不重复)
 {
 	//固定种子生成器
-	engine::Random_Generator generator(1234);
+	engine::Random_Generator<int64_t> generator(1234);
 	//记录首批取值
 	std::set<int64_t> values;
 	//连续生成一百个全范围随机数
@@ -163,7 +163,7 @@ TEST_F(Random_Generator_Test, 全范围生成不重复)
 TEST_F(Random_Generator_Test, 极值区间不溢出)
 {
 	//固定种子生成器
-	engine::Random_Generator generator(555);
+	engine::Random_Generator<int64_t> generator(555);
 	//在最小值与临近区间抽样
 	for (int i = 0; i < 100; ++i)
 	{
@@ -180,7 +180,7 @@ TEST_F(Random_Generator_Test, 极值区间不溢出)
 TEST_F(Random_Generator_Test, 无种子构造可用)
 {
 	//缺省构造生成器
-	engine::Random_Generator generator;
+	engine::Random_Generator<int64_t> generator;
 	//连续两次取值
 	const int64_t first = generator();
 	const int64_t second = generator();

@@ -6,14 +6,8 @@ namespace engine
 {
 	//单点查询可行性分析
 	template <typename T>
-	int Quadtree<T>::point_seekable_analyse(const Point2l& target)
+	Quadtree<T>::Analysis_Result Quadtree<T>::seekable_analyse(const Point2l& target)
 	{
-		/*函数逻辑：
-				  0，代表分析已经结束，查找不可行
-				  1，代表分析正在进行，查找可能可行
-				  2，代表分析已经结束，查找可行
-		*/
-
 		//简化表示路径
 		auto& root = state.root;
 		//四叉树管理范围存储
@@ -32,17 +26,17 @@ namespace engine
 				//若存在回调管理函数则报告上级
 				if (callback)
 					callback(root, target);
-				//返回分析终止值
-				return 0;
+				//返回分析终止
+				return Analysis_Result::INFEASIBLE;
 			}
 			//若当前四叉树大小小于上限大小则寻址可能可行
 			else if (state.size < state.max_size)
 			{
 				//若存在回调管理函数则请求扩大权限
 				if (callback)
-					//若扩大申请未通过则返回分析终止值
+					//若扩大申请未通过则返回分析终止
 					if (!callback(root, target))
-						return 0;
+						return Analysis_Result::INFEASIBLE;
 
 				//进行四叉树扩大操作
 				//若四叉树扩大成功则进行下一步操作
@@ -52,28 +46,28 @@ namespace engine
 					manage_range_calcu(tree_range, state.root, state.size);
 
 					//重新比较四叉树是否已经包含待查找位置
-					//若未包含则返回分析持续值
+					//若未包含则返回分析持续
 					if (target.X < tree_range.left || target.X > tree_range.right
 						|| target.Y > tree_range.up || target.Y < tree_range.down)
-						return 1;
-					//若已包含则返回返回查找可行值
+						return Analysis_Result::IN_PROGRESS;
+					//若已包含则返回返回查找可行
 					else
-						return 2;
+						return Analysis_Result::FEASIBLE;
 				}
-				//若未成功则直接返回分析终止值
+				//若未成功则直接返回分析终止
 				else
-					return 0;
+					return Analysis_Result::INFEASIBLE;
 			}
 		}
-		//若坐标大小未超出树则直接返回查找可行值
+		//若坐标大小未超出树则直接返回查找可行
 		else
-			return 2;
+			return Analysis_Result::FEASIBLE;
 
 	}
 
 	//范围查询可行性分析
 	template <typename T>
-	void Quadtree<T>::range_seekable_analyse(const Rect2l& format_range, Rect2l& seekable_range)
+	void Quadtree<T>::seekable_analyse(const Rect2l& format_range, Rect2l& seekable_range)
 	{
 		for (;;)
 		{
@@ -147,7 +141,7 @@ namespace engine
 
 	//最小区块单元查找
 	template <typename T>
-	void Quadtree<T>::block_seek(Tree_Chunk_Data<T>*& receiver, const Point2l& target, bool stable)
+	void Quadtree<T>::block_seek(std::shared_ptr<Tree_Chunk_Data<T>>& receiver, const Point2l& target, bool stable)
 	{
 		//四叉树上限上限临时存储
 		uint64_t max_size = state.max_size;
@@ -166,15 +160,15 @@ namespace engine
 		for (int check_time = 0; check_time < exam_time_max; check_time++)
 		{
 			//获取下一步分析方案
-			int next_step = point_seekable_analyse(target);
+			Analysis_Result next_step = seekable_analyse(target);
 			//若查找可行则直接结束检测
-			if (next_step == 2)
+			if (next_step == Analysis_Result::FEASIBLE)
 				break;
 			//若查找可能可行则继续
-			else if (next_step == 1)
+			else if (next_step == Analysis_Result::IN_PROGRESS)
 				continue;
 			//若查找不可行则直接返回
-			else if (next_step == 0)
+			else if (next_step == Analysis_Result::INFEASIBLE)
 				//返回给上层调用者
 				return;
 		}
@@ -183,6 +177,41 @@ namespace engine
 		int recur_level_max = 0;
 		//递归总级数计算
 		recur_level_calcu(recur_level_max);
+
+		//若四叉树仅有一级(边长等于区块单元)
+		//则根节点本身即为唯一区块，无需向下递归
+		if (recur_level_max == 0)
+		{
+			//若根节点尚未持有区块数据(分支 0 为子节点指针列表)
+			if (root.data.index() == 0)
+			{
+				//非稳定查询模式下不创建区块
+				if (stable == false)
+					return;
+				//为根节点分配区块数据
+				root.data.template emplace<1>(std::shared_ptr<T>(new(std::nothrow) T()));
+			}
+
+			//若接收器为空则分配结果对象
+			if (receiver == nullptr)
+				receiver = std::shared_ptr<Tree_Chunk_Data<T>>(new(std::nothrow) Tree_Chunk_Data<T>);
+			//若内存分配失败则返回
+			if (receiver == nullptr)
+				return;
+
+			//根节点管理范围存储
+			Rect2l root_range{};
+			//计算根节点管理范围
+			manage_range_calcu(root_range, state.root, state.size);
+			//记录查询结果
+			//结果对象与根区块数据共享所有权
+			receiver->ptr_data = std::get<1>(root.data);
+			//范围边界为 64 位整数，故以双精度求中点避免精度损失
+			receiver->node.X = static_cast<double>(root_range.left + root_range.right) / 2.0;
+			receiver->node.Y = static_cast<double>(root_range.down + root_range.up) / 2.0;
+			//查找结束
+			return;
+		}
 
 		//获取根节点指针
 		Node* child_node = &root;
@@ -216,25 +245,24 @@ namespace engine
 			child_node_range_calcu(recur_direct, node_range, old_range);
 		}
 
-		//若指针为空则分配内存
+		//若接收器为空则分配结果对象
 		if (receiver == nullptr)
-		{
-			receiver = new(std::nothrow) Tree_Chunk_Data<T>;
-			//若内存分配失败则返回
-			if (receiver == nullptr)
-				return;
-		}
+			receiver = std::shared_ptr<Tree_Chunk_Data<T>>(new(std::nothrow) Tree_Chunk_Data<T>);
+		//若内存分配失败则返回
+		if (receiver == nullptr)
+			return;
 
 		//记录查询结果
+		//结果对象与叶子区块数据共享所有权
+		receiver->ptr_data = std::get<1>(child_node->data);
 		//范围边界为 64 位整数，故以双精度求中点避免精度损失
-		receiver->ptr_data = &(child_node->leaf);
 		receiver->node.X = static_cast<double>(node_range.left + node_range.right) / 2.0;
 		receiver->node.Y = static_cast<double>(node_range.down + node_range.up) / 2.0;
 	}
 
 	//范围区块单元查找
 	template <typename T>
-	void Quadtree<T>::range_seek(std::vector<Tree_Chunk_Data<T>*>& receiver, 
+	void Quadtree<T>::range_seek(std::vector<std::shared_ptr<Tree_Chunk_Data<T>>>& receiver,
 		const Rect2l& target_range, bool stable)
 	{
 		//可查询范围存储
@@ -244,7 +272,7 @@ namespace engine
 		//格式化待查询范围
 		target_range_format(format_range, state.root, state.block_size);
 		//分析获得可查询范围
-		range_seekable_analyse(format_range, seekable_range);
+		seekable_analyse(format_range, seekable_range);
 
 		//根节点寻址总级数声明
 		int recur_level_max = 0;
@@ -372,15 +400,16 @@ namespace engine
 					//记录查询结果
 					//区块中心坐标由 64 位范围求得
 					//先以双精度求中点再落单精度，尽量减少精度损失
-					auto* new_data = new(std::nothrow) Tree_Chunk_Data<T>
+					//结果对象与叶子区块数据共享所有权
+					std::shared_ptr<Tree_Chunk_Data<T>> new_data(new(std::nothrow) Tree_Chunk_Data<T>
 						(static_cast<float>((child_range.left + child_range.right) / 2.0),
 							static_cast<float>((child_range.up + child_range.down) / 2.0),
-							&child_node->leaf);
+							std::get<1>(child_node->data)));
 					//若内存分配失败则直接返回
 					if (new_data == nullptr)
 						return;
-					else
-						receiver.push_back(new_data);
+					//记录查询结果
+					receiver.push_back(new_data);
 				}
 
 				//重置当前层级递归方向记录

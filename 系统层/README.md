@@ -59,7 +59,7 @@
 
 | 层 | 方向 | 关系 |
 | --- | --- | --- |
-| 引擎层 | 下游（本层依赖它） | 链接其已构建的 `EngineCore.lib`，使用 `Object`、`Object_Pool<T>`、`Event_Terminal`、`Event_Broker`、`Data_Validator`、`Engine_Env`、`Log` 等基础件 |
+| 引擎层 | 下游（本层依赖它） | 链接其已构建的 `EngineCore.lib`，使用 `Object`、`Object_Pool<T>`、`Event_Terminal`、`Event_Broker`、`detail`（`field_check` / `path_check` / `binary_search` 等）、`Engine_Env`、`Log` 等基础件 |
 | 游戏层 | 上游（依赖本层） | 通过 `BYJY_SYSTEM_OUT_*` 对外面接入 `SystemCore`，创建实体、发事件、触发效应（当前 `src/` 为空壳） |
 | 测试层 | 横跨 | 同时链接 `EngineCore.lib` 与 `SystemCore.lib` 承载单元测试；当前用例集中于引擎层，系统层用例尚未落位 |
 
@@ -685,7 +685,7 @@ cmake --build 系统层/out/build/x64-Debug
 | 7 | `core/效应管理器.cpp` `event_process`(Build) | `optional<uint64_t> effect_ID = effect_build(evt)` 返回值被丢弃，调用方拿不到新效应 ID |
 | 8 | `效应管理器.h` `Effect_Group.effects` | 存的是**裸指针**；`effect_set.build()` 触发 `std::vector` 扩容会使旧 `Effect_Record` 地址失效，分组内指针可能悬垂 |
 | 9 | `core/属性槽分发器.cpp` vs `core/属性槽处理.cpp` | 发送端 `Entity_Manager` 构造的事件 tag 为 `"Distribute"`，接收端 `Prop_Distributor` 判断的是 `tag == "Distributor"`，**两者不一致**，密钥事件可能无法被接收 |
-| 10 | 4 个头文件的 include | **已关闭（2026-09-26）**：`实体管理器.h`、`属性槽分发器.h`、`效应.h`、`效应管理器.h` 的 include 已改为引擎层现名 `src/tools/Data_Validator/数据校验器.h`，源码内 19 处 `field_check<T>` / `path_check` 调用点已全部随之改名（纯改名，签名一致） |
+| 10 | 4 个头文件的 include | **已关闭**：`实体管理器.h`、`属性槽分发器.h`、`效应.h`、`效应管理器.h` 的 include 已随引擎层工具重组改为 `src/tools/Detail/package/数据校验工具.h` 与 `src/tools/Detail/二分查找.h`，源码内 `field_check<T>` / `path_check` / `binary_search` 调用点已全部改为 `engine::detail::` 命名空间自由函数（其中 `binary_search` 语义由「返回 `-1`」改为返回 `std::optional`，未命中为 `std::nullopt`） |
 
 > 提示：上表第 1～5 项是**代码行为事实**（逐行核对源码得出），不代表模块设计意图；重开发时应以「设计意图」为准修复。
 
@@ -753,7 +753,7 @@ cmake --build 系统层/out/build/x64-Debug
 | `src/core/effect/`（后移出为 `排除编译代码/effect/`） | `系统层/src/effect/` | 效应系统曾一度移出源码树不参与编译，本次已回归本层 |
 | `src/tools/GUI/Config_Editor/` | `系统层/src/gui/Config_Editor/` | 配置编辑器迁入系统层（仍未接入构建） |
 | `common/external/Sol2/`、`external/Sol2`、`external/Lua` | `系统层/common/external/Sol2/`、`系统层/external/Sol2`、`系统层/external/Lua` | Sol2 / Lua 由引擎层搬到系统层（因公共头暴露 `LuaState`） |
-| `src/tools/Config_Checker/配置检查器.h`（类 `Config_Checker`） | 引擎层 `src/tools/Data_Validator/数据校验器.h`（类 `Data_Validator`） | 引擎层先更名（目录 `Config_Checker` 已不存在）；本层 4 个头文件与 19 处调用点已于 2026-09-26 同步 |
+| `src/tools/Config_Checker/配置检查器.h`（类 `Config_Checker`） | 引擎层 `src/tools/Detail/package/数据校验工具.h`（命名空间 `engine::detail` 自由函数 `field_check` / `path_check`） | 引擎层先更名 `Data_Validator`，后于工具重组中改为 `Detail` 命名空间自由函数（目录 `Config_Checker`、`Data_Validator` 均已不存在）；本层 4 个头文件与调用点已同步 |
 | `src/core/event/`、`src/core/object/`、`src/core/space/`、`src/core/collision/`、其余工具 | 引擎层 | 事件、对象、空间、碰撞与其余工具均属引擎层，不在本层 |
 | 实体/属性配置 JSON 与初始化、行为 Lua 脚本 | 游戏层 `assets/` | 属上层运行时资源 |
 | 旧仓库的 `TestEngine.exe` / `ConfigEditor.exe` 双可执行目标 | 可执行文件统一由测试层产出 | 层级契约改为「各层只产出静态库，只有测试层产出可执行文件」 |

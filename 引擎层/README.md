@@ -141,6 +141,8 @@ C++20 特性在源码中的使用：`concepts`（`Object_Pool` 的 `requires std
 ├── external/                   # 第三方库副本：Json / bullet3 / glfw / glm
 ├── src/
 │   ├── core/                   # 核心能力
+│   │   ├── config/             #   配置加载
+│   │   │   └── Config_Loader/{配置加载器.h, 局部命名空间使用.h, core/配置加载器.cpp}
 │   │   ├── Event/              #   事件系统
 │   │   │   ├── 事件系统运行包.h
 │   │   │   ├── Event/事件.h
@@ -179,14 +181,14 @@ C++20 特性在源码中的使用：`concepts`（`Object_Pool` 的 `requires std
 │   │                                        相邻四叉树查找.hpp,
 │   │                                        四叉树管理器实例化.cpp}}
 │   └── tools/                  # 工具模块群
-│       ├── Auxi_Algorithm/{二分查找.h, 路径字符串转换.h}
-│       ├── Config_Loader/{配置加载器.h, 局部命名空间使用.h, core/配置加载器.cpp}
-│       ├── Data_Validator/{数据校验器.h, 局部命名空间使用.h}
+│       ├── Detail/{二分查找.h, 路径字符串转换.h, 哈希混合.h,
+│       │           json字段可用性校验.h, 文件路径可用性校验.h,
+│       │           package/数据校验工具.h}
 │       ├── Engine_Env/引擎环境.h
 │       ├── Logging/日志系统.h
 │       ├── Mesh_Loader/{网格加载器.h, 局部命名空间使用.h, core/网格加载器.cpp}
 │       ├── Number_Allocator/数值分配器.h
-│       ├── Random/{随机数生成器.h, core/随机数生成器.cpp}
+│       ├── Random_Generator/随机数生成器.h
 │       └── Timer/{计时器.h, 局部命名空间使用.h, core/计时器.cpp}
 └── out/                        # CMake 构建输出（build / install，不纳入版本控制）
 ```
@@ -1058,26 +1060,27 @@ namespace engine
 
 | 模块 | 涉及文件 | 职责 |
 | --- | --- | --- |
-| `Data_Validator`（数据校验器） | `Data_Validator/数据校验器.h`（149 行）、`局部命名空间使用.h` | JSON 字段存在性与类型校验、路径有效性校验 |
-| `Config_Loader`（配置加载器） | `Config_Loader/配置加载器.h`（44 行）、`core/配置加载器.cpp`（252 行）、`局部命名空间使用.h` | 扫描路由目录读取配置并广播 `Config/Load` 事件 |
+| `Detail`（辅助算法与校验细节） | `Detail/二分查找.h`、`Detail/路径字符串转换.h`、`Detail/哈希混合.h`、`Detail/json字段可用性校验.h`、`Detail/文件路径可用性校验.h` | 容器二分 / 区间查找；中文路径与字符串互转；哈希混合；JSON 字段与文件路径可用性校验 |
+| `Detail/package`（数据校验工具聚合头） | `Detail/package/数据校验工具.h` | 聚合 JSON 字段校验与文件路径校验头，供上层一行引入 |
 | `Logging`（日志系统） | `Logging/日志系统.h`（151 行） | 分级日志格式化输出 |
 | `Mesh_Loader`（网格加载器） | `Mesh_Loader/网格加载器.h`（31 行）、`core/网格加载器.cpp`（194 行）、`局部命名空间使用.h` | 解析 OBJ 为 `Mesh_Data`，供碰撞网格形状使用 |
-| `Auxi_Algorithm`（辅助算法） | `Auxi_Algorithm/二分查找.h`（96 行）、`路径字符串转换.h`（28 行） | 容器的二分查找 / 区间查找；中文路径与字符串互转 |
 | `Engine_Env`（引擎环境） | `Engine_Env/引擎环境.h`（137 行） | 获取可执行文件路径 / 目录，拼接绝对路径 |
 | `Timer`（计时器） | `Timer/计时器.h`（39 行）、`core/计时器.cpp`（74 行）、`局部命名空间使用.h` | 多任务命名计时 |
-| `Random`（随机数生成器） | `Random/随机数生成器.h`（31 行）、`core/随机数生成器.cpp`（72 行） | 基于 PCG32 的全范围 / 无偏区间随机数 |
+| `Random_Generator`（随机数生成器） | `Random_Generator/随机数生成器.h` | 基于 PCG32 的全范围 / 无偏区间随机数（模板类，约束 `std::is_integral_v<T>`） |
 | `Number_Allocator`（数值分配器） | `Number_Allocator/数值分配器.h`（78 行） | 编号分配与回收（复用池） |
+
+> `Config_Loader`（配置加载器）已从 `src/tools/` 迁至 `src/core/config/Config_Loader/`（头文件 `配置加载器.h`、实现 `core/配置加载器.cpp`），职责与接口不变。
 
 **要点摘录**：
 
-- `Data_Validator`：`template <typename T> static bool field_check(const nlohmann::json&, const std::string&)` 检查字段是否存在且类型匹配；`static bool path_check(path/string)` 两个重载校验路径有效性。这是历史文档中「配置检查器」的现名。
+- `Detail`（校验部分）：命名空间自由函数 `template <typename T> inline bool engine::detail::field_check(const nlohmann::json&, const std::string&)` 检查字段是否存在且类型匹配；`inline bool engine::detail::path_check(path/string)` 两个重载校验路径有效性；`inline void engine::detail::hash_combine(size_t&, size_t)` 做哈希混合。这是历史文档中「配置检查器」的现名（类 `Data_Validator` 已改为命名空间自由函数）。
 - `Config_Loader`：私有成员 `std::u8string scan_content = u8"assets/config/route/"` 与 `allowed_root = u8"assets/config/"`，即**它只扫描路由目录，并限制在配置根目录之内**（防止越权跳转，内部有 `skip_safety_inspect` 恶意跳转检查）；读取成功后构造事件，填写 `category = "Config"`、`tag = "Load"`，并设置 `target_object` 为路由里声明的目标模块名；`act()` 是入口。
 - `Logging`：`Log` 类提供静态模板 `info / warn / error / debug`，签名接受 `std::format_string<Args...>` 支持 `{}` 占位格式化；`stream_set()` 可切换输出流（用于重定向到文件）；内部另有 `std::formatter<std::error_code>` 特化以便直接打印错误码。
 - `Mesh_Loader`：`struct Mesh_Data { std::vector<float> vertices; std::vector<uint32_t> indices; }`；`static bool load_obj(const std::string&, Mesh_Data&)` 解析 OBJ；带两个硬上限——`max_file_size = 64MiB`（文件大小）与 `max_vertex_count = 1000000`（顶点数量）；面索引支持四种常见写法，非三角面用扇形三角化，末尾做完整性终检；路径采取双源回退。
-- `Auxi_Algorithm`：`binary_search(first, last, target, comp, proj)` 返回相对 `first` 的全局下标（未找到返回 `-1`），另有容器重载；`range_binary_search` 返回闭区间 `std::pair<int,int>`（未找到返回 `{-1,-1}`）。`path_to_string()` / `string_to_path()` 经 `std::filesystem::path::u8string()` 往返，用于处理包含中文的文件路径。
+- `Detail`（算法部分）：`binary_search(first, last, target, comp, proj)` 返回相对 `first` 的全局下标，未命中返回 `std::nullopt`（返回类型 `std::optional<uint64_t>`），另有容器重载；`range_binary_search` 返回闭区间 `std::optional<std::pair<uint64_t, uint64_t>>`，未命中返回 `std::nullopt`。`path_to_string()` / `string_to_path()` 经 `std::filesystem::path::u8string()` 往返，用于处理包含中文的文件路径。
 - `Engine_Env`：`exe_path_get()`、`exe_dir_get()`、`absolute_path_get(path/string)`；可执行路径的获取按平台分派（Windows `GetModuleFileNameW` / Linux `/proc/self/exe` / macOS `_NSGetExecutablePath`），失败时回退到当前工作目录。
 - `Timer`：`using Clock = std::chrono::steady_clock`，`task_build()` 建任务、`elapsed(task, restart = false)` 读耗时，静态 `units()` / `Milli_units()` / `Micro_units()` / `Nano_units()` 提供单位换算。
-- `Random`：内核是结构 `Pcg32 { uint64_t state, inc; }`，`operator()()` 生成全范围值，`operator()(min, max)` 生成无偏区间值；构造函数可传种子；`acl_key_gen()` 就是它的使用者。
+- `Random_Generator`：模板类 `template <typename T> requires std::is_integral_v<T> class Random_Generator`；内核是结构 `Pcg32 { uint64_t state, inc; }`，`operator()()` 生成 `T` 的全范围无偏随机数，`operator()(min, max)` 生成 `[min, max]` 无偏区间随机数；构造函数可传种子；`acl_key_gen()` 就是它的使用者。
 - `Number_Allocator`：`set(min)` 设下限、`get()` 取号、`recycle(单/多)` 回收、`reset()` 复位；回收时用二分查找查重，重复回收会打 `Log::warn("Number_Pool::待回收数值已被回收!!!")`。
 
 ---
@@ -1208,7 +1211,7 @@ cmake --build out/build/x64-Debug
 - 注释使用中文，采用换行注释；预计少于三行用 `//`，三行及以上用 `/* */`；`//` 后不留空格。
 - include 路径必须与实际目录大小写完全一致（跨平台硬性要求）。
 - 文件编码统一 UTF-8（MSVC 已加 `/utf-8`）。
-- 为避免中文路径在 Windows 下的编码冲突，路径与字符串互转走 `Auxi_Algorithm/路径字符串转换.h`。
+- 为避免中文路径在 Windows 下的编码冲突，路径与字符串互转走 `Detail/路径字符串转换.h`。
 
 ### 10.2 如何新增一个引擎模块
 
@@ -1260,7 +1263,7 @@ cmake --build out/build/x64-Debug
 | `src/core/collision/Collision_Agent/` | `Collision_Proxy`（`src/core/spatial/collision/Collision_Proxy/`） | 旧「碰撞代理器」命名被 `Collision_Proxy` 取代 |
 | `src/core/collision/Collision_Processer/` | `Collision_Region`（`src/core/spatial/collision/Collision_Region/`） | 旧「碰撞处理器」命名被 `Collision_Region` 取代 |
 | `src/tools/Object_Pool/` | `src/core/object/Object_Pool/` | 对象池升入对象系统 |
-| `Config_Checker` / 「配置检查器」 | `Data_Validator`（`src/tools/Data_Validator/数据校验器.h`） | 更名，职责不变 |
+| `Config_Checker` / 「配置检查器」 | `detail`（`src/tools/Detail/package/数据校验工具.h`） | 更名，职责不变 |
 | `src/tools/Non_GUI/` 中间层 | 已取消 | 工具模块直接挂在 `src/tools/` 下 |
 | `src/tools/GUI/Config_Editor/`（配置编辑器 GUI 与 `ConfigEditor.exe`、`imgui.ini`） | 配置编辑器 → 系统层 | 图形化编辑器迁出本层 |
 | `主调文件/主调文件.cpp`（宿主组合根、依赖注入装配、`for(;;)` 帧循环） | 已取消 | 宿主机制取消；全项目唯一可执行文件由测试层产出 |

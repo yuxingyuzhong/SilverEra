@@ -6,7 +6,7 @@
 //获取四叉树
 #include "../Quadtree/四叉树.h"
 //获取辅助算法
-#include "src/tools/Auxi_Algorithm/二分查找.h"
+#include "src/tools/Detail/二分查找.h"
 
 //展开命名空间
 namespace engine
@@ -45,9 +45,9 @@ namespace engine
 
         // ---- 查询 ----
         //单区块信息查询
-        void seek(Tree_Chunk_Data<T>*& receiver,const Point2i& target, bool stable);
+        void seek(std::shared_ptr<Tree_Chunk_Data<T>>& receiver,const Point2i& target, bool stable);
         //范围区块信息查询
-        void seek(std::vector<Tree_Chunk_Data<T>*>& receiver, const Rect2i& target_range, bool stable);
+        void seek(std::vector<std::shared_ptr<Tree_Chunk_Data<T>>>& receiver, const Rect2i& target_range, bool stable);
 
         // ---- 读取 ----
         //四叉树管理器设置获取

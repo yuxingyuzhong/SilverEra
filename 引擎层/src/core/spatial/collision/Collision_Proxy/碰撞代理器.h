@@ -4,7 +4,7 @@
 //获取引擎环境
 #include "src/tools/Engine_Env/引擎环境.h"
 //获取路径字符串转化方法
-#include "src/tools/Auxi_Algorithm/路径字符串转换.h"
+#include "src/tools/Detail/路径字符串转换.h"
 //获取碰撞库依赖封装
 #include "../../common/core/依赖库封装.h"
 //获取空间系统运行包

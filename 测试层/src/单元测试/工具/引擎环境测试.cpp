@@ -4,7 +4,7 @@
 //获取引擎环境
 #include "src/tools/Engine_Env/引擎环境.h"
 //获取路径字符串转换工具
-#include "src/tools/Auxi_Algorithm/路径字符串转换.h"
+#include "src/tools/Detail/路径字符串转换.h"
 
 //引擎环境测试夹具
 class Engine_Env_Test : public ::testing::Test
@@ -31,7 +31,7 @@ TEST_F(Engine_Env_Test, 可执行文件路径含文件名)
 	//文件名不应为空
 	EXPECT_FALSE(engine::Engine_Env::exe_path_get().filename().empty());
 	//扩展名应为可执行文件后缀
-	EXPECT_EQ(engine::path_to_string(engine::Engine_Env::exe_path_get().extension()), ".exe");
+	EXPECT_EQ(engine::detail::path_to_string(engine::Engine_Env::exe_path_get().extension()), ".exe");
 }
 
 //可执行文件目录：为路径的父目录
@@ -91,7 +91,7 @@ TEST_F(Engine_Env_Test, 字符串重载保留中文)
 	const std::string relative = "资产/配置/测试.json";
 	//拼接并转回文本
 	const std::string joined =
-		engine::path_to_string(engine::Engine_Env::absolute_path_get(relative));
+		engine::detail::path_to_string(engine::Engine_Env::absolute_path_get(relative));
 	//中文成分不应丢失
 	EXPECT_NE(joined.find("资产"), std::string::npos);
 	//文件名部分应完整出现
@@ -104,9 +104,9 @@ TEST_F(Engine_Env_Test, 字符串重载以目录为基准)
 	//拼接待转换的相对路径
 	//字面量会引发重载歧义（C2668），故显式构造 std::string
 	const std::string joined =
-		engine::path_to_string(engine::Engine_Env::absolute_path_get(std::string("assets/config")));
+		engine::detail::path_to_string(engine::Engine_Env::absolute_path_get(std::string("assets/config")));
 	//目录文本
-	const std::string exe_dir = engine::path_to_string(engine::Engine_Env::exe_dir_get());
+	const std::string exe_dir = engine::detail::path_to_string(engine::Engine_Env::exe_dir_get());
 	//拼接结果应以目录文本开头
 	EXPECT_EQ(joined.compare(0, exe_dir.size(), exe_dir), 0);
 }

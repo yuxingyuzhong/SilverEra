@@ -31,16 +31,16 @@ namespace engine
     bool Entity_Manager::config_field_parse(const json& config) const
     {
         //若实体类型字段无效
-        if (!Data_Validator::field_check<string>(config, "type"))
+        if (!detail::field_check<string>(config, "type"))
             return false;
         //若属性槽配置脚本加载路径无效
-        if (!Data_Validator::field_check<string>(config, "prop_load_path"))
+        if (!detail::field_check<string>(config, "prop_load_path"))
             return false;
         //若行为脚本加载路径字段无效
-        if (!Data_Validator::field_check<string>(config, "action_load_path"))
+        if (!detail::field_check<string>(config, "action_load_path"))
             return false;
         //若订阅事件列表字段无效
-        if (!Data_Validator::field_check<vector<pair<string, string>>>(config, "needed_events"))
+        if (!detail::field_check<vector<pair<string, string>>>(config, "needed_events"))
             return false;
 
         //若所有检查均通过
@@ -53,7 +53,7 @@ namespace engine
         //获取实体行为加载路径
         path decision_load_path = Engine_Env::absolute_path_get(config["decision_load_path"].get<string>());
         //记录实体行为加载路径
-        action_load_path[entity_type] = path_to_string(decision_load_path);
+        action_load_path[entity_type] = detail::path_to_string(decision_load_path);
     }
 
     //属性槽配置加载路径注册
@@ -62,7 +62,7 @@ namespace engine
         //获取属性槽配置加载路径
         path prop_load_path = Engine_Env::absolute_path_get(config["prop_load_path"].get<string>());
         //记录属性槽配置加载路径
-        prop_config_paths[entity_type].load_file(path_to_string(prop_load_path));
+        prop_config_paths[entity_type].load_file(detail::path_to_string(prop_load_path));
     }
 
 }

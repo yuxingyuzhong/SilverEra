@@ -18,17 +18,14 @@ public:
 	}
 
 	//释放单点查询结果
-	static void chunk_clean(engine::Tree_Chunk_Data<int>*& receiver)
+	static void chunk_clean(std::shared_ptr<engine::Tree_Chunk_Data<int>>& receiver)
 	{
-		delete receiver;
-		receiver = nullptr;
+		receiver.reset();
 	}
 
 	//释放范围查询结果
-	static void chunk_clean(std::vector<engine::Tree_Chunk_Data<int>*>& receiver)
+	static void chunk_clean(std::vector<std::shared_ptr<engine::Tree_Chunk_Data<int>>>& receiver)
 	{
-		for (auto* item : receiver)
-			delete item;
 		receiver.clear();
 	}
 
@@ -208,7 +205,7 @@ TEST_F(Quadtree_Manager_Test, 不稳定查询空管理器返回空结果)
 	//默认构造的管理器
 	engine::Quadtree_Manager<int> manager;
 	//查询结果存储
-	engine::Tree_Chunk_Data<int>* receiver = nullptr;
+	std::shared_ptr<engine::Tree_Chunk_Data<int>> receiver;
 	//不稳定模式下不创建任何区块
 	manager.seek(receiver, make_coord(0, 0), false);
 	//未取得结果
@@ -223,7 +220,7 @@ TEST_F(Quadtree_Manager_Test, 稳定查询自动建树)
 	//默认构造的管理器
 	engine::Quadtree_Manager<int> manager;
 	//查询结果存储
-	engine::Tree_Chunk_Data<int>* receiver = nullptr;
+	std::shared_ptr<engine::Tree_Chunk_Data<int>> receiver;
 	//稳定模式下查询未覆盖坐标
 	manager.seek(receiver, make_coord(0, 0), true);
 	//取得了区块信息
@@ -243,7 +240,7 @@ TEST_F(Quadtree_Manager_Test, 稳定查询命中已有树)
 	//先建立一棵覆盖 [0,255]×[0,255] 的四叉树
 	build_one_tree(manager, make_coord(0, 0));
 	//查询结果存储
-	engine::Tree_Chunk_Data<int>* receiver = nullptr;
+	std::shared_ptr<engine::Tree_Chunk_Data<int>> receiver;
 	//查询落在该树内的坐标
 	manager.seek(receiver, make_coord(10, 10), true);
 	//取得了区块信息
@@ -263,7 +260,7 @@ TEST_F(Quadtree_Manager_Test, 稳定查询不同象限返回不同区块)
 	//先建立一棵覆盖 [0,255]×[0,255] 的四叉树
 	build_one_tree(manager, make_coord(0, 0));
 	//查询结果存储
-	engine::Tree_Chunk_Data<int>* receiver = nullptr;
+	std::shared_ptr<engine::Tree_Chunk_Data<int>> receiver;
 	//查询东北侧的坐标
 	manager.seek(receiver, make_coord(200, 200), true);
 	//取得了区块信息
@@ -281,7 +278,7 @@ TEST_F(Quadtree_Manager_Test, 不稳定查询不创建区块)
 	//先建立一棵覆盖 [0,255]×[0,255] 的四叉树
 	build_one_tree(manager, make_coord(0, 0));
 	//查询结果存储
-	engine::Tree_Chunk_Data<int>* receiver = nullptr;
+	std::shared_ptr<engine::Tree_Chunk_Data<int>> receiver;
 	//不稳定模式下查询尚未开辟路径的坐标
 	manager.seek(receiver, make_coord(10, 10), false);
 	//未取得结果，因为不稳定模式不创建区块节点
@@ -296,11 +293,11 @@ TEST_F(Quadtree_Manager_Test, 稳定查询结果可重复取得)
 	//先建立一棵覆盖 [0,255]×[0,255] 的四叉树
 	build_one_tree(manager, make_coord(0, 0));
 	//第一次查询
-	engine::Tree_Chunk_Data<int>* first = nullptr;
+	std::shared_ptr<engine::Tree_Chunk_Data<int>> first;
 	manager.seek(first, make_coord(10, 10), true);
 	ASSERT_NE(first, nullptr);
 	//第二次查询同一坐标
-	engine::Tree_Chunk_Data<int>* second = nullptr;
+	std::shared_ptr<engine::Tree_Chunk_Data<int>> second;
 	manager.seek(second, make_coord(10, 10), true);
 	ASSERT_NE(second, nullptr);
 	//两次落在同一区块（区块数据指针指向同一叶子）
@@ -321,7 +318,7 @@ TEST_F(Quadtree_Manager_Test, 越界查询改建新树)
 	//建立一棵覆盖 [0,255]×[0,255] 的四叉树（其大小恰好等于上限）
 	build_one_tree(manager, make_coord(0, 0));
 	//查询结果存储
-	engine::Tree_Chunk_Data<int>* receiver = nullptr;
+	std::shared_ptr<engine::Tree_Chunk_Data<int>> receiver;
 	//查询落在现有树之外的坐标
 	manager.seek(receiver, make_coord(300, 300), true);
 	//取得了区块信息
@@ -350,7 +347,7 @@ TEST_F(Quadtree_Manager_Test, 越界查询按基准树校准新树位置)
 	ASSERT_EQ(manager.records_get().size(), 1u);
 	ASSERT_EQ(manager.records_get()[0]->size, 512);
 	//查询结果存储
-	engine::Tree_Chunk_Data<int>* receiver = nullptr;
+	std::shared_ptr<engine::Tree_Chunk_Data<int>> receiver;
 	//查询落在主树 [0,511]×[0,511] 之外的坐标
 	manager.seek(receiver, make_coord(600, 600), true);
 	//取得了区块信息
@@ -377,13 +374,13 @@ TEST_F(Quadtree_Manager_Test, 范围查询整树返回全部区块)
 	//建立一棵覆盖 [0,255]×[0,255] 的四叉树
 	build_one_tree(manager, make_coord(0, 0));
 	//查询结果存储
-	std::vector<engine::Tree_Chunk_Data<int>*> receiver{};
+	std::vector<std::shared_ptr<engine::Tree_Chunk_Data<int>>> receiver{};
 	//按整棵树的范围查询
 	manager.seek(receiver, make_range(0, 255, 255, 0), true);
 	//16×16 个最小区块全部命中
 	EXPECT_EQ(receiver.size(), 256u);
 	//所有结果中心都落在树管理范围内
-	for (const auto* item : receiver)
+	for (const auto& item : receiver)
 	{
 		EXPECT_GE(item->node.X, 0.0);
 		EXPECT_LE(item->node.X, 255.0);
@@ -401,7 +398,7 @@ TEST_F(Quadtree_Manager_Test, 范围查询未对齐范围被格式化)
 	//建立一棵覆盖 [0,255]×[0,255] 的四叉树
 	build_one_tree(manager, make_coord(0, 0));
 	//查询结果存储
-	std::vector<engine::Tree_Chunk_Data<int>*> receiver{};
+	std::vector<std::shared_ptr<engine::Tree_Chunk_Data<int>>> receiver{};
 	//查询 [3,20]×[3,20]，格式化后应扩展到 [0,31]×[0,31]
 	manager.seek(receiver, make_range(3, 20, 20, 3), true);
 	//2×2 个最小区块命中
@@ -417,7 +414,7 @@ TEST_F(Quadtree_Manager_Test, 范围查询单区块范围)
 	//建立一棵覆盖 [0,255]×[0,255] 的四叉树
 	build_one_tree(manager, make_coord(0, 0));
 	//查询结果存储
-	std::vector<engine::Tree_Chunk_Data<int>*> receiver{};
+	std::vector<std::shared_ptr<engine::Tree_Chunk_Data<int>>> receiver{};
 	//查询 [0,15]×[0,15]，恰好一个最小区块
 	manager.seek(receiver, make_range(0, 15, 15, 0), true);
 	ASSERT_EQ(receiver.size(), 1u);
@@ -434,10 +431,10 @@ TEST_F(Quadtree_Manager_Test, 范围查询结果可重复取得)
 	//建立一棵覆盖 [0,255]×[0,255] 的四叉树
 	build_one_tree(manager, make_coord(0, 0));
 	//第一次查询
-	std::vector<engine::Tree_Chunk_Data<int>*> first{};
+	std::vector<std::shared_ptr<engine::Tree_Chunk_Data<int>>> first{};
 	manager.seek(first, make_range(0, 255, 255, 0), true);
 	//第二次查询同一范围
-	std::vector<engine::Tree_Chunk_Data<int>*> second{};
+	std::vector<std::shared_ptr<engine::Tree_Chunk_Data<int>>> second{};
 	manager.seek(second, make_range(0, 255, 255, 0), true);
 	//两次结果数量一致
 	EXPECT_EQ(first.size(), second.size());
@@ -601,13 +598,12 @@ TEST_F(Quadtree_Manager_Test, 默认设置下单点查询能够收敛)
 	//默认构造的管理器（边长上限缺省 65536）
 	engine::Quadtree_Manager<int> manager;
 	//查询结果存储
-	engine::Tree_Chunk_Data<int>* receiver = nullptr;
+	std::shared_ptr<engine::Tree_Chunk_Data<int>> receiver;
 	//稳定模式下查询单点
 	manager.seek(receiver, make_coord(0, 0), true);
 	//应取到区块信息
 	ASSERT_NE(receiver, nullptr);
 	//释放区块信息
-	delete receiver;
 }
 
 //智能创建：空坐标集合不建树
@@ -632,7 +628,7 @@ TEST_F(Quadtree_Manager_Test, 范围查询空序列返回空结果)
 	//默认构造的管理器（不含任何四叉树）
 	engine::Quadtree_Manager<int> manager;
 	//查询结果存储
-	std::vector<engine::Tree_Chunk_Data<int>*> receiver{};
+	std::vector<std::shared_ptr<engine::Tree_Chunk_Data<int>>> receiver{};
 	//不稳定模式下对空管理器做范围查询
 	manager.seek(receiver, make_range(0, 255, 255, 0), false);
 	//应返回空结果
@@ -664,7 +660,7 @@ TEST_F(Quadtree_Manager_Test, 范围查询部分覆盖不越界)
 	//先建立一棵覆盖 [0,255]×[0,255] 的四叉树
 	build_one_tree(manager, make_coord(0, 0));
 	//查询结果存储
-	std::vector<engine::Tree_Chunk_Data<int>*> receiver{};
+	std::vector<std::shared_ptr<engine::Tree_Chunk_Data<int>>> receiver{};
 	//稳定模式下查询树内的一小块区域（不覆盖整棵树）
 	manager.seek(receiver, make_range(20, 40, 40, 20), true);
 	//应取到区块信息
@@ -704,13 +700,12 @@ TEST_F(Quadtree_Manager_Test, 缓存条目上限为零时查找不崩溃)
 	//先建立一棵覆盖 [0,255]×[0,255] 的四叉树
 	build_one_tree(manager, make_coord(0, 0));
 	//查询结果存储
-	engine::Tree_Chunk_Data<int>* receiver = nullptr;
+	std::shared_ptr<engine::Tree_Chunk_Data<int>> receiver;
 	//稳定模式下查询
 	manager.seek(receiver, make_coord(10, 10), true);
 	//应取到区块信息
 	ASSERT_NE(receiver, nullptr);
 	//释放区块信息
-	delete receiver;
 }
 
 //范围查询：不稳定模式不崩溃
@@ -723,7 +718,7 @@ TEST_F(Quadtree_Manager_Test, 范围查询不稳定模式不崩溃)
 	//先建立一棵覆盖 [0,255]×[0,255] 的四叉树
 	build_one_tree(manager, make_coord(0, 0));
 	//查询结果存储
-	std::vector<engine::Tree_Chunk_Data<int>*> receiver{};
+	std::vector<std::shared_ptr<engine::Tree_Chunk_Data<int>>> receiver{};
 	//不稳定模式下做范围查询
 	manager.seek(receiver, make_range(0, 255, 255, 0), false);
 	//不稳定模式不新建区块，结果应为空
@@ -753,7 +748,7 @@ TEST_F(Quadtree_Manager_Test, 超大边长上限下区块检索次数正常)
 	//应建成一棵四叉树
 	ASSERT_EQ(manager.records_get().size(), 1u);
 	//查询结果存储
-	engine::Tree_Chunk_Data<int>* receiver = nullptr;
+	std::shared_ptr<engine::Tree_Chunk_Data<int>> receiver;
 	//在该超大连长四叉树上做稳定单点查询
 	manager.seek(receiver, make_coord(0, 0), true);
 	//仍应取到区块信息

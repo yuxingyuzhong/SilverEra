@@ -1,5 +1,5 @@
 #include "../局部命名空间使用.h"
-#include "src/tools/Data_Validator/数据校验器.h"
+#include "src/tools/Detail/package/数据校验工具.h"
 #include "src/tools/Logging/日志系统.h"
 
 namespace engine
@@ -139,14 +139,14 @@ namespace engine
 	bool Collision_Proxy::boundary_config_read(const string& path, json& receiver) const
 	{
 		//边界配置文件路径检查
-		if (!Data_Validator::path_check(path))
+		if (!detail::path_check(path))
 		{
 			Log::warn("Collision_Proxy::边界配置路径不可读取({})", path);
 			return false;
 		}
 
 		//打开边界配置文件
-		std::ifstream file(string_to_path(path));
+		std::ifstream file(detail::string_to_path(path));
 		//若文件打开失败
 		if (!file.is_open())
 		{

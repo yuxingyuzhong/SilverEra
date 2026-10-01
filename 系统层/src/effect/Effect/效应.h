@@ -9,12 +9,12 @@
 #include "common/external/Sol2/sol类型注册.h"
 //获取预定义sol2库类型别名
 #include "common/external/Sol2/sol类型别名.h"
-//获取数据校验器
-#include "src/tools/Data_Validator/数据校验器.h"
+//获取数据校验工具
+#include "src/tools/Detail/package/数据校验工具.h"
 //获取引擎环境
 #include "src/tools/Engine_Env/引擎环境.h"
 //获取路径字符串转化方法
-#include "src/tools/Auxi_Algorithm/路径字符串转换.h"
+#include "src/tools/Detail/路径字符串转换.h"
 
 //脚本系统模块
 namespace engine

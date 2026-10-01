@@ -8,7 +8,7 @@
 //获取引擎环境
 #include "src/tools/Engine_Env/引擎环境.h"
 //获取路径字符串转化方法
-#include "src/tools/Auxi_Algorithm/路径字符串转换.h"
+#include "src/tools/Detail/路径字符串转换.h"
 
 //临时网格文件所在目录（相对可执行文件目录）
 static const std::string temp_dir = "src/单元测试/工具/";
@@ -20,7 +20,7 @@ static std::string mesh_write(const std::string& file_name, const std::string& c
 	const std::string relative_path = temp_dir + file_name;
 	//写入文件
 	std::ofstream file(engine::Engine_Env::exe_dir_get() /
-		engine::string_to_path(relative_path));
+		engine::detail::string_to_path(relative_path));
 	file << content;
 	file.close();
 	return relative_path;
@@ -33,7 +33,7 @@ static void mesh_remove(const std::string& relative_path)
 	std::error_code ec;
 	//删除文件
 	std::filesystem::remove(engine::Engine_Env::exe_dir_get() /
-		engine::string_to_path(relative_path), ec);
+		engine::detail::string_to_path(relative_path), ec);
 }
 
 //网格加载器测试夹具

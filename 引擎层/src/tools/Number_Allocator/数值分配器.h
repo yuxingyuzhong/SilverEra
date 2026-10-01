@@ -2,7 +2,7 @@
 //预编译头
 #include "common/前置头文件包含.h"
 //获取二分查找算法
-#include "src/tools/Auxi_Algorithm/二分查找.h"
+#include "src/tools/Detail/二分查找.h"
 //获取日志系统
 #include "src/tools/Logging/日志系统.h"
 
@@ -64,9 +64,9 @@ namespace engine
 		bool recycle(const uint64_t& recycle_number)
 		{
 			//查找待回收数值是否已回收
-			int index = binary_search(recycle_numbers,recycle_number,std::ranges::less());
+			std::optional<uint64_t> index = detail::binary_search(recycle_numbers,recycle_number,std::ranges::less());
 			//若待回收数值已回收
-			if(index >= 0)
+			if(index.has_value())
 			{
 				Log::warn("Number_Pool::待回收数值已被回收!!!");
 				return false;

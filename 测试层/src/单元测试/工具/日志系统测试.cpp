@@ -4,7 +4,7 @@
 //获取日志系统
 #include "src/tools/Logging/日志系统.h"
 //获取路径字符串转换工具
-#include "src/tools/Auxi_Algorithm/路径字符串转换.h"
+#include "src/tools/Detail/路径字符串转换.h"
 
 //控制台输出捕获器
 //不用 gtest 的 CaptureStdout：它在临时目录建 .tmp 文件，本机临时目录含中文，
@@ -182,7 +182,7 @@ TEST_F(Log_Test, 设置活跃流后日志落文件)
 	const std::string file_name = "engine_log_probe.txt";
 	//删除可能存在的残留文件
 	std::error_code remove_info;
-	std::filesystem::remove(engine::string_to_path(file_name), remove_info);
+	std::filesystem::remove(engine::detail::string_to_path(file_name), remove_info);
 
 	//设置活跃输出流为该文件
 	engine::Log log;
@@ -191,10 +191,10 @@ TEST_F(Log_Test, 设置活跃流后日志落文件)
 	engine::Log::info("落盘探针 {}", 7);
 
 	//文件应被创建
-	EXPECT_TRUE(std::filesystem::exists(engine::string_to_path(file_name)));
+	EXPECT_TRUE(std::filesystem::exists(engine::detail::string_to_path(file_name)));
 
 	//读回文件内容
-	std::ifstream reader(engine::string_to_path(file_name));
+	std::ifstream reader(engine::detail::string_to_path(file_name));
 	std::string content;
 	std::string line;
 	while (std::getline(reader, line))
@@ -208,7 +208,7 @@ TEST_F(Log_Test, 设置活跃流后日志落文件)
 	//还原活跃输出流为控制台，避免影响其它用例
 	log.stream_set("");
 	//清理探针文件
-	std::filesystem::remove(engine::string_to_path(file_name), remove_info);
+	std::filesystem::remove(engine::detail::string_to_path(file_name), remove_info);
 }
 
 //活跃输出流：未设置时日志走控制台
