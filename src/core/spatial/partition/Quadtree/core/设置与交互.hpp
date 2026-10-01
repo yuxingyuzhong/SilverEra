@@ -48,10 +48,8 @@ namespace engine
 		//若当前为最后一级节点
 		if (now_level == max_level)
 		{
-			//若叶子节点不为指针类型
-			if constexpr (!std::is_pointer_v<T>)
-				ptr_now->leaf.~T();
-			//释放指向该节点的指针
+			//释放叶子节点
+			//区块数据由叶子持有的 shared_ptr 随节点析构自动释放
 			delete ptr_now;
 			//返回上级递归
 			return;

@@ -24,27 +24,40 @@ namespace engine
 			//叶子节点
 			LEAF
 		};
-		//节点信息联合体
-		union Node
+		//节点结构体
+		struct Node
 		{
-			Node(const Node_Type& mode = MIDDLE)
+			//节点数据
+			//中间节点存放四个子节点指针，叶子节点存放区块数据
+			std::variant<std::array<Node*, 4>, std::shared_ptr<T>> data;
+
+			//按参数类型构造(默认为中间节点)
+			explicit Node(Node_Type mode = Node_Type::MIDDLE)
 			{
-				//默认激活ptr_child成员并置空指针
-				if (mode == MIDDLE)
-					new (&ptr_child) Node* [4]();
-				//激活leaf成员
-				else if (mode == LEAF)
-					new (&leaf) T();
+				//若为叶子节点
+				if (mode == Node_Type::LEAF)
+					//分配区块数据存储
+					data.template emplace<1>(std::shared_ptr<T>(new(std::nothrow) T()));
+				//若为中间节点
+				else
+					//子节点指针一律置空
+					data.template emplace<0>(std::array<Node*, 4>{ nullptr, nullptr, nullptr, nullptr });
 			}
-			~Node()
-			{}
+		};
 
-			//节点指针
-			Node* ptr_child[4];
-			//区块
-			T leaf;
+		//四叉树根节点
+		Node root;
 
-		}root;
+		//单点查找可行性枚举
+		enum Analysis_Result
+		{
+			//分析已经结束，查找不可行
+			INFEASIBLE = 0,
+			//分析正在进行，查找可能可行
+			IN_PROGRESS = 1,
+			//分析已经结束，查找可行
+			FEASIBLE = 2
+		};
 		//查找区域分布情况枚举
 		enum Range_Relation
 		{
@@ -65,6 +78,7 @@ namespace engine
 			//递归级别
 			int recur_level = 0;
 		};
+
 		//四叉树状态记录
 		Tree_State state;
 		//外界上级管理对象回调管理方法----四叉树扩大行为权限申请
@@ -90,9 +104,9 @@ namespace engine
 		// ---- 查询 ----
 		//最小区块单元查找
 		//目标坐标为待查询区块坐标，来自范围推导，按 64 位整数接收
-		void block_seek(Tree_Chunk_Data<T>*& receiver, const Point2l& target, bool stable);
+		void block_seek(std::shared_ptr<Tree_Chunk_Data<T>>& receiver, const Point2l& target, bool stable);
 		//范围区块单元查找
-		void range_seek(std::vector<Tree_Chunk_Data<T>*>& receiver, const Rect2l& target_range, bool stable);
+		void range_seek(std::vector<std::shared_ptr<Tree_Chunk_Data<T>>>& receiver, const Rect2l& target_range, bool stable);
 
 		//四叉树状态获取
 		const Tree_State& tree_state_get(void) const;
@@ -135,10 +149,10 @@ namespace engine
 		// ———— 查询前置支撑 ————
 	private:
 		//单点查询可行性分析
-		int point_seekable_analyse(const Point2l& target);
+		Analysis_Result seekable_analyse(const Point2l& target);
 
 		//范围查询可行性分析
-		void range_seekable_analyse(const Rect2l& format_range, Rect2l& seekable_range);
+		void seekable_analyse(const Rect2l& format_range, Rect2l& seekable_range);
 
 		//递归栈操作
 		void recur_stack_operate(std::vector<Recur_Record>& recur_stack,
@@ -147,6 +161,3 @@ namespace engine
 
 	};
 }
-
-//使用四叉树
-using engine::Quadtree;
