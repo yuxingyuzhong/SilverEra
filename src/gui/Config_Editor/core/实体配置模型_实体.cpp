@@ -526,14 +526,14 @@ namespace engine
     }
 
     //写入路由表（原子写入：临时文件 + 流状态校验 + .bak 备份 + rename）
-    bool 实体配置仓库::写入路由()
+    bool 实体配置仓库::写入路由() const
     {
         std::string write_error;
         return 原子写入文件(route_path, route_json.dump(2), write_error);
     }
 
     //解析单个实体 JSON（兼容旧格式）
-    bool 实体配置仓库::解析实体配置(const nlohmann::json& data, 实体配置& out, std::string& error)
+    bool 实体配置仓库::解析实体配置(const nlohmann::json& data, 实体配置& out, std::string& error) const
     {
         if (!data.is_object())
         {

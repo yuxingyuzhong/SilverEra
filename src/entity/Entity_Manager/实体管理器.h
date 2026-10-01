@@ -60,7 +60,7 @@ namespace engine
 
     private:
         //配置字段检验
-        bool config_field_parse(const nlohmann::json& config);
+        bool config_field_parse(const nlohmann::json& config) const;
         //决策树加载路径注册
         void action_load_path_register(const std::string& entity_type, const nlohmann::json& config);
         //属性槽配置加载路径注册

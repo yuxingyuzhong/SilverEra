@@ -54,7 +54,7 @@ namespace engine
 		void prop_slots_bind(std::function< Object_Pool<Prop>*
 			(const uint64_t& distribute_key)> bind_entry);
 		//属性槽获取
-		std::unordered_map<std::string, double>* prop_slot_get(const uint64_t& ID);
+		std::unordered_map<std::string, double>* prop_slot_get(const uint64_t& ID) const;
 		//只读属性槽获取
 		const std::unordered_map<std::string, double>* const_prop_slot_get(const uint64_t& ID) const;
 	private:

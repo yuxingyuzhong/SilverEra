@@ -107,7 +107,7 @@ namespace engine
     }
 
     //效应名称获取
-    const std::string& Prop_Effect::effect_name_get(void)
+    const std::string& Prop_Effect::effect_name_get(void) const
     {
         return name;
     }

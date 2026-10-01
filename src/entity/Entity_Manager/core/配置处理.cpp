@@ -28,7 +28,7 @@ namespace engine
     }
 
     //配置事件解析
-    bool Entity_Manager::config_field_parse(const json& config)
+    bool Entity_Manager::config_field_parse(const json& config) const
     {
         //若实体类型字段无效
         if (!Data_Validator::field_check<string>(config, "type"))

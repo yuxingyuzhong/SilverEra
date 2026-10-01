@@ -62,7 +62,7 @@ namespace engine
     
     private:
         //效应分组查找
-        int64_t effect_group_seek(const uint64_t& inclusion);
+        int64_t effect_group_seek(const uint64_t& inclusion) const;
         //效应构建
         std::optional<uint64_t> effect_build(std::shared_ptr<Event> evt);
         //效应卸载

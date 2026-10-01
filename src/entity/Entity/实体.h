@@ -55,7 +55,7 @@ namespace engine
 		~Entity();
 
 		//类型信息获取
-		std::string type(void);
+		std::string type(void) const;
 		//属性槽绑定
 		void prop_slot_bind(std::unordered_map<std::string, double>* ptr);
 		//行为加载

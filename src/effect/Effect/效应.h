@@ -60,7 +60,7 @@ namespace engine
         void effect_object_bind(std::unordered_map<std::string, double>* object);
 
         //效应名称获取
-        const std::string& effect_name_get(void);
+        const std::string& effect_name_get(void) const;
 
         //效应触发
         void effect_act(void);

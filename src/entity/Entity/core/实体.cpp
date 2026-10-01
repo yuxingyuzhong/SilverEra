@@ -32,7 +32,7 @@ namespace engine
 	}
 
 	//标签信息获取
-	std::string Entity::type(void)
+	std::string Entity::type(void) const
 	{
 		return entity_type;
 	}

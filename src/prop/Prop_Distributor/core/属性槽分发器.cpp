@@ -42,7 +42,7 @@ namespace engine
 	}
 
 	//属性槽获取
-	unordered_map<string, double>* Prop_Distributor::prop_slot_get(const uint64_t& ID)
+	unordered_map<string, double>* Prop_Distributor::prop_slot_get(const uint64_t& ID) const
 	{
 		return const_cast<unordered_map<string, double>*>(const_prop_slot_get(ID));
 	}
