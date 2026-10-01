@@ -200,6 +200,23 @@ TEST_F(Quadtree_Manager_Test, 智能创建后最大规模为最大树边长)
 	EXPECT_EQ(manager.largest_size_get(), 0u);
 }
 
+//建树拦截：边长不大于区块单元的退化树被拒绝创建
+TEST_F(Quadtree_Manager_Test, 退化树创建被拒绝)
+{
+	//默认构造的管理器（区块单元默认 16）
+	engine::Quadtree_Manager<int> manager;
+	//上限压到与区块单元相等，智能建树将尝试产出退化树
+	manager.set_max_size(16);
+	manager.quadtree_build_smart({ make_coord(0, 0) });
+	//建树入口拦截退化树，序列保持为空
+	EXPECT_TRUE(manager.records_get().empty());
+	//恢复上限后同一坐标可正常建树
+	manager.set_max_size(256);
+	manager.quadtree_build_smart({ make_coord(0, 0) });
+	ASSERT_EQ(manager.records_get().size(), 1u);
+	EXPECT_EQ(manager.records_get()[0]->size, 256u);
+}
+
 // ———— 单点查询 ————
 
 //单点查询：空管理器合上不稳定模式时返回空结果且不建树
