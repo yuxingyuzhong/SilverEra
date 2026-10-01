@@ -23,9 +23,6 @@ namespace engine
         ~Quadtree_Manager();
         
         // ---- 设置 ----
-        //数据迁移方法注册
-        void callback_register(const std::function<void(Tree_Chunk_Data<T>& receiver, 
-            Tree_Chunk_Data<T>& transmitter)>& cb_1);
         //四叉树最小区块单元大小设置
         void set_block_size(const uint64_t& block_size);
         //四叉树边长上限设置
@@ -87,8 +84,6 @@ namespace engine
         }tree_cache;
         //管理器设置
         Tree_Manager_Settings settings;
-        //外界上级管理对象回调管理方法
-        std::function<void(Tree_Chunk_Data<T>& receiver, Tree_Chunk_Data<T>& transmitter)> copy;  //数据迁移方法
 
         // ---- 辅助函数（按功能分组） ----
 
