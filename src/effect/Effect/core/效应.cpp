@@ -20,19 +20,19 @@ namespace engine
     bool Prop_Effect::config_read(const json& config)
     {
         //若加载路径字段无效
-        if (!Data_Validator::field_check<string>(config, "path"))
+        if (!detail::field_check<string>(config, "path"))
             return false;
         //若归属字段无效
-        if (!Data_Validator::field_check<uint64_t>(config, "inclusion"))
+        if (!detail::field_check<uint64_t>(config, "inclusion"))
             return false;
         //若名称字段无效
-        if (!Data_Validator::field_check<string>(config, "name"))
+        if (!detail::field_check<string>(config, "name"))
             return false;
 
         //获取加载路径
         path config_path = Engine_Env::absolute_path_get(config["path"].get<string>());
         //若加载路径无效
-        if (!Data_Validator::path_check(config_path))
+        if (!detail::path_check(config_path))
             return false;
         //若读取路径有效
         else
@@ -40,7 +40,7 @@ namespace engine
             //重置状态机
             script = LuaState{};
             //加载新状态机
-            script.load_file(path_to_string(config_path));
+            script.load_file(detail::path_to_string(config_path));
             //打开标准库
             script.open_libraries(sol::lib::base, sol::lib::math,
                 sol::lib::string, sol::lib::table);
