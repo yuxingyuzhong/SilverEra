@@ -310,18 +310,18 @@ namespace engine
                 //此处使用不稳定查询保证不创建新区块
                 tree_group[seek_time]->tree->range_seek(buffer, merged_tree_range, false);
                 //使用稳定查询在新树中定位对应区块
-                //直接共享区块数据所有权
                 for (int copy_time = 0; copy_time < buffer.size(); copy_time++)
                 {
                     //重置数据迁移结果
                     ptr_data.reset();
                     //稳定查询创建新区块（节点坐标为双精度，按 64 位整数取整）
-                    //并把旧区块数据所有权直接移交新树叶子
-                    new_tree->tree->block_seek(ptr_data, point_to_l(buffer[copy_time]->node),
-                        true, buffer[copy_time]->ptr_data);
-                    //若区块创建失败则跳过该区块
-                    if (ptr_data == nullptr)
+                    new_tree->tree->block_seek(ptr_data, point_to_l(buffer[copy_time]->node), true);
+                    //若新区块创建失败则跳过该区块
+                    if (ptr_data == nullptr || ptr_data->ptr_data == nullptr)
                         continue;
+                    //解引用赋值：结果对象与新区块叶子共享同一 T
+                    //直接拷贝旧区块数据值写入新树叶子（要求 T 可赋值）
+                    *ptr_data->ptr_data = *buffer[copy_time]->ptr_data;
                 }
             }
 
