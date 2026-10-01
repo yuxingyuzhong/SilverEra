@@ -769,10 +769,10 @@ TEST_F(Quadtree_Manager_Test, 超大边长上限下区块检索次数正常)
 	chunk_clean(receiver);
 }
 
-//合并：四棵相邻同级树合并为一棵，区块数据以共享所有权迁移
-//新语义：区块数据 T 由叶子以 shared_ptr 持有，合并时新树叶子直接共享旧区块
-//        所有权，不再依赖 T 的拷贝方法或外界注册的数据迁移回调。
-TEST_F(Quadtree_Manager_Test, 四棵相邻树合并后区块数据共享迁移)
+//合并：四棵相邻同级树合并为一棵，区块数据以解引用拷贝迁移
+//新语义：区块数据 T 由叶子以 shared_ptr 持有，合并时对新区块叶子持有的 T
+//        解引用赋值旧区块数据值（要求 T 可赋值），不再依赖外界数据迁移回调。
+TEST_F(Quadtree_Manager_Test, 四棵相邻树合并后区块数据拷贝迁移)
 {
 	//默认构造的管理器
 	engine::Quadtree_Manager<int> manager;
@@ -816,7 +816,7 @@ TEST_F(Quadtree_Manager_Test, 四棵相邻树合并后区块数据共享迁移)
 	EXPECT_EQ(manager.records_get()[0]->root, (engine::Point2d(255.5, 255.5)));
 	EXPECT_EQ(manager.records_get()[0]->size, 512u);
 
-	//逐点校验：数据值正确且仍是同一个 T 对象（共享所有权而非拷贝）
+	//逐点校验：数据值正确，且新区块为独立分配的 T 对象（解引用拷贝而非共享所有权）
 	for (int check_time = 0; check_time < 4; check_time++)
 	{
 		//查询结果存储
@@ -827,7 +827,7 @@ TEST_F(Quadtree_Manager_Test, 四棵相邻树合并后区块数据共享迁移)
 		ASSERT_NE(receiver->ptr_data, nullptr);
 		//数据值与合并前一致
 		EXPECT_EQ(*receiver->ptr_data, data_value[check_time]);
-		//数据对象地址与合并前一致（证明是同一份 T，未发生拷贝）
-		EXPECT_EQ(receiver->ptr_data.get(), data_address[check_time]);
+		//数据对象地址与合并前不同（证明是拷贝出的独立 T 对象）
+		EXPECT_NE(receiver->ptr_data.get(), data_address[check_time]);
 	}
 }
