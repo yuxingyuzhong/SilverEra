@@ -349,3 +349,196 @@ TEST_F(Object_Pool_Test, 排序模式清空对象池)
 	//容器应为空
 	EXPECT_TRUE(pool.data().empty());
 }
+
+//空池卸载：对空池卸载任意ID只告警，不崩溃
+TEST_F(Object_Pool_Test, 空池卸载不崩溃)
+{
+	//默认构造的空对象池
+	engine::Object_Pool<Test_Object> pool;
+	//卸载一个从未分配过的ID应不抛异常
+	EXPECT_NO_THROW(pool.unload(1));
+	//池内仍应无任何记录
+	EXPECT_TRUE(pool.data().empty());
+	//查询该ID应返回超尾
+	EXPECT_EQ(pool.find(1), pool.end());
+}
+
+//重复装载：连续新建不会产生重复ID
+TEST_F(Object_Pool_Test, 重复装载不产生重复ID)
+{
+	//默认构造的对象池
+	engine::Object_Pool<Test_Object> pool;
+	//用于登记已分配ID
+	std::unordered_set<uint64_t> IDs;
+	//连续新建多个对象
+	const int count = 64;
+	for (int i = 0; i < count; i++)
+	{
+		//每次新建一个对象
+		const uint64_t ID = pool.build();
+		//返回的ID应成功登记（即此前未出现过）
+		EXPECT_TRUE(IDs.insert(ID).second);
+	}
+	//分配出的ID数量应与新建次数一致
+	EXPECT_EQ(IDs.size(), static_cast<size_t>(count));
+}
+
+//大批量装载卸载：卸载不清除记录，存活对象仍可查找
+TEST_F(Object_Pool_Test, 大批量装载卸载后计数正确)
+{
+	//默认构造的对象池
+	engine::Object_Pool<Test_Object> pool;
+	//记录全部ID
+	std::vector<uint64_t> IDs;
+	//批量新建
+	const int count = 100;
+	for (int i = 0; i < count; i++)
+		IDs.push_back(pool.build());
+	//记录数量应与新建次数一致
+	EXPECT_EQ(pool.data().size(), static_cast<size_t>(count));
+	//卸载序号为偶数的对象
+	for (int i = 0; i < count; i += 2)
+		pool.unload(IDs[i]);
+	//卸载只清有效标记，容器规模应保持不变
+	EXPECT_EQ(pool.data().size(), static_cast<size_t>(count));
+	//逐一核对存活与已卸载对象
+	for (int i = 0; i < count; i++)
+	{
+		//偶数序号已被卸载，应查不到
+		if (i % 2 == 0)
+			EXPECT_EQ(pool.find(IDs[i]), pool.end());
+		//奇数序号仍在存活，应可查到
+		else
+			EXPECT_NE(pool.find(IDs[i]), pool.end());
+	}
+}
+
+//卸载全部后再装载：清空后仍可新建并查找到对象
+TEST_F(Object_Pool_Test, 卸载全部后再装载)
+{
+	//默认构造的对象池
+	engine::Object_Pool<Test_Object> pool;
+	//新建三个对象
+	std::vector<uint64_t> IDs;
+	for (int i = 0; i < 3; i++)
+		IDs.push_back(pool.build());
+	//逐个卸载全部对象
+	for (const uint64_t& ID : IDs)
+		pool.unload(ID);
+	//全部对象都应查不到
+	for (const uint64_t& ID : IDs)
+		EXPECT_EQ(pool.find(ID), pool.end());
+	//再次新建对象
+	const uint64_t reused = pool.build();
+	//新对象应可查找到
+	EXPECT_NE(pool.find(reused), pool.end());
+	//新对象ID不应为零
+	EXPECT_NE(reused, 0u);
+}
+
+//非法ID查询：保留的零号ID与未分配ID都返回超尾
+TEST_F(Object_Pool_Test, 非法ID查询返回超尾)
+{
+	//默认构造的对象池
+	engine::Object_Pool<Test_Object> pool;
+	//新建一个对象
+	pool.build();
+	//为非法实体预留的零号ID应查不到
+	EXPECT_EQ(pool.find(0), pool.end());
+	//从未分配过的较大ID应查不到
+	EXPECT_EQ(pool.find(99999), pool.end());
+}
+
+//查询已卸载对象：卸载后按原ID查找返回超尾
+TEST_F(Object_Pool_Test, 查询已卸载对象返回超尾)
+{
+	//默认构造的对象池
+	engine::Object_Pool<Test_Object> pool;
+	//新建两个对象
+	const uint64_t first = pool.build();
+	const uint64_t second = pool.build();
+	//卸载第一个对象
+	pool.unload(first);
+	//已卸载对象应查不到
+	EXPECT_EQ(pool.find(first), pool.end());
+	//未卸载对象应仍可查到
+	EXPECT_NE(pool.find(second), pool.end());
+}
+
+//边界ID：零与64位极大值的查询与卸载都不崩溃
+TEST_F(Object_Pool_Test, 边界ID查询与卸载不崩溃)
+{
+	//默认构造的对象池
+	engine::Object_Pool<Test_Object> pool;
+	//新建一个对象
+	pool.build();
+	//零号边界ID应查不到
+	EXPECT_EQ(pool.find(0), pool.end());
+	//64位无符号极大值ID应查不到
+	EXPECT_EQ(pool.find(UINT64_MAX), pool.end());
+	//卸载零号ID不应抛异常
+	EXPECT_NO_THROW(pool.unload(0));
+	//卸载极大值ID不应抛异常
+	EXPECT_NO_THROW(pool.unload(UINT64_MAX));
+	//原有对象应不受影响
+	EXPECT_EQ(pool.data().size(), 1u);
+}
+
+//容量上限附近：大批量新建后首中尾对象均可见
+TEST_F(Object_Pool_Test, 容量上限附近批量装载均可见)
+{
+	//默认构造的对象池
+	engine::Object_Pool<Test_Object> pool;
+	//一次规模较大的批量新建
+	const int count = 1024;
+	//记录全部ID
+	std::vector<uint64_t> IDs;
+	IDs.reserve(count);
+	for (int i = 0; i < count; i++)
+		IDs.push_back(pool.build());
+	//容器规模应与新建次数一致
+	EXPECT_EQ(pool.data().size(), static_cast<size_t>(count));
+	//抽查首、中、尾三段对象是否均可查到
+	EXPECT_NE(pool.find(IDs.front()), pool.end());
+	EXPECT_NE(pool.find(IDs[count / 2]), pool.end());
+	EXPECT_NE(pool.find(IDs.back()), pool.end());
+}
+
+//ID复用：卸载后新建会复用被回收的ID
+TEST_F(Object_Pool_Test, 多次装载卸载后ID复用)
+{
+	//默认构造的对象池
+	engine::Object_Pool<Test_Object> pool;
+	//新建三个对象
+	const uint64_t first = pool.build();
+	const uint64_t second = pool.build();
+	const uint64_t third = pool.build();
+	//卸载中间对象
+	pool.unload(second);
+	//再次新建应复用被回收的ID
+	const uint64_t reused = pool.build();
+	//复用ID应与被卸载ID一致
+	EXPECT_EQ(reused, second);
+	//复用ID对应对象应可查到
+	EXPECT_NE(pool.find(reused), pool.end());
+	//其余原有对象不受影响
+	EXPECT_NE(pool.find(first), pool.end());
+	EXPECT_NE(pool.find(third), pool.end());
+}
+
+//析构：装满对象后对象池析构不应崩溃
+TEST_F(Object_Pool_Test, 装满对象后析构不崩溃)
+{
+	//内层作用域用于触发生命周期结束时的析构
+	{
+		//默认构造的对象池
+		engine::Object_Pool<Test_Object> pool;
+		//装满大量对象
+		for (int i = 0; i < 256; i++)
+			pool.build();
+		//池内应有对应数量的记录
+		EXPECT_EQ(pool.data().size(), 256u);
+	}
+	//能执行到此说明析构过程未崩溃
+	SUCCEED();
+}

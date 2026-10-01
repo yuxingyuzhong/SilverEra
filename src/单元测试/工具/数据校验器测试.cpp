@@ -210,3 +210,102 @@ TEST_F(Data_Validator_Test, 字符串重载拒绝空文本)
 	//空文本路径
 	EXPECT_FALSE(engine::detail::path_check(std::string{}));
 }
+
+//缺失字符串字段：直接判定失败
+TEST_F(Data_Validator_Test, 缺失字符串字段被拒绝)
+{
+	//空配置对象
+	nlohmann::json config = nlohmann::json::object();
+	//不存在的字符串字段校验应失败
+	EXPECT_FALSE(engine::detail::field_check<std::string>(config, "名称"));
+}
+
+//数组字段：对象内容被拒绝
+TEST_F(Data_Validator_Test, 数组字段拒绝对象)
+{
+	//数组字段被填成对象
+	nlohmann::json config = nlohmann::json::object();
+	config["路径组"] = nlohmann::json::object({ {"a", 1} });
+	//容器类型校验应失败
+	EXPECT_FALSE(engine::detail::field_check<std::vector<std::string>>(config, "路径组"));
+}
+
+//空对象字段：被非空检查拦下
+TEST_F(Data_Validator_Test, 空对象字段被拒绝)
+{
+	//对象字段被留空
+	nlohmann::json config = nlohmann::json::object();
+	config["配置"] = nlohmann::json::object();
+	//非空检查应失败
+	EXPECT_FALSE(engine::detail::field_check<nlohmann::json>(config, "配置"));
+}
+
+//空值字段：null 内容被拒绝
+TEST_F(Data_Validator_Test, 空值字段被拒绝)
+{
+	//数值字段被填成空值
+	nlohmann::json config = nlohmann::json::object();
+	config["数量"] = nullptr;
+	//整数类型校验应失败
+	EXPECT_FALSE(engine::detail::field_check<int>(config, "数量"));
+}
+
+//数组元素类型不符：被拒绝
+TEST_F(Data_Validator_Test, 数组元素类型不符被拒绝)
+{
+	//数组字段内混入数值元素
+	nlohmann::json config = nlohmann::json::object();
+	config["路径组"] = nlohmann::json::array({ "a", 1 });
+	//容器元素类型校验应失败
+	EXPECT_FALSE(engine::detail::field_check<std::vector<std::string>>(config, "路径组"));
+}
+
+//整数零值：边界值通过校验
+TEST_F(Data_Validator_Test, 整数零值通过)
+{
+	//整数字段被填成零
+	nlohmann::json config = nlohmann::json::object();
+	config["数量"] = 0;
+	//整数类型校验应通过
+	EXPECT_TRUE(engine::detail::field_check<int>(config, "数量"));
+}
+
+//整数负值：边界值通过校验
+TEST_F(Data_Validator_Test, 整数负值通过)
+{
+	//整数字段被填成负数
+	nlohmann::json config = nlohmann::json::object();
+	config["数量"] = -42;
+	//整数类型校验应通过
+	EXPECT_TRUE(engine::detail::field_check<int>(config, "数量"));
+}
+
+//整数极大值：边界值通过校验
+TEST_F(Data_Validator_Test, 整数极大值通过)
+{
+	//整数字段被填成极大值
+	nlohmann::json config = nlohmann::json::object();
+	config["数量"] = 1234567890123LL;
+	//整数类型校验应通过
+	EXPECT_TRUE(engine::detail::field_check<int>(config, "数量"));
+}
+
+//嵌套对象缺失内层字段：内层校验失败
+TEST_F(Data_Validator_Test, 嵌套对象缺失内层字段被拒绝)
+{
+	//嵌套对象仅含无关字段
+	nlohmann::json config = nlohmann::json::object();
+	config["配置"] = nlohmann::json::object({ {"其它", 1} });
+	//直接对嵌套对象校验其缺失的内层字段应失败
+	EXPECT_FALSE(engine::detail::field_check<int>(config["配置"], "内层"));
+}
+
+//布尔字段：文本内容被拒绝
+TEST_F(Data_Validator_Test, 布尔字段拒绝文本)
+{
+	//布尔字段被填成文本
+	nlohmann::json config = nlohmann::json::object();
+	config["启用"] = "true";
+	//布尔类型校验应失败
+	EXPECT_FALSE(engine::detail::field_check<bool>(config, "启用"));
+}

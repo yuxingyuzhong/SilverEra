@@ -231,3 +231,121 @@ TEST_F(Log_Test, 未设置活跃流时走控制台)
 	//类型前缀与格式化结果都应出现在控制台
 	EXPECT_NE(output.find("[INFO]控制台落点 1"), std::string::npos);
 }
+
+//四级日志连续写出：各等级依次输出且前缀完整
+TEST_F(Log_Test, 四级日志连续写出)
+{
+	//捕获内容
+	std::string output;
+	{
+		//开始捕获控制台输出
+		Console_Capture capture;
+		//依次输出四个等级的日志
+		engine::Log::info("信息 {}", 1);
+		engine::Log::warn("警告 {}", 2);
+		engine::Log::error("错误 {}", 3);
+		engine::Log::debug("调试 {}", 4);
+		//取回输出内容
+		output = capture.text();
+	}
+	//信息等级前缀与内容应存在
+	EXPECT_NE(output.find("[INFO]信息 1"), std::string::npos);
+	//警告等级前缀与内容应存在
+	EXPECT_NE(output.find("[WARN]警告 2"), std::string::npos);
+	//错误等级前缀与内容应存在
+	EXPECT_NE(output.find("[ERROR]错误 3"), std::string::npos);
+	//调试等级前缀与内容应存在
+	EXPECT_NE(output.find("[DEBUG]调试 4"), std::string::npos);
+}
+
+//混合类型参数替换：整数、浮点与文本依次填位
+TEST_F(Log_Test, 混合类型参数替换)
+{
+	//捕获内容
+	std::string output;
+	{
+		//开始捕获控制台输出
+		Console_Capture capture;
+		//输出含三种类型占位符的日志
+		engine::Log::info("整数{}浮点{}文本{}", 7, 2.5, std::string("甲"));
+		//取回输出内容
+		output = capture.text();
+	}
+	//各类型参数应依次替换占位符
+	EXPECT_NE(output.find("整数7浮点2.5文本甲"), std::string::npos);
+}
+
+//空字符串消息：可写出且不崩溃
+TEST_F(Log_Test, 空字符串消息可写出)
+{
+	//捕获内容
+	std::string output;
+	{
+		//开始捕获控制台输出
+		Console_Capture capture;
+		//输出一条空消息
+		engine::Log::info("");
+		//取回输出内容
+		output = capture.text();
+	}
+	//空消息仍应带类型前缀
+	EXPECT_NE(output.find("[INFO]"), std::string::npos);
+}
+
+//含中文消息：中文明文完整输出
+TEST_F(Log_Test, 含中文消息完整输出)
+{
+	//捕获内容
+	std::string output;
+	{
+		//开始捕获控制台输出
+		Console_Capture capture;
+		//输出一条中文消息
+		engine::Log::info("中文消息：{}", "测试");
+		//取回输出内容
+		output = capture.text();
+	}
+	//中文明文应完整出现
+	EXPECT_NE(output.find("中文消息：测试"), std::string::npos);
+}
+
+//超长消息：八千字符长文本可完整输出
+TEST_F(Log_Test, 超长消息可完整输出)
+{
+	//构造八千字符的超长文本
+	const std::string long_text(8000, 'x');
+	//捕获内容
+	std::string output;
+	{
+		//开始捕获控制台输出
+		Console_Capture capture;
+		//以超长文本为参数输出日志
+		engine::Log::info("{}", long_text);
+		//取回输出内容
+		output = capture.text();
+	}
+	//类型前缀应存在
+	EXPECT_NE(output.find("[INFO]"), std::string::npos);
+	//超长正文应被完整写出
+	EXPECT_NE(output.find(long_text), std::string::npos);
+}
+
+//连续大量写出：高频输出下首末条日志均应存在
+TEST_F(Log_Test, 连续大量写出稳定)
+{
+	//捕获内容
+	std::string output;
+	{
+		//开始捕获控制台输出
+		Console_Capture capture;
+		//连续写出两千条日志
+		for (int index = 0; index < 2000; ++index)
+			engine::Log::info("批量日志 {}", index);
+		//取回输出内容
+		output = capture.text();
+	}
+	//首条批日志应存在
+	EXPECT_NE(output.find("批量日志 0"), std::string::npos);
+	//末条批日志应存在
+	EXPECT_NE(output.find("批量日志 1999"), std::string::npos);
+}
