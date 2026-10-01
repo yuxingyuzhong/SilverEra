@@ -14,7 +14,7 @@ public:
 	static void build_one_tree(engine::Quadtree_Manager<int>& manager, const engine::Point2i& target)
 	{
 		manager.set_max_size(256);
-		manager.qurdtree_build_smart({ target });
+		manager.quadtree_build_smart({ target });
 	}
 
 	//释放单点查询结果
@@ -96,7 +96,7 @@ TEST_F(Quadtree_Manager_Test, 设置项写入设置结构体)
 	//改写缓存启用阈值
 	manager.set_cache_active_threshold(8);
 	//改写缓存条目上限
-	manager.set_max_cach_records(4);
+	manager.set_max_cache_records(4);
 	//读取设置
 	const engine::Tree_Manager_Settings& settings = manager.settings_get();
 	//六项设置均已生效
@@ -163,7 +163,7 @@ TEST_F(Quadtree_Manager_Test, 智能创建多点建立多棵树)
 	engine::Quadtree_Manager<int> manager;
 	//设定边长上限并投喂两个相距较远的坐标
 	manager.set_max_size(256);
-	manager.qurdtree_build_smart({ make_coord(0, 0), make_coord(300, 300) });
+	manager.quadtree_build_smart({ make_coord(0, 0), make_coord(300, 300) });
 	//读取序列
 	const std::vector<engine::Tree_Record<int>*>& records = manager.records_get();
 	//两个坐标各占一个最大区块，故建立两棵树
@@ -184,7 +184,7 @@ TEST_F(Quadtree_Manager_Test, 智能创建不重复覆盖已建区域)
 	//先建立覆盖 [0,255]×[0,255] 的四叉树
 	build_one_tree(manager, make_coord(0, 0));
 	//(10,10) 已落在现有四叉树管理范围内
-	manager.qurdtree_build_smart({ make_coord(10, 10) });
+	manager.quadtree_build_smart({ make_coord(10, 10) });
 	//序列数量不变
 	EXPECT_EQ(manager.records_get().size(), 1u);
 }
@@ -346,7 +346,7 @@ TEST_F(Quadtree_Manager_Test, 越界查询按基准树校准新树位置)
 	engine::Quadtree_Manager<int> manager;
 	//把上限抬到 512，使建成的主树大小为 512（不等于下限 256）
 	manager.set_max_size(512);
-	manager.qurdtree_build_smart({ make_coord(0, 0) });
+	manager.quadtree_build_smart({ make_coord(0, 0) });
 	ASSERT_EQ(manager.records_get().size(), 1u);
 	ASSERT_EQ(manager.records_get()[0]->size, 512);
 	//查询结果存储
@@ -454,7 +454,7 @@ TEST_F(Quadtree_Manager_Test, 清空释放全部四叉树)
 	engine::Quadtree_Manager<int> manager;
 	//建立两棵相距较远的四叉树
 	manager.set_max_size(256);
-	manager.qurdtree_build_smart({ make_coord(0, 0), make_coord(300, 300) });
+	manager.quadtree_build_smart({ make_coord(0, 0), make_coord(300, 300) });
 	ASSERT_EQ(manager.records_get().size(), 2u);
 	//清空
 	manager.clear();
@@ -481,7 +481,7 @@ TEST_F(Quadtree_Manager_Test, 按根坐标卸载单棵树)
 	engine::Quadtree_Manager<int> manager;
 	//建立两棵树（根坐标分别为 383.5 与 127.5）
 	manager.set_max_size(256);
-	manager.qurdtree_build_smart({ make_coord(0, 0), make_coord(300, 300) });
+	manager.quadtree_build_smart({ make_coord(0, 0), make_coord(300, 300) });
 	ASSERT_EQ(manager.records_get().size(), 2u);
 	//卸载根坐标 383.5 的那一棵
 	manager.quadtree_unload({ engine::Point2d(383.5, 383.5) });
@@ -498,7 +498,7 @@ TEST_F(Quadtree_Manager_Test, 按根坐标卸载全部树)
 	engine::Quadtree_Manager<int> manager;
 	//建立两棵树
 	manager.set_max_size(256);
-	manager.qurdtree_build_smart({ make_coord(0, 0), make_coord(300, 300) });
+	manager.quadtree_build_smart({ make_coord(0, 0), make_coord(300, 300) });
 	ASSERT_EQ(manager.records_get().size(), 2u);
 	//一次卸载两棵
 	manager.quadtree_unload({ engine::Point2d(383.5, 383.5),
@@ -527,10 +527,10 @@ TEST_F(Quadtree_Manager_Test, 未注册迁移方法时合并不生效)
 	engine::Quadtree_Manager<int> manager;
 	//建立两棵树
 	manager.set_max_size(256);
-	manager.qurdtree_build_smart({ make_coord(0, 0), make_coord(300, 300) });
+	manager.quadtree_build_smart({ make_coord(0, 0), make_coord(300, 300) });
 	ASSERT_EQ(manager.records_get().size(), 2u);
 	//未注册迁移方法即请求合并
-	manager.qurdtree_merge();
+	manager.quadtree_merge();
 	//序列保持不变
 	EXPECT_EQ(manager.records_get().size(), 2u);
 }
@@ -543,7 +543,7 @@ TEST_F(Quadtree_Manager_Test, 树数量不足时合并不生效)
 	//注册数据迁移方法（本用例中不会被调用）
 	int copy_times = 0;
 	manager.callback_register([&copy_times](engine::Tree_Chunk_Data<int>& receiver,
-		engine::Tree_Chunk_Data<int>& transmiter)
+		engine::Tree_Chunk_Data<int>& transmitter)
 		{
 			++copy_times;
 		});
@@ -551,7 +551,7 @@ TEST_F(Quadtree_Manager_Test, 树数量不足时合并不生效)
 	build_one_tree(manager, make_coord(0, 0));
 	ASSERT_EQ(manager.records_get().size(), 1u);
 	//请求合并
-	manager.qurdtree_merge();
+	manager.quadtree_merge();
 	//不足四棵同级树，未发生任何数据迁移
 	EXPECT_EQ(copy_times, 0);
 	EXPECT_EQ(manager.records_get().size(), 1u);
@@ -563,7 +563,7 @@ TEST_F(Quadtree_Manager_Test, 析构释放全部四叉树)
 	//在堆上构造管理器并建立两棵树
 	engine::Quadtree_Manager<int>* manager = new engine::Quadtree_Manager<int>();
 	manager->set_max_size(256);
-	manager->qurdtree_build_smart({ make_coord(0, 0), make_coord(300, 300) });
+	manager->quadtree_build_smart({ make_coord(0, 0), make_coord(300, 300) });
 	ASSERT_EQ(manager->records_get().size(), 2u);
 	//删除时析构函数应完成全部四叉树的释放
 	delete manager;
@@ -583,7 +583,7 @@ TEST_F(Quadtree_Manager_Test, 默认边长上限下建成的树记录大小正�
 	//默认构造的管理器（边长上限缺省 65536）
 	engine::Quadtree_Manager<int> manager;
 	//按单点建树
-	manager.qurdtree_build_smart({ make_coord(0, 0) });
+	manager.quadtree_build_smart({ make_coord(0, 0) });
 	//读取序列
 	const std::vector<engine::Tree_Record<int>*>& records = manager.records_get();
 	ASSERT_EQ(records.size(), 1u);
@@ -611,7 +611,7 @@ TEST_F(Quadtree_Manager_Test, 默认设置下单点查询能够收敛)
 }
 
 //智能创建：空坐标集合不建树
-//修复后语义：qurdtree_build_smart 入口已对 coord_set 做 empty() 判断并直接返回，
+//修复后语义：quadtree_build_smart 入口已对 coord_set 做 empty() 判断并直接返回，
 //          不会再对空容器取首元素。
 TEST_F(Quadtree_Manager_Test, 智能创建空坐标集合不建树)
 {
@@ -620,7 +620,7 @@ TEST_F(Quadtree_Manager_Test, 智能创建空坐标集合不建树)
 	//设定边长上限
 	manager.set_max_size(256);
 	//投喂空坐标集合
-	manager.qurdtree_build_smart({});
+	manager.quadtree_build_smart({});
 	//不应建立任何四叉树
 	EXPECT_TRUE(manager.records_get().empty());
 }
@@ -700,7 +700,7 @@ TEST_F(Quadtree_Manager_Test, 缓存条目上限为零时查找不崩溃)
 	//设定边长上限、缓存启用阈值与条目上限
 	manager.set_max_size(256);
 	manager.set_cache_active_threshold(1);
-	manager.set_max_cach_records(0);
+	manager.set_max_cache_records(0);
 	//先建立一棵覆盖 [0,255]×[0,255] 的四叉树
 	build_one_tree(manager, make_coord(0, 0));
 	//查询结果存储
@@ -749,7 +749,7 @@ TEST_F(Quadtree_Manager_Test, 超大边长上限下区块检索次数正常)
 	//把边长上限提到 INT_MAX 以上
 	manager.set_max_size(1ull << 33);
 	//按单点建树
-	manager.qurdtree_build_smart({ make_coord(0, 0) });
+	manager.quadtree_build_smart({ make_coord(0, 0) });
 	//应建成一棵四叉树
 	ASSERT_EQ(manager.records_get().size(), 1u);
 	//查询结果存储
@@ -763,7 +763,7 @@ TEST_F(Quadtree_Manager_Test, 超大边长上限下区块检索次数正常)
 }
 
 //合并：拷贝前检查区块指针
-//修复后语义：qurdtree_merge 的数据拷贝段已加 if (ptr_data) 判断，
+//修复后语义：quadtree_merge 的数据拷贝段已加 if (ptr_data) 判断，
 //          区块创建失败时跳过拷贝并计入失败统计。
 TEST_F(Quadtree_Manager_Test, 合并拷贝前检查区块指针)
 {
@@ -773,9 +773,9 @@ TEST_F(Quadtree_Manager_Test, 合并拷贝前检查区块指针)
 	manager.set_max_size(256);
 	//注册数据迁移方法
 	manager.callback_register([](engine::Tree_Chunk_Data<int>& receiver,
-		engine::Tree_Chunk_Data<int>& transmiter) {});
+		engine::Tree_Chunk_Data<int>& transmitter) {});
 	//执行合并
-	manager.qurdtree_merge();
+	manager.quadtree_merge();
 	//无崩溃即为通过
 	SUCCEED();
 }
