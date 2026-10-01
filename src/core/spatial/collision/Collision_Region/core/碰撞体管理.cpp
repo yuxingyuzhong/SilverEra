@@ -1,6 +1,6 @@
 #include "../局部命名空间使用.h"
 //获取数据校验器
-#include "src/tools/Data_Validator/数据校验器.h"
+#include "src/tools/Detail/package/数据校验工具.h"
 //获取日志系统
 #include "src/tools/Logging/日志系统.h"
 //获取网格加载器
@@ -114,7 +114,7 @@ namespace engine
 			return false;
 		}
 		//目标碰撞体编号字段检查
-		if (!Data_Validator::field_check<uint64_t>(geometry_config, "collider_ID"))
+		if (!detail::field_check<uint64_t>(geometry_config, "collider_ID"))
 		{
 			Log::warn("Collision_Region::几何配置缺少有效字段(collider_ID)");
 			return false;

@@ -6,7 +6,7 @@
 //获取终端接口
 #include "终端接口.h"
 //获取随机数生成器(用于权限密钥生成)
-#include "src/tools/Random/随机数生成器.h"
+#include "src/tools/Random_Generator/随机数生成器.h"
 
 //游戏引擎命名空间
 namespace engine
@@ -18,7 +18,7 @@ namespace engine
 		//权限密钥
 		std::optional<int64_t> acl_key;
 		//密钥生成器
-		Random_Generator key_generator{};
+		Random_Generator<int64_t> key_generator{};
 
 		//事件集合
 		std::vector<std::shared_ptr<Event>> event_set{};

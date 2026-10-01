@@ -6,7 +6,7 @@
 //获取数值分配器
 #include "src/tools/Number_Allocator/数值分配器.h"
 //获取二分查找算法
-#include "src/tools/Auxi_Algorithm/二分查找.h"
+#include "src/tools/Detail/二分查找.h"
 
 namespace engine
 {
@@ -158,17 +158,17 @@ namespace engine
 				else
 				{
 					//目标对象索引存储
-					int index;
+					std::optional<uint64_t> index;
 					//获取目标对象索引
 					if (!is_greater)
-						index = binary_search(objects.begin() + min_valid_index.value(), objects.end(),
+						index = detail::binary_search(objects.begin() + min_valid_index.value(), objects.end(),
 							key, std::ranges::less(), projector);
 					else
-						index = binary_search(objects.begin() + min_valid_index.value(), objects.end(),
+						index = detail::binary_search(objects.begin() + min_valid_index.value(), objects.end(),
 							key, std::ranges::greater(), projector);
 					//若返回索引有效
-					if (index >= 0)
-						return objects.begin() + min_valid_index.value() + index;
+					if (index.has_value())
+						return objects.begin() + min_valid_index.value() + index.value();
 					//若不存在目标对象则返回超尾迭代器
 					else
 						return objects.end();
@@ -185,16 +185,16 @@ namespace engine
 				else
 				{
 					//目标对象索引存储
-					int index;
+					std::optional<uint64_t> index;
 					//获取目标对象索引
 					if (!is_greater)
-						index = binary_search(objects.begin() + min_valid_index.value(), objects.end(),
+						index = detail::binary_search(objects.begin() + min_valid_index.value(), objects.end(),
 							key, std::ranges::less(), projector);
 					else
-						index = binary_search(objects.begin() + min_valid_index.value(), objects.end(),
+						index = detail::binary_search(objects.begin() + min_valid_index.value(), objects.end(),
 							key, std::ranges::greater(), projector);
 					//若返回索引有效
-					if (index >= 0)
+					if (index.has_value())
 						return objects.begin() + min_valid_index.value() + index;
 					//若不存在目标对象则返回超尾迭代器
 					else

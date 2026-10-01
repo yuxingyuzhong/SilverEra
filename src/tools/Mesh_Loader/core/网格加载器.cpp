@@ -1,10 +1,10 @@
 #include "../局部命名空间使用.h"
 //获取数据校验器
-#include "src/tools/Data_Validator/数据校验器.h"
+#include "src/tools/Detail/package/数据校验工具.h"
 //获取引擎环境
 #include "src/tools/Engine_Env/引擎环境.h"
 //获取路径字符串转化方法
-#include "src/tools/Auxi_Algorithm/路径字符串转换.h"
+#include "src/tools/Detail/路径字符串转换.h"
 //获取日志系统
 #include "src/tools/Logging/日志系统.h"
 
@@ -30,10 +30,10 @@ namespace engine
 		//实际读取路径
 		path read_path;
 		//若原样路径有效（按当前工作目录解释）
-		if (Data_Validator::path_check(mesh_path))
-			read_path = string_to_path(mesh_path);
+		if (detail::path_check(mesh_path))
+			read_path = detail::string_to_path(mesh_path);
 		//若可执行文件目录下的路径有效
-		else if (Data_Validator::path_check(absolute_path))
+		else if (detail::path_check(absolute_path))
 			read_path = absolute_path;
 		//若两者均无效
 		else
@@ -209,4 +209,4 @@ namespace engine
 		}
 	}
 
-}
+}
