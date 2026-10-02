@@ -1,4 +1,4 @@
-//对象池测试：覆盖稳定模式下的对象新建、ID分配、索引复用、查找、卸载，以及排序模式（现状不可用，见下）
+//对象池测试：覆盖稳定模式下的对象新建、ID分配、索引复用、查找、卸载，以及排序模式与投影字段定位
 #include <gtest/gtest.h>
 
 //获取对象池
@@ -12,6 +12,26 @@ public:
 	uint64_t payload = 0;
 };
 
+//派生测试对象(附带字符串定位字段)
+class Tagged_Object : public engine::Object
+{
+public:
+	//字符串定位字段
+	std::string tag;
+};
+
+//定位投影字段：以对象ID定位
+uint64_t ID_project(const Test_Object& object)
+{
+	return object.ID();
+}
+
+//定位投影字段：以派生字段定位
+uint64_t payload_project(const Test_Object& object)
+{
+	return object.payload;
+}
+
 //对象池测试夹具
 class Object_Pool_Test : public ::testing::Test
 {
@@ -21,7 +41,7 @@ class Object_Pool_Test : public ::testing::Test
 TEST_F(Object_Pool_Test, 新建对象返回非零ID)
 {
 	//默认构造的对象池
-	engine::Object_Pool<Test_Object> pool;
+	engine::Object_Pool<Test_Object> pool(ID_project);
 	//新建一个对象
 	const uint64_t ID = pool.build();
 	//ID 不应为零
@@ -32,7 +52,7 @@ TEST_F(Object_Pool_Test, 新建对象返回非零ID)
 TEST_F(Object_Pool_Test, 新建对象标记有效)
 {
 	//默认构造的对象池
-	engine::Object_Pool<Test_Object> pool;
+	engine::Object_Pool<Test_Object> pool(ID_project);
 	//新建一个对象
 	const uint64_t ID = pool.build();
 	//查找目标对象
@@ -52,7 +72,7 @@ TEST_F(Object_Pool_Test, 新建对象标记有效)
 TEST_F(Object_Pool_Test, 多次新建ID互不相同)
 {
 	//默认构造的对象池
-	engine::Object_Pool<Test_Object> pool;
+	engine::Object_Pool<Test_Object> pool(ID_project);
 	//连续新建三个对象
 	const uint64_t first = pool.build();
 	const uint64_t second = pool.build();
@@ -69,7 +89,7 @@ TEST_F(Object_Pool_Test, 多次新建ID互不相同)
 TEST_F(Object_Pool_Test, 查找不存在ID返回超尾)
 {
 	//默认构造的对象池
-	engine::Object_Pool<Test_Object> pool;
+	engine::Object_Pool<Test_Object> pool(ID_project);
 	//新建一个对象
 	pool.build();
 	//查找一个未分配过的ID
@@ -80,7 +100,7 @@ TEST_F(Object_Pool_Test, 查找不存在ID返回超尾)
 TEST_F(Object_Pool_Test, 卸载后查找返回超尾)
 {
 	//默认构造的对象池
-	engine::Object_Pool<Test_Object> pool;
+	engine::Object_Pool<Test_Object> pool(ID_project);
 	//新建两个对象
 	const uint64_t first = pool.build();
 	const uint64_t second = pool.build();
@@ -97,7 +117,7 @@ TEST_F(Object_Pool_Test, 卸载后查找返回超尾)
 TEST_F(Object_Pool_Test, 卸载后记录保留但ID清零)
 {
 	//默认构造的对象池
-	engine::Object_Pool<Test_Object> pool;
+	engine::Object_Pool<Test_Object> pool(ID_project);
 	//新建一个对象
 	const uint64_t ID = pool.build();
 	//卸载该对象
@@ -114,7 +134,7 @@ TEST_F(Object_Pool_Test, 卸载后记录保留但ID清零)
 TEST_F(Object_Pool_Test, 卸载不存在ID不抛异常)
 {
 	//默认构造的对象池
-	engine::Object_Pool<Test_Object> pool;
+	engine::Object_Pool<Test_Object> pool(ID_project);
 	//新建一个对象
 	pool.build();
 	//卸载一个未分配过的ID
@@ -127,7 +147,7 @@ TEST_F(Object_Pool_Test, 卸载不存在ID不抛异常)
 TEST_F(Object_Pool_Test, 多对象卸载重载)
 {
 	//默认构造的对象池
-	engine::Object_Pool<Test_Object> pool;
+	engine::Object_Pool<Test_Object> pool(ID_project);
 	//新建三个对象
 	const uint64_t first = pool.build();
 	const uint64_t second = pool.build();
@@ -142,12 +162,11 @@ TEST_F(Object_Pool_Test, 多对象卸载重载)
 }
 
 //索引复用：卸载后新建会复用被回收的位置，且新对象可正常查找
-//注意：稳定模式下该路径会读取联合体中未激活的 min_valid_index 成员，属未定义行为，
-//     因此这里只用「不抛异常」与可查找性做约束，不对内部索引取值下断言。
+//稳定模式下卸载会回收容器下标，新建按下标分配器的后进先出机制复用该位置。
 TEST_F(Object_Pool_Test, 卸载后新建复用索引)
 {
 	//默认构造的对象池
-	engine::Object_Pool<Test_Object> pool;
+	engine::Object_Pool<Test_Object> pool(ID_project);
 	//新建两个对象
 	const uint64_t first = pool.build();
 	pool.build();
@@ -162,30 +181,23 @@ TEST_F(Object_Pool_Test, 卸载后新建复用索引)
 	EXPECT_NE(reused, 0u);
 }
 
-//非整数Key：当前实现不可编译，属已知缺陷，无法写成运行期用例
-//缺陷位置：对象池.h 的 find
-//成因：整数Key与非整数Key的分支判定写作运行期 if (!is_sorted && is_key_integral)，
-//     两个分支都会被实例化，其中整数分支的 object_index_map.find(key) 要求 Key 可转为 uint64_t；
-//     于是 Object_Pool<T, std::string> 只要调用 find 就会编译失败（C2665），
-//     模板参数 Key 名义上可选非整数，实际不可用。
-//修复方向：把分支判定换成 if constexpr，使不可达分支不参与实例化。
+//定位字段：定位键改为构造时传入的投影字段，定位映射以投影字段为键
+//投影字段可为任意可比较类型，非整数键已可用（见文末字符串定位字段用例）
 
-//排序模式：索引映射与排序定位信息共用联合体存储，
-//min_valid_index 现已在 sort_order_set 内以 placement new 显式构造，
-//不再读取 std::function 的内部字节作为「是否已有值」的依据。
-//以下用例由缺陷固化转为排序模式的正式回归用例。
+//排序模式：排列方式由 order_set 设置，投影字段在构造时固定
+//不再需要随排序方式重复传入投影
 
 //排序模式：设置排序方式后仍可按ID查找
 TEST_F(Object_Pool_Test, 排序模式按ID查找)
 {
 	//默认构造的对象池
-	engine::Object_Pool<Test_Object> pool;
+	engine::Object_Pool<Test_Object> pool(ID_project);
 	//新建三个对象
 	pool.build();
 	const uint64_t second = pool.build();
 	pool.build();
 	//以ID为投影字段升序排列
-	pool.sort_order_set(false, [](const Test_Object& object) { return object.ID(); });
+	pool.order_set(std::ranges::less{});
 	//目标对象应可查找到
 	const auto it = pool.find(second);
 	ASSERT_NE(it, pool.end());
@@ -197,31 +209,32 @@ TEST_F(Object_Pool_Test, 排序模式按ID查找)
 TEST_F(Object_Pool_Test, 排序模式降序查找)
 {
 	//默认构造的对象池
-	engine::Object_Pool<Test_Object> pool;
+	engine::Object_Pool<Test_Object> pool(ID_project);
 	//新建三个对象
 	pool.build();
 	const uint64_t second = pool.build();
 	pool.build();
 	//以ID为投影字段降序排列
-	pool.sort_order_set(true, [](const Test_Object& object) { return object.ID(); });
+	pool.order_set(std::ranges::greater{});
 	//目标对象应可查找到
 	EXPECT_NE(pool.find(second), pool.end());
 }
 
-//排序模式：按自定义投影字段查找
+//排序模式：以派生字段为投影字段查找
 TEST_F(Object_Pool_Test, 排序模式按投影字段查找)
 {
-	//默认构造的对象池
-	engine::Object_Pool<Test_Object> pool;
-	//新建三个对象并写入互不相同的投影值
+	//以派生字段定位的对象池
+	engine::Object_Pool<Test_Object> pool(payload_project);
+	//新建三个对象
 	const uint64_t first = pool.build();
 	const uint64_t second = pool.build();
 	const uint64_t third = pool.build();
-	pool.find(first)->payload = 30;
-	pool.find(second)->payload = 10;
-	pool.find(third)->payload = 20;
-	//以派生字段为投影字段升序排列
-	pool.sort_order_set(false, [](const Test_Object& object) { return object.payload; });
+	//直接写入互不相同的投影值
+	pool.data()[0].payload = 30;
+	pool.data()[1].payload = 10;
+	pool.data()[2].payload = 20;
+	//以投影字段升序排列
+	pool.order_set(std::ranges::less{});
 	//按投影值查找
 	const auto it = pool.find(10);
 	//应命中且落在预期对象上
@@ -231,19 +244,23 @@ TEST_F(Object_Pool_Test, 排序模式按投影字段查找)
 	const auto other = pool.find(30);
 	ASSERT_NE(other, pool.end());
 	EXPECT_EQ(other->ID(), first);
+	//剩余的投影值同样可定位到对应对象
+	const auto rest = pool.find(20);
+	ASSERT_NE(rest, pool.end());
+	EXPECT_EQ(rest->ID(), third);
 }
 
 //排序模式：卸载后查找返回超尾
 TEST_F(Object_Pool_Test, 排序模式卸载后不可查找)
 {
 	//默认构造的对象池
-	engine::Object_Pool<Test_Object> pool;
+	engine::Object_Pool<Test_Object> pool(ID_project);
 	//新建三个对象
 	pool.build();
 	const uint64_t second = pool.build();
 	const uint64_t third = pool.build();
 	//以ID为投影字段升序排列
-	pool.sort_order_set(false, [](const Test_Object& object) { return object.ID(); });
+	pool.order_set(std::ranges::less{});
 	//卸载中间对象
 	pool.unload(second);
 	//已卸载对象应查不到
@@ -256,12 +273,12 @@ TEST_F(Object_Pool_Test, 排序模式卸载后不可查找)
 TEST_F(Object_Pool_Test, 排序模式新建后可查找)
 {
 	//默认构造的对象池
-	engine::Object_Pool<Test_Object> pool;
+	engine::Object_Pool<Test_Object> pool(ID_project);
 	//新建两个对象
 	pool.build();
 	pool.build();
 	//以ID为投影字段降序排列
-	pool.sort_order_set(true, [](const Test_Object& object) { return object.ID(); });
+	pool.order_set(std::ranges::greater{});
 	//排序模式下新建一个对象
 	const uint64_t newest = pool.build();
 	//新对象应可查找到
@@ -272,35 +289,34 @@ TEST_F(Object_Pool_Test, 排序模式新建后可查找)
 TEST_F(Object_Pool_Test, 排序重置后原对象可查找)
 {
 	//默认构造的对象池
-	engine::Object_Pool<Test_Object> pool;
+	engine::Object_Pool<Test_Object> pool(ID_project);
 	//新建两个对象
 	const uint64_t first = pool.build();
 	const uint64_t second = pool.build();
 	//以ID为投影字段升序排列
-	pool.sort_order_set(false, [](const Test_Object& object) { return object.ID(); });
+	pool.order_set(std::ranges::less{});
 	//重置排列方式
-	pool.sort_order_reset();
+	pool.order_reset();
 	//两个对象都应可查找到
 	EXPECT_NE(pool.find(first), pool.end());
 	EXPECT_NE(pool.find(second), pool.end());
 }
 
-//排序重置：已卸载对象不会再被写回索引映射
-//修复后语义：sort_order_reset 重建索引映射时改用 valid() 判定记录有效，
-//          卸载只清有效标记的记录不会被误收录。
+//排列方式重置：已卸载对象不会再被写回定位映射
+//order_reset 重建映射时以 valid() 判定记录有效，仅清有效标记的已卸载记录不会被误收录。
 TEST_F(Object_Pool_Test, 重置排序后已卸载对象查不到)
 {
 	//默认构造的对象池
-	engine::Object_Pool<Test_Object> pool;
+	engine::Object_Pool<Test_Object> pool(ID_project);
 	//新建两个对象
 	const uint64_t first = pool.build();
 	pool.build();
 	//以ID为投影字段升序排列
-	pool.sort_order_set(false, [](const Test_Object& object) { return object.ID(); });
+	pool.order_set(std::ranges::less{});
 	//卸载首个对象
 	pool.unload(first);
 	//重置排列方式
-	pool.sort_order_reset();
+	pool.order_reset();
 	//期望：已卸载对象查不到
 	EXPECT_EQ(pool.find(first), pool.end());
 }
@@ -309,22 +325,21 @@ TEST_F(Object_Pool_Test, 重置排序后已卸载对象查不到)
 TEST_F(Object_Pool_Test, 空池设置排序方式)
 {
 	//默认构造的对象池（不含任何对象）
-	engine::Object_Pool<Test_Object> pool;
+	engine::Object_Pool<Test_Object> pool(ID_project);
 	//设置排序方式
-	pool.sort_order_set(false, [](const Test_Object& object) { return object.ID(); });
+	pool.order_set(std::ranges::less{});
 	//记录数量应保持不变
 	EXPECT_TRUE(pool.data().empty());
 }
 
-//对象清除：两个模式下的分支已各归其位，转为正式回归用例
-//修复后语义：clear 的条件为 if (!is_sorted) 清空索引映射，
-//          稳定模式作用于索引映射、排序模式作用于排序定位字段，不再触及未构造成员。
+//对象清除：两个模式下的分支各归其位
+//clear 在稳定模式清空定位映射，在排序模式重置比较方式与有效索引起点。
 
 //对象清除：稳定模式下清空
 TEST_F(Object_Pool_Test, 稳定模式清空对象池)
 {
 	//默认构造的对象池
-	engine::Object_Pool<Test_Object> pool;
+	engine::Object_Pool<Test_Object> pool(ID_project);
 	//新建两个对象
 	pool.build();
 	pool.build();
@@ -338,12 +353,12 @@ TEST_F(Object_Pool_Test, 稳定模式清空对象池)
 TEST_F(Object_Pool_Test, 排序模式清空对象池)
 {
 	//默认构造的对象池
-	engine::Object_Pool<Test_Object> pool;
+	engine::Object_Pool<Test_Object> pool(ID_project);
 	//新建两个对象
 	pool.build();
 	pool.build();
 	//以ID为投影字段升序排列
-	pool.sort_order_set(false, [](const Test_Object& object) { return object.ID(); });
+	pool.order_set(std::ranges::less{});
 	//清空对象池
 	pool.clear();
 	//容器应为空
@@ -354,7 +369,7 @@ TEST_F(Object_Pool_Test, 排序模式清空对象池)
 TEST_F(Object_Pool_Test, 空池卸载不崩溃)
 {
 	//默认构造的空对象池
-	engine::Object_Pool<Test_Object> pool;
+	engine::Object_Pool<Test_Object> pool(ID_project);
 	//卸载一个从未分配过的ID应不抛异常
 	EXPECT_NO_THROW(pool.unload(1));
 	//池内仍应无任何记录
@@ -367,7 +382,7 @@ TEST_F(Object_Pool_Test, 空池卸载不崩溃)
 TEST_F(Object_Pool_Test, 重复装载不产生重复ID)
 {
 	//默认构造的对象池
-	engine::Object_Pool<Test_Object> pool;
+	engine::Object_Pool<Test_Object> pool(ID_project);
 	//用于登记已分配ID
 	std::unordered_set<uint64_t> IDs;
 	//连续新建多个对象
@@ -387,7 +402,7 @@ TEST_F(Object_Pool_Test, 重复装载不产生重复ID)
 TEST_F(Object_Pool_Test, 大批量装载卸载后计数正确)
 {
 	//默认构造的对象池
-	engine::Object_Pool<Test_Object> pool;
+	engine::Object_Pool<Test_Object> pool(ID_project);
 	//记录全部ID
 	std::vector<uint64_t> IDs;
 	//批量新建
@@ -417,7 +432,7 @@ TEST_F(Object_Pool_Test, 大批量装载卸载后计数正确)
 TEST_F(Object_Pool_Test, 卸载全部后再装载)
 {
 	//默认构造的对象池
-	engine::Object_Pool<Test_Object> pool;
+	engine::Object_Pool<Test_Object> pool(ID_project);
 	//新建三个对象
 	std::vector<uint64_t> IDs;
 	for (int i = 0; i < 3; i++)
@@ -440,7 +455,7 @@ TEST_F(Object_Pool_Test, 卸载全部后再装载)
 TEST_F(Object_Pool_Test, 非法ID查询返回超尾)
 {
 	//默认构造的对象池
-	engine::Object_Pool<Test_Object> pool;
+	engine::Object_Pool<Test_Object> pool(ID_project);
 	//新建一个对象
 	pool.build();
 	//为非法实体预留的零号ID应查不到
@@ -453,7 +468,7 @@ TEST_F(Object_Pool_Test, 非法ID查询返回超尾)
 TEST_F(Object_Pool_Test, 查询已卸载对象返回超尾)
 {
 	//默认构造的对象池
-	engine::Object_Pool<Test_Object> pool;
+	engine::Object_Pool<Test_Object> pool(ID_project);
 	//新建两个对象
 	const uint64_t first = pool.build();
 	const uint64_t second = pool.build();
@@ -469,7 +484,7 @@ TEST_F(Object_Pool_Test, 查询已卸载对象返回超尾)
 TEST_F(Object_Pool_Test, 边界ID查询与卸载不崩溃)
 {
 	//默认构造的对象池
-	engine::Object_Pool<Test_Object> pool;
+	engine::Object_Pool<Test_Object> pool(ID_project);
 	//新建一个对象
 	pool.build();
 	//零号边界ID应查不到
@@ -488,7 +503,7 @@ TEST_F(Object_Pool_Test, 边界ID查询与卸载不崩溃)
 TEST_F(Object_Pool_Test, 容量上限附近批量装载均可见)
 {
 	//默认构造的对象池
-	engine::Object_Pool<Test_Object> pool;
+	engine::Object_Pool<Test_Object> pool(ID_project);
 	//一次规模较大的批量新建
 	const int count = 1024;
 	//记录全部ID
@@ -508,7 +523,7 @@ TEST_F(Object_Pool_Test, 容量上限附近批量装载均可见)
 TEST_F(Object_Pool_Test, 多次装载卸载后ID复用)
 {
 	//默认构造的对象池
-	engine::Object_Pool<Test_Object> pool;
+	engine::Object_Pool<Test_Object> pool(ID_project);
 	//新建三个对象
 	const uint64_t first = pool.build();
 	const uint64_t second = pool.build();
@@ -532,7 +547,7 @@ TEST_F(Object_Pool_Test, 装满对象后析构不崩溃)
 	//内层作用域用于触发生命周期结束时的析构
 	{
 		//默认构造的对象池
-		engine::Object_Pool<Test_Object> pool;
+		engine::Object_Pool<Test_Object> pool(ID_project);
 		//装满大量对象
 		for (int i = 0; i < 256; i++)
 			pool.build();
@@ -541,4 +556,84 @@ TEST_F(Object_Pool_Test, 装满对象后析构不崩溃)
 	}
 	//能执行到此说明析构过程未崩溃
 	SUCCEED();
+}
+
+//定位字段：非整数键可用（字符串投影字段）
+TEST_F(Object_Pool_Test, 字符串定位字段可用)
+{
+	//以字符串字段定位的对象池
+	engine::Object_Pool<Tagged_Object, std::string> pool(
+		[](const Tagged_Object& object) { return object.tag; });
+	//新建两个对象
+	pool.build();
+	pool.build();
+	//直接写入互不相同的定位字段
+	pool.data()[0].tag = "alpha";
+	pool.data()[1].tag = "beta";
+	//切换为排序模式后按定位字段检索
+	pool.order_set(std::ranges::less{});
+	//按定位字段查找
+	const auto it = pool.find(std::string("beta"));
+	//应命中且落在预期对象上
+	ASSERT_NE(it, pool.end());
+	EXPECT_EQ(it->tag, "beta");
+	//未登记的字符串应查不到
+	EXPECT_EQ(pool.find(std::string("gamma")), pool.end());
+}
+
+//对象清除：清空后ID分配起点恢复
+TEST_F(Object_Pool_Test, 清空后ID起点恢复)
+{
+	//默认构造的对象池
+	engine::Object_Pool<Test_Object> pool(ID_project);
+	//新建三个对象使ID游标前进
+	pool.build();
+	pool.build();
+	pool.build();
+	//清空对象池
+	pool.clear();
+	//清空后首个新建对象的ID应回到起点 1
+	const uint64_t ID = pool.build();
+	EXPECT_EQ(ID, 1u);
+	//容器中只应保留新建的一个对象
+	EXPECT_EQ(pool.data().size(), 1u);
+}
+
+//排列方式重置：稳定模式下调用的无副作用
+TEST_F(Object_Pool_Test, 稳定模式重置排列方式无副作用)
+{
+	//默认构造的对象池
+	engine::Object_Pool<Test_Object> pool(ID_project);
+	//新建两个对象
+	const uint64_t first = pool.build();
+	const uint64_t second = pool.build();
+	//稳定模式下重置排列方式
+	pool.order_reset();
+	//两个对象仍可按ID查找到
+	EXPECT_NE(pool.find(first), pool.end());
+	EXPECT_NE(pool.find(second), pool.end());
+}
+
+//排序模式：卸载后新建的对象仍可查找
+TEST_F(Object_Pool_Test, 排序模式卸载后新建可查找)
+{
+	//默认构造的对象池
+	engine::Object_Pool<Test_Object> pool(ID_project);
+	//新建三个对象
+	const uint64_t first = pool.build();
+	const uint64_t second = pool.build();
+	const uint64_t third = pool.build();
+	//以ID为投影字段升序排列
+	pool.order_set(std::ranges::less{});
+	//卸载中间对象
+	pool.unload(second);
+	//排序模式下新建一个对象（复用被回收的下标）
+	const uint64_t newest = pool.build();
+	//新对象应可查找到
+	EXPECT_NE(pool.find(newest), pool.end());
+	//其余存活对象仍可查找到
+	EXPECT_NE(pool.find(first), pool.end());
+	EXPECT_NE(pool.find(third), pool.end());
+	//卸载只清有效标记，新建复用被回收下标，容器规模不变
+	EXPECT_EQ(pool.data().size(), 3u);
 }
