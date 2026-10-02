@@ -56,6 +56,20 @@ namespace engine
 		Vector3 displacement_vector{ 0.0f,0.0f,0.0f };
 		//位移作废标记（碰撞响应判定为停止运动时置位，作废期间不再施加位移）
 		bool displacement_invalid = false;
+		/*
+		位移作用频率
+		逻辑帧率的因数，表示一个逻辑帧周期内位移生效的次数；
+		为零表示未配置，此时每次检测都按旧行为施加全量位移。
+		*/
+		uint64_t displacement_frequency = 0;
+		//位移上次生效的逻辑帧序号
+		uint64_t displacement_frame = 0;
+		/*
+		本帧实际施加的位移
+		生效帧为「位移向量 ÷ 作用频率」，非生效帧为零向量；
+		未配置频率时即等于位移向量本身。
+		*/
+		Vector3 displacement_step{ 0.0f,0.0f,0.0f };
 		//检测方式
 		Detection_Mode detection_mode;
 		//豁免标记
@@ -92,6 +106,9 @@ namespace engine
 			compound = std::move(other.compound);
 			displacement_vector = other.displacement_vector;
 			displacement_invalid = other.displacement_invalid;
+			displacement_frequency = other.displacement_frequency;
+			displacement_frame = other.displacement_frame;
+			displacement_step = other.displacement_step;
 			detection_mode = other.detection_mode;
 			exemption_flag = other.exemption_flag;
 			geometry = std::move(other.geometry);
@@ -116,6 +133,9 @@ namespace engine
 			compound = std::move(other.compound);
 			displacement_vector = other.displacement_vector;
 			displacement_invalid = other.displacement_invalid;
+			displacement_frequency = other.displacement_frequency;
+			displacement_frame = other.displacement_frame;
+			displacement_step = other.displacement_step;
 			detection_mode = other.detection_mode;
 			exemption_flag = other.exemption_flag;
 			geometry = std::move(other.geometry);

@@ -128,6 +128,8 @@ namespace engine
 		bool collider_displacement_void(uint64_t collider_ID);
 		//碰撞体位移改写(碰撞响应判定为继续运动且位移变化)
 		bool collider_displacement_replace(uint64_t collider_ID, const Vector3& displacement);
+		//碰撞体位移频率设置(作用频率与生效计时随碰撞体保存于本空间，登记时重新起算生效计时)
+		bool collider_frequency_set(uint64_t collider_ID, uint64_t frequency);
 
 		//执行碰撞检测
 		std::optional<std::vector<Collision_Result>> detect(void);

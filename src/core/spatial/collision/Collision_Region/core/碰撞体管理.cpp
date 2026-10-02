@@ -5,6 +5,8 @@
 #include "src/tools/Logging/日志系统.h"
 //获取网格加载器
 #include "src/tools/Mesh_Loader/网格加载器.h"
+//获取引擎环境(逻辑帧计数)
+#include "src/tools/Engine_Env/引擎环境.h"
 
 namespace engine
 {
@@ -232,6 +234,27 @@ namespace engine
 		target->displacement_vector = displacement;
 		//解除位移作废(改写后继续运动)
 		target->displacement_invalid = false;
+		return true;
+	}
+
+	//碰撞体位移频率设置(作用频率与生效计时随碰撞体保存于本空间，登记时重新起算生效计时)
+	bool Collision_Region::collider_frequency_set(uint64_t collider_ID, uint64_t frequency)
+	{
+		//查找目标碰撞体
+		Collider* target = collider_seek(collider_ID);
+		//若目标碰撞体不存在
+		if (!target)
+		{
+			Log::warn("Collision_Region::待设置位移频率的碰撞体({})不存在", collider_ID);
+			return false;
+		}
+
+		//写入位移作用频率
+		target->displacement_frequency = frequency;
+		//生效计时重新起算(新配置须等待一个完整帧间隔后才生效)
+		target->displacement_frame = Engine_Env::frame_count_get();
+		//清零本帧施加位移
+		target->displacement_step.setValue(0.0f, 0.0f, 0.0f);
 		return true;
 	}
 
