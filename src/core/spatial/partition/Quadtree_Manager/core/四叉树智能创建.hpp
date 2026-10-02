@@ -6,9 +6,9 @@ namespace engine
 {
     //四叉树智能创建——计算初始包围矩形及最大区块划分参数
     template<typename T>
-    void Quadtree_Manager<T>::prepare_smart_create_params(const std::vector<Point2i>& coord_set,
-        Rect2l& recta_range, int64_t& father_block_num_all,
-        int64_t& father_block_size) const
+    void Quadtree_Manager<T>::prepare_smart_create_params(const std::vector<Point2l>& coord_set,
+        Rect2l& recta_range, uint64_t& father_block_num_all,
+        uint64_t& father_block_size) const
     {
         //初始化包围矩形
         recta_range.left = coord_set.front().X;
@@ -34,60 +34,70 @@ namespace engine
         }
 
         //确定最大区块边长（位移量）
-        //边长上限已达 64 位，故此处按 64 位整数接收
+        //边长上限已是 64 位无符号整数，此处按同类型接收
         //此前按 32 位整数接收时，超过 INT_MAX 的上限会被截断为零
         //随后的取模与除法即抛整数除零异常
-        father_block_size = static_cast<int64_t>(settings.max_tree_size);
+        father_block_size = settings.max_tree_size;
         //最大区块边长非正防御
         //边长非正时无法划分区块，以零区块数返回交由调用方处理
-        if (father_block_size <= 0)
+        //边长已为无符号类型，仅需拦截零值
+        if (father_block_size == 0)
         {
             father_block_num_all = 0;
             return;
         }
 
         //计算矩形宽度
-        int64_t width = (recta_range.right - recta_range.left + 1);
+        uint64_t width = static_cast<uint64_t>(recta_range.right - recta_range.left + 1);
         //若边界未对齐则补齐边界
         if (width % father_block_size != 0)
         {
-            recta_range.right += father_block_size - (width % father_block_size);
+            recta_range.right += static_cast<int64_t>(father_block_size - (width % father_block_size));
             width += father_block_size - (width % father_block_size);
         }
         //计算矩形包含最大区块数目（X轴）
-        int64_t father_block_num_X = width / father_block_size;
+        uint64_t father_block_num_X = width / father_block_size;
 
         //计算矩形高度
-        int64_t height = (recta_range.up - recta_range.down + 1);
+        uint64_t height = static_cast<uint64_t>(recta_range.up - recta_range.down + 1);
         //若边界未对齐则补齐边界
         if (height % father_block_size != 0)
         {
-            recta_range.up += father_block_size - (height % father_block_size);
+            recta_range.up += static_cast<int64_t>(father_block_size - (height % father_block_size));
             height += father_block_size - (height % father_block_size);
         }
         // 计算矩形包含最大区块数目（Y轴）
-        int64_t father_block_num_Y = height / father_block_size;
+        uint64_t father_block_num_Y = height / father_block_size;
 
         // 更新总最大区块个数
+        //两方向块数均为 64 位无符号，理论上界为「坐标范围宽高 / 边长平方」
+        //在坐标不超出 int64_t 表示范围时不会触及 64 位上限
+        //此处仍显式拦截回绕，避免异常输入下块数静默归零
+        if (father_block_num_X != 0 &&
+            father_block_num_Y > (std::numeric_limits<uint64_t>::max)() / father_block_num_X)
+        {
+            father_block_num_all = 0;
+            return;
+        }
         father_block_num_all = father_block_num_X * father_block_num_Y;
     }
 
     //四叉树智能创建——单个最大区块的深度划分（递归复制子集版，保持原接口）
     template<typename T>
-    void Quadtree_Manager<T>::divide_single_father_block(const std::vector<Point2i>& coord_set,
+    void Quadtree_Manager<T>::divide_single_father_block(const std::vector<Point2l>& coord_set,
         int64_t block_left, int64_t block_right, int64_t block_up, int64_t block_down,
-        int64_t block_size, int64_t coord_count_in_parent,
+        uint64_t block_size, uint64_t coord_count_in_parent,
         std::vector<Point2d>& node_centers,
         std::vector<uint64_t>& tree_sizes) const
     {
         // 辅助：判断点是否在当前区块内
-        auto in_block = [&](const Point2i& p) -> bool {
+        auto in_block = [&](const Point2l& p) -> bool {
             return p.X >= block_left && p.X <= block_right &&
                 p.Y >= block_down && p.Y <= block_up;
             };
 
         // 收集当前区块内的所有点（复制子集）
-        std::vector<Point2i> local_points;
+        std::vector<Point2l> local_points;
         for (const auto& p : coord_set)
             if (in_block(p))
                 local_points.push_back(p);
@@ -132,7 +142,7 @@ namespace engine
         }
 
         // 中心聚集 -> 尝试细分
-        int64_t half = block_size / 2;
+        int64_t half = static_cast<int64_t>(block_size / 2);
         // 四个子区块边界
         struct Sub_Rect { int64_t l, r, d, u; };
         Sub_Rect subs[4] = {
@@ -143,7 +153,7 @@ namespace engine
         };
 
         // 将 local_points 分配到四个子区块
-        std::vector<Point2i> sub_points[4];
+        std::vector<Point2l> sub_points[4];
         for (const auto& p : local_points)
         {
             if (p.X <= block_left + half - 1)   // 左半
@@ -180,7 +190,7 @@ namespace engine
             const auto& sub = subs[target];
             divide_single_father_block(sub_points[target],
                 sub.l, sub.r, sub.u, sub.d,   // 注意顺序：l,r,u,d
-                half, static_cast<int64_t>(sub_points[target].size()),
+                half, static_cast<uint64_t>(sub_points[target].size()),
                 node_centers, tree_sizes);
         }
         else
@@ -195,7 +205,7 @@ namespace engine
 
     //四叉树智能创建主函数
     template<typename T>
-    void Quadtree_Manager<T>::quadtree_build_smart(const std::vector<Point2i>& coord_set)
+    void Quadtree_Manager<T>::quadtree_build_smart(const std::vector<Point2l>& coord_set)
     {
         // 智能创建逻辑：
         // 先用一个初始矩形包裹住所有坐标点
@@ -219,38 +229,38 @@ namespace engine
             //范围边界与区块边长均按 64 位整数承载
             Rect2l recta_range{};
             //最大区块数量
-            int64_t max_block_num_total = 0;
+            uint64_t max_block_num_total = 0;
             //最大区块边长
-            int64_t max_block_size = 0;
+            uint64_t max_block_size = 0;
             //计算矩形范围和最大区块参数
             prepare_smart_create_params(coord_set, recta_range, max_block_num_total, max_block_size);
 
             //最大区块参数非法防御
             //无法划分出任何区块时直接结束创建
-            if (max_block_num_total <= 0 || max_block_size <= 0)
+            //两者均为无符号类型，仅需拦截零值
+            if (max_block_num_total == 0 || max_block_size == 0)
                 return;
 
             // —————————— 第二步：遍历点集划分可递归区块 ——————————
 
             //各区块内坐标个数记录
-            std::vector<int64_t> father_block_coord_count(max_block_num_total, 0);
+            std::vector<uint64_t> father_block_coord_count(max_block_num_total, 0);
 
-            //访问索引记录
-            int64_t index = 0;
             //中转坐标存储
-            Point2i middle_store{};
+            Point2l middle_store{};
             //水平竖直方向包含区块数目计算
-            int64_t father_block_num_X = (recta_range.right - recta_range.left + 1) / max_block_size;
+            uint64_t father_block_num_X =
+                static_cast<uint64_t>(recta_range.right - recta_range.left + 1) / max_block_size;
 
             //统计各区块包含坐标数
             for (int time = 0; time < coord_set.size(); time++)
             {
                 //计算当前点所在列号（水平方向第几块）
-                int64_t col_index = (coord_set[time].X - recta_range.left) / max_block_size;
+                uint64_t col_index = static_cast<uint64_t>(coord_set[time].X - recta_range.left) / max_block_size;
                 //计算当前点所在行号（垂直方向从上往下第几块）
-                int64_t row_index = (recta_range.up - coord_set[time].Y) / max_block_size;
+                uint64_t row_index = static_cast<uint64_t>(recta_range.up - coord_set[time].Y) / max_block_size;
                 //合成一维区块索引
-                int64_t index = row_index * father_block_num_X + col_index;
+                uint64_t index = row_index * father_block_num_X + col_index;
 
                 //增加相关区块计数器
                 father_block_coord_count[index]++;
@@ -272,25 +282,25 @@ namespace engine
             std::vector<uint64_t> tree_size{};
 
             //寻找可划分区块
-            for (int64_t find_index = 0; find_index < max_block_num_total; find_index++)
+            for (uint64_t find_index = 0; find_index < max_block_num_total; find_index++)
             {
                 // 重置区块边界（修正为闭区间）
                 left = recta_range.left;
-                right = left + max_block_size - 1;   // 修正：减1
+                right = left + static_cast<int64_t>(max_block_size) - 1;   // 修正：减1
                 up = recta_range.up;
-                down = up - max_block_size + 1;      // 修正：加1
+                down = up - static_cast<int64_t>(max_block_size) + 1;      // 修正：加1
 
                 //对符合条件的区块进行划分
                 if (father_block_coord_count[find_index] != 0)
                 {
                     //计算区块左边界
-                    left += (find_index % father_block_num_X) * max_block_size;
+                    left += static_cast<int64_t>((find_index % father_block_num_X) * max_block_size);
                     //计算区块右边界（闭区间）
-                    right = left + max_block_size - 1;   // 修正：减1
+                    right = left + static_cast<int64_t>(max_block_size) - 1;   // 修正：减1
                     //计算区块上边界
-                    up -= (find_index / father_block_num_X) * max_block_size;
+                    up -= static_cast<int64_t>((find_index / father_block_num_X) * max_block_size);
                     //计算区块下边界（闭区间）
-                    down = up - max_block_size + 1;      // 修正：加1
+                    down = up - static_cast<int64_t>(max_block_size) + 1;      // 修正：加1
 
                     //调用区块划分函数
                     divide_single_father_block(coord_set, left, right, up, down,
@@ -311,7 +321,7 @@ namespace engine
             //检查点集坐标是否有四叉树覆盖
             for (int exam_time = 0; exam_time < coord_set.size(); exam_time++)
             {
-                //待检查坐标提升为 64 位整数精度
+                //待检查坐标（对外接口已统一为 64 位整数精度）
                 Point2l exam_coord{ coord_set[exam_time].X, coord_set[exam_time].Y };
                 //若点集坐标尚未被四叉树覆盖
                 //则调用扩大管理函数

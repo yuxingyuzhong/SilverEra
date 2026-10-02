@@ -134,10 +134,30 @@ namespace engine
 			//返回拼接路径
 			return exe_dir_get() / u8_path;
 		}
+		//逻辑帧率设置
+		static void logic_frames_set(const uint64_t& frame_rate)
+		{
+			//加阻塞锁避免外界读/写旧数据
+			std::lock_guard<std::mutex> lock(frame_mtx);
+			//修改逻辑帧率数值
+			logic_frames = frame_rate;
+		}
+		//逻辑帧率读取
+		static uint64_t logic_frames_get(void) 
+		{
+			//加阻塞锁避免外界读/写旧数据
+			std::lock_guard<std::mutex> lock(frame_mtx);
+			//修改逻辑帧率数值
+			return logic_frames;
+		}
 	private:
 		//可执行文件路径
 		inline static std::filesystem::path exe_path{};
 		//可执行文件目录
 		inline static std::filesystem::path exe_dir{};
+		//逻辑帧率
+		inline static uint64_t logic_frames = 0;
+		//逻辑帧率互斥锁
+		inline static std::mutex frame_mtx;
 	};
 }

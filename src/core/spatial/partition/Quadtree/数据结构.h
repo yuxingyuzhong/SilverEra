@@ -47,6 +47,7 @@ namespace engine
 		~Tree_Chunk_Data() {}
 
 		Point2d node = { 0.5f, 0.5f };  // 使用 0.5f 强调 float 类型
+		//数据
 		std::shared_ptr<T> ptr_data = nullptr;
 	};
 }

@@ -6,7 +6,7 @@ namespace engine
 {
 	//单点查询可行性分析
 	template <typename T>
-	Quadtree<T>::Analysis_Result Quadtree<T>::seekable_analyse(const Point2l& target)
+	Quadtree<T>::Analysis_Result Quadtree<T>::seekable_analyse(const Point2l& target, bool read_only)
 	{
 		//简化表示路径
 		auto& root = state.root;
@@ -20,6 +20,10 @@ namespace engine
 		if (target.X < tree_range.left || target.X > tree_range.right
 			|| target.Y > tree_range.up || target.Y < tree_range.down)
 		{
+			//若当前为只读查找模式则查找不可行
+			if (read_only)
+				return Analysis_Result::INFEASIBLE;
+
 			//若当前四叉树大小以及大于等于上限大小则查找不可行
 			if (state.size >= state.max_size)
 			{
@@ -67,7 +71,7 @@ namespace engine
 
 	//范围查询可行性分析
 	template <typename T>
-	void Quadtree<T>::seekable_analyse(const Rect2l& format_range, Rect2l& seekable_range)
+	void Quadtree<T>::seekable_analyse(const Rect2l& format_range, Rect2l& seekable_range, bool read_only)
 	{
 		for (;;)
 		{
@@ -76,9 +80,9 @@ namespace engine
 			//获取是否扩大标记
 			Point2d expand_register = seekable_range_calcu(format_range, seekable_range);
 
-			//若返回坐标非树根节点坐标
+			//若返回坐标非树根节点坐标且非只读查询模式
 			//则进行扩大(若存在管理层则进行申请)
-			if (expand_register != state.root)
+			if (expand_register != state.root && !read_only)
 			{
 				//若存在回调则进行扩大申请
 				if (callback)
@@ -114,59 +118,199 @@ namespace engine
 		}
 	}
 
-	//递归栈操作
+	//区块构建 —— 单区块重载(可直接挂载数据)
 	template <typename T>
-	void Quadtree<T>::recur_stack_operate(std::vector<Recur_Record>& recur_stack,
-		Node*& ptr, Rect2l& range, int& level,
-		bool push_back) const
+	void Quadtree<T>::build(const Point2l& target, const std::shared_ptr<T>& data)
 	{
-		//若为弹栈操作
-		if (push_back == true)
-			recur_stack.push_back({ ptr,range ,level });
-		//若为压栈操作
+		//参数填充临时对象
+		std::shared_ptr<Tree_Chunk_Data<T>> temp;
+		//启动节点创建模式
+		node_operate(target,Operate_Mode::Build,temp,data);
+	}
+
+	//区块构建 —— 范围重载(不可直接挂载数据)
+	template <typename T>
+	void Quadtree<T>::build(const Rect2l& target_range)
+	{
+		//参数填充临时对象
+		std::vector<std::shared_ptr<Tree_Chunk_Data<T>>> temp;
+		//启动节点创建模式
+		node_operate(target_range,Operate_Mode::Build,temp);
+	}
+
+	//区块查找 —— 单区块重载
+	template <typename T>
+	void Quadtree<T>::seek(const Point2l& target, std::shared_ptr<Tree_Chunk_Data<T>>& receiver)
+	{
+		//启动节点查找模式
+		node_operate(target, Operate_Mode::Seek,receiver);
+	}
+
+	//区块查找 —— 范围重载
+	template <typename T>
+	void Quadtree<T>::seek(const Rect2l& target_range,
+		std::vector<std::shared_ptr<Tree_Chunk_Data<T>>>& receiver)
+	{
+		//启动节点查找模式
+		node_operate(target_range, Operate_Mode::Seek,receiver);
+	}
+
+	//区块获取 —— 单区块重载
+	template <typename T>
+	void Quadtree<T>::get(const Point2l& target, std::shared_ptr<Tree_Chunk_Data<T>>& receiver)
+	{
+		//启动节点创建模式
+		node_operate(target, Operate_Mode::Get, receiver);
+	}
+
+	//区块获取 —— 范围重载
+	template <typename T>
+	void Quadtree<T>::get(const Rect2l& target_range,
+		std::vector<std::shared_ptr<Tree_Chunk_Data<T>>>& receiver)
+	{
+		//启动节点查找模式
+		node_operate(target_range, Operate_Mode::Get, receiver);
+	}
+
+	//区块卸载 —— 单区块重载
+	template <typename T>
+	void Quadtree<T>::unload(const Point2l& target)
+	{
+		//参数填充临时对象
+		std::shared_ptr<Tree_Chunk_Data<T>> temp;
+		//启动节点卸载模式
+		node_operate(target, Operate_Mode::Unload,temp);
+	}
+
+	//区块卸载 —— 范围重载
+	template <typename T>
+	void Quadtree<T>::unload(const Rect2l& target_range)
+	{
+		//参数填充临时对象
+		std::vector<std::shared_ptr<Tree_Chunk_Data<T>>> temp;
+		//启动节点卸载模式
+		node_operate(target_range, Operate_Mode::Unload,temp);
+	}
+
+	//叶子收集
+	template <typename T>
+	void Quadtree<T>::leaf_collect(const Rect2l& target_range, const Rect2l& parent_range, Operate_Mode mode,
+		int now_level, const int& max_level, Node* parent_node,
+		std::vector<std::shared_ptr<Tree_Chunk_Data<T>>>& receiver)
+	{
+		//默认非只读操作
+		bool read_only = false;
+		//若当前为区块查找/卸载模式
+		if (mode == Operate_Mode::Seek || mode == Operate_Mode::Unload)
+			read_only = true;
+
+		//子节点指针存储
+		Node* child_node = parent_node;
+		//子节点范围存储
+		Rect2l child_range{};
+
+		//若当前为最后一级递归
+		if (now_level == max_level)
+		{
+			//一次性取出当前节点下辖所有待取出叶子节点
+			for (int recur_direct = Recur_Direct::NW; recur_direct <= Recur_Direct::SE; recur_direct++)
+			{
+				//计算子节点范围
+				child_node_range_calcu(recur_direct, child_range, parent_range);
+
+				//若当前叶子节点未在可查询范围内则略过
+				if (!range_relation_get(target_range, child_range))
+					continue;
+
+				//若为区块卸载模式
+				if (mode == Operate_Mode::Unload)
+				{
+					//获取待卸载叶子节点
+					Node* leaf_node = std::get<0>(parent_node->data)[recur_direct];
+					//释放叶子节点持有的区块数据
+					std::get<1>(leaf_node->data).reset();
+					continue;
+				}
+				//若为其余模式
+				else 
+				{
+					//重置子节点指针
+					child_node = parent_node;
+					//递归子节点
+					//若递归失败则查找下一节点
+					if (!child_node_recur(child_node, recur_direct, Node_Type::LEAF, read_only))
+						continue;
+
+					//若为区块查找/获取模式
+					if(mode == Operate_Mode::Seek || mode == Operate_Mode::Get)
+					{
+						//记录查询结果
+						//区块中心坐标由 64 位范围求得
+						//先以双精度求中点再落单精度，尽量减少精度损失
+						//结果对象与叶子区块数据共享所有权
+						std::shared_ptr<Tree_Chunk_Data<T>> new_data(new(std::nothrow) Tree_Chunk_Data<T>
+							(static_cast<float>((child_range.left + child_range.right) / 2.0),
+								static_cast<float>((child_range.up + child_range.down) / 2.0),
+								std::get<1>(child_node->data)));
+						//若内存分配失败则直接返回
+						if (new_data == nullptr)
+							return;
+						//记录查询结果
+						receiver.push_back(new_data);
+					}
+				}
+			}
+		}
+		//若当前非最后一级递归
 		else
 		{
-			//简化表示路径
-			auto& record = recur_stack.back();
-			//获取记录指针
-			ptr = record.node;
-			//获取记录范围
-			range = record.node_range;
-			//获取记录递归级数
-			level = record.recur_level;
-			//弹出栈顶记录
-			recur_stack.pop_back();
+			//寻找可查找子节点
+			for (int now_direct = Recur_Direct::NW; now_direct <= Recur_Direct::SE; now_direct++)
+			{
+				//重置子节点指针
+				child_node = parent_node;
+				//计算子节点管理范围
+				child_node_range_calcu(now_direct, child_range, parent_range);
+				//若子节点包含待查找范围
+				//无论全包含或者部分包含
+				if (range_relation_get(target_range, child_range))
+				{
+					//若子节点递归失败则放弃该方向递归
+					if (!child_node_recur(child_node, now_direct, Node_Type::MIDDLE, read_only))
+						continue;
+					//若子节点递归成功则进入下一级递归函数
+					else
+						leaf_collect(target_range, child_range, mode,
+							now_level + 1, max_level, child_node, receiver);
+				}
+			}
 		}
 	}
 
-	//最小区块单元查找
-	//结果对象的 ptr_data 与命中叶子持有的 shared_ptr<T> 共享同一 T 对象
-	//故调用方可解引用修改叶子数据，但无法改变叶子 shared_ptr 的指向
+	//节点操作 —— 单区块重载
 	template <typename T>
-	void Quadtree<T>::block_seek(std::shared_ptr<Tree_Chunk_Data<T>>& receiver, const Point2l& target,
-		bool stable)
+	void Quadtree<T>::node_operate(const Point2l& target, Operate_Mode mode,
+		std::shared_ptr<Tree_Chunk_Data<T>>& receiver,
+		const std::shared_ptr<T>& data)
 	{
-		//防御：边长不大于区块单元的退化树没有可寻址叶子
-		//管理器建树入口已拦截此类树，此处仅防裸用 Quadtree 时的非法状态
-		//防御置于分析之前：退化树经扩大分析会产生半初始化结构
-		if (state.size <= state.block_size)
-			return;
+		//默认非只读操作
+		bool read_only = false;
+		//若当前为区块查找/卸载模式
+		if (mode == Operate_Mode::Seek ||mode == Operate_Mode::Unload)
+			read_only = true;
 
-		//四叉树上限上限临时存储
-		uint64_t max_size = state.max_size;
 		//最大检测次数存储
-		int exam_time_max = 1;
+		int check_time_max = 1;
 		//计算最大检测次数
-		for (; (max_size /= 2) / state.size > 1;)
-			exam_time_max++;
-
+		for (uint64_t max_size = state.max_size; (max_size /= 2) / state.size > 1;)
+			check_time_max++;
 		//循环检测查找是否可行
 		//循环次数保证理想情况下四叉树可扩大到最大
 		//额外次数保证可能存在的管理层知晓查询失败信息
-		for (int check_time = 0; check_time < exam_time_max; check_time++)
+		for (int check_time = 0; check_time < check_time_max; check_time++)
 		{
 			//获取下一步分析方案
-			Analysis_Result next_step = seekable_analyse(target);
+			Analysis_Result next_step = seekable_analyse(target, read_only);
 			//若查找可行则直接结束检测
 			if (next_step == Analysis_Result::FEASIBLE)
 				break;
@@ -201,10 +345,32 @@ namespace engine
 			//递归子节点
 			//若当前不为最后一级则创建中间节点
 			if (recur_level_now < recur_level_max - 1)
-				child_node_recur(child_node, recur_direct, MIDDLE, stable);
+				child_node_recur(child_node, recur_direct, Node_Type::MIDDLE, read_only);
 			//若当前为最后一级递归则创建叶子节点
-			else if (recur_level_now == recur_level_max - 1)
-				child_node_recur(child_node, recur_direct, LEAF, stable);
+			else
+			{
+				//若为区块构建模式
+				if (mode == Operate_Mode::Build)
+				{
+					//获取当前节点子节点指针列表
+					std::array<Node*, 4>& child_list = std::get<0>(child_node->data);
+					//挂载外部数据
+					child_list[recur_direct] = new(std::nothrow) Node(Node_Type::LEAF, data);
+					return;
+				}
+				//若为区块卸载模式
+				else if (mode == Operate_Mode::Unload)
+				{
+					//获取待卸载叶子节点
+					Node* leaf_node = std::get<0>(child_node->data)[recur_direct];
+					//释放叶子节点持有的区块数据
+					std::get<1>(leaf_node->data).reset();
+					return;
+				}
+				//若为区块查找/获取模式
+				else
+					child_node_recur(child_node, recur_direct, Node_Type::LEAF, read_only);
+			}
 
 			//若内存分配失败则直接返回
 			if (child_node == nullptr)
@@ -216,31 +382,35 @@ namespace engine
 			child_node_range_calcu(recur_direct, node_range, old_range);
 		}
 
-		//若接收器为空则分配结果对象
-		if (receiver == nullptr)
-			receiver = std::shared_ptr<Tree_Chunk_Data<T>>(new(std::nothrow) Tree_Chunk_Data<T>);
-		//若内存分配失败则返回
-		if (receiver == nullptr)
-			return;
+		//若为区块查找/获取模式
+		if (mode == Operate_Mode::Seek || mode == Operate_Mode::Get)
+		{
+			//若接收器为空则分配结果对象
+			if (receiver == nullptr)
+				receiver.reset(new(std::nothrow) Tree_Chunk_Data<T>);
+			//若内存分配失败则返回
+			if (receiver == nullptr)
+				return;
 
-		//记录查询结果
-		//结果对象与叶子区块数据共享所有权
-		receiver->ptr_data = std::get<1>(child_node->data);
-		//范围边界为 64 位整数，故以双精度求中点避免精度损失
-		receiver->node.X = static_cast<double>(node_range.left + node_range.right) / 2.0;
-		receiver->node.Y = static_cast<double>(node_range.down + node_range.up) / 2.0;
+			//记录查询结果
+			//结果对象与叶子区块数据共享所有权
+			receiver->ptr_data = std::get<1>(child_node->data);
+			//范围边界为 64 位整数，故以双精度求中点避免精度损失
+			receiver->node.X = static_cast<double>(node_range.left + node_range.right) / 2.0;
+			receiver->node.Y = static_cast<double>(node_range.down + node_range.up) / 2.0;
+		}
 	}
 
-	//范围区块单元查找
+	//节点操作 —— 范围区块重载
 	template <typename T>
-	void Quadtree<T>::range_seek(std::vector<std::shared_ptr<Tree_Chunk_Data<T>>>& receiver,
-		const Rect2l& target_range, bool stable)
+	void Quadtree<T>::node_operate(const Rect2l& target_range, Operate_Mode mode,
+		std::vector<std::shared_ptr<Tree_Chunk_Data<T>>>& receiver)
 	{
-		//防御：边长不大于区块单元的退化树没有可寻址叶子
-		//管理器建树入口已拦截此类树，此处仅防裸用 Quadtree 时的非法状态
-		//防御置于分析之前：退化树经扩大分析会产生半初始化结构
-		if (state.size <= state.block_size)
-			return;
+		//默认非只读操作
+		bool read_only = false;
+		//若当前为区块查找/卸载模式
+		if (mode == Operate_Mode::Seek || mode == Operate_Mode::Unload)
+			read_only = true;
 
 		//可查询范围存储
 		Rect2l seekable_range{};
@@ -249,157 +419,21 @@ namespace engine
 		//格式化待查询范围
 		target_range_format(format_range, state.root, state.block_size);
 		//分析获得可查询范围
-		seekable_analyse(format_range, seekable_range);
+		seekable_analyse(format_range, seekable_range, read_only);
 
 		//根节点寻址总级数声明
 		int recur_level_max = 0;
 		//寻址总级数计算
 		recur_level_calcu(recur_level_max);
-
-		//矢量模拟堆栈
-		std::vector<Recur_Record> stack{};
-		//递归路径存储
-		std::vector<int> recur_path(recur_level_max, NW);
-
 		//父节点指针存储
 		Node* parent_node = &root;
 		//父节点管理范围存储
 		Rect2l parent_range{};
 		//父节点初始化为四叉树管理范围
 		manage_range_calcu(parent_range, state.root, state.size);
-		//子节点管理范围存储
-		Rect2l child_range{};
 
-		//递归查找子区块
-		for (int recur_level_now = 0; recur_level_now < recur_level_max;)
-		{
-			//简化表示路径
-			auto& recur_direct = recur_path[recur_level_now];
-			//可递归子节点数量
-			int recursive_num = 0;
-			//可递归子节点方向记录
-			bool is_direct_record = false;
-
-			//寻找可查找子节点
-			for (int now_direct = recur_direct; now_direct <= SE; now_direct++)
-			{
-				//计算子节点管理范围
-				child_node_range_calcu(now_direct, child_range, parent_range);
-
-				//若子节点包含待查找范围
-				//无论全包含或者部分包含
-				if (range_relation_get(seekable_range, child_range))
-				{
-					//记录可递归区块数目
-					recursive_num++;
-					//若尚未记录可递归方向则记录
-					if (is_direct_record == false)
-					{
-						//记录递归方向
-						recur_direct = now_direct;
-						//设置标记位
-						is_direct_record = true;
-					}
-				}
-			}
-
-			//若可查找子节点数目超过一
-			//且当前不为叶子层级
-			//则向栈存储信息
-			if (recursive_num > 1 && recur_level_now != recur_level_max - 1)
-				recur_stack_operate(stack, parent_node, parent_range,
-					recur_level_now, true);
-
-			//若当前不为最后一级递归
-			//则下级节点为中间节点
-			if (recur_level_now < recur_level_max - 1)
-			{
-				//弹栈操作标记位
-				bool is_pop_back = true;
-
-				//父节点递归
-	            //若递归失败则弹栈
-				bool entered = child_node_recur(parent_node, recur_direct, MIDDLE, stable);
-				if (entered)
-				{
-					//存储父节点范围
-					Rect2l old_range = parent_range;
-					//更新父节点范围
-					child_node_range_calcu(recur_direct, parent_range, old_range);
-					//更新递归级数
-					recur_level_now++;
-					//标记无需弹栈
-					is_pop_back = false;
-				}
-
-				//若当前层级尚有未查找方向
-				if (recursive_num > 1)
-				{
-					//更新递归方向
-					recur_direct++;
-					//仅在成功进入子节点时才标记无需弹栈
-					if (entered)
-						is_pop_back = false;
-				}
-				//若当前层级无未查找方向
-				else
-					//重置当前层级递归方向记录
-					recur_direct = NW;
-
-				//若弹栈操作为真且栈内元素为零则直接结束查找
-				if (is_pop_back == true && stack.size() == 0)
-					break;
-				//若弹栈操作为真且栈内元素不为零则读取信息
-				else if (is_pop_back == true && stack.size() != 0)
-					recur_stack_operate(stack, parent_node, parent_range,
-						recur_level_now, false);
-			}
-			//若当前为最后一级递归
-			//则下级节点为叶子节点
-			else if (recur_level_now == recur_level_max - 1)
-			{
-				//一次性取出当前节点下辖所有待取出叶子节点
-				for (; recur_direct <= SE; recur_direct++)
-				{
-					//计算子节点范围
-					child_node_range_calcu(recur_direct, child_range, parent_range);
-
-					//若当前叶子节点未在可查询范围内则略过
-					if (!range_relation_get(seekable_range, child_range))
-						continue;
-
-					//子节点指针存储
-					Node* child_node = parent_node;
-					//递归子节点
-					//若递归失败则查找下一节点
-					if (!child_node_recur(child_node, recur_direct, LEAF, stable))
-						continue;
-					//记录查询结果
-					//区块中心坐标由 64 位范围求得
-					//先以双精度求中点再落单精度，尽量减少精度损失
-					//结果对象与叶子区块数据共享所有权
-					std::shared_ptr<Tree_Chunk_Data<T>> new_data(new(std::nothrow) Tree_Chunk_Data<T>
-						(static_cast<float>((child_range.left + child_range.right) / 2.0),
-							static_cast<float>((child_range.up + child_range.down) / 2.0),
-							std::get<1>(child_node->data)));
-					//若内存分配失败则直接返回
-					if (new_data == nullptr)
-						return;
-					//记录查询结果
-					receiver.push_back(new_data);
-				}
-
-				//重置当前层级递归方向记录
-				recur_direct = NW;
-				//若堆栈记录取用失败则结束查找进程
-				if (stack.size() == 0)
-					break;
-				//反之则从堆栈中读取信息
-				else
-					recur_stack_operate(stack, parent_node,
-						parent_range, recur_level_now, false);
-			}
-		}
+		//递归收集叶子节点
+		leaf_collect(seekable_range,parent_range,mode,
+			1, recur_level_max,parent_node,receiver);
 	}
-
 }

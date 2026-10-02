@@ -20,36 +20,64 @@ namespace engine
 
     //四叉树最小区块单元大小设置
     template<typename T>
-    void Quadtree_Manager<T>::set_block_size(const uint64_t& block_size)
+    bool Quadtree_Manager<T>::set_block_size(const uint64_t& block_size)
     {
-        //记录最小区块单元信息
-        settings.block_size = block_size;
-        //设置四叉树最小区块单元信息
-        auto& tree_group = X_sequence;
-        for (int set_time = 0; set_time < tree_group.size(); set_time++)
+        //若四叉树最小区块单元非正数则设置不可行
+        if (block_size <= 0)
+            return false;
+        //若四叉树边长下限不大于最小区块单元大小则设置不可行
+        if (block_size >= settings.min_tree_size)
+            return false;
+        else
         {
-            tree_group[set_time]->tree->set_block_size(settings.block_size);
+            //记录最小区块单元信息
+            settings.block_size = block_size;
+            //设置四叉树最小区块单元信息
+            auto& tree_group = X_sequence;
+            for (int set_time = 0; set_time < tree_group.size(); set_time++)
+                tree_group[set_time]->tree->set_block_size(settings.block_size);
+            return true;
         }
     }
 
     //四叉树边长上限设置
     template<typename T>
-    void Quadtree_Manager<T>::set_max_size(const uint64_t& max_size)
+    bool Quadtree_Manager<T>::set_max_size(const uint64_t& max_size)
     {
-        //记录四叉树上限大小信息
-        settings.max_tree_size = max_size;
-        //设置四叉树上限大小信息
-        auto& tree_group = X_sequence;
-        for (int set_time = 0; set_time < tree_group.size(); set_time++)
-            tree_group[set_time]->tree->set_max_size(settings.max_tree_size);;
+        //若四叉树边长上限非正数则设置不可行
+        if (max_size <= 0)
+            return false;
+        //若四叉树边长上限不大于四叉树边长下限则设置不可行
+        if (max_size <= settings.min_tree_size)
+            return false;
+        else
+        {
+            //记录四叉树上限大小信息
+            settings.max_tree_size = max_size;
+            //设置四叉树上限大小信息
+            auto& tree_group = X_sequence;
+            for (int set_time = 0; set_time < tree_group.size(); set_time++)
+                tree_group[set_time]->tree->set_max_size(settings.max_tree_size);
+            return true;
+        }
     }
 
     //四叉树边长下限设置
     template<typename T>
-    void Quadtree_Manager<T>::set_min_size(const uint64_t& min_size)
+    bool Quadtree_Manager<T>::set_min_size(const uint64_t& min_size)
     {
-        //记录四叉树下限大小信息
-        settings.min_tree_size = min_size;
+        //若四叉树边长上限非正数则设置不可行
+        if (min_size <= 0)
+            return false;
+        //若四叉树边长下限不大于最小区块单元大小则设置可行
+        if (min_size <= settings.block_size)
+            return false;
+        else
+        {
+            //记录四叉树下限大小信息
+            settings.min_tree_size = min_size;
+            return true;
+        }
     }
 
     //高速缓存启用状态设置
@@ -114,7 +142,7 @@ namespace engine
     void Quadtree_Manager<T>::clear(void)
     {
         //四叉树记录索引存储
-        std::vector<int64_t> index_set{};
+        std::vector<uint64_t> index_set{};
         //记录四叉树记录索引
         for (int unload_time = X_sequence.size() - 1; unload_time >= 0; unload_time--)
             index_set.push_back(unload_time);

@@ -283,7 +283,7 @@ C++20 特性在源码中的使用：`concepts`（`Object_Pool` 的 `requires std
 调用方
   └ Quadtree_Manager::seek(单点检索) 或 seek(范围检索, stable)
        ├ 从树缓存中定位覆盖目标的四叉树（无则 quadtree_build_smart 新建）
-       ├ Quadtree::block_seek / range_seek
+       ├ Quadtree::node_operate / node_operate
        │    ├ seekable_analyse 判断是否需要扩大
        │    ├ 需要扩大 → 扩大回调交给管理器裁决（tree_expand_approve）→ tree_expand 原地加倍
        │    └ 沿递归路径下钻，产出 Tree_Chunk_Data<T>
@@ -697,10 +697,10 @@ namespace engine
         void set_callback_manage(const std::function<bool(Point2d root,
                                      Point2l target)>& cb);                 //扩大权限回调
 
-        void block_seek(std::shared_ptr<Tree_Chunk_Data<T>>& receiver,
+        void node_operate(std::shared_ptr<Tree_Chunk_Data<T>>& receiver,
                         const Point2l& target, bool stable,
                         std::shared_ptr<T> adopt = nullptr);               //单点区块查询（adopt：叶子接管数据）
-        void range_seek(std::vector<std::shared_ptr<Tree_Chunk_Data<T>>>& receiver,
+        void node_operate(std::vector<std::shared_ptr<Tree_Chunk_Data<T>>>& receiver,
                         const Rect2l& target_range, bool stable);            //范围区块查询
 
         const Tree_State& tree_state_get(void);                             //读取树状态
@@ -744,13 +744,13 @@ namespace engine
 **内部实现要点**：
 
 - **64 位尺寸层契约**（由前序版次 `fa8459a` 引入）：区块节点范围用 `Rect2l`、回调目标坐标用 `Point2l`，内部几何运算全走 64 位整数，从而使边长可以配置到 `INT_MAX` 以上而不溢出；对外暴露的区块中心仍回落为 `Point2d`，保持与上层浮点接口兼容。
-- `range_seek` 采用**显式栈迭代而非递归**：以 `std::vector<Recur_Record>` 模拟栈、`std::vector<int> recur_path` 记录当前路径，规避深递归导致的栈溢出。
+- `node_operate` 采用**显式栈迭代而非递归**：以 `std::vector<Recur_Record>` 模拟栈、`std::vector<int> recur_path` 记录当前路径，规避深递归导致的栈溢出。
 - **原地扩大** `tree_expand()`：分配 4 个新的中间节点，把原根 4 个槽位的子树按反方向（`NW→SE、NE→SW、SW→NE、SE→NW`）下沉挂到新节点，再把新节点挂回根，最后 `size *= 2`；O(1) 完成「向上加一层」。
 - **扩大权限受控**：四叉树不擅自扩大，`set_callback_manage()` 注册的 `callback` 向 `Quadtree_Manager` 申请权限，批准后才执行 `tree_expand()`；未注册回调时若 `size < max_size` 则自行扩大。
 - **单点查询三态分析**：`point_seekable_analyse` 返回 0（不可行，终止）/ 1（可能可行，继续尝试扩大）/ 2（可行，直接寻址）。
 - 节点 `Node` 是联合体：中间节点用 `ptr_child[4]`，叶子节点用 `leaf`（类型 `T`），按 `Node_Type` 用 placement new 激活对应成员。
 - **范围查询可能返回重复区块**：同一坐标的区块在相邻多次查询边界重叠时会被重复创建，去重由 `Quadtree_Manager` 用布尔表负责。
-- 调用方注意：`block_seek` 的 `stable == false` 不分配缺失节点；`stable == true` 会即时 `new` 补齐路径，保证结果必定存在。
+- 调用方注意：`node_operate` 的 `stable == false` 不分配缺失节点；`stable == true` 会即时 `new` 补齐路径，保证结果必定存在。
 - 工程内以 `Quadtree<int>` 实例化（见 `core/四叉树实例化.cpp`），并在头文件末尾以 `using engine::Quadtree;` 引出命名空间。
 
 ---
@@ -834,7 +834,7 @@ namespace engine
 - **相邻树三级筛选查找**：`相邻四叉树查找.hpp` 以由粗到细的三级筛选定位与目标范围相邻的树，降低查找开销。
 - **四叉树合并**：`四叉树合并.hpp` 把可以合并的相邻同尺寸树归并为一棵，控制树的数量膨胀。
 - **扩大裁决**：四叉树把自己的扩大申请通过回调上报给管理器；管理器由 `四叉树扩大回调管理.hpp` 判断该次扩大会否与已在册的其它树发生管辖范围重叠，再决定批准与否——这是多树并存时避免相互重叠的关键。
-- **合并时数据迁移**：区块数据 `T` 由叶子以 `std::shared_ptr<T>` 持有；合并时 `block_seek` 经新增的 `adopt` 形参让新树命中叶子**直接接管**旧区块的 shared_ptr（`std::get<1>(叶子.data) = adopt`），旧树卸载后由新树独占持有，`T` 对象地址不变。`T` 无需提供拷贝方法，管理器也不再提供任何数据迁移注册接口（原 `callback_register` 已移除，合并无条件执行）。
+- **合并时数据迁移**：区块数据 `T` 由叶子以 `std::shared_ptr<T>` 持有；合并时 `node_operate` 经新增的 `adopt` 形参让新树命中叶子**直接接管**旧区块的 shared_ptr（`std::get<1>(叶子.data) = adopt`），旧树卸载后由新树独占持有，`T` 对象地址不变。`T` 无需提供拷贝方法，管理器也不再提供任何数据迁移注册接口（原 `callback_register` 已移除，合并无条件执行）。
 - **最大边长随建树/卸载维护**：`largest_tree_size` 现于 `quadtree_build` 取入树边长的最大值、于两个 `quadtree_unload` 重载末尾按剩余树重算（`clear` 经卸载重载归零）；此前该值仅在扩大审批路径更新，智能建树后恒为 0，会使合并的相邻树矩形筛选半径塌缩而永远找不到可合并组合。
 - **缓存**：管理器维护 `tree_cache { records, ranges }`，缓存近期使用过的树；缓存启用阈值与记录上限可配置，`cache_clear()` 可手动清空。
 - **对外检索的坐标仍受 32 位约束**：`seek` 使用 `Point2i` / `Rect2i`（详见第九节已知问题）。

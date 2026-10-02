@@ -13,9 +13,6 @@ namespace engine
 	class Quadtree
 	{
 	private:
-		
-		// ———— 内部类型定义 ————
-
 		//节点类型枚举
 		enum Node_Type
 		{
@@ -32,22 +29,29 @@ namespace engine
 			std::variant<std::array<Node*, 4>, std::shared_ptr<T>> data;
 
 			//按参数类型构造(默认为中间节点)
-			explicit Node(Node_Type mode = Node_Type::MIDDLE)
+			explicit Node(Node_Type mode = Node_Type::MIDDLE,std::shared_ptr<T> external_data = nullptr)
 			{
-				//若为叶子节点
-				if (mode == Node_Type::LEAF)
-					//分配区块数据存储
-					data.template emplace<1>(std::shared_ptr<T>(new(std::nothrow) T()));
 				//若为中间节点
-				else
+				if (mode == Node_Type::MIDDLE)
 					//子节点指针一律置空
 					data.template emplace<0>(std::array<Node*, 4>{ nullptr, nullptr, nullptr, nullptr });
+				//若为叶子节点且外界传入数据
+				else if(external_data)
+					//分配区块数据存储
+					data.template emplace<1>(external_data);
+				else
+					//分配区块数据存储
+					data.template emplace<1>(std::shared_ptr<T>(new(std::nothrow) T()));
 			}
 		};
-
-		//四叉树根节点
-		Node root;
-
+		//节点操作模式枚举
+		enum class Operate_Mode
+		{
+			Build,
+			Seek,
+			Get,
+			Unload
+		};
 		//单点查找可行性枚举
 		enum Analysis_Result
 		{
@@ -66,26 +70,15 @@ namespace engine
 		};
 		//节点递归方向枚举
 		enum Recur_Direct { NW, NE, SW, SE };
-		//节点递归记录结构体
-		struct Recur_Record
-		{
-			//节点
-			Node* node;
-			//节点范围
-			//范围边界由树边长推导，边长可配置到 INT_MAX 以上
-			//故一律使用 64 位整数承载，避免溢出
-			Rect2l node_range{};
-			//递归级别
-			int recur_level = 0;
-		};
 
+		//四叉树跟几点
+		Node root;
 		//四叉树状态记录
 		Tree_State state;
 		//外界上级管理对象回调管理方法----四叉树扩大行为权限申请
 		//目标坐标取自范围推导结果，同样按 64 位整数通报
 		std::function<bool(const Point2d& root, const Point2l& target)> callback;
 
-		// ———— 公开接口 ————
 	public:
 		//构造函数
 		Quadtree(const uint64_t& size = 256, const Point2d& root = { 0.5,0.5 });
@@ -93,22 +86,42 @@ namespace engine
 		~Quadtree(void);
 
 		// ---- 设置 ----
+		
 		//最小区块单元大小设置
-		void set_block_size(const uint64_t& size);
+		bool set_block_size(const uint64_t& size);
 		//四叉树边长上限设置
-		void set_max_size(const uint64_t& size);
+		bool set_max_size(const uint64_t& size);
 		//四叉树回调管理方法设置
 		void set_callback_manage
 		(const std::function<bool(Point2d root, Point2l target)>& cb);
 
-		// ---- 查询 ----
-		//最小区块单元查找
-		//目标坐标为待查询区块坐标，来自范围推导，按 64 位整数接收
-		//结果对象的 ptr_data 与命中叶子共享同一 T 对象（叶子以 shared_ptr 持有 T）
-		void block_seek(std::shared_ptr<Tree_Chunk_Data<T>>& receiver, const Point2l& target, bool stable);
-		//范围区块单元查找
-		void range_seek(std::vector<std::shared_ptr<Tree_Chunk_Data<T>>>& receiver, 
-			const Rect2l& target_range, bool stable);
+		// ---- 区块操作 ----
+	 
+		//区块构建 —— 单区块重载(可直接挂载数据)
+		void build(const Point2l& target,const std::shared_ptr<T>& data = nullptr);
+
+		//区块构建 —— 范围重载(不可直接挂载数据)
+		void build(const Rect2l& target_range);
+
+		//区块查找 —— 单区块重载
+		void seek(const Point2l& target, std::shared_ptr<Tree_Chunk_Data<T>>& receiver) ;
+
+		//区块查找 —— 范围重载
+		void seek(const Rect2l& target_range,
+			std::vector<std::shared_ptr<Tree_Chunk_Data<T>>>& receiver) ;
+
+		//区块获取 —— 单区块重载
+		void get(const Point2l& target, std::shared_ptr<Tree_Chunk_Data<T>>& receiver);
+
+		//区块获取 —— 范围重载
+		void get(const Rect2l& target_range,
+			std::vector<std::shared_ptr<Tree_Chunk_Data<T>>>& receiver);
+
+		//区块卸载 —— 单区块重载
+		void unload(const Point2l& target);
+
+		//区块卸载 —— 范围重载
+		void unload(const Rect2l& target_range);
 
 		//四叉树状态获取
 		const Tree_State& tree_state_get(void) const;
@@ -142,24 +155,33 @@ namespace engine
 
 		// ———— 结构维护 ————
 	private:
-		//四叉树卸载
-		void unload(int now_level, const int& max_level, Node* ptr_now);
+		//四叉树递归卸载
+		void recur_unload(int now_level, const int& max_level, Node* ptr_now);
 
 		//子节点递归
-		bool child_node_recur(Node*& this_node, const int& direct, const Node_Type& type, bool stable);
+		bool child_node_recur(Node*& this_node, const int& direct, const Node_Type& type,bool read_only);
+
+		//叶子收集
+		void leaf_collect(const Rect2l& target_range, const Rect2l& parent_range, Operate_Mode mode,
+			int now_level, const int& max_level,Node* parent_node,
+			std::vector<std::shared_ptr<Tree_Chunk_Data<T>>>& receiver);
+
+		//节点操作 —— 单区块重载
+		void node_operate(const Point2l& target,Operate_Mode mode, 
+			std::shared_ptr<Tree_Chunk_Data<T>>& receiver,
+			const std::shared_ptr<T>& data = nullptr);
+
+		//节点操作 —— 范围区块重载
+		void node_operate(const Rect2l& target_range, Operate_Mode mode, 
+			std::vector<std::shared_ptr<Tree_Chunk_Data<T>>>& receiver);
 
 		// ———— 查询前置支撑 ————
 	private:
 		//单点查询可行性分析
-		Analysis_Result seekable_analyse(const Point2l& target);
+		Analysis_Result seekable_analyse(const Point2l& target, bool read_only);
 
 		//范围查询可行性分析
-		void seekable_analyse(const Rect2l& format_range, Rect2l& seekable_range);
-
-		//递归栈操作
-		void recur_stack_operate(std::vector<Recur_Record>& recur_stack,
-			Node*& ptr, Rect2l& range, int& level,
-			bool push_back) const;
+		void seekable_analyse(const Rect2l& format_range, Rect2l& seekable_range, bool read_only);
 
 	};
 }

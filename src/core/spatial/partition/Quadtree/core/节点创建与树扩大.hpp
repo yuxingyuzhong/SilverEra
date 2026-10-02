@@ -6,7 +6,7 @@ namespace engine
 {
 	//子节点递归
 	template <typename T>
-	bool Quadtree<T>::child_node_recur(Node*& this_node, const int& direct, const Node_Type& type, bool stable)
+	bool Quadtree<T>::child_node_recur(Node*& this_node, const int& direct, const Node_Type& type, bool read_only)
 	{
 		//若当前节点持有区块数据(分支 1)却需要子节点
 		//则先转换为中间节点，原区块数据交由外部持有者释放
@@ -17,7 +17,7 @@ namespace engine
 		std::array<Node*, 4>& child_list = std::get<0>(this_node->data);
 		//若当前子节点为空且为稳定查询模式
 		//则为子节点分配内存
-		if (child_list[direct] == nullptr && stable == true)
+		if (child_list[direct] == nullptr && !read_only)
 			child_list[direct] = new(std::nothrow) Node(type);
 
 		//递归指针子节点
