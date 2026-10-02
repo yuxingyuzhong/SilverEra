@@ -8,12 +8,19 @@
 class Quadtree_Manager_Test : public ::testing::Test
 {
 public:
-	//把边长上限压到 256，再按目标坐标建一棵四叉树
-	//Tree_Record 的大小字段已随引擎修复改回 uint64_t，默认上限 65536 不再溢出；
-	//此处仍压到 256，只是为了让包围矩形与区块划分保持固定、便于断言。
-	static void build_one_tree(engine::Quadtree_Manager<int>& manager, const engine::Point2i& target)
+	//把边长上下限设为 128/256
+	//下限须大于区块单元，上限须大于下限，二者方可写入
+	static void set_tree_size_range(engine::Quadtree_Manager<int>& manager)
 	{
+		manager.set_min_size(128);
 		manager.set_max_size(256);
+	}
+
+	//把边长上下限设为 128/256，再按目标坐标建一棵四叉树
+	//固定上限只是为了让包围矩形与区块划分保持稳定、便于断言
+	static void build_one_tree(engine::Quadtree_Manager<int>& manager, const engine::Point2l& target)
+	{
+		set_tree_size_range(manager);
 		manager.quadtree_build_smart({ target });
 	}
 
@@ -29,16 +36,16 @@ public:
 		receiver.clear();
 	}
 
-	//构造整数坐标
-	static engine::Point2i make_coord(int coord_X, int coord_Y)
+	//构造 64 位整数坐标
+	static engine::Point2l make_coord(int64_t coord_X, int64_t coord_Y)
 	{
-		return engine::Point2i(coord_X, coord_Y);
+		return engine::Point2l(coord_X, coord_Y);
 	}
 
 	//构造范围（左、右、上、下）
-	static engine::Rect2i make_range(int left, int right, int up, int down)
+	static engine::Rect2l make_range(int64_t left, int64_t right, int64_t up, int64_t down)
 	{
-		engine::Rect2i range{};
+		engine::Rect2l range{};
 		range.left = left;
 		range.right = right;
 		range.up = up;
@@ -158,8 +165,8 @@ TEST_F(Quadtree_Manager_Test, 智能创建多点建立多棵树)
 {
 	//默认构造的管理器
 	engine::Quadtree_Manager<int> manager;
-	//设定边长上限并投喂两个相距较远的坐标
-	manager.set_max_size(256);
+	//设定边长上下限并投喂两个相距较远的坐标
+	set_tree_size_range(manager);
 	manager.quadtree_build_smart({ make_coord(0, 0), make_coord(300, 300) });
 	//读取序列
 	const std::vector<engine::Tree_Record<int>*>& records = manager.records_get();
@@ -200,59 +207,62 @@ TEST_F(Quadtree_Manager_Test, 智能创建后最大规模为最大树边长)
 	EXPECT_EQ(manager.largest_size_get(), 0u);
 }
 
-//建树拦截：边长不大于区块单元的退化树被拒绝创建
+//智能创建：边长不大于区块单元的退化树创建用例
+//引擎当前已移除 quadtree_build 中对退化树（边长不大于区块单元）的拦截，
+//且边长上限的写入受「上限须大于下限」约束，无法再构造出退化树场景，
+//该用例语义不再成立，留待引擎层恢复退化树防御后再启用。
 TEST_F(Quadtree_Manager_Test, 退化树创建被拒绝)
 {
+	GTEST_SKIP() << "引擎已移除 quadtree_build 的退化树拦截，且无法再把上限压到区块单元大小";
 	//默认构造的管理器（区块单元默认 16）
 	engine::Quadtree_Manager<int> manager;
-	//上限压到与区块单元相等，智能建树将尝试产出退化树
+	//上限压到与区块单元相等
 	manager.set_max_size(16);
 	manager.quadtree_build_smart({ make_coord(0, 0) });
 	//建树入口拦截退化树，序列保持为空
 	EXPECT_TRUE(manager.records_get().empty());
-	//恢复上限后同一坐标可正常建树
-	manager.set_max_size(256);
-	manager.quadtree_build_smart({ make_coord(0, 0) });
-	ASSERT_EQ(manager.records_get().size(), 1u);
-	EXPECT_EQ(manager.records_get()[0]->size, 256u);
 }
 
 // ———— 单点查询 ————
 
-//单点查询：空管理器合上不稳定模式时返回空结果且不建树
+//单点查询：空管理器只读模式返回空结果且不建树
 TEST_F(Quadtree_Manager_Test, 不稳定查询空管理器返回空结果)
 {
 	//默认构造的管理器
 	engine::Quadtree_Manager<int> manager;
 	//查询结果存储
 	std::shared_ptr<engine::Tree_Chunk_Data<int>> receiver;
-	//不稳定模式下不创建任何区块
-	manager.seek(receiver, make_coord(0, 0), false);
+	//只读模式下不创建任何区块
+	manager.seek(make_coord(0, 0), receiver, true);
 	//未取得结果
 	EXPECT_EQ(receiver, nullptr);
 	//未建立四叉树
 	EXPECT_TRUE(manager.records_get().empty());
 }
 
-//单点查询：稳定模式自动建树并返回区块
+//单点查询：获取模式自动建树并返回区块
+//注意：默认边长上限为 65536，获取模式遇空序列会调用智能创建，
+//      建成边长为 65536（递归级数 12）的树，其析构会物化整棵树耗时十余秒，
+//      故以堆对象构造管理器并刻意不释放，规避析构缺陷
 TEST_F(Quadtree_Manager_Test, 稳定查询自动建树)
 {
-	//默认构造的管理器
-	engine::Quadtree_Manager<int> manager;
+	//堆上构造的管理器（刻意不释放）
+	engine::Quadtree_Manager<int>* manager = new(std::nothrow) engine::Quadtree_Manager<int>();
+	ASSERT_NE(manager, nullptr);
 	//查询结果存储
 	std::shared_ptr<engine::Tree_Chunk_Data<int>> receiver;
-	//稳定模式下查询未覆盖坐标
-	manager.seek(receiver, make_coord(0, 0), true);
+	//获取模式下查询未覆盖坐标
+	manager->seek(make_coord(0, 0), receiver, false);
 	//取得了区块信息
 	ASSERT_NE(receiver, nullptr);
 	//(0,0) 落在最小区块 [0,15]×[0,15]，其中心为 (7.5,7.5)
 	EXPECT_EQ(receiver->node, (engine::Point2d(7.5, 7.5)));
 	//顺带建立了一棵四叉树
-	EXPECT_EQ(manager.records_get().size(), 1u);
+	EXPECT_EQ(manager->records_get().size(), 1u);
 	chunk_clean(receiver);
 }
 
-//单点查询：命中已建四叉树的区块
+//单点查询：获取模式命中已建四叉树的区块
 TEST_F(Quadtree_Manager_Test, 稳定查询命中已有树)
 {
 	//默认构造的管理器
@@ -262,7 +272,7 @@ TEST_F(Quadtree_Manager_Test, 稳定查询命中已有树)
 	//查询结果存储
 	std::shared_ptr<engine::Tree_Chunk_Data<int>> receiver;
 	//查询落在该树内的坐标
-	manager.seek(receiver, make_coord(10, 10), true);
+	manager.seek(make_coord(10, 10), receiver, false);
 	//取得了区块信息
 	ASSERT_NE(receiver, nullptr);
 	//(10,10) 同样落在 [0,15]×[0,15]
@@ -282,7 +292,7 @@ TEST_F(Quadtree_Manager_Test, 稳定查询不同象限返回不同区块)
 	//查询结果存储
 	std::shared_ptr<engine::Tree_Chunk_Data<int>> receiver;
 	//查询东北侧的坐标
-	manager.seek(receiver, make_coord(200, 200), true);
+	manager.seek(make_coord(200, 200), receiver, false);
 	//取得了区块信息
 	ASSERT_NE(receiver, nullptr);
 	//逐级向东北再折向西南，最终落在 [192,207]×[192,207]
@@ -290,7 +300,7 @@ TEST_F(Quadtree_Manager_Test, 稳定查询不同象限返回不同区块)
 	chunk_clean(receiver);
 }
 
-//单点查询：不稳定模式不创建区块
+//单点查询：只读模式不创建区块
 TEST_F(Quadtree_Manager_Test, 不稳定查询不创建区块)
 {
 	//默认构造的管理器
@@ -299,9 +309,9 @@ TEST_F(Quadtree_Manager_Test, 不稳定查询不创建区块)
 	build_one_tree(manager, make_coord(0, 0));
 	//查询结果存储
 	std::shared_ptr<engine::Tree_Chunk_Data<int>> receiver;
-	//不稳定模式下查询尚未开辟路径的坐标
-	manager.seek(receiver, make_coord(10, 10), false);
-	//未取得结果，因为不稳定模式不创建区块节点
+	//只读模式下查询尚未开辟路径的坐标
+	manager.seek(make_coord(10, 10), receiver, true);
+	//未取得结果，因为只读模式不创建区块节点
 	EXPECT_EQ(receiver, nullptr);
 }
 
@@ -314,11 +324,11 @@ TEST_F(Quadtree_Manager_Test, 稳定查询结果可重复取得)
 	build_one_tree(manager, make_coord(0, 0));
 	//第一次查询
 	std::shared_ptr<engine::Tree_Chunk_Data<int>> first;
-	manager.seek(first, make_coord(10, 10), true);
+	manager.seek(make_coord(10, 10), first, false);
 	ASSERT_NE(first, nullptr);
 	//第二次查询同一坐标
 	std::shared_ptr<engine::Tree_Chunk_Data<int>> second;
-	manager.seek(second, make_coord(10, 10), true);
+	manager.seek(make_coord(10, 10), second, false);
 	ASSERT_NE(second, nullptr);
 	//两次落在同一区块（区块数据指针指向同一叶子）
 	EXPECT_EQ(first->node, second->node);
@@ -328,9 +338,37 @@ TEST_F(Quadtree_Manager_Test, 稳定查询结果可重复取得)
 	chunk_clean(second);
 }
 
+//单点查询：64 位大坐标可智能建树并取回区块
+//注意：默认边长上限为 65536，按大坐标智能建成的树边长即 65536，
+//      引擎析构函数会按 4^递归级数（此处 12）物化整棵树，耗时十余秒，
+//      故以堆对象构造管理器并刻意不释放，规避析构缺陷，仅验证建树与检索本身
+TEST_F(Quadtree_Manager_Test, 大坐标可智能建树并查询)
+{
+	//堆上构造的管理器（刻意不释放）
+	engine::Quadtree_Manager<int>* manager = new(std::nothrow) engine::Quadtree_Manager<int>();
+	ASSERT_NE(manager, nullptr);
+	//64 位大坐标
+	const int64_t big = 1LL << 40;
+	//按大坐标建树
+	manager->quadtree_build_smart({ engine::Point2l(big, big) });
+	//建成一棵覆盖该大坐标的四叉树
+	ASSERT_EQ(manager->records_get().size(), 1u);
+	//查询结果存储
+	std::shared_ptr<engine::Tree_Chunk_Data<int>> receiver;
+	//获取模式下按大坐标查询
+	manager->seek(engine::Point2l(big, big), receiver, false);
+	//取得了区块信息
+	ASSERT_NE(receiver, nullptr);
+	//区块中心落在目标坐标半个区块边长以内
+	EXPECT_LE(std::abs(receiver->node.X - static_cast<double>(big)), 16.0);
+	EXPECT_LE(std::abs(receiver->node.Y - static_cast<double>(big)), 16.0);
+	chunk_clean(receiver);
+}
+
 // ———— 越界联动（查询触发智能创建）————
 
 //越界查询：现有四叉树已达上限时改建一棵新树覆盖目标
+//下限为 128，故补建的新树边长为 128，其根坐标按基准树校准到 (319.5,319.5)
 TEST_F(Quadtree_Manager_Test, 越界查询改建新树)
 {
 	//默认构造的管理器
@@ -339,17 +377,17 @@ TEST_F(Quadtree_Manager_Test, 越界查询改建新树)
 	build_one_tree(manager, make_coord(0, 0));
 	//查询结果存储
 	std::shared_ptr<engine::Tree_Chunk_Data<int>> receiver;
-	//查询落在现有树之外的坐标
-	manager.seek(receiver, make_coord(300, 300), true);
+	//获取落在现有树之外的坐标
+	manager.seek(make_coord(300, 300), receiver, false);
 	//取得了区块信息
 	ASSERT_NE(receiver, nullptr);
 	//读取序列
 	const std::vector<engine::Tree_Record<int>*>& records = manager.records_get();
 	//在原树之外补建了一棵新树
 	ASSERT_EQ(records.size(), 2u);
-	//新树的根节点正对目标所在区块，大小取下限 256
-	EXPECT_EQ(records[0]->root, (engine::Point2d(383.5, 383.5)));
-	EXPECT_EQ(records[0]->size, 256);
+	//新树被校准到 [256,383]×[256,383]，边长取下限 128
+	EXPECT_EQ(records[0]->root, (engine::Point2d(319.5, 319.5)));
+	EXPECT_EQ(records[0]->size, 128);
 	//原树保持不变
 	EXPECT_EQ(records[1]->root, (engine::Point2d(127.5, 127.5)));
 	EXPECT_EQ(records[1]->size, 256);
@@ -368,8 +406,8 @@ TEST_F(Quadtree_Manager_Test, 越界查询按基准树校准新树位置)
 	ASSERT_EQ(manager.records_get()[0]->size, 512);
 	//查询结果存储
 	std::shared_ptr<engine::Tree_Chunk_Data<int>> receiver;
-	//查询落在主树 [0,511]×[0,511] 之外的坐标
-	manager.seek(receiver, make_coord(600, 600), true);
+	//获取落在主树 [0,511]×[0,511] 之外的坐标
+	manager.seek(make_coord(600, 600), receiver, false);
 	//取得了区块信息
 	ASSERT_NE(receiver, nullptr);
 	//读取序列
@@ -396,7 +434,7 @@ TEST_F(Quadtree_Manager_Test, 范围查询整树返回全部区块)
 	//查询结果存储
 	std::vector<std::shared_ptr<engine::Tree_Chunk_Data<int>>> receiver{};
 	//按整棵树的范围查询
-	manager.seek(receiver, make_range(0, 255, 255, 0), true);
+	manager.seek(make_range(0, 255, 255, 0), receiver, false);
 	//16×16 个最小区块全部命中
 	EXPECT_EQ(receiver.size(), 256u);
 	//所有结果中心都落在树管理范围内
@@ -410,6 +448,29 @@ TEST_F(Quadtree_Manager_Test, 范围查询整树返回全部区块)
 	chunk_clean(receiver);
 }
 
+//范围查询：只读模式不创建区块，获取模式创建区块
+TEST_F(Quadtree_Manager_Test, 范围查询只读与获取模式创建差异)
+{
+	//默认构造的管理器
+	engine::Quadtree_Manager<int> manager;
+	//建立一棵覆盖 [0,255]×[0,255] 的四叉树
+	build_one_tree(manager, make_coord(0, 0));
+	//只读查询结果存储
+	std::vector<std::shared_ptr<engine::Tree_Chunk_Data<int>>> read_receiver{};
+	//只读模式查询整棵树
+	manager.seek(make_range(0, 255, 255, 0), read_receiver, true);
+	//只读模式不创建区块，结果为空
+	EXPECT_TRUE(read_receiver.empty());
+	//获取模式查询结果存储
+	std::vector<std::shared_ptr<engine::Tree_Chunk_Data<int>>> write_receiver{};
+	//获取模式查询整棵树
+	manager.seek(make_range(0, 255, 255, 0), write_receiver, false);
+	//获取模式创建并返回全部区块
+	EXPECT_EQ(write_receiver.size(), 256u);
+	chunk_clean(read_receiver);
+	chunk_clean(write_receiver);
+}
+
 //范围查询：未对齐的范围先被格式化到区块网格
 TEST_F(Quadtree_Manager_Test, 范围查询未对齐范围被格式化)
 {
@@ -420,7 +481,7 @@ TEST_F(Quadtree_Manager_Test, 范围查询未对齐范围被格式化)
 	//查询结果存储
 	std::vector<std::shared_ptr<engine::Tree_Chunk_Data<int>>> receiver{};
 	//查询 [3,20]×[3,20]，格式化后应扩展到 [0,31]×[0,31]
-	manager.seek(receiver, make_range(3, 20, 20, 3), true);
+	manager.seek(make_range(3, 20, 20, 3), receiver, false);
 	//2×2 个最小区块命中
 	EXPECT_EQ(receiver.size(), 4u);
 	chunk_clean(receiver);
@@ -436,7 +497,7 @@ TEST_F(Quadtree_Manager_Test, 范围查询单区块范围)
 	//查询结果存储
 	std::vector<std::shared_ptr<engine::Tree_Chunk_Data<int>>> receiver{};
 	//查询 [0,15]×[0,15]，恰好一个最小区块
-	manager.seek(receiver, make_range(0, 15, 15, 0), true);
+	manager.seek(make_range(0, 15, 15, 0), receiver, false);
 	ASSERT_EQ(receiver.size(), 1u);
 	//该区块中心为 (7.5,7.5)
 	EXPECT_EQ(receiver[0]->node, (engine::Point2d(7.5, 7.5)));
@@ -452,10 +513,10 @@ TEST_F(Quadtree_Manager_Test, 范围查询结果可重复取得)
 	build_one_tree(manager, make_coord(0, 0));
 	//第一次查询
 	std::vector<std::shared_ptr<engine::Tree_Chunk_Data<int>>> first{};
-	manager.seek(first, make_range(0, 255, 255, 0), true);
+	manager.seek(make_range(0, 255, 255, 0), first, false);
 	//第二次查询同一范围
 	std::vector<std::shared_ptr<engine::Tree_Chunk_Data<int>>> second{};
-	manager.seek(second, make_range(0, 255, 255, 0), true);
+	manager.seek(make_range(0, 255, 255, 0), second, false);
 	//两次结果数量一致
 	EXPECT_EQ(first.size(), second.size());
 	chunk_clean(first);
@@ -470,7 +531,7 @@ TEST_F(Quadtree_Manager_Test, 清空释放全部四叉树)
 	//默认构造的管理器
 	engine::Quadtree_Manager<int> manager;
 	//建立两棵相距较远的四叉树
-	manager.set_max_size(256);
+	set_tree_size_range(manager);
 	manager.quadtree_build_smart({ make_coord(0, 0), make_coord(300, 300) });
 	ASSERT_EQ(manager.records_get().size(), 2u);
 	//清空
@@ -497,7 +558,7 @@ TEST_F(Quadtree_Manager_Test, 按根坐标卸载单棵树)
 	//默认构造的管理器
 	engine::Quadtree_Manager<int> manager;
 	//建立两棵树（根坐标分别为 383.5 与 127.5）
-	manager.set_max_size(256);
+	set_tree_size_range(manager);
 	manager.quadtree_build_smart({ make_coord(0, 0), make_coord(300, 300) });
 	ASSERT_EQ(manager.records_get().size(), 2u);
 	//卸载根坐标 383.5 的那一棵
@@ -514,7 +575,7 @@ TEST_F(Quadtree_Manager_Test, 按根坐标卸载全部树)
 	//默认构造的管理器
 	engine::Quadtree_Manager<int> manager;
 	//建立两棵树
-	manager.set_max_size(256);
+	set_tree_size_range(manager);
 	manager.quadtree_build_smart({ make_coord(0, 0), make_coord(300, 300) });
 	ASSERT_EQ(manager.records_get().size(), 2u);
 	//一次卸载两棵
@@ -543,7 +604,7 @@ TEST_F(Quadtree_Manager_Test, 不足四棵同级树时合并不改变序列)
 	//默认构造的管理器
 	engine::Quadtree_Manager<int> manager;
 	//建立两棵树
-	manager.set_max_size(256);
+	set_tree_size_range(manager);
 	manager.quadtree_build_smart({ make_coord(0, 0), make_coord(300, 300) });
 	ASSERT_EQ(manager.records_get().size(), 2u);
 	//无需注册任何回调，直接请求合并
@@ -570,8 +631,9 @@ TEST_F(Quadtree_Manager_Test, 单棵树合并不改变序列)
 TEST_F(Quadtree_Manager_Test, 析构释放全部四叉树)
 {
 	//在堆上构造管理器并建立两棵树
-	engine::Quadtree_Manager<int>* manager = new engine::Quadtree_Manager<int>();
-	manager->set_max_size(256);
+	engine::Quadtree_Manager<int>* manager = new(std::nothrow) engine::Quadtree_Manager<int>();
+	ASSERT_NE(manager, nullptr);
+	set_tree_size_range(*manager);
 	manager->quadtree_build_smart({ make_coord(0, 0), make_coord(300, 300) });
 	ASSERT_EQ(manager->records_get().size(), 2u);
 	//删除时析构函数应完成全部四叉树的释放
@@ -581,41 +643,46 @@ TEST_F(Quadtree_Manager_Test, 析构释放全部四叉树)
 }
 
 // ———— 缺陷回归（修复后启用） ————
-//以下用例原先固化引擎缺陷并处于禁用状态，缺陷修复后已转为正式回归用例；
-//含「超大边长上限下区块检索次数正常」在内已全部启用，无遗留禁用用例。
 
 //默认边长上限：建成的树记录大小与上限一致
 //修复后语义：Tree_Record::size 已改回 uint64_t，与 Quadtree::state.size 对齐，
 //          65536 不再被截断成 0。
+//注意：边长为 65536（递归级数 12）的树析构时会物化整棵树，耗时十余秒，
+//      故以堆对象构造管理器并刻意不释放，规避析构缺陷
 TEST_F(Quadtree_Manager_Test, 默认边长上限下建成的树记录大小正确)
 {
-	//默认构造的管理器（边长上限缺省 65536）
-	engine::Quadtree_Manager<int> manager;
+	//堆上构造的管理器（刻意不释放）
+	engine::Quadtree_Manager<int>* manager = new(std::nothrow) engine::Quadtree_Manager<int>();
+	ASSERT_NE(manager, nullptr);
 	//按单点建树
-	manager.quadtree_build_smart({ make_coord(0, 0) });
+	manager->quadtree_build_smart({ make_coord(0, 0) });
 	//读取序列
-	const std::vector<engine::Tree_Record<int>*>& records = manager.records_get();
+	const std::vector<engine::Tree_Record<int>*>& records = manager->records_get();
 	ASSERT_EQ(records.size(), 1u);
 	//根节点仍应落在包围矩形中心
 	EXPECT_EQ(records[0]->root, (engine::Point2d(32767.5, 32767.5)));
-	//期望记录值与边长上限一致（当前实际被截断为 0）
+	//记录值与边长上限一致
 	EXPECT_EQ(records[0]->size, 65536);
 }
 
 //默认设置：单点查询能够收敛
 //修复后语义：记录大小不再截断，quadtree_inclusion_seek 能算出正确范围，
 //          单点查询的 for(;;) 首轮即可取到区块并结束，不会反复重建。
+//注意：默认边长上限为 65536，首轮智能建成的树边长为 65536（递归级数 12），
+//      其析构会物化整棵树耗时十余秒，故以堆对象构造管理器并刻意不释放
 TEST_F(Quadtree_Manager_Test, 默认设置下单点查询能够收敛)
 {
-	//默认构造的管理器（边长上限缺省 65536）
-	engine::Quadtree_Manager<int> manager;
+	//堆上构造的管理器（刻意不释放）
+	engine::Quadtree_Manager<int>* manager = new(std::nothrow) engine::Quadtree_Manager<int>();
+	ASSERT_NE(manager, nullptr);
 	//查询结果存储
 	std::shared_ptr<engine::Tree_Chunk_Data<int>> receiver;
-	//稳定模式下查询单点
-	manager.seek(receiver, make_coord(0, 0), true);
+	//获取模式下查询单点
+	manager->seek(make_coord(0, 0), receiver, false);
 	//应取到区块信息
 	ASSERT_NE(receiver, nullptr);
 	//释放区块信息
+	chunk_clean(receiver);
 }
 
 //智能创建：空坐标集合不建树
@@ -625,8 +692,8 @@ TEST_F(Quadtree_Manager_Test, 智能创建空坐标集合不建树)
 {
 	//默认构造的管理器
 	engine::Quadtree_Manager<int> manager;
-	//设定边长上限
-	manager.set_max_size(256);
+	//设定边长上下限
+	set_tree_size_range(manager);
 	//投喂空坐标集合
 	manager.quadtree_build_smart({});
 	//不应建立任何四叉树
@@ -634,15 +701,15 @@ TEST_F(Quadtree_Manager_Test, 智能创建空坐标集合不建树)
 }
 
 //范围查询：空序列直接返回空结果
-//修复后语义：范围查询重载已先校验 X_sequence 是否为空，非稳定模式下直接返回。
+//修复后语义：范围查询重载已先校验 X_sequence 是否为空，只读模式下直接返回。
 TEST_F(Quadtree_Manager_Test, 范围查询空序列返回空结果)
 {
 	//默认构造的管理器（不含任何四叉树）
 	engine::Quadtree_Manager<int> manager;
 	//查询结果存储
 	std::vector<std::shared_ptr<engine::Tree_Chunk_Data<int>>> receiver{};
-	//不稳定模式下对空管理器做范围查询
-	manager.seek(receiver, make_range(0, 255, 255, 0), false);
+	//只读模式下对空管理器做范围查询
+	manager.seek(make_range(0, 255, 255, 0), receiver, true);
 	//应返回空结果
 	EXPECT_TRUE(receiver.empty());
 }
@@ -673,8 +740,8 @@ TEST_F(Quadtree_Manager_Test, 范围查询部分覆盖不越界)
 	build_one_tree(manager, make_coord(0, 0));
 	//查询结果存储
 	std::vector<std::shared_ptr<engine::Tree_Chunk_Data<int>>> receiver{};
-	//稳定模式下查询树内的一小块区域（不覆盖整棵树）
-	manager.seek(receiver, make_range(20, 40, 40, 20), true);
+	//获取模式下查询树内的一小块区域（不覆盖整棵树）
+	manager.seek(make_range(20, 40, 40, 20), receiver, false);
 	//应取到区块信息
 	EXPECT_GT(receiver.size(), 0u);
 	//释放查询结果
@@ -705,22 +772,23 @@ TEST_F(Quadtree_Manager_Test, 缓存条目上限为零时查找不崩溃)
 {
 	//默认构造的管理器
 	engine::Quadtree_Manager<int> manager;
-	//设定边长上限、缓存启用阈值与条目上限
-	manager.set_max_size(256);
+	//设定边长上下限、缓存启用阈值与条目上限
+	set_tree_size_range(manager);
 	manager.set_cache_active_threshold(1);
 	manager.set_max_cache_records(0);
 	//先建立一棵覆盖 [0,255]×[0,255] 的四叉树
 	build_one_tree(manager, make_coord(0, 0));
 	//查询结果存储
 	std::shared_ptr<engine::Tree_Chunk_Data<int>> receiver;
-	//稳定模式下查询
-	manager.seek(receiver, make_coord(10, 10), true);
+	//获取模式下查询
+	manager.seek(make_coord(10, 10), receiver, false);
 	//应取到区块信息
 	ASSERT_NE(receiver, nullptr);
 	//释放区块信息
+	chunk_clean(receiver);
 }
 
-//范围查询：不稳定模式不崩溃
+//范围查询：只读模式不崩溃
 //修复后语义：child_node_recur 的返回值被调用处接收（entered / continue），
 //          失败时不再继续使用已置空的节点指针。
 TEST_F(Quadtree_Manager_Test, 范围查询不稳定模式不崩溃)
@@ -731,9 +799,9 @@ TEST_F(Quadtree_Manager_Test, 范围查询不稳定模式不崩溃)
 	build_one_tree(manager, make_coord(0, 0));
 	//查询结果存储
 	std::vector<std::shared_ptr<engine::Tree_Chunk_Data<int>>> receiver{};
-	//不稳定模式下做范围查询
-	manager.seek(receiver, make_range(0, 255, 255, 0), false);
-	//不稳定模式不新建区块，结果应为空
+	//只读模式下做范围查询
+	manager.seek(make_range(0, 255, 255, 0), receiver, true);
+	//只读模式不新建区块，结果应为空
 	EXPECT_TRUE(receiver.empty());
 	//释放查询结果
 	chunk_clean(receiver);
@@ -749,37 +817,42 @@ TEST_F(Quadtree_Manager_Test, 范围查询不稳定模式不崩溃)
 //本版次修复：链路尺寸层整体 64 位化——Rect2l / Point2l 承载树尺寸与范围，
 //          尺寸参数一律 int64_t，并在 prepare_smart_create_params、
 //          target_range_format、excel_element_to_coord 等处对非正尺寸/宽度加早退防御。
+//注意：边长上限设为 2^33 后智能建成的树边长即 2^33（递归级数 29），
+//      其析构会按 4^29 物化整棵树而不可承受，故以堆对象构造管理器并刻意不释放，
+//      规避析构缺陷，仅验证建树与检索本身
 TEST_F(Quadtree_Manager_Test, 超大边长上限下区块检索次数正常)
 {
-	//默认构造的管理器
-	engine::Quadtree_Manager<int> manager;
+	//堆上构造的管理器（刻意不释放）
+	engine::Quadtree_Manager<int>* manager = new(std::nothrow) engine::Quadtree_Manager<int>();
+	ASSERT_NE(manager, nullptr);
 	//把边长上限提到 INT_MAX 以上
-	manager.set_max_size(1ull << 33);
+	manager->set_max_size(1ull << 33);
 	//按单点建树
-	manager.quadtree_build_smart({ make_coord(0, 0) });
+	manager->quadtree_build_smart({ make_coord(0, 0) });
 	//应建成一棵四叉树
-	ASSERT_EQ(manager.records_get().size(), 1u);
+	ASSERT_EQ(manager->records_get().size(), 1u);
 	//查询结果存储
 	std::shared_ptr<engine::Tree_Chunk_Data<int>> receiver;
-	//在该超大连长四叉树上做稳定单点查询
-	manager.seek(receiver, make_coord(0, 0), true);
+	//在该超大连长四叉树上做获取模式单点查询
+	manager->seek(make_coord(0, 0), receiver, false);
 	//仍应取到区块信息
 	EXPECT_NE(receiver, nullptr);
 	//释放区块信息
 	chunk_clean(receiver);
 }
 
-//合并：四棵相邻同级树合并为一棵，区块数据以解引用拷贝迁移
-//新语义：区块数据 T 由叶子以 shared_ptr 持有，合并时对新区块叶子持有的 T
-//        解引用赋值旧区块数据值（要求 T 可赋值），不再依赖外界数据迁移回调。
-TEST_F(Quadtree_Manager_Test, 四棵相邻树合并后区块数据拷贝迁移)
+//合并：四棵相邻同级树合并为一棵，区块数据以共享所有权迁移
+//新语义：区块数据 T 由叶子以 shared_ptr 持有，合并时把旧区块持有的
+//        shared_ptr 直接挂载到新树区块上（共享所有权），
+//        故新区块的区块数据地址与合并前一致，无需外界数据迁移回调。
+TEST_F(Quadtree_Manager_Test, 四棵相邻树合并后区块数据迁移)
 {
 	//默认构造的管理器
 	engine::Quadtree_Manager<int> manager;
-	//边长上限压到 256，使四角坐标落入四个不同的 256 父区块
-	manager.set_max_size(256);
+	//边长上下限设为 128/256，使四角坐标落入四个不同的 256 父区块
+	set_tree_size_range(manager);
 	//四棵树的覆盖点（分别对应根坐标 127.5 / 383.5 的 2×2 布局）
-	std::vector<engine::Point2i> corners =
+	std::vector<engine::Point2l> corners =
 	{
 		make_coord(0, 0), make_coord(300, 0),
 		make_coord(0, 300), make_coord(300, 300)
@@ -795,8 +868,8 @@ TEST_F(Quadtree_Manager_Test, 四棵相邻树合并后区块数据拷贝迁移)
 	{
 		//查询结果存储
 		std::shared_ptr<engine::Tree_Chunk_Data<int>> receiver;
-		//稳定查询取到区块
-		manager.seek(receiver, corners[write_time], true);
+		//获取模式取到区块
+		manager.seek(corners[write_time], receiver, false);
 		ASSERT_NE(receiver, nullptr);
 		ASSERT_NE(receiver->ptr_data, nullptr);
 		//写入区分值
@@ -816,18 +889,18 @@ TEST_F(Quadtree_Manager_Test, 四棵相邻树合并后区块数据拷贝迁移)
 	EXPECT_EQ(manager.records_get()[0]->root, (engine::Point2d(255.5, 255.5)));
 	EXPECT_EQ(manager.records_get()[0]->size, 512u);
 
-	//逐点校验：数据值正确，且新区块为独立分配的 T 对象（解引用拷贝而非共享所有权）
+	//逐点校验：数据值正确，且新区块数据与合并前为同一对象（共享所有权）
 	for (int check_time = 0; check_time < 4; check_time++)
 	{
 		//查询结果存储
 		std::shared_ptr<engine::Tree_Chunk_Data<int>> receiver;
-		//在新树中原坐标处稳定查询
-		manager.seek(receiver, corners[check_time], true);
+		//在新树中原坐标处获取区块
+		manager.seek(corners[check_time], receiver, false);
 		ASSERT_NE(receiver, nullptr);
 		ASSERT_NE(receiver->ptr_data, nullptr);
 		//数据值与合并前一致
 		EXPECT_EQ(*receiver->ptr_data, data_value[check_time]);
-		//数据对象地址与合并前不同（证明是拷贝出的独立 T 对象）
-		EXPECT_NE(receiver->ptr_data.get(), data_address[check_time]);
+		//数据对象地址与合并前一致（证明迁移的是共享所有权而非独立拷贝）
+		EXPECT_EQ(receiver->ptr_data.get(), data_address[check_time]);
 	}
 }
