@@ -83,7 +83,7 @@ namespace engine
 	};
 
 	//二维点 —— 整数精度
-	using Point2i = Point2<int>;
+	using Point2i = Point2<int32_t>;
 	//二维点 —— 64 位整数精度
 	using Point2l = Point2<int64_t>;
 	//二维点 —— 双精度浮点
@@ -105,7 +105,7 @@ namespace engine
 		//默认构造
 		Rect2() = default;
 		//带参构造
-		Rect2(T l, T r, T u, T d) : left(l), right(r), up(u), down(d) {}
+		Rect2(T l, T r, T u, T d) : left(l), right(r), up(u), down(d){}
 
 		//等于运算符重载
 		bool operator==(const Rect2& other) const noexcept
@@ -129,7 +129,7 @@ namespace engine
 	};
 
 	//二维矩形范围 —— 整数精度
-	using Rect2i = Rect2<int>;
+	using Rect2i = Rect2<int32_t>;
 	//二维矩形范围 —— 64 位整数精度
 	using Rect2l = Rect2<int64_t>;
 	//二维矩形范围 —— 双精度浮点

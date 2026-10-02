@@ -49,7 +49,7 @@ namespace engine
 		bool is_active = false;
 
 		//碰撞体编号分配器
-		Number_Allocator ID_allocator;
+		Number_Allocator<uint64_t> ID_allocator;
 		//空间边界(静态网格)
 		Collider region_boundary;
 		//碰撞检测后端

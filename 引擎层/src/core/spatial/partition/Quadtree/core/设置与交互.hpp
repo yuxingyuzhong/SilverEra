@@ -29,9 +29,9 @@ namespace engine
 		for (int recur_direct = 0; recur_direct <= SE; recur_direct++)
 		{
 			//递归子节点
-			child_node_recur(ptr_next, recur_direct, MIDDLE, false);
+			child_node_recur(ptr_next, recur_direct, MIDDLE,true);
 			//递归子函数
-			unload(1, max_level, ptr_next);
+			recur_unload(1, max_level, ptr_next);
 			//还原当前节点指针
 			ptr_next = ptr_now;
 		}
@@ -39,7 +39,7 @@ namespace engine
 
 	//析构函数辅助函数
 	template <typename T>
-	void Quadtree<T>::unload(int now_level, const int& max_level, Node* ptr_now)
+	void Quadtree<T>::recur_unload(int now_level, const int& max_level, Node* ptr_now)
 	{
 		//若当前节点为空指针则直接返回
 		if (ptr_now == nullptr)
@@ -67,9 +67,9 @@ namespace engine
 		for (int recur_direct = 0; recur_direct <= SE; recur_direct++)
 		{
 			//递归子节点
-			child_node_recur(ptr_next, recur_direct, type, false);
+			child_node_recur(ptr_next, recur_direct, type, true);
 			//递归子函数
-			unload(now_level + 1, max_level, ptr_next);
+			recur_unload(now_level + 1, max_level, ptr_next);
 			//还原当前节点指针
 			ptr_next = ptr_now;
 		}
@@ -80,16 +80,30 @@ namespace engine
 
 	//最小区块单元大小设置
 	template <typename T>
-	void Quadtree<T>::set_block_size(const uint64_t& size)
+	bool Quadtree<T>::set_block_size(const uint64_t& size)
 	{
-		state.block_size = size;
+		//若最小区块单元小于四叉树当前大小则设置可行
+		if (size < state.size)
+		{
+			state.block_size = size;
+			return true;
+		}
+		else
+			return false;
 	}
 
 	//四叉树边长上限设置
 	template <typename T>
-	void Quadtree<T>::set_max_size(const uint64_t& size)
+	bool Quadtree<T>::set_max_size(const uint64_t& size)
 	{
-		state.max_size = size;
+		//若四叉树边长上限大于四叉树当前大小则设置可行
+		if (size > state.size)
+		{
+			state.max_size = size;
+			return true;
+		}
+		else
+			return false;
 	}
 
 	//四叉树回调管理方法设置

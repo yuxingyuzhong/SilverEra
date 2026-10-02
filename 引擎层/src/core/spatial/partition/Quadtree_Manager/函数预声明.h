@@ -15,7 +15,6 @@ namespace engine
     template<typename T>
     class Quadtree_Manager
     {
-    // ======================== 公开接口 ========================
     public:
         //默认构造函数
         Quadtree_Manager();
@@ -24,11 +23,11 @@ namespace engine
         
         // ---- 设置 ----
         //四叉树最小区块单元大小设置
-        void set_block_size(const uint64_t& block_size);
+        bool set_block_size(const uint64_t& block_size);
         //四叉树边长上限设置
-        void set_max_size(const uint64_t& max_size);
+        bool set_max_size(const uint64_t& max_size);
         //四叉树边长下限设置
-        void set_min_size(const uint64_t& min_size);
+        bool set_min_size(const uint64_t& min_size);
         //高速缓存启用状态设置
         void set_cache_state(bool enabled);
         //高速缓存启用阈值设置
@@ -38,13 +37,15 @@ namespace engine
 
         // ---- 创建 ----
         //四叉树智能创建主函数
-        void quadtree_build_smart(const std::vector<Point2i>& coord_set);
+        void quadtree_build_smart(const std::vector<Point2l>& coord_set);
 
         // ---- 查询 ----
         //单区块信息查询
-        void seek(std::shared_ptr<Tree_Chunk_Data<T>>& receiver,const Point2i& target, bool stable);
+        void seek(const Point2l& target, std::shared_ptr<Tree_Chunk_Data<T>>& receiver,
+            bool read_only);
         //范围区块信息查询
-        void seek(std::vector<std::shared_ptr<Tree_Chunk_Data<T>>>& receiver, const Rect2i& target_range, bool stable);
+        void seek(const Rect2l& target_range, std::vector<std::shared_ptr<Tree_Chunk_Data<T>>>& receiver,
+            bool read_only);
 
         // ---- 读取 ----
         //四叉树管理器设置获取
@@ -64,8 +65,6 @@ namespace engine
         //卸载——根节点重载
         void quadtree_unload(const std::vector<Point2d>& root_set);
 
-
-    // ======================== 私有成员 ========================
     private:
         // ---- 数据成员 ----
         
@@ -91,7 +90,7 @@ namespace engine
         //直属四叉树查找
         Tree_Record<T>* quadtree_inclusion_seek(const Point2l& target);
         //四叉树序列索引查找
-        int64_t quadtree_index_seek(const Point2d& root) const;
+        std::optional<uint64_t> quadtree_index_seek(const Point2d& root) const;
         //矩形筛选
         void rectangle_filter(std::vector<Tree_Record<T>*>& receiver, const Tree_Record<T>* tree,
             const Rect2l& range, const std::vector<Tree_Record<T>*>* tree_group = nullptr) const;
@@ -125,26 +124,26 @@ namespace engine
         void quadtree_merge_filter(const std::vector<std::vector<Tree_Record<T>*>>& candidate,
             std::vector<std::vector<Tree_Record<T>*>>& receiver) const;
         //卸载——序列索引重载
-        void quadtree_unload(std::vector<int64_t>& index_set);
+        void quadtree_unload(std::vector<uint64_t>& index_set);
 
         // ---------- 智能创建辅助 ----------
         //计算初始包围矩形及最大区块划分参数
-        void prepare_smart_create_params(const std::vector<Point2i>& coord_set,
-            Rect2l& recta_range, int64_t& father_block_num_all,
-            int64_t& father_block_size) const;
+        void prepare_smart_create_params(const std::vector<Point2l>& coord_set,
+            Rect2l& recta_range, uint64_t& father_block_num_all,
+            uint64_t& father_block_size) const;
         //单个最大区块的深度划分（递归复制子集版）
-        void divide_single_father_block(const std::vector<Point2i>& coord_set,
+        void divide_single_father_block(const std::vector<Point2l>& coord_set,
             int64_t block_left, int64_t block_right, int64_t block_up, int64_t block_down,
-            int64_t block_size, int64_t coord_count_in_parent,
+            uint64_t block_size, uint64_t coord_count_in_parent,
             std::vector<Point2d>& node_centers,
             std::vector<uint64_t>& tree_sizes) const;
 
         // ---------- 查询辅助 ----------
         //查询范围列表修改
-        void target_range_amend(const Rect2l& excel_range, bool* ptr_excel,
+        void target_range_amend(const Rect2l& excel_range, std::vector<bool>& excel,
             const Rect2l& target_range) const;
         //查询结果列表元素坐标化
-        void excel_element_to_coord(const Rect2l& excel_range, const int64_t& element_ID,
+        void excel_element_to_coord(const Rect2l& excel_range, const uint64_t& element_ID,
             Point2l& receiver) const;
     };
 }

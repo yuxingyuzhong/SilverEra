@@ -97,7 +97,7 @@ namespace engine
 
     //四叉树序列索引查找
     template<typename T>
-    int64_t Quadtree_Manager<T>::quadtree_index_seek(const Point2d& root) const
+    std::optional<uint64_t> Quadtree_Manager<T>::quadtree_index_seek(const Point2d& root) const
     {
         //简化表示路径
         auto& tree_group = X_sequence;
@@ -107,10 +107,10 @@ namespace engine
             std::ranges::greater(), [](auto* p) { return p->root.X; });
         //若返回区间无效
         if (!range.has_value())
-            return -1;
+            return std::nullopt;
 
         //检测是否存在符合要求的四叉树
-        for (int begin = range.value().first, end = range.value().second; begin <= end; begin++)
+        for (uint64_t begin = range.value().first, end = range.value().second; begin <= end; begin++)
         {
             //若根节点坐标相同则返回当前索引
             if (root == tree_group[begin]->root)
@@ -119,17 +119,13 @@ namespace engine
         }
 
         //若查找失败则返回无效索引
-        return -1;
+        return std::nullopt;
     }
 
     //四叉树创建
     template<typename T>
     void Quadtree_Manager<T>::quadtree_build(Point2d root, uint64_t tree_size)
     {
-        //若树边长不大于区块单元则为退化树（无可寻址叶子），拒绝创建
-        if (tree_size <= settings.block_size)
-            return;
-
         //简化表示路径
         auto& tree_group = X_sequence;
 
@@ -179,7 +175,7 @@ namespace engine
 
     //四叉树卸载
     template<typename T>
-    void Quadtree_Manager<T>::quadtree_unload(std::vector<int64_t>& index_set)
+    void Quadtree_Manager<T>::quadtree_unload(std::vector<uint64_t>& index_set)
     {
         //简化表示路径
         auto& tree_group = X_sequence;
@@ -190,10 +186,11 @@ namespace engine
         std::ranges::sort(index_set.begin(), index_set.end(), std::ranges::greater());
         
         //卸载四叉树
-        for (int unload_time = 0; unload_time < index_set.size(); unload_time++)
+        for (uint64_t unload_time = 0; unload_time < index_set.size(); unload_time++)
         {
-            //若索引无效读取下一索引
-            if (index_set[unload_time] < 0)
+            //若索引越界则读取下一索引
+            //索引已为无符号类型，越界即为无效索引
+            if (index_set[unload_time] >= tree_group.size())
                 continue;
             //获取四叉树记录
             auto& record = tree_group[index_set[unload_time]];
@@ -222,7 +219,7 @@ namespace engine
             //删除节点本身
             delete record;
             //从四叉树序列中移除
-            tree_group.erase(tree_group.begin() + index_set[unload_time]);
+            tree_group.erase(tree_group.begin() + static_cast<std::ptrdiff_t>(index_set[unload_time]));
         }
 
         //按剩余四叉树重算最大边长
@@ -245,13 +242,13 @@ namespace engine
         for (int unload_time = 0; unload_time < root_set.size(); unload_time++)
         {
             //获取四叉树记录读取索引
-            int64_t index = quadtree_index_seek(root_set[unload_time]);
+            auto index = quadtree_index_seek(root_set[unload_time]);
             //若索引无效则读取下一索引
-            if (index < 0)
+            if (!index.has_value())
                 continue;
 
             //获取四叉树记录
-            auto& record = tree_group[index];
+            auto& record = tree_group[index.value()];
 
             //若存在高速缓存
             //则检查卸载对象是否位于高速缓存
@@ -281,7 +278,7 @@ namespace engine
             //删除节点本身
             delete record;
             //从序列中移除记录
-            tree_group.erase(tree_group.begin() + index);
+            tree_group.erase(tree_group.begin() + static_cast<std::ptrdiff_t>(index.value()));
         }
 
         //按剩余四叉树重算最大边长

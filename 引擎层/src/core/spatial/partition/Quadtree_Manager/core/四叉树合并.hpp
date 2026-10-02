@@ -270,7 +270,7 @@ namespace engine
         //区块数据缓冲区
         std::vector<std::shared_ptr<Tree_Chunk_Data<T>>> buffer{};
         //待合并/卸载四叉树序列索引存储
-        std::vector<int64_t> index_set{};
+        std::vector<uint64_t> indexs{};
 
         //合并四叉树
         for (int merge_time = 0; merge_time < verified_tree.size(); merge_time++)
@@ -286,15 +286,19 @@ namespace engine
 
             //创建新四叉树
             quadtree_build(new_root, tree_group.front()->size * 2);
+            std::optional<uint64_t> new_tree_index = quadtree_index_seek(new_root);
+            //若新四叉树创建失败
+            if (!new_tree_index.has_value())
+                continue;
             //获取新四叉树
-            auto& new_tree = X_sequence[quadtree_index_seek(new_root)];
+            auto* new_tree = X_sequence[new_tree_index.value()];
 
             //数据迁移结果
             std::shared_ptr<Tree_Chunk_Data<T>> ptr_data;
             //待合并四叉树范围存储
             Rect2l merged_tree_range{};
             //重置待合并四叉树索引集合
-            index_set.clear();
+            indexs.clear();
             //迁移区块数据
             for (int seek_time = 0; seek_time < tree_group.size(); seek_time++)
             {
@@ -303,30 +307,21 @@ namespace engine
                 //计算待合并四叉树管理范围
                 merged_tree->tree->manage_range_calcu(merged_tree_range, merged_tree->root, merged_tree->size);
                 //计算待合并四叉树序列索引
-                index_set.push_back(quadtree_index_seek(merged_tree->root));
+                std::optional<uint64_t> index = quadtree_index_seek(merged_tree->root);
+                if(index.has_value())
+                    indexs.push_back(index.value());
                 //重置区块数据缓冲区
                 buffer.clear();
                 //范围查询该范围内所有区块信息
-                //此处使用不稳定查询保证不创建新区块
-                tree_group[seek_time]->tree->range_seek(buffer, merged_tree_range, false);
-                //使用稳定查询在新树中定位对应区块
+                tree_group[seek_time]->tree->seek(merged_tree_range, buffer);
+                //迁移数据
                 for (int copy_time = 0; copy_time < buffer.size(); copy_time++)
-                {
-                    //重置数据迁移结果
-                    ptr_data.reset();
-                    //稳定查询创建新区块（节点坐标为双精度，按 64 位整数取整）
-                    new_tree->tree->block_seek(ptr_data, point_to_l(buffer[copy_time]->node), true);
-                    //若新区块创建失败则跳过该区块
-                    if (ptr_data == nullptr || ptr_data->ptr_data == nullptr)
-                        continue;
-                    //解引用赋值：结果对象与新区块叶子共享同一 T
-                    //直接拷贝旧区块数据值写入新树叶子（要求 T 可赋值）
-                    *ptr_data->ptr_data = *buffer[copy_time]->ptr_data;
-                }
+                    //构建新树区块并迁移数据
+                    new_tree->tree->build(point_to_l(buffer[copy_time]->node), buffer[copy_time]->ptr_data);
             }
 
             //卸载已经被合并的四叉树
-            quadtree_unload(index_set);
+            quadtree_unload(indexs);
         }
 
         //若高速缓存操作位为真

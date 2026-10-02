@@ -1,4 +1,4 @@
-//数值分配器测试：覆盖初始分配、起点设置、回收复用顺序、重复回收拒绝、批量回收与重置
+//数值分配器测试：覆盖初始分配、起点设置、回收复用顺序、重复回收拒绝、批量回收、分配方式、模板类型与重置
 #include <gtest/gtest.h>
 
 //获取数值分配器
@@ -9,7 +9,7 @@ class Number_Allocator_Test : public ::testing::Test
 {
 protected:
 	//被测分配器
-	engine::Number_Allocator allocator;
+	engine::Number_Allocator<uint64_t> allocator;
 };
 
 //默认起点：从零开始逐个递增
@@ -172,14 +172,17 @@ TEST_F(Number_Allocator_Test, 回收复用不产生重复持有)
 	EXPECT_NE(reused, third);
 }
 
-//分配方式：调用设置接口的默认参数后回到后进先出
-TEST_F(Number_Allocator_Test, 分配方式可复位为默认后进先出)
+//分配方式：重置后回到默认后进先出
+TEST_F(Number_Allocator_Test, 重置后分配方式复位为后进先出)
 {
 	//先切换为先进先出
-	allocator.allocate_order_set(engine::Allocate_Order::FIFO);
-	//再以默认参数复位分配方式
-	allocator.allocate_order_set();
+	allocator.set(engine::Allocate_Order::FIFO);
 	//依次回收两个数值
+	allocator.recycle(1u);
+	allocator.recycle(2u);
+	//重置分配器(分配方式一并复位)
+	allocator.reset();
+	//重置后回收池已清空，重新回收两个数值
 	allocator.recycle(1u);
 	allocator.recycle(2u);
 	//默认后进先出应先取回后回收的 2
@@ -192,7 +195,7 @@ TEST_F(Number_Allocator_Test, 分配方式可复位为默认后进先出)
 TEST_F(Number_Allocator_Test, 先进先出回收弹出顺序)
 {
 	//切换为先进先出分配方式
-	allocator.allocate_order_set(engine::Allocate_Order::FIFO);
+	allocator.set(engine::Allocate_Order::FIFO);
 	//依次回收 1 与 2
 	allocator.recycle(1u);
 	allocator.recycle(2u);
@@ -210,10 +213,10 @@ TEST_F(Number_Allocator_Test, 先进先出与后进先出切换)
 	allocator.recycle(2u);
 	allocator.recycle(3u);
 	//切换为先进先出后应取回最小的 1
-	allocator.allocate_order_set(engine::Allocate_Order::FIFO);
+	allocator.set(engine::Allocate_Order::FIFO);
 	EXPECT_EQ(allocator.get(), 1u);
 	//切换为后进先出后应取回最大的 3
-	allocator.allocate_order_set(engine::Allocate_Order::LIFO);
+	allocator.set(engine::Allocate_Order::LIFO);
 	EXPECT_EQ(allocator.get(), 3u);
 	//剩余数值按后进先出取回 2
 	EXPECT_EQ(allocator.get(), 2u);
@@ -244,17 +247,17 @@ TEST_F(Number_Allocator_Test, 回收值取出后可再次回收)
 	EXPECT_TRUE(allocator.recycle(value));
 }
 
-//批量回收：乱序含重复的数值被排序并去重后后进先出取回
-TEST_F(Number_Allocator_Test, 批量回收排序并去重)
+//批量回收：按调用顺序逐个入池，重复项被忽略
+TEST_F(Number_Allocator_Test, 批量回收保持调用顺序并忽略重复项)
 {
 	//批量回收含重复且乱序的数值
 	allocator.recycle(std::vector<uint64_t>{ 5u, 1u, 3u, 1u, 5u });
-	//去重排序后后进先出应先取回最大的 5
-	EXPECT_EQ(allocator.get(), 5u);
-	//再取回 3
+	//后进先出先取回最后入池的 3
 	EXPECT_EQ(allocator.get(), 3u);
-	//最后取回 1
+	//再取回 1
 	EXPECT_EQ(allocator.get(), 1u);
+	//最后取回 5
+	EXPECT_EQ(allocator.get(), 5u);
 	//回收池已空，继续分配新的游标数值 0
 	EXPECT_EQ(allocator.get(), 0u);
 }
@@ -330,14 +333,23 @@ TEST_F(Number_Allocator_Test, 回收池耗尽后继续递增分配)
 	EXPECT_EQ(allocator.get(), 2u);
 }
 
-//极值边界：起点为最大数值时分配后回绕到零
-TEST_F(Number_Allocator_Test, 起点为最大数值时分配后回绕)
+//极值边界：游标即为最大数值时首次分配即判定耗尽并回绕
+TEST_F(Number_Allocator_Test, 游标为最大数值时首次分配回绕)
 {
 	//把起点设为 uint64_t 最大值
 	allocator.set(UINT64_MAX);
-	//首个数值应为最大值本身
-	EXPECT_EQ(allocator.get(), UINT64_MAX);
-	//游标自增溢出后回绕为 0
+	//游标与最大值相等即判定耗尽，首次分配直接回绕到最小值
+	EXPECT_EQ(allocator.get(), 0u);
+}
+
+//极值边界：游标递增到最大值时回绕，最大值本身不外发
+TEST_F(Number_Allocator_Test, 游标递增至最大值时回绕)
+{
+	//把起点设到最大值前一位
+	allocator.set(UINT64_MAX - 1);
+	//先正常取出起点数值
+	EXPECT_EQ(allocator.get(), UINT64_MAX - 1);
+	//游标到达最大值后判定耗尽，回绕到最小值
 	EXPECT_EQ(allocator.get(), 0u);
 }
 
@@ -348,4 +360,65 @@ TEST_F(Number_Allocator_Test, 回收最大数值后原样取回)
 	EXPECT_TRUE(allocator.recycle(UINT64_MAX));
 	//分配应原样返回该最大值
 	EXPECT_EQ(allocator.get(), UINT64_MAX);
+}
+
+//模板类型：可按 8 位无符号整数分配
+TEST_F(Number_Allocator_Test, 八位无符号类型分配)
+{
+	//8 位分配器
+	engine::Number_Allocator<uint8_t> byte_allocator;
+	//连续取出三个数值
+	EXPECT_EQ(static_cast<int>(byte_allocator.get()), 0);
+	EXPECT_EQ(static_cast<int>(byte_allocator.get()), 1);
+	EXPECT_EQ(static_cast<int>(byte_allocator.get()), 2);
+}
+
+//模板类型：可按有符号整数分配且起点可为负数
+TEST_F(Number_Allocator_Test, 有符号类型负数起点)
+{
+	//32 位有符号分配器
+	engine::Number_Allocator<int32_t> signed_allocator;
+	//把起点设为负数
+	signed_allocator.set(-5);
+	//从负起点开始递增
+	EXPECT_EQ(signed_allocator.get(), -5);
+	EXPECT_EQ(signed_allocator.get(), -4);
+}
+
+//极值边界：8 位类型游标耗尽后回绕到最小值
+TEST_F(Number_Allocator_Test, 八位类型游标耗尽回绕)
+{
+	//8 位分配器
+	engine::Number_Allocator<uint8_t> byte_allocator;
+	//把游标设到最大值前一位
+	byte_allocator.set(static_cast<uint8_t>(254));
+	//先正常取出 254
+	EXPECT_EQ(static_cast<int>(byte_allocator.get()), 254);
+	//游标到达 255 后判定耗尽，回绕到最小值
+	EXPECT_EQ(static_cast<int>(byte_allocator.get()), 0);
+}
+
+//重置：重复回收检测记录一并清空
+TEST_F(Number_Allocator_Test, 重置清空重复回收记录)
+{
+	//回收数值 4
+	EXPECT_TRUE(allocator.recycle(4u));
+	//重复回收同一数值被拒绝
+	EXPECT_FALSE(allocator.recycle(4u));
+	//重置分配器
+	allocator.reset();
+	//重置后同一数值可再次回收
+	EXPECT_TRUE(allocator.recycle(4u));
+}
+
+//分配方式设置：切换分配方式不影响数值游标
+TEST_F(Number_Allocator_Test, 切换分配方式不影响数值游标)
+{
+	//取出 0、1，游标前进到 2
+	allocator.get();
+	allocator.get();
+	//切换分配方式
+	allocator.set(engine::Allocate_Order::FIFO);
+	//回收池为空，游标不受分配方式影响，继续返回 2
+	EXPECT_EQ(allocator.get(), 2u);
 }

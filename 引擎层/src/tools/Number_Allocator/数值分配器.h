@@ -1,72 +1,92 @@
 #pragma once
 //预编译头
 #include "common/前置头文件包含.h"
-//获取二分查找算法
-#include "src/tools/Detail/二分查找.h"
 //获取日志系统
 #include "src/tools/Logging/日志系统.h"
 
 namespace engine
 {
 	//分配方式
-	enum Allocate_Order
+	enum class Allocate_Order
 	{
 		LIFO,
 		FIFO
 	};
 
-	//数值池
+	//数值池 —— 模板参数 T 指定分配数值类型
+	template <typename T = uint64_t>
+		requires std::is_integral_v<T>
 	class Number_Allocator
 	{
 	private:
 		//数值分配方式
 		Allocate_Order order = Allocate_Order::LIFO;
 		//可分配新数值
-		uint64_t next_number = 0;
+		T next_number = (std::numeric_limits<T>::min)();
 		//回收数值集合
-		std::vector<uint64_t> recycle_numbers;
+		std::deque<T> recycle_numbers;
+		//回收数值映射
+		std::unordered_set<T> mapping;
+
 	public:
 		//设置分配起点
-		void set(const uint64_t& min_allocate_number)
+		void set(T min_allocate_number)
 		{
 			next_number = min_allocate_number;
 		}
+		//设置分配机制
+		void set(Allocate_Order order)
+		{
+			this->order = order;
+		}
 		//获取可用数值
-		uint64_t get(void)
+		T get(void)
 		{
 			//待返回数值记录
-			uint64_t index;
+			T number;
 			//若回收数值集合不为空
 			if (!recycle_numbers.empty())
 			{
-				//若为后进后出分配机制
-				if(order == Allocate_Order::LIFO)
+				//若为后进先出分配机制
+				if (order == Allocate_Order::LIFO)
 				{
 					//弹出末元素
-					index = recycle_numbers.back();
+					number = recycle_numbers.back();
 					recycle_numbers.pop_back();
 				}
-				//若为后进先出分配机制
+				//若为后进后出分配机制
 				else
 				{
 					//弹出首元素
-					index = recycle_numbers.front();
-					recycle_numbers.erase(recycle_numbers.begin());
+					number = recycle_numbers.front();
+					recycle_numbers.pop_front();
 				}
 			}
+			//若回收数值集合为空
 			else
-				//获取可分配新数值
-				index = next_number++;
+			{
+				//若可分配数值耗尽
+				if (next_number == (std::numeric_limits<T>::max)())
+				{
+					Log::warn("Number_Allocator::数值分配殆尽\n已进行回绕分配");
+					//获取可分配新数值
+					number = next_number = (std::numeric_limits<T>::min)();
+				}
+				else
+				    //获取可分配新数值
+				    number = next_number++;
+			}
 
-			return index;
+			//清除数值映射
+			mapping.erase(number);
+
+			return number;
 		}
 		//回收数值 —— 单数值重载
-		bool recycle(const uint64_t& recycle_number)
+		bool recycle(T recycle_number)
 		{
-			//查找待回收数值是否已回收
-			std::optional<uint64_t> index = detail::binary_search(recycle_numbers,recycle_number,std::ranges::less());
 			//若待回收数值已回收
-			if(index.has_value())
+			if (mapping.count(recycle_number))
 			{
 				Log::warn("Number_Pool::待回收数值已被回收!!!");
 				return false;
@@ -75,30 +95,29 @@ namespace engine
 			{
 				//回收数值
 				recycle_numbers.push_back(recycle_number);
-				//重排序
-				std::ranges::sort(recycle_numbers);
+				//建立映射
+				mapping.insert(recycle_number);
 				return true;
 			}
 		}
 		//回收数值 —— 多数值重载
-		void recycle(const std::vector<uint64_t>& recycle_numbers)
+		void recycle(const std::vector<T>& numbers)
 		{
 			//循环调用单数值重载
-			for (auto number : recycle_numbers)
+			for (auto number : numbers)
 				recycle(number);
-		}
-		//数值分配方式设置
-		void allocate_order_set(Allocate_Order order = Allocate_Order::LIFO)
-		{
-			this->order = order;
 		}
 		//重置分配器
 		void reset(void)
 		{
+			//重置数值分配策略
+			order = Allocate_Order::LIFO;
 			//重置可分配新数值
-			next_number = 0;
+			next_number = (std::numeric_limits<T>::min)();
 			//重置回收数值集合
 			recycle_numbers.clear();
+			//重置回收数值映射
+			mapping.clear();
 		}
 	};
 }
