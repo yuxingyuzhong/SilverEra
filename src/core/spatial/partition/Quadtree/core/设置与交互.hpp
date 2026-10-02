@@ -29,7 +29,7 @@ namespace engine
 		for (int recur_direct = 0; recur_direct <= SE; recur_direct++)
 		{
 			//递归子节点
-			child_node_recur(ptr_next, recur_direct, MIDDLE, false);
+			child_node_recur(ptr_next, recur_direct, MIDDLE,true);
 			//递归子函数
 			recur_unload(1, max_level, ptr_next);
 			//还原当前节点指针
@@ -67,7 +67,7 @@ namespace engine
 		for (int recur_direct = 0; recur_direct <= SE; recur_direct++)
 		{
 			//递归子节点
-			child_node_recur(ptr_next, recur_direct, type, false);
+			child_node_recur(ptr_next, recur_direct, type, true);
 			//递归子函数
 			recur_unload(now_level + 1, max_level, ptr_next);
 			//还原当前节点指针

@@ -70,7 +70,7 @@ namespace engine
 				{
 					Log::warn("Number_Allocator::数值分配殆尽\n已进行回绕分配");
 					//获取可分配新数值
-					number = next_number = (std::numeric_limits<T>::min)());
+					number = next_number = (std::numeric_limits<T>::min)();
 				}
 				else
 				    //获取可分配新数值

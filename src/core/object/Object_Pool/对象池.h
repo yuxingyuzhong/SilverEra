@@ -37,9 +37,9 @@ namespace engine
 		//ID分配起点
 		uint64_t min_ID = 1;
 		//ID分配器
-		Number_Allocator ID_allocator;
+		Number_Allocator<uint64_t> ID_allocator;
 		//索引分配器
-		Number_Allocator index_allocator;
+		Number_Allocator<uint64_t> index_allocator;
 
 		//对象集合
 		std::vector<T> objects;
@@ -328,8 +328,13 @@ namespace engine
 			//返回全部对象
 			return objects;
 		}
-		//超尾迭代器获取
-		typename std::vector<T>::iterator end(void) const
+		//超尾迭代器获取 —— 非常量重载
+		typename std::vector<T>::iterator end(void)
+		{
+			return objects.end();
+		}
+		//超尾迭代器获取 —— 常量重载
+		typename std::vector<T>::const_iterator end(void) const
 		{
 			return objects.end();
 		}
