@@ -1,11 +1,15 @@
 //日志系统测试：覆盖四级输出的类型前缀与格式化内容、错误码格式化特化，
 //以及链表树流分流的路径节点绑定、目录继承、子节点覆盖、多流全量输出与清空回落
+//注意：主程序会把引擎日志屏蔽到文件，本套件要验证「未绑定即走控制台」与屏幕捕获，
+//故夹具在用例前关闭屏蔽、用例后恢复屏蔽（见 src/主调/引擎日志屏蔽.h）
 #include <gtest/gtest.h>
 
 //获取日志系统
-#include "src/tools/Logging/日志系统.h"
+#include "src/tools/Logging/日志系统运行包.h"
 //获取路径字符串转换工具
 #include "src/tools/Detail/路径字符串转换.h"
+//获取引擎日志屏蔽（用例期间需临时关闭）
+#include "src/主调/引擎日志屏蔽.h"
 
 //本测试文件路径（current() 位于本文件，故返回本文件路径，与日志调用处路径一致）
 static std::string log_test_path()
@@ -26,6 +30,8 @@ static std::string log_test_dir()
 //读回日志文件全文（仅拼接各行内容，便于文本查找）
 static std::string log_read(const std::string& file_name)
 {
+	//先把日志系统缓冲落盘（文件输出目标按阈值批量落盘，读取前需显式刷新）
+	engine::logger.stream_flush();
 	//以字符串路径打开文件（兼容中文路径）
 	std::ifstream reader(engine::detail::string_to_path(file_name));
 	//拼接各行内容
@@ -105,10 +111,12 @@ protected:
 	//用例前清理本文件路径节点与本文件目录节点的自有流
 	void SetUp() override
 	{
+		//关闭引擎日志屏蔽：本套件要验证「未绑定 → 走控制台」的兜底行为
+		engine::日志屏蔽_关闭();
 		//清除本文件路径节点自有流
-		engine::Log::stream_clear(log_test_path());
+		engine::logger.stream_clear(log_test_path());
 		//清除本文件目录节点自有流
-		engine::Log::stream_clear(log_test_dir());
+		engine::logger.stream_clear(log_test_dir());
 		//清理上次运行可能残留的探针文件
 		log_remove_all();
 	}
@@ -116,13 +124,15 @@ protected:
 	void TearDown() override
 	{
 		//清除本文件路径节点自有流
-		engine::Log::stream_clear(log_test_path());
+		engine::logger.stream_clear(log_test_path());
 		//清除本文件目录节点自有流
-		engine::Log::stream_clear(log_test_dir());
+		engine::logger.stream_clear(log_test_dir());
 		//清除根节点自有流
-		engine::Log::stream_clear("");
+		engine::logger.stream_clear("");
 		//绑定清除后文件流已释放，此时清理探针文件
 		log_remove_all();
+		//恢复引擎日志屏蔽：其余套件不应把引擎日志混进 googletest 的输出
+		engine::日志屏蔽_开启();
 	}
 };
 
@@ -135,7 +145,7 @@ TEST_F(Log_Test, 信息输出带类型前缀)
 		//开始捕获控制台输出
 		Console_Capture capture;
 		//输出一条信息日志
-		engine::Log::info("数值={}", 42);
+		engine::logger.info("数值={}", 42);
 		//取回输出内容
 		output = capture.text();
 	}
@@ -154,7 +164,7 @@ TEST_F(Log_Test, 警告输出带类型前缀)
 		//开始捕获控制台输出
 		Console_Capture capture;
 		//输出一条警告日志
-		engine::Log::warn("资源缺失：{}", "贴图");
+		engine::logger.warn("资源缺失：{}", "贴图");
 		//取回输出内容
 		output = capture.text();
 	}
@@ -173,7 +183,7 @@ TEST_F(Log_Test, 错误输出带类型前缀)
 		//开始捕获控制台输出
 		Console_Capture capture;
 		//输出一条错误日志
-		engine::Log::error("初始化失败：{}", 3);
+		engine::logger.error("初始化失败：{}", 3);
 		//取回输出内容
 		output = capture.text();
 	}
@@ -192,7 +202,7 @@ TEST_F(Log_Test, 调试输出带类型前缀)
 		//开始捕获控制台输出
 		Console_Capture capture;
 		//输出一条调试日志
-		engine::Log::debug("帧耗时：{}", 16.6);
+		engine::logger.debug("帧耗时：{}", 16.6);
 		//取回输出内容
 		output = capture.text();
 	}
@@ -211,7 +221,7 @@ TEST_F(Log_Test, 多参数格式化)
 		//开始捕获控制台输出
 		Console_Capture capture;
 		//输出含两个占位符的日志
-		engine::Log::info("{}与{}", "甲", 5);
+		engine::logger.info("{}与{}", "甲", 5);
 		//取回输出内容
 		output = capture.text();
 	}
@@ -228,7 +238,7 @@ TEST_F(Log_Test, 无占位符输出原文)
 		//开始捕获控制台输出
 		Console_Capture capture;
 		//输出不含占位符的日志
-		engine::Log::info("启动完成");
+		engine::logger.info("启动完成");
 		//取回输出内容
 		output = capture.text();
 	}
@@ -247,7 +257,7 @@ TEST_F(Log_Test, 错误码格式化特化)
 		//开始捕获控制台输出
 		Console_Capture capture;
 		//以错误码为参数输出日志
-		engine::Log::info("系统调用失败：{}", error_info);
+		engine::logger.info("系统调用失败：{}", error_info);
 		//取回输出内容
 		output = capture.text();
 	}
@@ -264,9 +274,9 @@ TEST_F(Log_Test, 文件节点绑定后日志落文件)
 	const std::string file_name = "engine_log_probe.txt";
 
 	//把本文件路径节点绑定到该文件
-	ASSERT_TRUE(engine::Log::stream_bind(log_test_path(), file_name));
+	ASSERT_TRUE(engine::logger.stream_bind(log_test_path(), file_name));
 	//此时输出一条信息日志
-	engine::Log::info("落盘探针 {}", 7);
+	engine::logger.info("落盘探针 {}", 7);
 
 	//文件应被创建
 	ASSERT_TRUE(std::filesystem::exists(engine::detail::string_to_path(file_name)));
@@ -288,7 +298,7 @@ TEST_F(Log_Test, 未绑定路径时走控制台)
 		//开始捕获控制台输出
 		Console_Capture capture;
 		//输出一条信息日志
-		engine::Log::info("控制台落点 {}", 1);
+		engine::logger.info("控制台落点 {}", 1);
 		//取回输出内容
 		output = capture.text();
 	}
@@ -305,10 +315,10 @@ TEST_F(Log_Test, 四级日志连续写出)
 		//开始捕获控制台输出
 		Console_Capture capture;
 		//依次输出四个等级的日志
-		engine::Log::info("信息 {}", 1);
-		engine::Log::warn("警告 {}", 2);
-		engine::Log::error("错误 {}", 3);
-		engine::Log::debug("调试 {}", 4);
+		engine::logger.info("信息 {}", 1);
+		engine::logger.warn("警告 {}", 2);
+		engine::logger.error("错误 {}", 3);
+		engine::logger.debug("调试 {}", 4);
 		//取回输出内容
 		output = capture.text();
 	}
@@ -331,7 +341,7 @@ TEST_F(Log_Test, 混合类型参数替换)
 		//开始捕获控制台输出
 		Console_Capture capture;
 		//输出含三种类型占位符的日志
-		engine::Log::info("整数{}浮点{}文本{}", 7, 2.5, std::string("甲"));
+		engine::logger.info("整数{}浮点{}文本{}", 7, 2.5, std::string("甲"));
 		//取回输出内容
 		output = capture.text();
 	}
@@ -348,7 +358,7 @@ TEST_F(Log_Test, 空字符串消息可写出)
 		//开始捕获控制台输出
 		Console_Capture capture;
 		//输出一条空消息
-		engine::Log::info("");
+		engine::logger.info("");
 		//取回输出内容
 		output = capture.text();
 	}
@@ -365,7 +375,7 @@ TEST_F(Log_Test, 含中文消息完整输出)
 		//开始捕获控制台输出
 		Console_Capture capture;
 		//输出一条中文消息
-		engine::Log::info("中文消息：{}", "测试");
+		engine::logger.info("中文消息：{}", "测试");
 		//取回输出内容
 		output = capture.text();
 	}
@@ -384,7 +394,7 @@ TEST_F(Log_Test, 超长消息可完整输出)
 		//开始捕获控制台输出
 		Console_Capture capture;
 		//以超长文本为参数输出日志
-		engine::Log::info("{}", long_text);
+		engine::logger.info("{}", long_text);
 		//取回输出内容
 		output = capture.text();
 	}
@@ -404,7 +414,7 @@ TEST_F(Log_Test, 连续大量写出稳定)
 		Console_Capture capture;
 		//连续写出两千条日志
 		for (int index = 0; index < 2000; ++index)
-			engine::Log::info("批量日志 {}", index);
+			engine::logger.info("批量日志 {}", index);
 		//取回输出内容
 		output = capture.text();
 	}
@@ -421,9 +431,9 @@ TEST_F(Log_Test, 目录节点绑定后后代继承)
 	const std::string file_name = "engine_log_dir_probe.txt";
 
 	//把本文件所在目录节点绑定到该文件
-	ASSERT_TRUE(engine::Log::stream_bind(log_test_dir(), file_name));
+	ASSERT_TRUE(engine::logger.stream_bind(log_test_dir(), file_name));
 	//此时输出一条信息日志
-	engine::Log::info("目录继承 {}", 1);
+	engine::logger.info("目录继承 {}", 1);
 
 	//日志应经目录节点继承落到文件
 	const std::string content = log_read(file_name);
@@ -437,10 +447,10 @@ TEST_F(Log_Test, 子节点自有流覆盖父节点流)
 	const std::string parent_name = "engine_log_parent.txt";
 	const std::string child_name = "engine_log_child.txt";
 	//先绑定目录节点，再绑定文件节点
-	ASSERT_TRUE(engine::Log::stream_bind(log_test_dir(), parent_name));
-	ASSERT_TRUE(engine::Log::stream_bind(log_test_path(), child_name));
+	ASSERT_TRUE(engine::logger.stream_bind(log_test_dir(), parent_name));
+	ASSERT_TRUE(engine::logger.stream_bind(log_test_path(), child_name));
 	//此时输出一条信息日志
-	engine::Log::info("子节点覆盖 {}", 2);
+	engine::logger.info("子节点覆盖 {}", 2);
 
 	//日志应落到文件节点自有输出流
 	EXPECT_NE(log_read(child_name).find("[INFO]子节点覆盖 2"), std::string::npos);
@@ -455,12 +465,12 @@ TEST_F(Log_Test, 清空子节点后回落父节点流)
 	const std::string parent_name = "engine_log_fall_parent.txt";
 	const std::string child_name = "engine_log_fall_child.txt";
 	//绑定目录节点与文件节点
-	ASSERT_TRUE(engine::Log::stream_bind(log_test_dir(), parent_name));
-	ASSERT_TRUE(engine::Log::stream_bind(log_test_path(), child_name));
+	ASSERT_TRUE(engine::logger.stream_bind(log_test_dir(), parent_name));
+	ASSERT_TRUE(engine::logger.stream_bind(log_test_path(), child_name));
 	//清空文件节点自有输出流
-	ASSERT_TRUE(engine::Log::stream_clear(log_test_path()));
+	ASSERT_TRUE(engine::logger.stream_clear(log_test_path()));
 	//此时输出一条信息日志
-	engine::Log::info("回落父流 {}", 3);
+	engine::logger.info("回落父流 {}", 3);
 
 	//日志应回落到目录节点输出流
 	EXPECT_NE(log_read(parent_name).find("[INFO]回落父流 3"), std::string::npos);
@@ -475,10 +485,10 @@ TEST_F(Log_Test, 同节点多流全量输出)
 	const std::string first_name = "engine_log_multi_one.txt";
 	const std::string second_name = "engine_log_multi_two.txt";
 	//对同一路径节点连续绑定两个输出流
-	ASSERT_TRUE(engine::Log::stream_bind(log_test_path(), first_name));
-	ASSERT_TRUE(engine::Log::stream_bind(log_test_path(), second_name));
+	ASSERT_TRUE(engine::logger.stream_bind(log_test_path(), first_name));
+	ASSERT_TRUE(engine::logger.stream_bind(log_test_path(), second_name));
 	//此时输出一条信息日志
-	engine::Log::info("多流输出 {}", 4);
+	engine::logger.info("多流输出 {}", 4);
 
 	//两个文件都应收到同一条日志
 	EXPECT_NE(log_read(first_name).find("[INFO]多流输出 4"), std::string::npos);
@@ -492,21 +502,21 @@ TEST_F(Log_Test, 目录节点后绑定按公共前缀归并)
 	const std::string child_name = "engine_log_merge_child.txt";
 	const std::string parent_name = "engine_log_merge_parent.txt";
 	//先绑定文件节点（此时树上仅存在该文件路径节点）
-	ASSERT_TRUE(engine::Log::stream_bind(log_test_path(), child_name));
+	ASSERT_TRUE(engine::logger.stream_bind(log_test_path(), child_name));
 	//输出一条日志，应落到文件节点输出流
-	engine::Log::info("先绑文件 {}", 5);
+	engine::logger.info("先绑文件 {}", 5);
 	EXPECT_NE(log_read(child_name).find("[INFO]先绑文件 5"), std::string::npos);
 
 	//后绑定目录节点（与既存文件节点共享公共前缀而成为其父节点）
-	ASSERT_TRUE(engine::Log::stream_bind(log_test_dir(), parent_name));
+	ASSERT_TRUE(engine::logger.stream_bind(log_test_dir(), parent_name));
 	//文件节点自有输出流优先，日志仍落文件节点输出流
-	engine::Log::info("后绑目录 {}", 6);
+	engine::logger.info("后绑目录 {}", 6);
 	EXPECT_NE(log_read(child_name).find("[INFO]后绑目录 6"), std::string::npos);
 	EXPECT_EQ(log_read(parent_name).find("后绑目录"), std::string::npos);
 
 	//清空文件节点后日志回落目录节点输出流
-	ASSERT_TRUE(engine::Log::stream_clear(log_test_path()));
-	engine::Log::info("回落目录 {}", 7);
+	ASSERT_TRUE(engine::logger.stream_clear(log_test_path()));
+	engine::logger.info("回落目录 {}", 7);
 	EXPECT_NE(log_read(parent_name).find("[INFO]回落目录 7"), std::string::npos);
 }
 
@@ -517,9 +527,9 @@ TEST_F(Log_Test, 根节点绑定后全体继承)
 	const std::string file_name = "engine_log_root_probe.txt";
 
 	//把根路径节点绑定到该文件
-	ASSERT_TRUE(engine::Log::stream_bind("", file_name));
+	ASSERT_TRUE(engine::logger.stream_bind("", file_name));
 	//此时输出一条信息日志
-	engine::Log::info("根流继承 {}", 8);
+	engine::logger.info("根流继承 {}", 8);
 
 	//日志应经根节点继承落到文件
 	EXPECT_NE(log_read(file_name).find("[INFO]根流继承 8"), std::string::npos);
@@ -532,9 +542,9 @@ TEST_F(Log_Test, 流对象重载绑定内存流)
 	std::shared_ptr<std::ostringstream> memory(new(std::nothrow) std::ostringstream());
 	ASSERT_TRUE(memory);
 	//把内存流绑定到本文件路径节点
-	ASSERT_TRUE(engine::Log::stream_bind(log_test_path(), memory));
+	ASSERT_TRUE(engine::logger.stream_bind(log_test_path(), memory));
 	//此时输出一条信息日志
-	engine::Log::info("内存流输出 {}", 9);
+	engine::logger.info("内存流输出 {}", 9);
 
 	//内存流应收到该日志
 	EXPECT_NE(memory->str().find("[INFO]内存流输出 9"), std::string::npos);
@@ -544,14 +554,14 @@ TEST_F(Log_Test, 流对象重载绑定内存流)
 TEST_F(Log_Test, 空输出流绑定被拒绝)
 {
 	//绑定空输出流应返回失败
-	EXPECT_FALSE(engine::Log::stream_bind(log_test_path(), engine::Log::Stream()));
+	EXPECT_FALSE(engine::logger.stream_bind(log_test_path(), engine::Log::Stream()));
 }
 
 //清空失败：清空不存在路径节点应返回失败
 TEST_F(Log_Test, 清空不存在节点返回失败)
 {
 	//清空不存在的路径节点应返回失败
-	EXPECT_FALSE(engine::Log::stream_clear("不存在的路径/不存在的文件.hpp"));
+	EXPECT_FALSE(engine::logger.stream_clear("不存在的路径/不存在的文件.hpp"));
 }
 
 //多线程保护：多线程并发输出时日志行完整不交错
@@ -561,7 +571,7 @@ TEST_F(Log_Test, 多线程并发输出不交错)
 	std::shared_ptr<std::ostringstream> memory(new(std::nothrow) std::ostringstream());
 	ASSERT_TRUE(memory);
 	//把内存流绑定到本文件路径节点
-	ASSERT_TRUE(engine::Log::stream_bind(log_test_path(), memory));
+	ASSERT_TRUE(engine::logger.stream_bind(log_test_path(), memory));
 
 	//四个线程各写一百条带序号的日志
 	std::vector<std::thread> workers;
@@ -570,7 +580,7 @@ TEST_F(Log_Test, 多线程并发输出不交错)
 			{
 				//逐条写出带线程号与序号的日志
 				for (int seq = 0; seq < 100; ++seq)
-					engine::Log::info("并发标记 {}:{}", index, seq);
+					engine::logger.info("并发标记 {}:{}", index, seq);
 			});
 	//等待全部线程结束
 	for (std::thread& worker : workers)

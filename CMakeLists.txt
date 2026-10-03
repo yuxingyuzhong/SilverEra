@@ -72,12 +72,50 @@ byjy_jieru_xiaceng(
 )
 
 # =============================================================================
+# 1.5 下层头快照切换（本层专用）
+# =============================================================================
+# 本层改为按「与下层静态库同版次」的头文件编译：把下层源码树下的包含目录换成其构建目录
+# 内的头快照（<下层构建目录>/include），消除「下层头已改、库未重建」时新头配旧库地
+# 编译链接的风险。系统层的对外面里并入了引擎层的包含目录，故：
+#   ① 引擎层路径映射要对 EngineCore 与 SystemCore 各做一次（后者承载并入的引擎条目）；
+#   ② 系统层路径映射只改 SystemCore，且必须放在引擎映射之后，避免误改引擎条目。
+# 系统层自身的包含目录非引擎层源码树路径，原样保留。
+# =============================================================================
+get_target_property(BYJY_ENGINE_LIB_FILE EngineCore IMPORTED_LOCATION)
+get_filename_component(BYJY_ENGINE_BUILD_DIR "${BYJY_ENGINE_LIB_FILE}/../.." ABSOLUTE)
+get_filename_component(BYJY_ENGINE_SOURCE_DIR "${PROJECT_ROOT_DIR}/../引擎层" ABSOLUTE)
+
+byjy_qiehuan_tou_kuaizhao(EngineCore "${BYJY_ENGINE_BUILD_DIR}/include" "${BYJY_ENGINE_SOURCE_DIR}")
+byjy_qiehuan_tou_kuaizhao(SystemCore "${BYJY_ENGINE_BUILD_DIR}/include" "${BYJY_ENGINE_SOURCE_DIR}")
+
+get_target_property(BYJY_SYSTEM_LIB_FILE SystemCore IMPORTED_LOCATION)
+get_filename_component(BYJY_SYSTEM_BUILD_DIR "${BYJY_SYSTEM_LIB_FILE}/../.." ABSOLUTE)
+get_filename_component(BYJY_SYSTEM_SOURCE_DIR "${PROJECT_ROOT_DIR}/../系统层" ABSOLUTE)
+
+byjy_qiehuan_tou_kuaizhao(SystemCore "${BYJY_SYSTEM_BUILD_DIR}/include" "${BYJY_SYSTEM_SOURCE_DIR}")
+
+# =============================================================================
 # 2. 源文件收集
 # =============================================================================
 # 收录 src/ 下的功能测试代码
 file(GLOB_RECURSE TEST_SOURCES CONFIGURE_DEPENDS
     "${PROJECT_ROOT_DIR}/src/*.cpp"
     "${PROJECT_ROOT_DIR}/src/*.c"
+)
+
+# 导出编译数据库（供 IDE / 语言工具链读取本层包含路径与宏）
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+# 递归收集本层头文件：仅用于让 IDE 与生成系统建立文件索引（不参与编译）
+file(GLOB_RECURSE TEST_HEADERS CONFIGURE_DEPENDS
+    "${PROJECT_ROOT_DIR}/src/*.h"
+    "${PROJECT_ROOT_DIR}/src/*.hpp"
+)
+
+# 主调头文件（TestLauncher 与 EngineTests 共用，单独收编以纳入索引）
+file(GLOB_RECURSE MAIN_HEADERS CONFIGURE_DEPENDS
+    "${PROJECT_ROOT_DIR}/src/主调/*.h"
+    "${PROJECT_ROOT_DIR}/src/主调/*.hpp"
 )
 
 if(TEST_SOURCES)
@@ -94,6 +132,10 @@ list(FILTER TEST_SOURCES EXCLUDE REGEX "/src/单元测试/")
 # 主调代码（含 main 与图形窗口）也不并入 TestCore：它是可执行入口，不是库内容
 list(FILTER TEST_SOURCES EXCLUDE REGEX "/src/主调/")
 
+# 头文件同样排除用例与主调目录（它们分别由下方独立目标收编）
+list(FILTER TEST_HEADERS EXCLUDE REGEX "/src/单元测试/")
+list(FILTER TEST_HEADERS EXCLUDE REGEX "/src/主调/")
+
 # src/ 下暂无源文件时不视为错误：分阶段开发中测试代码尚未落位属正常状态，
 # 此时不产出 TestCore，EngineTests 仍可只靠下层静态库独立生成
 if(NOT TEST_SOURCES)
@@ -106,7 +148,7 @@ if(TEST_SOURCES)
     # =========================================================================
     # 3. 创建测试层静态库
     # =========================================================================
-    add_library(TestCore STATIC ${TEST_SOURCES})
+    add_library(TestCore STATIC ${TEST_SOURCES} ${TEST_HEADERS})
 
     # 公共包含路径：本层根目录
     target_include_directories(TestCore PUBLIC "${PROJECT_ROOT_DIR}")
@@ -197,6 +239,12 @@ file(GLOB_RECURSE BYJY_TEST_SOURCES CONFIGURE_DEPENDS
     "${PROJECT_ROOT_DIR}/src/单元测试/*.cpp"
 )
 
+# 用例头文件：同样纳入索引（不参与编译）
+file(GLOB_RECURSE BYJY_TEST_HEADERS CONFIGURE_DEPENDS
+    "${PROJECT_ROOT_DIR}/src/单元测试/*.h"
+    "${PROJECT_ROOT_DIR}/src/单元测试/*.hpp"
+)
+
 # 用例尚未落位时不视为错误，构建不因此中断
 if(NOT BYJY_TEST_SOURCES)
     message(STATUS "src/单元测试/ 下暂无用例，跳过 EngineTests 与 EngineTestObjects")
@@ -211,6 +259,7 @@ else()
     # 只收纯逻辑部分：图形窗口依赖 ImGui，单独编进 EngineTests，不并入此库，
     # 使用例不必拖上图形库。
     add_library(TestLauncher STATIC
+        ${MAIN_HEADERS}
         "${PROJECT_ROOT_DIR}/src/主调/测试选择模型.cpp"
         "${PROJECT_ROOT_DIR}/src/主调/控制台选择菜单.cpp"
     )
@@ -226,7 +275,7 @@ else()
     )
 
     #用例目标：编一次，EngineTests 取一份 .obj
-    add_library(EngineTestObjects OBJECT ${BYJY_TEST_SOURCES})
+    add_library(EngineTestObjects OBJECT ${BYJY_TEST_SOURCES} ${BYJY_TEST_HEADERS})
 
     #链接下层静态库以取得对外的包含路径；从 gtest 取得框架头文件路径；
     #并由 TestLauncher 取得本层根目录（用例要 include "src/主调/测试选择模型.h"）
@@ -250,8 +299,10 @@ else()
     #（Engine_Env 以「可执行文件所在目录」为基准解析资源路径，这是硬性要求）
     add_executable(EngineTests
         $<TARGET_OBJECTS:EngineTestObjects>
+        ${MAIN_HEADERS}
         "${PROJECT_ROOT_DIR}/src/主调/主程序.cpp"
         "${PROJECT_ROOT_DIR}/src/主调/图形选择窗口.cpp"
+        "${PROJECT_ROOT_DIR}/src/主调/引擎日志屏蔽.cpp"
     )
     target_link_libraries(EngineTests PRIVATE
         EngineTestObjects EngineCore SystemCore
