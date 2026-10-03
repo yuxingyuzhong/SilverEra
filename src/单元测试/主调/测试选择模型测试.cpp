@@ -2,7 +2,7 @@
 #include <gtest/gtest.h>
 
 //获取被测的测试选择模型与控制台输入解析
-#include "src/主调/测试选择模型.h"
+#include "Application/Test/src/主调/测试选择模型.h"
 
 #include <cstddef>
 #include <string>

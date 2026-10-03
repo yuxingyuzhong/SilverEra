@@ -1,12 +1,12 @@
 //引擎日志屏蔽 —— 实现（声明见 src/主调/引擎日志屏蔽.h）
-#include "src/主调/引擎日志屏蔽.h"
+#include "Application/Test/src/主调/引擎日志屏蔽.h"
 
 //获取日志系统（含全局 logger 单例）
-#include "src/tools/Logging/日志系统运行包.h"
+#include "Engine/EngineCore/src/tools/Logging/日志系统运行包.h"
 //获取引擎环境（以可执行文件目录为基准定位日志文件）
-#include "src/tools/Engine_Env/引擎环境.h"
+#include "Engine/EngineCore/src/tools/Engine_Env/引擎环境.h"
 //获取路径字符串转换工具（中文字节与 filesystem::path 互转）
-#include "src/tools/Detail/路径字符串转换.h"
+#include "Engine/EngineCore/src/tools/Detail/路径字符串转换.h"
 
 //引擎命名空间
 namespace engine

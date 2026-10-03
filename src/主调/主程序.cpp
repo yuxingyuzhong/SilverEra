@@ -13,11 +13,11 @@
 //============================================================================
 #include <gtest/gtest.h>
 
-#include "src/主调/测试选择模型.h"
-#include "src/主调/图形选择窗口.h"
-#include "src/主调/控制台选择菜单.h"
-#include "src/主调/退出等待判定.h"
-#include "src/主调/引擎日志屏蔽.h"
+#include "Application/Test/src/主调/测试选择模型.h"
+#include "Application/Test/src/主调/图形选择窗口.h"
+#include "Application/Test/src/主调/控制台选择菜单.h"
+#include "Application/Test/src/主调/退出等待判定.h"
+#include "Application/Test/src/主调/引擎日志屏蔽.h"
 
 #include <conio.h>
 #include <cstring>

@@ -2,11 +2,11 @@
 #include <gtest/gtest.h>
 
 //获取配置加载器
-#include "src/core/config/Config_Loader/配置加载器.h"
+#include "Engine/EngineCore/src/core/config/Config_Loader/配置加载器.h"
 //获取事件中转器
-#include "src/core/event/Event_Broker/事件中转器.h"
+#include "Engine/EngineCore/src/core/event/Event_Broker/事件中转器.h"
 //获取路径字符串转换工具
-#include "src/tools/Detail/路径字符串转换.h"
+#include "Engine/EngineCore/src/tools/Detail/路径字符串转换.h"
 
 //配置加载器测试夹具
 class Config_Loader_Test : public ::testing::Test

@@ -2,7 +2,7 @@
 #include <gtest/gtest.h>
 
 //获取数值分配器
-#include "src/tools/Number_Allocator/数值分配器.h"
+#include "Engine/EngineCore/src/tools/Number_Allocator/数值分配器.h"
 
 //数值分配器测试夹具
 class Number_Allocator_Test : public ::testing::Test

@@ -4,7 +4,7 @@
 #include <fstream>
 
 //获取碰撞代理器（含碰撞空间、碰撞体与事件系统）
-#include "src/core/spatial/collision/Collision_Proxy/碰撞代理器.h"
+#include "Engine/EngineCore/src/core/spatial/collision/Collision_Proxy/碰撞代理器.h"
 
 //构造盒体几何配置
 static nlohmann::json box_config(const uint64_t collider_ID, const double position_X)

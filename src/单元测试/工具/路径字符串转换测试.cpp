@@ -3,9 +3,9 @@
 #include <gtest/gtest.h>
 
 //获取路径操作工具（路径字符串转换 + 路径规范化 + 路径键规范化）
-#include "src/tools/Detail/package/路径操作工具.h"
+#include "Engine/EngineCore/src/tools/Detail/package/路径操作工具.h"
 //获取引擎环境
-#include "src/tools/Engine_Env/引擎环境.h"
+#include "Engine/EngineCore/src/tools/Engine_Env/引擎环境.h"
 
 //路径字符串转换测试夹具
 class Path_String_Test : public ::testing::Test

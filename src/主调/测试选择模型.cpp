@@ -1,5 +1,5 @@
 //测试选择模型实现：googletest 反射建树、勾选态维护、过滤串生成与控制台输入解析
-#include "src/主调/测试选择模型.h"
+#include "Application/Test/src/主调/测试选择模型.h"
 
 #include <gtest/gtest.h>
 

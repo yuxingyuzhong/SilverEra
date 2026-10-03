@@ -2,7 +2,7 @@
 #include <gtest/gtest.h>
 
 //获取对象池
-#include "src/core/object/Object_Pool/对象池.h"
+#include "Engine/EngineCore/src/core/object/Object_Pool/对象池.h"
 
 //派生测试对象
 class Test_Object : public engine::Object

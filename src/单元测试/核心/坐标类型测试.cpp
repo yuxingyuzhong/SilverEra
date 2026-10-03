@@ -7,7 +7,7 @@
 #include <limits>
 
 //获取坐标类型
-#include "src/core/spatial/common/core/坐标类型.h"
+#include "Engine/EngineCore/src/core/spatial/common/core/坐标类型.h"
 
 //坐标类型测试夹具
 class Coord_Type_Test : public ::testing::Test

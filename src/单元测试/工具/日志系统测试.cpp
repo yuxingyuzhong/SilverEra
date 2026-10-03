@@ -5,11 +5,11 @@
 #include <gtest/gtest.h>
 
 //获取日志系统
-#include "src/tools/Logging/日志系统运行包.h"
+#include "Engine/EngineCore/src/tools/Logging/日志系统运行包.h"
 //获取路径字符串转换工具
-#include "src/tools/Detail/路径字符串转换.h"
+#include "Engine/EngineCore/src/tools/Detail/路径字符串转换.h"
 //获取引擎日志屏蔽（用例期间需临时关闭）
-#include "src/主调/引擎日志屏蔽.h"
+#include "Application/Test/src/主调/引擎日志屏蔽.h"
 
 //本测试文件路径（current() 位于本文件，故返回本文件路径，与日志调用处路径一致）
 static std::string log_test_path()

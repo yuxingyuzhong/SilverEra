@@ -2,7 +2,7 @@
 #include <gtest/gtest.h>
 
 //获取碰撞体（含碰撞对象与几何形状）
-#include "src/core/spatial/collision/Collider/碰撞体.h"
+#include "Engine/EngineCore/src/core/spatial/collision/Collider/碰撞体.h"
 
 //碰撞体搬移测试夹具（独立夹具名，避免与碰撞测试内的夹具重名）
 class Collider_Move_Test : public ::testing::Test

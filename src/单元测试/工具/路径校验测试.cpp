@@ -4,11 +4,11 @@
 #include <fstream>
 
 //获取文件路径可用性校验工具
-#include "src/tools/Detail/文件路径可用性校验.h"
+#include "Engine/EngineCore/src/tools/Detail/文件路径可用性校验.h"
 //获取引擎环境（取可执行文件目录作为临时文件基址）
-#include "src/tools/Engine_Env/引擎环境.h"
+#include "Engine/EngineCore/src/tools/Engine_Env/引擎环境.h"
 //获取路径字符串转换工具
-#include "src/tools/Detail/路径字符串转换.h"
+#include "Engine/EngineCore/src/tools/Detail/路径字符串转换.h"
 
 //路径校验测试夹具
 class Path_Check_Test : public ::testing::Test

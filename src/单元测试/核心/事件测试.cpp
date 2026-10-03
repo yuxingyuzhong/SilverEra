@@ -2,7 +2,7 @@
 #include <gtest/gtest.h>
 
 //获取事件结构体
-#include "src/core/event/Event/事件.h"
+#include "Engine/EngineCore/src/core/event/Event/事件.h"
 
 //构造测试事件
 static engine::Event make_event(const std::string& sender_object,

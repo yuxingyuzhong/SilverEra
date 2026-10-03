@@ -1,8 +1,8 @@
 # =============================================================================
-# 测试层 —— 构建脚本
+# Test —— 构建脚本
 # =============================================================================
-# 位置：白银纪元/测试层
-# 依赖：引擎层（EngineCore）、系统层（SystemCore）—— 一律链接「已经构建好的」静态库
+# 位置：白银纪元/Application/Test
+# 依赖：Engine 聚合层（对外转发 EngineSystem.lib + EngineCore.lib）—— 一律链接「已经构建好的」静态库
 # 产物：TestCore 静态库（src/ 下的功能测试器集合，当前为空）
 #       TestLauncher 静态库（src/主调/ 下的测试选择模型与控制台菜单）
 #       TestGui 静态库（external/Dear_ImGui + external/glad，供图形选择窗口使用）
@@ -10,10 +10,14 @@
 # 用法（本层独立配置与构建）：
 #     cmake -S <本目录> -B <本目录>/out/build/x64-Debug -G Ninja
 #     cmake --build <本目录>/out/build/x64-Debug
-# 前置条件：先构建引擎层与系统层。本层不拉入任何下层源码，
+# 前置条件：先依次构建 Engine/EngineCore 与 Engine/EngineSystem。本层不拉入任何下层源码，
 #           也没有源码回退路径（层级契约统一：层与层之间一律链接静态库）。
+# 包含路径：项目内部一律写「项目根相对全路径」——
+#           引擎头   Engine/EngineCore/...、Engine/EngineSystem/...
+#           本层自身 Application/Test/...
+#           编译包含根 = [下层头快照根, ..., 项目根]（快照在前，见第 1.5 节，次序不可颠倒）
 # 层间契约：
-#     cmake/接入下层.cmake   通用接入函数 byjy_jieru_xiaceng()，系统层 / 本层 / 游戏层逐字节相同
+#     cmake/接入下层.cmake   通用接入函数 byjy_jieru_xiaceng()，EngineSystem / Engine / Test / Game 逐字节相同
 # 说明：
 #     - 本层不再产出分层宿主（引擎宿主 / 系统宿主 / 全栈宿主）。宿主机制取消后，
 #       可执行文件只在测试层产生：EngineTests.exe 既是单元测试入口，也是启动项。
@@ -26,73 +30,55 @@ if(MSVC)
     add_compile_options(/WX-)
 endif()
 
-project(测试层 LANGUAGES C CXX)
+project(Test LANGUAGES C CXX)
 
-# 强制使用 C++20 标准（与引擎层保持一致）
+# 强制使用 C++20 标准（与下层保持一致）
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-# 本层根目录
+# 本层根目录；项目根供 Application/Test/... 全路径解析
 get_filename_component(PROJECT_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}" ABSOLUTE)
+get_filename_component(BYJY_PROJECT_ROOT "${PROJECT_ROOT_DIR}/../.." ABSOLUTE)
 
 # =============================================================================
-# 1. 接入下层：引擎层 / 系统层 —— 链接已构建好的静态库
+# 1. 接入 Engine 聚合层 —— 链接已构建好的静态库
 # =============================================================================
-# 本层只消费下层「已经构建好的」静态库：下层源码不进入本次构建，
-# 也没有任何源码回退路径（层级契约统一）。
+# 本层只消费下层「已经构建好的」静态库：下层源码不进入本次构建，也没有源码回退路径。
+# Engine 聚合层的对外面转发 EngineSystem.lib + EngineCore.lib 两个库，故这里只接一次。
 #
 # 库定位顺序由 cmake/接入下层.cmake 的 byjy_jieru_xiaceng() 统一实现：
-#   ① 覆盖变量非空 → 用它；指向的文件不存在则直接报错
-#   ② 留空 → 自动探测 <下层>/out/build/*/lib/<库名>.lib，取时间戳最新的一份
-#   ③ 都没有 → FATAL_ERROR，并提示先构建下层
-#
-# 下层的对外面（包含目录 / 编译定义 / 链接库 / 系统库）由各层 cmake/对外接口.cmake
-# 声明。系统层的对外面已并入引擎层的对外面，引擎层的包含目录（common/ 预编译头、
-# src/ 下的头文件、external/Json 与 external/glfw 等）因此一并到位。
-#
-# 两层都接：本层是各层的测试产地，将来出现系统层用例时不必再改这里。
+#   ① 覆盖变量非空（须与库数等长的分号列表）→ 用它；文件不存在则直接报错
+#   ② 留空 → 自动探测 <该库所在层目录>/out/build/*/lib/<库名>.lib，取时间戳最新的一份
+#   ③ 都没有 → FATAL_ERROR，并提示先构建产出该库的下层
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/接入下层.cmake")
 
-set(BYJY_ENGINE_LIB_PATH "" CACHE FILEPATH
-    "引擎层静态库路径；留空则自动探测 引擎层/out/build/*/lib/EngineCore.lib")
-set(BYJY_SYSTEM_LIB_PATH "" CACHE FILEPATH
-    "系统层静态库路径；留空则自动探测 系统层/out/build/*/lib/SystemCore.lib")
+set(BYJY_ENGINE_LIB_PATH "" CACHE STRING
+    "Engine 聚合层静态库路径（分号列表，顺序同 EngineSystem;EngineCore）；留空则自动探测")
 
 byjy_jieru_xiaceng(
-    "${PROJECT_ROOT_DIR}/../引擎层/cmake/对外接口.cmake"
+    "${PROJECT_ROOT_DIR}/../../Engine/cmake/对外接口.cmake"
     "BYJY_ENGINE"
     "BYJY_ENGINE_LIB_PATH"
 )
 
-byjy_jieru_xiaceng(
-    "${PROJECT_ROOT_DIR}/../系统层/cmake/对外接口.cmake"
-    "BYJY_SYSTEM"
-    "BYJY_SYSTEM_LIB_PATH"
+# =============================================================================
+# 1.5 下层头快照接入（本层专用）
+# =============================================================================
+# 本层按「与下层静态库同版次」的头文件编译：把两个子层的头快照根作为「本层自身的
+# 包含目录」列出，并排在项目根之前 —— 目标自身的 -I 恒在导入目标传递来的 /external:I
+# 之前，因此 Engine/... 必然先命中快照，不会落到源码树上的同名头。
+# 快照根由各库的 IMPORTED_LOCATION 反推，缺失即硬失败（不静默退回源码树）。
+# =============================================================================
+byjy_tou_kuaizhao_gen(BYJY_CORE_SNAPSHOT   EngineCore)
+byjy_tou_kuaizhao_gen(BYJY_SYSTEM_SNAPSHOT EngineSystem)
+
+# 本层各目标的包含根：下层快照在前、项目根在后（供 Application/Test/... 全路径）。
+set(BYJY_APP_INC
+    "${BYJY_CORE_SNAPSHOT}"
+    "${BYJY_SYSTEM_SNAPSHOT}"
+    "${BYJY_PROJECT_ROOT}"
 )
-
-# =============================================================================
-# 1.5 下层头快照切换（本层专用）
-# =============================================================================
-# 本层改为按「与下层静态库同版次」的头文件编译：把下层源码树下的包含目录换成其构建目录
-# 内的头快照（<下层构建目录>/include），消除「下层头已改、库未重建」时新头配旧库地
-# 编译链接的风险。系统层的对外面里并入了引擎层的包含目录，故：
-#   ① 引擎层路径映射要对 EngineCore 与 SystemCore 各做一次（后者承载并入的引擎条目）；
-#   ② 系统层路径映射只改 SystemCore，且必须放在引擎映射之后，避免误改引擎条目。
-# 系统层自身的包含目录非引擎层源码树路径，原样保留。
-# =============================================================================
-get_target_property(BYJY_ENGINE_LIB_FILE EngineCore IMPORTED_LOCATION)
-get_filename_component(BYJY_ENGINE_BUILD_DIR "${BYJY_ENGINE_LIB_FILE}/../.." ABSOLUTE)
-get_filename_component(BYJY_ENGINE_SOURCE_DIR "${PROJECT_ROOT_DIR}/../引擎层" ABSOLUTE)
-
-byjy_qiehuan_tou_kuaizhao(EngineCore "${BYJY_ENGINE_BUILD_DIR}/include" "${BYJY_ENGINE_SOURCE_DIR}")
-byjy_qiehuan_tou_kuaizhao(SystemCore "${BYJY_ENGINE_BUILD_DIR}/include" "${BYJY_ENGINE_SOURCE_DIR}")
-
-get_target_property(BYJY_SYSTEM_LIB_FILE SystemCore IMPORTED_LOCATION)
-get_filename_component(BYJY_SYSTEM_BUILD_DIR "${BYJY_SYSTEM_LIB_FILE}/../.." ABSOLUTE)
-get_filename_component(BYJY_SYSTEM_SOURCE_DIR "${PROJECT_ROOT_DIR}/../系统层" ABSOLUTE)
-
-byjy_qiehuan_tou_kuaizhao(SystemCore "${BYJY_SYSTEM_BUILD_DIR}/include" "${BYJY_SYSTEM_SOURCE_DIR}")
 
 # =============================================================================
 # 2. 源文件收集
@@ -116,6 +102,16 @@ file(GLOB_RECURSE TEST_HEADERS CONFIGURE_DEPENDS
 file(GLOB_RECURSE MAIN_HEADERS CONFIGURE_DEPENDS
     "${PROJECT_ROOT_DIR}/src/主调/*.h"
     "${PROJECT_ROOT_DIR}/src/主调/*.hpp"
+)
+
+# 任务<1>：把被 GLOB 的目录登记为配置依赖 —— 目录内容变化（增删文件）时，
+# 生成系统自动重跑配置并重扫 GLOB，不必手动「重新生成缓存」才刷新目录视图。
+# 说明：GLOB_RECURSE 覆盖子目录，但 CMAKE_CONFIGURE_DEPENDS 要逐个目录登记，
+#       故这里登记三个 GLOB 基点目录（src / src/单元测试 / src/主调）。
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    "${PROJECT_ROOT_DIR}/src"
+    "${PROJECT_ROOT_DIR}/src/单元测试"
+    "${PROJECT_ROOT_DIR}/src/主调"
 )
 
 if(TEST_SOURCES)
@@ -150,13 +146,13 @@ if(TEST_SOURCES)
     # =========================================================================
     add_library(TestCore STATIC ${TEST_SOURCES} ${TEST_HEADERS})
 
-    # 公共包含路径：本层根目录
-    target_include_directories(TestCore PUBLIC "${PROJECT_ROOT_DIR}")
+    # 包含根：下层头快照 + 项目根（供 Application/Test/... 全路径）
+    target_include_directories(TestCore PUBLIC ${BYJY_APP_INC})
 
     # 链接下层静态库：包含路径 / 编译定义 / 第三方库由导入目标传递过来
-    target_link_libraries(TestCore PUBLIC EngineCore SystemCore)
+    target_link_libraries(TestCore PUBLIC EngineCore EngineSystem)
 
-    # 编译选项与引擎层保持一致
+    # 编译选项与下层保持一致
     if(MSVC)
         target_compile_options(TestCore PRIVATE /MP /utf-8)
         target_compile_definitions(TestCore PRIVATE _CRT_SECURE_NO_WARNINGS)
@@ -165,7 +161,7 @@ if(TEST_SOURCES)
         target_compile_definitions(TestCore PRIVATE _GNU_SOURCE)
     endif()
 
-    # 静态库输出到构建目录 lib/（与引擎层一致）
+    # 静态库输出到构建目录 lib/（与下层一致）
     set_target_properties(TestCore PROPERTIES
         ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
         LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
@@ -176,7 +172,7 @@ endif()
 # 3.5 GUI 第三方接入（Dear ImGui + glad）
 # =============================================================================
 # 供主调的图形选择窗口使用。与 external/googletest 同构：第三方源码以副本形式
-# 放在本层 external/ 下，由本层自行编译，不改动系统层的构建与对外接口。
+# 放在本层 external/ 下，由本层自行编译，不改动下层的构建与对外接口。
 # 说明：
 #   - 不编 imgui_demo.cpp（示例窗口，本层用不到）
 #   - opengl3 后端默认使用自带的 loader，另编 glad 供窗口自身的 GL 调用使用
@@ -224,7 +220,7 @@ endif()
 # 说明：googletest 以源码形式内嵌在 external/googletest，并以 EXCLUDE_FROM_ALL 接入：
 #       只在被测试目标依赖时编译，不改变静态库的既有构建范围。
 if(EXISTS "${PROJECT_ROOT_DIR}/external/googletest/CMakeLists.txt")
-    #不安装 gtest、不构建 gmock；强制共享运行时库，避免与引擎层的 CRT 设置冲突（LNK2038）
+    #不安装 gtest、不构建 gmock；强制共享运行时库，避免与下层的 CRT 设置冲突（LNK2038）
     set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
     set(BUILD_GMOCK OFF CACHE BOOL "" FORCE)
     set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
@@ -263,7 +259,8 @@ else()
         "${PROJECT_ROOT_DIR}/src/主调/测试选择模型.cpp"
         "${PROJECT_ROOT_DIR}/src/主调/控制台选择菜单.cpp"
     )
-    target_include_directories(TestLauncher PUBLIC "${PROJECT_ROOT_DIR}")
+    # 主调仅引用本层自身头（Application/Test/src/主调/...），故只需项目根
+    target_include_directories(TestLauncher PUBLIC "${BYJY_PROJECT_ROOT}")
     target_link_libraries(TestLauncher PUBLIC GTest::gtest)
     if(MSVC)
         target_compile_options(TestLauncher PRIVATE /MP /utf-8)
@@ -277,9 +274,11 @@ else()
     #用例目标：编一次，EngineTests 取一份 .obj
     add_library(EngineTestObjects OBJECT ${BYJY_TEST_SOURCES} ${BYJY_TEST_HEADERS})
 
-    #链接下层静态库以取得对外的包含路径；从 gtest 取得框架头文件路径；
-    #并由 TestLauncher 取得本层根目录（用例要 include "src/主调/测试选择模型.h"）
-    target_link_libraries(EngineTestObjects PUBLIC EngineCore SystemCore GTest::gtest TestLauncher)
+    #包含根：下层快照 + 项目根（用例要 include "Application/Test/src/主调/测试选择模型.h"）
+    target_include_directories(EngineTestObjects PUBLIC ${BYJY_APP_INC})
+
+    #链接下层静态库以取得对外的包含路径；从 gtest 取得框架头文件路径；并由 TestLauncher 取得本层自身根
+    target_link_libraries(EngineTestObjects PUBLIC EngineCore EngineSystem GTest::gtest TestLauncher)
 
     #编译选项与下层保持一致
     if(MSVC)
@@ -304,8 +303,9 @@ else()
         "${PROJECT_ROOT_DIR}/src/主调/图形选择窗口.cpp"
         "${PROJECT_ROOT_DIR}/src/主调/引擎日志屏蔽.cpp"
     )
+    target_include_directories(EngineTests PRIVATE ${BYJY_APP_INC})
     target_link_libraries(EngineTests PRIVATE
-        EngineTestObjects EngineCore SystemCore
+        EngineTestObjects EngineCore EngineSystem
         GTest::gtest TestLauncher TestGui
     )
     set_target_properties(EngineTests PROPERTIES
@@ -346,5 +346,5 @@ endif()
 # 该机制已移除，原因有二：
 #     1) 宿主把下层源码拉进本构建树重复编译，与「层间一律链接已构建静态库」的契约冲突；
 #     2) 分层宿主与 EngineTests 职责重叠，可执行文件只留一个入口更清楚。
-# 现在的分工：下层各自构建静态库（引擎层 EngineCore、系统层 SystemCore），
-# 本层构建 EngineTests.exe 作为唯一启动与测试入口。
+# 现在的分工：下层各自构建静态库（Engine/EngineCore → EngineCore.lib、
+# Engine/EngineSystem → EngineSystem.lib），本层构建 EngineTests.exe 作为唯一启动与测试入口。

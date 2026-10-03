@@ -4,7 +4,7 @@
 #include <vector>
 
 //获取json字段可用性校验工具
-#include "src/tools/Detail/json字段可用性校验.h"
+#include "Engine/EngineCore/src/tools/Detail/json字段可用性校验.h"
 
 //字段校验测试夹具
 class Field_Check_Test : public ::testing::Test

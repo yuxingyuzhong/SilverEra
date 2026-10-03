@@ -2,7 +2,7 @@
 #include <gtest/gtest.h>
 
 //获取对象基类
-#include "src/core/object/Object/对象.h"
+#include "Engine/EngineCore/src/core/object/Object/对象.h"
 
 //派生测试对象
 class Test_Object : public engine::Object

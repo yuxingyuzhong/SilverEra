@@ -2,7 +2,7 @@
 #include <gtest/gtest.h>
 
 //获取二分查找算法
-#include "src/tools/Detail/二分查找.h"
+#include "Engine/EngineCore/src/tools/Detail/二分查找.h"
 
 //测试用记录（用于验证按投影字段查找）
 struct test_item

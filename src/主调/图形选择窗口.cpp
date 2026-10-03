@@ -1,5 +1,5 @@
 //图形选择窗口实现：GLFW + OpenGL3 + Dear ImGui 的临时勾选界面
-#include "src/主调/图形选择窗口.h"
+#include "Application/Test/src/主调/图形选择窗口.h"
 
 //GL 函数加载器必须先于 GLFW 头文件
 #include <glad/gl.h>

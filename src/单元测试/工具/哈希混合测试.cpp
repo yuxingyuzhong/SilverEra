@@ -2,7 +2,7 @@
 #include <gtest/gtest.h>
 
 //获取哈希混合工具
-#include "src/tools/Detail/哈希混合.h"
+#include "Engine/EngineCore/src/tools/Detail/哈希混合.h"
 
 //哈希混合测试夹具
 class Hash_Combine_Test : public ::testing::Test

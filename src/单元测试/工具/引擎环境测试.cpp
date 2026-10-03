@@ -2,9 +2,9 @@
 #include <gtest/gtest.h>
 
 //获取引擎环境
-#include "src/tools/Engine_Env/引擎环境.h"
+#include "Engine/EngineCore/src/tools/Engine_Env/引擎环境.h"
 //获取路径字符串转换工具
-#include "src/tools/Detail/路径字符串转换.h"
+#include "Engine/EngineCore/src/tools/Detail/路径字符串转换.h"
 
 //引擎环境测试夹具
 class Engine_Env_Test : public ::testing::Test

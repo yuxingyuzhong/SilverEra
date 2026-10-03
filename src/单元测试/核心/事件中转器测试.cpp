@@ -2,7 +2,7 @@
 #include <gtest/gtest.h>
 
 //获取事件中转器
-#include "src/core/event/Event_Broker/事件中转器.h"
+#include "Engine/EngineCore/src/core/event/Event_Broker/事件中转器.h"
 
 //构造测试事件
 static std::shared_ptr<engine::Event> make_event(const std::string& sender_object,
