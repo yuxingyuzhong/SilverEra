@@ -2,9 +2,11 @@
 //获取数据校验器
 #include "src/tools/Detail/package/数据校验工具.h"
 //获取日志系统
-#include "src/tools/Logging/日志系统.h"
+#include "src/tools/Logging/日志系统运行包.h"
 //获取网格加载器
 #include "src/tools/Mesh_Loader/网格加载器.h"
+//获取引擎环境(逻辑帧计数)
+#include "src/tools/Engine_Env/引擎环境.h"
 
 namespace engine
 {
@@ -29,7 +31,7 @@ namespace engine
 		//若该编号已被占用
 		if (mapping.count(collider_ID))
 		{
-			Log::warn("Collision_Region::待接管碰撞体编号({})已被占用", collider_ID);
+			logger.warn("Collision_Region::待接管碰撞体编号({})已被占用", collider_ID);
 			return false;
 		}
 
@@ -46,7 +48,7 @@ namespace engine
 		//若目标碰撞体不存在
 		if (!target)
 		{
-			Log::warn("Collision_Region::待卸载碰撞体({})不存在", collider_ID);
+			logger.warn("Collision_Region::待卸载碰撞体({})不存在", collider_ID);
 			return false;
 		}
 
@@ -78,7 +80,7 @@ namespace engine
 		//若目标碰撞体不存在
 		if (!target)
 		{
-			Log::warn("Collision_Region::待设置碰撞体({})不存在", collider_ID);
+			logger.warn("Collision_Region::待设置碰撞体({})不存在", collider_ID);
 			return false;
 		}
 
@@ -95,7 +97,7 @@ namespace engine
 		//若目标碰撞体不存在
 		if (!target)
 		{
-			Log::warn("Collision_Region::待设置碰撞体({})不存在", collider_ID);
+			logger.warn("Collision_Region::待设置碰撞体({})不存在", collider_ID);
 			return false;
 		}
 
@@ -110,13 +112,13 @@ namespace engine
 		//几何配置格式检查
 		if (!geometry_config.is_object())
 		{
-			Log::warn("Collision_Region::几何配置非对象格式");
+			logger.warn("Collision_Region::几何配置非对象格式");
 			return false;
 		}
 		//目标碰撞体编号字段检查
 		if (!detail::field_check<uint64_t>(geometry_config, "collider_ID"))
 		{
-			Log::warn("Collision_Region::几何配置缺少有效字段(collider_ID)");
+			logger.warn("Collision_Region::几何配置缺少有效字段(collider_ID)");
 			return false;
 		}
 		//提取目标碰撞体编号
@@ -126,7 +128,7 @@ namespace engine
 		//若目标碰撞体不存在
 		if (!target)
 		{
-			Log::warn("Collision_Region::待设置碰撞体({})不存在", collider_ID);
+			logger.warn("Collision_Region::待设置碰撞体({})不存在", collider_ID);
 			return false;
 		}
 
@@ -135,7 +137,7 @@ namespace engine
 		unique_ptr<Collision_Shape> compound;
 		if (!geometry_build(geometry_config, parts, compound))
 		{
-			Log::warn("Collision_Region::碰撞体({})几何配置非法", collider_ID);
+			logger.warn("Collision_Region::碰撞体({})几何配置非法", collider_ID);
 			return false;
 		}
 
@@ -154,7 +156,7 @@ namespace engine
 			//读取基准位置
 			if (!vector_read(geometry_config, "position", position))
 			{
-				Log::warn("Collision_Region::碰撞体({})字段(position)非法", collider_ID);
+				logger.warn("Collision_Region::碰撞体({})字段(position)非法", collider_ID);
 				return false;
 			}
 			//写入基准位置
@@ -168,7 +170,7 @@ namespace engine
 			//读取基准旋转
 			if (!quaternion_read(geometry_config, "rotation", rotation))
 			{
-				Log::warn("Collision_Region::碰撞体({})字段(rotation)非法", collider_ID);
+				logger.warn("Collision_Region::碰撞体({})字段(rotation)非法", collider_ID);
 				return false;
 			}
 			//写入基准旋转
@@ -207,7 +209,7 @@ namespace engine
 		//若目标碰撞体不存在
 		if (!target)
 		{
-			Log::warn("Collision_Region::待作废位移的碰撞体({})不存在", collider_ID);
+			logger.warn("Collision_Region::待作废位移的碰撞体({})不存在", collider_ID);
 			return false;
 		}
 
@@ -224,7 +226,7 @@ namespace engine
 		//若目标碰撞体不存在
 		if (!target)
 		{
-			Log::warn("Collision_Region::待改写位移的碰撞体({})不存在", collider_ID);
+			logger.warn("Collision_Region::待改写位移的碰撞体({})不存在", collider_ID);
 			return false;
 		}
 
@@ -232,6 +234,27 @@ namespace engine
 		target->displacement_vector = displacement;
 		//解除位移作废(改写后继续运动)
 		target->displacement_invalid = false;
+		return true;
+	}
+
+	//碰撞体位移频率设置(作用频率与生效计时随碰撞体保存于本空间，登记时重新起算生效计时)
+	bool Collision_Region::collider_frequency_set(uint64_t collider_ID, uint64_t frequency)
+	{
+		//查找目标碰撞体
+		Collider* target = collider_seek(collider_ID);
+		//若目标碰撞体不存在
+		if (!target)
+		{
+			logger.warn("Collision_Region::待设置位移频率的碰撞体({})不存在", collider_ID);
+			return false;
+		}
+
+		//写入位移作用频率
+		target->displacement_frequency = frequency;
+		//生效计时重新起算(新配置须等待一个完整帧间隔后才生效)
+		target->displacement_frame = Engine_Env::frame_count_get();
+		//清零本帧施加位移
+		target->displacement_step.setValue(0.0f, 0.0f, 0.0f);
 		return true;
 	}
 

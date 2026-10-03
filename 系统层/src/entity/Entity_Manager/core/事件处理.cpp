@@ -1,5 +1,5 @@
 #include "../局部命名空间使用.h"
-#include "src/tools/Logging/日志系统.h"
+#include "src/tools/Logging/日志系统运行包.h"
 
 //引擎命名空间
 namespace engine
@@ -92,7 +92,7 @@ namespace engine
                 //若ID集合为空则直接返回
                 if (!ID_set.empty())
                 {
-                    Log::warn("Entity_Manager::未定义实体创建数量\n实体创建事件已驳回");
+                    logger.warn("Entity_Manager::未定义实体创建数量\n实体创建事件已驳回");
                     return;
                 }
                 else

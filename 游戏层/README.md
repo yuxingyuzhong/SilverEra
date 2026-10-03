@@ -491,6 +491,8 @@ cmake -S 游戏层 -B 游戏层/out/build/x64-Debug -G Ninja
 cmake --build 游戏层/out/build/x64-Debug
 ```
 
+- **配置期须处于 UTF-8 代码页**（先 `chcp 65001`），否则头文件依赖不会被记录（详见顶层 README 的构建说明）。
+
 也可使用统一入口脚本（脚本位于工程根的 `out/_verify/` 下，自动布置 MSVC 环境）：
 
 ```bash

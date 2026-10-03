@@ -1,5 +1,5 @@
 #include "../局部命名空间使用.h"
-#include "src/tools/Logging/日志系统.h"
+#include "src/tools/Logging/日志系统运行包.h"
 
 //引擎命名空间
 namespace engine
@@ -66,20 +66,20 @@ namespace engine
 		//若效应归属字段无效
 		if (!detail::field_check<uint64_t>(config, "inclusion"))
 		{
-			Log::warn("Effect_Manager::未指定效应归属\n效应构建事件已驳回");
+			logger.warn("Effect_Manager::未指定效应归属\n效应构建事件已驳回");
 			return nullopt;
 		}
 		//若效应执行阶段字段无效
 		if (!detail::field_check<uint64_t>(config, "act_phase"))
 		{
-			Log::warn("Effect_Manager::未指定效应执行阶段\n效应构建事件已驳回");
+			logger.warn("Effect_Manager::未指定效应执行阶段\n效应构建事件已驳回");
 			return nullopt;
 		}
 		//若执行优先级字段非字符串和无符号整数
 		if (!detail::field_check<string>(config, "priority") &&
 			!detail::field_check<uint64_t>(config, "priority"))
 		{
-			Log::warn("Prop_Effect::未定义执行优先级字段\n效应无法加载");
+			logger.warn("Prop_Effect::未定义执行优先级字段\n效应无法加载");
 			return nullopt;
 	    }
 
@@ -117,7 +117,7 @@ namespace engine
 				//若为其余异常定义
 				else
 				{
-					Log::warn("Effect_Manager::执行优先级字段内容异常");
+					logger.warn("Effect_Manager::执行优先级字段内容异常");
 					//卸载新效应
 					effect_set.unload(ID);
 					//返回无效值
@@ -161,8 +161,8 @@ namespace engine
 			//将新建效应加入分组
 			group.effects.push_back(new_record);
 
-			//按执行优先级设置降序排列
-			effect_set.sort_order_set(true, &Effect_Record::priority);
+			//降序排列（对象池的排序键即定位投影字段，本池投影字段为对象ID）
+			effect_set.order_set(std::ranges::greater{});
 			
 			//返回新效应ID
 			return new_record->ID();
@@ -178,7 +178,7 @@ namespace engine
 		//若效应ID字段无效
 		if (!detail::field_check<uint64_t>(config, "target_ID"))
 		{
-			Log::warn("Effect_Manager::效应ID未定义\n效应卸载事件已驳回");
+			logger.warn("Effect_Manager::效应ID未定义\n效应卸载事件已驳回");
 			return false;
 		}
 
@@ -272,7 +272,7 @@ namespace engine
 				//若效应执行阶段字段未定义
 				if (!detail::field_check<string>(config, "act_phase"))
 				{
-					Log::warn("Effect_Manager::效应执行阶段未定义\n效应触发事件已驳回");
+					logger.warn("Effect_Manager::效应执行阶段未定义\n效应触发事件已驳回");
 					return;
 				}
 
@@ -287,7 +287,7 @@ namespace engine
 				//若效应ID字段未定义
 				if (!detail::field_check<uint64_t>(config, "target_ID"))
 				{
-					Log::warn("Effect_Manager::目标效应ID未定义\n未知事件已驳回");
+					logger.warn("Effect_Manager::目标效应ID未定义\n未知事件已驳回");
 					return;
 				}
 
@@ -296,7 +296,7 @@ namespace engine
 				//若目标效应不存在
 				if (effect_set.find(target_ID) == effect_set.end())
 				{
-					Log::warn("Effect_Manager::目标效应ID不存在\n未知事件已驳回");
+					logger.warn("Effect_Manager::目标效应ID不存在\n未知事件已驳回");
 					return;
 				}
 				//若目标效应存在

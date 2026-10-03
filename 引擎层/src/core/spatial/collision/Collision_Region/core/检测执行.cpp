@@ -1,6 +1,8 @@
 #include "../局部命名空间使用.h"
 //获取日志系统
-#include "src/tools/Logging/日志系统.h"
+#include "src/tools/Logging/日志系统运行包.h"
+//获取引擎环境(逻辑帧计数与逻辑帧率)
+#include "src/tools/Engine_Env/引擎环境.h"
 
 namespace engine
 {
@@ -65,6 +67,15 @@ namespace engine
 			//写回去重结果
 			pairs.swap(unique_pairs);
 		}
+
+		//分段段数读取（未配置步长时视作一段）
+		uint32_t step_count_get(const Collider& collider)
+		{
+			//配置步长
+			uint32_t step_count = collider.detection_mode.step_length;
+			//步长为零即不拆分
+			return (step_count == 0) ? 1 : step_count;
+		}
 	}
 
 	//执行碰撞检测
@@ -79,20 +90,61 @@ namespace engine
 		//刷新碰撞世界内的包围盒（挂入后尚未执行过检测时需要）
 		backend.world->updateAabbs();
 
-		//---------- 位移重读：按最新位移事件刷新各碰撞体的位移向量 ----------
+		//当前逻辑帧序号
+		uint64_t frame_now = Engine_Env::frame_count_get();
+		//逻辑帧率（一个逻辑帧周期含有的帧数）
+		uint64_t frame_rate = Engine_Env::logic_frames_get();
+
+		//---------- 位移生效门控：按逻辑帧间隔决定本帧是否施加位移 ----------
 		for (auto& [collider_ID, collider] : mapping)
 		{
-			//位移事件读取回调未注入时跳过
-			if (!displacement_reader)
+			//位移作用频率
+			uint64_t frequency = collider.displacement_frequency;
+			/*
+			未配置频率或帧率不可用时按旧行为处理
+			即每次检测都重读最新位移事件并施加全量位移。
+			*/
+			if (frequency == 0 || frame_rate == 0)
+			{
+				//位移事件读取回调已注入时重读最新位移事件
+				if (displacement_reader)
+				{
+					//位移向量
+					Vector3 displacement;
+					//若该编号存在位移事件则重读事件配置内的位移向量
+					if (displacement_reader(collider_ID, displacement))
+						collider.displacement_vector = displacement;
+				}
+				//本帧施加量即位移向量本身
+				collider.displacement_step = collider.displacement_vector;
 				continue;
-			//位移向量
-			Vector3 displacement;
-			//若该编号存在位移事件则重读事件配置内的位移向量
-			if (displacement_reader(collider_ID, displacement))
-				collider.displacement_vector = displacement;
+			}
+
+			//帧间隔（逻辑帧率按因数整除作用频率）
+			uint64_t interval = frame_rate / frequency;
+			//未达帧间隔时对位移向量不做任何操作（含不重读外界的位移更新）
+			if (frame_now - collider.displacement_frame < interval)
+			{
+				collider.displacement_step.setValue(0.0f, 0.0f, 0.0f);
+				continue;
+			}
+
+			//记录本次生效的逻辑帧序号
+			collider.displacement_frame = frame_now;
+			//生效帧重读位移事件（暂存的最新配置至此生效）
+			if (displacement_reader)
+			{
+				//位移向量
+				Vector3 displacement;
+				//若该编号存在位移事件则重读事件配置内的位移向量
+				if (displacement_reader(collider_ID, displacement))
+					collider.displacement_vector = displacement;
+			}
+			//本帧施加量为一个周期总位移的作用频率分之一
+			collider.displacement_step = collider.displacement_vector / static_cast<Scalar>(frequency);
 		}
 
-		//---------- 扫掠检测：位移途中命中的碰撞体 ----------
+		//---------- 扫掠检测：按步长分段推进，收集位移途中命中的碰撞体 ----------
 		for (auto& [collider_ID, collider] : mapping)
 		{
 			//仅处理启用扫掠检测的碰撞体
@@ -101,9 +153,14 @@ namespace engine
 			//位移已作废的碰撞体不再运动
 			if (collider.displacement_invalid)
 				continue;
-			//位移向量为零时无需扫掠
-			if (collider.displacement_vector.length2() <= 0)
+			//本帧施加位移为零时无需扫掠
+			if (collider.displacement_step.length2() <= 0)
 				continue;
+
+			//分段段数
+			uint32_t step_count = step_count_get(collider);
+			//单段位移
+			Vector3 segment = collider.displacement_step / static_cast<Scalar>(step_count);
 
 			//碰撞体世界变换
 			const Transform collider_transform = collider.object.getWorldTransform();
@@ -114,100 +171,138 @@ namespace engine
 				if (!part.shape || !part.shape->isConvex())
 					continue;
 
-				//扫掠起点变换（碰撞体世界变换 ∘ 部件相对变换）
+				//本部件扫掠起点变换（碰撞体世界变换 ∘ 部件相对变换）
 				Transform sweep_from = collider_transform * part.local_transform;
-				//扫掠终点变换
-				Transform sweep_to = sweep_from;
-				sweep_to.getOrigin() += collider.displacement_vector;
-
-				//扫掠命中收集器
-				Swept_Collector collector(&collider.object);
-				//执行凸包扫掠
-				backend.world->convexSweepTest(static_cast<const Convex_Shape*>(part.shape.get()),
-					sweep_from, sweep_to, collector,
-					backend.world->getDispatchInfo().m_allowedCcdPenetration);
-
-				//汇总扫掠命中
-				for (const Collision_Object* hit_object : collector.hits)
+				//逐段推进扫掠
+				for (uint32_t step = 0; step < step_count; ++step)
 				{
-					//反查命中碰撞体
-					const Collider* hit_collider = Collider::recover(hit_object);
-					//若无法反查则跳过
-					if (!hit_collider)
-						continue;
-					//空间边界不属于碰撞体，不参与碰撞对
-					if (hit_collider == &region_boundary)
-						continue;
-					//同组豁免的碰撞对跳过
-					if (collider.exemption_flag != 0 &&
-						collider.exemption_flag == hit_collider->exemption_flag)
-						continue;
+					//本段扫掠终点变换
+					Transform sweep_to = sweep_from;
+					sweep_to.getOrigin() += segment;
 
-					//记录碰撞对
-					pairs.push_back(pair_normalize(collider_ID, hit_collider->ID));
+					//扫掠命中收集器
+					Swept_Collector collector(&collider.object);
+					//执行本段凸包扫掠
+					backend.world->convexSweepTest(static_cast<const Convex_Shape*>(part.shape.get()),
+						sweep_from, sweep_to, collector,
+						backend.world->getDispatchInfo().m_allowedCcdPenetration);
+
+					//汇总本段扫掠命中
+					for (const Collision_Object* hit_object : collector.hits)
+					{
+						//反查命中碰撞体
+						const Collider* hit_collider = Collider::recover(hit_object);
+						//若无法反查则跳过
+						if (!hit_collider)
+							continue;
+						//空间边界不属于碰撞体，不参与碰撞对
+						if (hit_collider == &region_boundary)
+							continue;
+						//同组豁免的碰撞对跳过
+						if (collider.exemption_flag != 0 &&
+							collider.exemption_flag == hit_collider->exemption_flag)
+							continue;
+
+						//记录碰撞对
+						pairs.push_back(pair_normalize(collider_ID, hit_collider->ID));
+					}
+
+					//推进到本段末端
+					sweep_from = sweep_to;
 				}
 			}
 		}
 
-		//---------- 离散检测：就地平移后求交叉接触 ----------
-		for (auto& [collider_ID, collider] : mapping)
-		{
-			//位移已作废的碰撞体不再运动
-			if (collider.displacement_invalid)
-				continue;
-			//位移向量为零时无需平移
-			if (collider.displacement_vector.length2() <= 0)
-				continue;
-
-			//就地平移碰撞对象
-			Transform transform = collider.object.getWorldTransform();
-			transform.setOrigin(transform.getOrigin() + collider.displacement_vector);
-			collider.object.setWorldTransform(transform);
-		}
-
-		//执行离散碰撞检测
-		backend.world->performDiscreteCollisionDetection();
-
 		/*
 		与空间边界存在接触的碰撞体编号
 		供跨越状态判定使用：接触即视为部分跨越，无接触时再以射线奇偶判定内外。
+		分段检测下同一编号可能被多次登记，判定侧按集合成员处理，重复无碍。
 		*/
 		vector<uint64_t> boundary_contacts;
-		//碰撞流形数量
-		int manifold_count = backend.dispatcher->getNumManifolds();
-		//逐个流形提取碰撞对
-		for (int i = 0; i < manifold_count; ++i)
+
+		//---------- 离散检测：按步长分段平移后求交叉接触 ----------
+		//最大分段段数（各碰撞体段数不一，统一按最大段数推进；段数耗尽的碰撞体不再移动）
+		uint32_t max_step_count = 1;
+		for (const auto& record : mapping)
 		{
-			//目标流形
-			Persistent_Manifold* manifold = backend.dispatcher->getManifoldByIndexInternal(i);
-			//无接触点则跳过
-			if (manifold->getNumContacts() == 0)
+			//本记录内的碰撞体
+			const Collider& collider = record.second;
+			//位移已作废或本帧施加位移为零的碰撞体不参与推进
+			if (collider.displacement_invalid || collider.displacement_step.length2() <= 0)
 				continue;
+			//分段段数
+			uint32_t step_count = step_count_get(collider);
+			//取最大段数
+			if (step_count > max_step_count)
+				max_step_count = step_count;
+		}
 
-			//反查流形两侧碰撞体
-			const Collider* collider_A = Collider::recover(manifold->getBody0());
-			const Collider* collider_B = Collider::recover(manifold->getBody1());
-			//若任一侧无法反查则跳过
-			if (!collider_A || !collider_B)
-				continue;
-
-			//与空间边界接触：登记接触并跳过碰撞对（空间边界不属于碰撞体）
-			if (collider_A == &region_boundary || collider_B == &region_boundary)
+		//逐段推进并逐段执行离散碰撞检测
+		for (uint32_t step = 0; step < max_step_count; ++step)
+		{
+			//本段内逐碰撞体就地平移
+			for (auto& [collider_ID, collider] : mapping)
 			{
-				//接触对中位于空间边界另一侧的碰撞体
-				const Collider* contacted = (collider_A == &region_boundary) ? collider_B : collider_A;
-				//登记该碰撞体与空间边界的接触
-				boundary_contacts.push_back(contacted->ID);
-				continue;
+				//位移已作废的碰撞体不再运动
+				if (collider.displacement_invalid)
+					continue;
+				//本帧施加位移为零时无需平移
+				if (collider.displacement_step.length2() <= 0)
+					continue;
+
+				//分段段数
+				uint32_t step_count = step_count_get(collider);
+				//该碰撞体的段数已耗尽则不再推进
+				if (step >= step_count)
+					continue;
+
+				//单段位移
+				Vector3 segment = collider.displacement_step / static_cast<Scalar>(step_count);
+				//就地平移碰撞对象
+				Transform transform = collider.object.getWorldTransform();
+				transform.setOrigin(transform.getOrigin() + segment);
+				collider.object.setWorldTransform(transform);
 			}
 
-			//同组豁免的碰撞对跳过
-			if (collider_A->exemption_flag != 0 &&
-				collider_A->exemption_flag == collider_B->exemption_flag)
-				continue;
+			//执行本段离散碰撞检测
+			backend.world->performDiscreteCollisionDetection();
 
-			//记录碰撞对
-			pairs.push_back(pair_normalize(collider_A->ID, collider_B->ID));
+			//本段碰撞流形数量
+			int manifold_count = backend.dispatcher->getNumManifolds();
+			//逐个流形提取碰撞对
+			for (int i = 0; i < manifold_count; ++i)
+			{
+				//目标流形
+				Persistent_Manifold* manifold = backend.dispatcher->getManifoldByIndexInternal(i);
+				//无接触点则跳过
+				if (manifold->getNumContacts() == 0)
+					continue;
+
+				//反查流形两侧碰撞体
+				const Collider* collider_A = Collider::recover(manifold->getBody0());
+				const Collider* collider_B = Collider::recover(manifold->getBody1());
+				//若任一侧无法反查则跳过
+				if (!collider_A || !collider_B)
+					continue;
+
+				//与空间边界接触：登记接触并跳过碰撞对（空间边界不属于碰撞体）
+				if (collider_A == &region_boundary || collider_B == &region_boundary)
+				{
+					//接触对中位于空间边界另一侧的碰撞体
+					const Collider* contacted = (collider_A == &region_boundary) ? collider_B : collider_A;
+					//登记该碰撞体与空间边界的接触
+					boundary_contacts.push_back(contacted->ID);
+					continue;
+				}
+
+				//同组豁免的碰撞对跳过
+				if (collider_A->exemption_flag != 0 &&
+					collider_A->exemption_flag == collider_B->exemption_flag)
+					continue;
+
+				//记录碰撞对
+				pairs.push_back(pair_normalize(collider_A->ID, collider_B->ID));
+			}
 		}
 
 		//去重后返回检测结果

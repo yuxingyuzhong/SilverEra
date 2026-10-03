@@ -6,7 +6,7 @@
 //获取路径字符串转化方法
 #include "src/tools/Detail/路径字符串转换.h"
 //获取日志系统
-#include "src/tools/Logging/日志系统.h"
+#include "src/tools/Logging/日志系统运行包.h"
 
 namespace engine
 {
@@ -20,7 +20,7 @@ namespace engine
 		//若路径字符串为空
 		if (mesh_path.empty())
 		{
-			Log::warn("Mesh_Loader::网格路径为空");
+			logger.warn("Mesh_Loader::网格路径为空");
 			return false;
 		}
 
@@ -38,7 +38,7 @@ namespace engine
 		//若两者均无效
 		else
 		{
-			Log::warn("Mesh_Loader::网格路径不可读取({})", mesh_path);
+			logger.warn("Mesh_Loader::网格路径不可读取({})", mesh_path);
 			return false;
 		}
 
@@ -49,13 +49,13 @@ namespace engine
 		//若体量查询失败
 		if (ec)
 		{
-			Log::warn("Mesh_Loader::网格体量查询失败({})", mesh_path);
+			logger.warn("Mesh_Loader::网格体量查询失败({})", mesh_path);
 			return false;
 		}
 		//若文件体量超限
 		if (body_size > max_file_size)
 		{
-			Log::warn("Mesh_Loader::网格体量超限({} 字节)", body_size);
+			logger.warn("Mesh_Loader::网格体量超限({} 字节)", body_size);
 			return false;
 		}
 
@@ -64,7 +64,7 @@ namespace engine
 		//若文件打开失败
 		if (!file.is_open())
 		{
-			Log::warn("Mesh_Loader::网格文件打开失败({})", mesh_path);
+			logger.warn("Mesh_Loader::网格文件打开失败({})", mesh_path);
 			return false;
 		}
 
@@ -86,7 +86,7 @@ namespace engine
 				//读取前三个分量（OBJ 允许附带齐次分量，本加载器忽略）
 				if (!(stream >> coordinate_X >> coordinate_Y >> coordinate_Z))
 				{
-					Log::warn("Mesh_Loader::顶点行格式非法");
+					logger.warn("Mesh_Loader::顶点行格式非法");
 					receiver.vertices.clear();
 					receiver.indices.clear();
 					return false;
@@ -94,7 +94,7 @@ namespace engine
 				//顶点数量超限检查
 				if (receiver.vertices.size() / 3 >= max_vertex_count)
 				{
-					Log::warn("Mesh_Loader::顶点数量超限({})", max_vertex_count);
+					logger.warn("Mesh_Loader::顶点数量超限({})", max_vertex_count);
 					receiver.vertices.clear();
 					receiver.indices.clear();
 					return false;
@@ -128,7 +128,7 @@ namespace engine
 				//若面顶点不足三个
 				if (face.size() < 3)
 				{
-					Log::warn("Mesh_Loader::面顶点不足三个");
+					logger.warn("Mesh_Loader::面顶点不足三个");
 					receiver.vertices.clear();
 					receiver.indices.clear();
 					return false;
@@ -142,7 +142,7 @@ namespace engine
 		//若未解析出任何三角面
 		if (receiver.indices.empty())
 		{
-			Log::warn("Mesh_Loader::网格未包含有效三角面({})", mesh_path);
+			logger.warn("Mesh_Loader::网格未包含有效三角面({})", mesh_path);
 			receiver.vertices.clear();
 			return false;
 		}
@@ -161,7 +161,7 @@ namespace engine
 		//若索引内容为空
 		if (number.empty())
 		{
-			Log::warn("Mesh_Loader::面顶点索引为空");
+			logger.warn("Mesh_Loader::面顶点索引为空");
 			return false;
 		}
 
@@ -174,7 +174,7 @@ namespace engine
 		}
 		catch (const std::exception&)
 		{
-			Log::warn("Mesh_Loader::面顶点索引非法({})", number);
+			logger.warn("Mesh_Loader::面顶点索引非法({})", number);
 			return false;
 		}
 
@@ -189,7 +189,7 @@ namespace engine
 		//越界检查
 		if (index < 0 || static_cast<size_t>(index) >= vertex_count)
 		{
-			Log::warn("Mesh_Loader::面顶点索引越界({})", number);
+			logger.warn("Mesh_Loader::面顶点索引越界({})", number);
 			return false;
 		}
 

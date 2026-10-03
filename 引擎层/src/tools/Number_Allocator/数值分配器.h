@@ -2,7 +2,7 @@
 //预编译头
 #include "common/前置头文件包含.h"
 //获取日志系统
-#include "src/tools/Logging/日志系统.h"
+#include "src/tools/Logging/日志系统运行包.h"
 
 namespace engine
 {
@@ -68,7 +68,7 @@ namespace engine
 				//若可分配数值耗尽
 				if (next_number == (std::numeric_limits<T>::max)())
 				{
-					Log::warn("Number_Allocator::数值分配殆尽\n已进行回绕分配");
+					logger.warn("Number_Allocator::数值分配殆尽\n已进行回绕分配");
 					//获取可分配新数值
 					number = next_number = (std::numeric_limits<T>::min)();
 				}
@@ -88,7 +88,7 @@ namespace engine
 			//若待回收数值已回收
 			if (mapping.count(recycle_number))
 			{
-				Log::warn("Number_Pool::待回收数值已被回收!!!");
+				logger.warn("Number_Pool::待回收数值已被回收!!!");
 				return false;
 			}
 			else

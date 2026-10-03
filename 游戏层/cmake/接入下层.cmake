@@ -138,3 +138,78 @@ function(byjy_jieru_xiaceng interface_file prefix override_var)
     message(STATUS "接入下层：${_layer_name} → ${_lib_name}\n"
                    "          库文件：${_lib_file}")
 endfunction()
+
+# -----------------------------------------------------------------------------
+# 头快照路径映射 —— 把一串包含目录中「位于源根之下」的条目改指快照根
+# -----------------------------------------------------------------------------
+# 用法
+#     byjy_kuaizhao_lujing(<结果变量> <快照根> <源根> <包含目录列表>)
+#
+# 行为
+#     逐条换算：等于 <源根> → <快照根>；位于 <源根>/ 之下 → <快照根>/<其余部分>；
+#     其余目录原样返回。结果经 PARENT_SCOPE 写回 <结果变量>，不做存在性校验。
+#
+# 用途
+#     产出层改造自己的 target_include_directories(PUBLIC ...)：普通库目标的包含目录由
+#     INCLUDE_DIRECTORIES 决定，只改 INTERFACE_INCLUDE_DIRECTORIES 不会改变它自身的编译
+#     包含路径，故此处按列表换算后再传给 target_include_directories。
+#     消费层改造「导入目标」请用 byjy_qiehuan_tou_kuaizhao()（含快照缺失的硬失败）。
+# -----------------------------------------------------------------------------
+function(byjy_kuaizhao_lujing out_var snapshot_root source_root inc_dirs)
+    set(_mapped_dirs "")
+    foreach(_dir IN LISTS inc_dirs)
+        # 源根本身：换成快照根
+        if(_dir STREQUAL "${source_root}")
+            list(APPEND _mapped_dirs "${snapshot_root}")
+        else()
+            # 判断是否位于源根之下
+            string(FIND "${_dir}/" "${source_root}/" _pos)
+            if(_pos EQUAL 0)
+                # 取源根之后的剩余部分，拼到快照根下
+                string(LENGTH "${source_root}/" _source_root_len)
+                string(SUBSTRING "${_dir}" ${_source_root_len} -1 _rest)
+                list(APPEND _mapped_dirs "${snapshot_root}/${_rest}")
+            else()
+                # 非源根目录原样保留
+                list(APPEND _mapped_dirs "${_dir}")
+            endif()
+        endif()
+    endforeach()
+    set(${out_var} "${_mapped_dirs}" PARENT_SCOPE)
+endfunction()
+
+# -----------------------------------------------------------------------------
+# 头快照切换 —— 把导入目标的「下层源码树包含目录」改指该下层的构建目录头快照
+# -----------------------------------------------------------------------------
+# 用法
+#     byjy_qiehuan_tou_kuaizhao(<导入目标名> <快照根> <源根>)
+#
+# 行为
+#     按 byjy_kuaizhao_lujing() 的规则换算该目标的 INTERFACE_INCLUDE_DIRECTORIES，
+#     其余目录（如本层自有包含目录）原样保留。
+#     快照根不存在 → FATAL_ERROR，提示先构建产出该快照的下层；不静默退回源码树。
+#
+# 用途
+#     上层据此按「与下层静态库同版次」的头文件编译，消除「新头配旧库」的编译链接风险。
+#     只有需要该语义的层才调用（当前为系统层与测试层）；未调用者维持原有源码树包含目录。
+# -----------------------------------------------------------------------------
+function(byjy_qiehuan_tou_kuaizhao target_name snapshot_root source_root)
+    if(NOT TARGET ${target_name})
+        message(FATAL_ERROR "头快照切换：导入目标 ${target_name} 不存在")
+    endif()
+
+    if(NOT IS_DIRECTORY "${snapshot_root}")
+        message(FATAL_ERROR
+            "头快照切换：找不到头快照目录\n"
+            "  期望位置：${snapshot_root}\n"
+            "  该目录由下层构建时导出，请先构建产出它的下层：\n"
+            "      cmake --build <下层目录>/out/build/x64-Debug")
+    endif()
+
+    get_target_property(_inc_dirs ${target_name} INTERFACE_INCLUDE_DIRECTORIES)
+    byjy_kuaizhao_lujing(_new_inc_dirs "${snapshot_root}" "${source_root}" "${_inc_dirs}")
+
+    set_target_properties(${target_name} PROPERTIES
+        INTERFACE_INCLUDE_DIRECTORIES "${_new_inc_dirs}")
+    message(STATUS "头快照切换：${target_name} 的包含目录改指 ${snapshot_root}")
+endfunction()

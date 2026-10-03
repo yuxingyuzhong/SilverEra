@@ -560,6 +560,10 @@ cmake -S 系统层 -B 系统层/out/build/x64-Debug -G Ninja
 cmake --build 系统层/out/build/x64-Debug
 ```
 
+- **配置期须处于 UTF-8 代码页**（先 `chcp 65001`），否则头文件依赖不会被记录，改头文件永不触发重编（详见顶层 README 的构建说明）。
+- 本层**按引擎层的对外头快照编译**，不再实时读取引擎层源码树：配置期由 `byjy_kuaizhao_lujing()` 把对外包含目录中位于引擎层源码树下的条目改指 `<引擎构建目录>/include`，并同步切换 `EngineCore` 导入面。因此「改了引擎层源码头但没重建引擎层」时本层不会看到新头（正是为了避免新头配旧库）；要让新头生效，先构建引擎层。引擎层快照缺失会在配置期直接 `FATAL_ERROR`。
+- 本层同时向 `<本层构建目录>/include` **导出自身的对外头快照**（`SystemIncludeSnapshot` 常驻目标，镜像 `common`、`src`、`external/Sol2/include`、`external/Lua`），供测试层按「与 `SystemCore.lib` 同版次」的头编译。
+
 - 源文件由 `GLOB_RECURSE ... CONFIGURE_DEPENDS` 自动收集 `src/entity/`、`src/prop/`、`src/effect/` 下的
   `.cpp` / `.c`，并依次排除：① 构建目录下的文件；② `Tests/` 目录；③ `src/gui/Config_Editor/`（含独立 `main()`）。
 - 若收集结果为空，`CMakeLists.txt` 以 `FATAL_ERROR` 报错终止。

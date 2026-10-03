@@ -1,6 +1,6 @@
 #include "../局部命名空间使用.h"
 //获取日志系统
-#include "src/tools/Logging/日志系统.h"
+#include "src/tools/Logging/日志系统运行包.h"
 
 namespace engine
 {
@@ -32,7 +32,7 @@ namespace engine
 		//若当前尚未生成密钥
 		if (!this->acl_key.has_value())
 		{
-			Log::warn("Event_Terminal::密钥未生成\n功能已锁定");
+			logger.warn("Event_Terminal::密钥未生成\n功能已锁定");
 			return false;
 		}
 		//若密钥权限未匹配
@@ -61,12 +61,13 @@ namespace engine
 	}
 
 	//中转站交互 —— 单事件重载
-	bool Event_Terminal::interact(std::shared_ptr<Event> evt, const int64_t& acl_key)
+	bool Event_Terminal::interact(std::shared_ptr<Event> evt,std::shared_ptr<Event>& receiver,
+		const int64_t& acl_key)
 	{
 		//若当前尚未生成密钥
 		if (!this->acl_key.has_value())
 		{
-			Log::warn("Event_Terminal::密钥未生成\n功能已锁定");
+			logger.warn("Event_Terminal::密钥未生成\n功能已锁定");
 			return false;
 		}
 
@@ -78,7 +79,7 @@ namespace engine
 				return false;
 			else
 			{
-				(*terminal_interface.event_interactor)(evt);
+				receiver = (*terminal_interface.event_interactor)(evt);
 				return true;
 			}
 		}
@@ -87,12 +88,13 @@ namespace engine
 	}
 
 	//中转站交互 —— 多事件重载
-	bool Event_Terminal::interact(std::vector<std::shared_ptr<Event>> events, const int64_t& acl_key)
+	bool Event_Terminal::interact(std::vector<std::shared_ptr<Event>> events,
+		std::vector<std::shared_ptr<Event>> receiver, const int64_t& acl_key)
 	{
 		//若当前尚未生成密钥
 		if (!this->acl_key.has_value())
 		{
-			Log::warn("Event_Terminal::密钥未生成\n功能已锁定");
+			logger.warn("Event_Terminal::密钥未生成\n功能已锁定");
 			return false;
 		}
 		//若权限密钥匹配
@@ -101,7 +103,7 @@ namespace engine
 			//若已注册多事件交互接口
 			if (terminal_interface.interface_check(Interface_ID::EVENTS_INTERACTOR))
 			{
-				(*terminal_interface.events_interactor)(events);
+				receiver = (*terminal_interface.events_interactor)(events);
 				return true;
 			}
 			//若已注册单事件交互接口则返回
@@ -109,7 +111,7 @@ namespace engine
 			{
 				//分多次发送事件
 				for (auto& evt : events)
-					(*terminal_interface.event_interactor)(evt);
+					receiver.push_back((*terminal_interface.event_interactor)(evt));
 				return true;
 			}
 			else
@@ -144,7 +146,7 @@ namespace engine
 		//若当前尚未生成密钥
 		if (!this->acl_key.has_value())
 		{
-			Log::warn("Event_Terminal::密钥未生成\n功能已锁定");
+			logger.warn("Event_Terminal::密钥未生成\n功能已锁定");
 			return false;
 		}
 		//若权限密钥匹配
@@ -172,7 +174,7 @@ namespace engine
 		//若当前尚未生成密钥
 		if (!this->acl_key.has_value())
 		{
-			Log::warn("Event_Terminal::密钥未生成\n功能已锁定");
+			logger.warn("Event_Terminal::密钥未生成\n功能已锁定");
 			return false;
 		}
 		//若权限密钥匹配
@@ -222,7 +224,7 @@ namespace engine
 		//若当前尚未生成密钥
 		if (!this->acl_key.has_value())
 		{
-			Log::warn("Event_Terminal::密钥未生成\n功能已锁定");
+			logger.warn("Event_Terminal::密钥未生成\n功能已锁定");
 			return nullptr;
 		}
 		//若密钥匹配则发送事件集合
@@ -238,7 +240,7 @@ namespace engine
 		//若当前尚未生成密钥
 		if (!this->acl_key.has_value())
 		{
-			Log::warn("Event_Terminal::密钥未生成\n功能已锁定");
+			logger.warn("Event_Terminal::密钥未生成\n功能已锁定");
 			return false;
 		}
 		//若密钥匹配则清空所有事件

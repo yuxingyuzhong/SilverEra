@@ -1,5 +1,5 @@
 #include "../局部命名空间使用.h"
-#include "src/tools/Logging/日志系统.h"
+#include "src/tools/Logging/日志系统运行包.h"
 
 namespace engine
 {
@@ -35,7 +35,7 @@ namespace engine
 		//若尚未获取分发权限密钥
 		if (!distribute_key.has_value())
 		{
-			Log::warn("Prop_Distributor::尚未获取分发权限密钥\n无法绑定属性槽集合");
+			logger.warn("Prop_Distributor::尚未获取分发权限密钥\n无法绑定属性槽集合");
 			return;
 		}
 		props = bind_entry(distribute_key.value());

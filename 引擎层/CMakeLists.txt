@@ -13,6 +13,9 @@ endif()
 # 项目名称：引擎层（支持中文，但建议英文）
 project(引擎层 LANGUAGES CXX)
 
+# 导出编译数据库（供 IDE / 语言工具链读取本层的包含路径与宏；Ninja 生成器默认不产出该文件）
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 # =============================================================================
 # 归档响应文件 BOM 包装器（MSVC + Ninja 专用）
 # =============================================================================
@@ -59,6 +62,15 @@ file(GLOB_RECURSE ENGINE_SOURCES CONFIGURE_DEPENDS
     "${PROJECT_ROOT_DIR}/external/*.cpp"
 )
 
+# 递归收集本层头文件：仅用于让 IDE 与生成系统建立文件索引（不参与编译），
+# external/ 下第三方头文件不纳入以免污染索引
+file(GLOB_RECURSE ENGINE_HEADERS CONFIGURE_DEPENDS
+    "${PROJECT_ROOT_DIR}/src/*.h"
+    "${PROJECT_ROOT_DIR}/src/*.hpp"
+    "${PROJECT_ROOT_DIR}/common/*.h"
+    "${PROJECT_ROOT_DIR}/common/*.hpp"
+)
+
 # ----- 过滤掉不需要的文件 -----
 if(ENGINE_SOURCES)
     # 1) 排除构建目录下的文件（防止将生成的临时文件误编译进去）
@@ -67,6 +79,8 @@ if(ENGINE_SOURCES)
     # 转义正则特殊字符（如 . + * ? 等）
     string(REGEX REPLACE "([.+*?^$()])" "\\\\\\1" SAFE_BINARY_REGEX "${SAFE_BINARY_DIR}")
     list(FILTER ENGINE_SOURCES EXCLUDE REGEX "^${SAFE_BINARY_REGEX}/")
+    # 头文件同样排除构建目录下的生成物
+    list(FILTER ENGINE_HEADERS EXCLUDE REGEX "^${SAFE_BINARY_REGEX}/")
 
 endif()
 
@@ -84,7 +98,7 @@ message(STATUS "引擎源文件数量: ${ENGINE_SOURCES}")
 # =============================================================================
 # 3. 创建引擎静态库（核心）
 # =============================================================================
-add_library(EngineCore STATIC ${ENGINE_SOURCES})
+add_library(EngineCore STATIC ${ENGINE_SOURCES} ${ENGINE_HEADERS})
 
 # =============================================================================
 # 4. 头文件搜索路径设置
@@ -103,13 +117,30 @@ target_include_directories(EngineCore PRIVATE "${JSON_ROOT}")
 set(GLFW_ROOT "${PROJECT_ROOT_DIR}/external/glfw")
 target_include_directories(EngineCore PRIVATE "${GLFW_ROOT}")
 
-# ---------- GLM ---------- 数学库
-set(GLM_ROOT "${PROJECT_ROOT_DIR}/external/glm")
-target_include_directories(EngineCore PRIVATE "${GLM_ROOT}")
-
 # ---------- GLM ---------- 碰撞检测库
 set(BULLET_ROOT "${PROJECT_ROOT_DIR}/external/bullet3/src")
 target_include_directories(EngineCore PRIVATE "${BULLET_ROOT}")
+
+# =============================================================================
+# 5.5 对外头快照导出（供上层按「与本层静态库同版次」的头编译）
+# =============================================================================
+# 背景：上层的引擎包含目录此前直接指向本层源码树，与本层构建目录里的 .lib 无绑定关系，
+#       一旦「头已改、库未重建」，上层就会新头配旧库地编译链接。
+# 做法：每轮构建把对外包含目录下的头镜像到 <构建目录>/include/，上层改读该快照；
+#       只复制内容有变化的头，未变头不改变时间戳，不会引起上层无谓重编。
+#       镜像目录与 对外接口.cmake 里声明的包含目录一一对应（含第三方头）。
+# =============================================================================
+set(BYJY_ENGINE_INCLUDE_SNAPSHOT_DIR "${CMAKE_BINARY_DIR}/include")
+
+add_custom_target(EngineIncludeSnapshot ALL
+    COMMAND "${CMAKE_COMMAND}"
+        "-DSRC_ROOT=${PROJECT_ROOT_DIR}"
+        "-DDST_ROOT=${BYJY_ENGINE_INCLUDE_SNAPSHOT_DIR}"
+        "-DMIRROR_DIRS=common;src;external/Json;external/glfw;external/bullet3/src"
+        -P "${PROJECT_ROOT_DIR}/cmake/导出头快照.cmake"
+    COMMENT "导出引擎层对外头快照 → ${BYJY_ENGINE_INCLUDE_SNAPSHOT_DIR}"
+    VERBATIM
+)
 
 # =============================================================================
 # 6. 链接第三方库（新增）

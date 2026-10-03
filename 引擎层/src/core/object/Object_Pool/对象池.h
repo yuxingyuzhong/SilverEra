@@ -10,8 +10,20 @@
 
 namespace engine
 {
+	//默认对象定位投影器 —— 以对象ID作为定位键
+	struct Default_Projector
+	{
+		template <typename T>
+		uint64_t operator()(const T& object) const
+		{
+			return object.ID();
+		}
+	};
+
 	//对象池 —— 模板需从对象中派生
-	template <typename T, typename Key = uint64_t>
+	//Projector为对象定位投影器类型，Key由投影器返回类型自动推导
+	template <typename T, typename Projector = Default_Projector,
+		typename Key = std::invoke_result_t<Projector, const T&>>
 		requires std::is_base_of_v<Object, T>
 	class Object_Pool
 	{
@@ -43,8 +55,8 @@ namespace engine
 
 		//对象集合
 		std::vector<T> objects;
-		//对象定位投影字段
-		std::function<Key(const T&)> projector;
+		//对象定位投影器(无状态时经空基类优化不占空间)
+		[[no_unique_address]] Projector projector;
 		//对象定位方式标记
 		bool is_sorted = false;
 
@@ -58,7 +70,7 @@ namespace engine
 
 	public:
 		//构造函数
-		explicit Object_Pool(std::function<Key(const T&)> proj)
+		Object_Pool()
 		{
 			//设置后进先出机制分配回收ID
 			ID_allocator.set(Allocate_Order::LIFO);
@@ -67,13 +79,10 @@ namespace engine
 			ID_allocator.set(min_ID);
 			//显示指定起始索引
 			index_allocator.set(0);
-			//记录定位投影字段
-			projector = std::move(proj);
 		}
 		//析构函数
 		~Object_Pool()
-		{
-		}
+		{}
 		//对象排列方式设置
 		template <typename Compare>
 			requires std::same_as<Compare, std::ranges::less> ||
@@ -116,8 +125,8 @@ namespace engine
 			if (!min_valid_index.has_value())
 				return;
 			else
-			    //重排序对象
-			    sort();
+				//重排序对象
+				sort();
 		}
 		//对象排列方式重置
 		void order_reset(void)
@@ -163,14 +172,14 @@ namespace engine
 				//若有效索引起点非有效值
 				if (!min_valid_index.has_value())
 				{
-					Log::warn("Object_Pool::当前排序模式不可用\n请设置排序方式后再调用此方法");
+					logger.warn("Object_Pool::当前排序模式不可用\n请设置排序方式后再调用此方法");
 					return objects.end();
 				}
 
 				//获取目标对象索引
 				std::optional<uint64_t> index = detail::binary_search
 				(objects.begin() + min_valid_index.value(), objects.end(),
-					key, compare, projector);;
+					key, compare, projector);
 				//若返回索引有效
 				if (index.has_value())
 					return objects.begin() + min_valid_index.value() + index.value();
@@ -178,7 +187,7 @@ namespace engine
 				else
 					return objects.end();
 			}
-		}		
+		}
 		//对象添加
 		uint64_t build(void)
 		{
@@ -206,7 +215,7 @@ namespace engine
 				//简化表示路径
 				auto& min_index = min_valid_index.value();
 				//若有效区非全容器时
-				if(min_index > 0)
+				if (min_index > 0)
 				{
 					//若新对象位于有效区边界则扩充有效区
 					if (index == min_index - 1)
@@ -225,7 +234,7 @@ namespace engine
 			//若有效索引起点非有效值
 			if (!min_valid_index.has_value())
 			{
-				Log::warn("Object_Pool::当前排序模式不可用\n请设置排序方式后再调用此方法");
+				logger.warn("Object_Pool::当前排序模式不可用\n请设置排序方式后再调用此方法");
 				return false;
 			}
 
@@ -234,8 +243,8 @@ namespace engine
 				return false;
 			//若为排序模式则进行重排序
 			else
-			    std::ranges::sort(objects.begin() + min_valid_index.value(), objects.end(),
-			        compare, projector);
+				std::ranges::sort(objects.begin() + min_valid_index.value(), objects.end(),
+					compare, projector);
 
 			return true;
 		}
@@ -258,7 +267,7 @@ namespace engine
 				//设置目标对象记录不合法
 				objects[target_index].valid_set(false);
 				//若为哈希定位模式
-				if(!is_sorted)
+				if (!is_sorted)
 				{
 					//取消目标对象定位字段映射
 					mapping.erase(key);
@@ -277,9 +286,9 @@ namespace engine
 			}
 			else
 			{
-				Log::warn("Object_Pool::目标对象不存在");
+				logger.warn("Object_Pool::目标对象不存在");
 				return;
-			}	
+			}
 		}
 		//对象卸载 —— 多对象重载
 		void unload(const std::vector<Key>& keys)
@@ -295,7 +304,7 @@ namespace engine
 			objects.clear();
 
 			//清空所有ID记录
-			ID_allocator.reset();    
+			ID_allocator.reset();
 			//恢复后进先出分配机制
 			ID_allocator.set(Allocate_Order::LIFO);
 			//恢复保留非法ID
@@ -309,8 +318,8 @@ namespace engine
 			index_allocator.set(0);
 
 			//若为哈希定位模式则清空所有索引映射
-			if(!is_sorted)
-			    mapping.clear();
+			if (!is_sorted)
+				mapping.clear();
 			//若为排序模式则清空所有排序信息
 			else
 			{

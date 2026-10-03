@@ -17,6 +17,7 @@
 #include "src/主调/图形选择窗口.h"
 #include "src/主调/控制台选择菜单.h"
 #include "src/主调/退出等待判定.h"
+#include "src/主调/引擎日志屏蔽.h"
 
 #include <conio.h>
 #include <cstring>
@@ -70,6 +71,9 @@ int main(int argc, char** argv)
     ::SetConsoleOutputCP(CP_UTF8);
     ::SetConsoleCP(CP_UTF8);
 
+    //把引擎日志分流到日志文件：避免与 googletest 的输出交织在同一位置
+    engine::日志屏蔽_开启();
+
     //—— 第一步：摘出自定义开关，其余参数原样留给 googletest ——
     std::string 选择模式 = "window";
     //是否显式指定了选择器（显式指定时优先于「带 gtest 参数即透传」的自动化约定）
@@ -110,7 +114,12 @@ int main(int argc, char** argv)
     //—— 第三步：透传 / 关闭分支：不开窗直接全跑 ——
     //未显式指定选择器时，出现 gtest 参数即视为自动化调用，原样透传
     if ((命令行带过滤 && !显式选择器) || 选择模式 == "off")
-        return RUN_ALL_TESTS();
+    {
+        //执行测试并把引擎日志缓冲落盘
+        const int 透传结果 = RUN_ALL_TESTS();
+        engine::日志屏蔽_落盘();
+        return 透传结果;
+    }
 
     //—— 第四步：建立选择模型，按模式取得过滤串 ——
     engine::Test_Selection_Model 模型;
@@ -137,6 +146,8 @@ int main(int argc, char** argv)
     std::cout << "[测试选择] 可用 --gtest_filter=" << 过滤串 << " 复跑同一批用例。" << std::endl;
     ::testing::GTEST_FLAG(filter) = 过滤串;
     const int 测试结果 = RUN_ALL_TESTS();
+    //把引擎日志缓冲落盘
+    engine::日志屏蔽_落盘();
 
     //交互运行：测试结束后停住，等用户看完输出再手动关闭窗口
     if (engine::需要等待退出(选择模式, 命令行带过滤, 显式选择器))

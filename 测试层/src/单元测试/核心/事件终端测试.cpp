@@ -287,7 +287,8 @@ TEST_F(Event_Terminal_Test, 密钥未生成时接口全部锁定)
 	//未生成密钥时接入被拒绝
 	EXPECT_FALSE(terminal.attach("模块", {}, 0));
 	//未生成密钥时交互被拒绝
-	EXPECT_FALSE(terminal.interact(make_event("输入", "按键"), 0));
+	std::shared_ptr<engine::Event> response;
+	EXPECT_FALSE(terminal.interact(make_event("输入", "按键"), response, 0));
 	//未生成密钥时查阅返回空指针
 	EXPECT_EQ(terminal.query(0), nullptr);
 }

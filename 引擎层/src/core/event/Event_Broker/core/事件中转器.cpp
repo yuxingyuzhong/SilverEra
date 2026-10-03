@@ -1,5 +1,5 @@
 #include "../局部命名空间使用.h"
-#include "src/tools/Logging/日志系统.h"
+#include "src/tools/Logging/日志系统运行包.h"
 
 //引擎命名空间
 namespace engine
@@ -12,7 +12,7 @@ namespace engine
         //若接入者信息为空
         if (subscriber.empty())
         {
-            Log::warn("Event_Broker::订阅者不可为空\n接入失败");
+            logger.warn("Event_Broker::订阅者不可为空\n接入失败");
             return;
         }
 
@@ -47,9 +47,9 @@ namespace engine
                     }
                 }
                 
-                Log::info("Event_Broker::检测到二次接入未包含有效接入信息");
-                Log::info("已满足接入卸载条件");
-                Log::info("事件中转站接入已下线");
+                logger.info("Event_Broker::检测到二次接入未包含有效接入信息");
+                logger.info("已满足接入卸载条件");
+                logger.info("事件中转站接入已下线");
 
                 return;
             }
@@ -63,8 +63,8 @@ namespace engine
             //若订阅事件集为空且接收者不存在
             if (needed_events.empty() && !receiver)
             {
-                Log::info("Event_Broker::检测到接入未包含有效接入信息");
-                Log::info("接入失败");
+                logger.info("Event_Broker::检测到接入未包含有效接入信息");
+                logger.info("接入失败");
                 return;
             }
             //获取当前映射数目作为新订阅者编号
@@ -84,7 +84,7 @@ namespace engine
             //若事件标识信息不完整
             if (evt.category.empty() || evt.tag.empty())
             {
-                Log::warn("Event_Broker::订阅事件标识信息不完整\n已略过该事件");
+                logger.warn("Event_Broker::订阅事件标识信息不完整\n已略过该事件");
                 continue;
             }
 
@@ -119,19 +119,19 @@ namespace engine
         //若事件标识信息不完整
         if (evt->category.empty() || evt->tag.empty())
         {
-            Log::warn("Event_Broker::事件标识信息不完整\n已略过该事件处理");
+            logger.warn("Event_Broker::事件标识信息不完整\n已略过该事件处理");
             return;
         }
         //若事件标识未注册
         if (!acl_set.count({ evt->category,evt->tag }))
         {
-            Log::warn("Event_Broker::事件订阅者不存在\n已略过该事件处理");
+            logger.warn("Event_Broker::事件订阅者不存在\n已略过该事件处理");
             return;
         }
         //若事件标签为已占用字段
         if(evt->tag == "All")
         {
-            Log::warn("Event_Broker::All标签已占用\n已略过该事件处理");
+            logger.warn("Event_Broker::All标签已占用\n已略过该事件处理");
             return;
         }
 
@@ -182,19 +182,27 @@ namespace engine
     //事件处理 —— 单事件重载
     shared_ptr<Event> Event_Broker::process(shared_ptr<Event> evt)
     {
+        //若事件为空
+        if (evt == nullptr)
+        {
+            logger.warn("Event_Broker::当前事件未分配内存\n已略过该事件");
+            return nullptr;
+        }
+
         //简化表示路径
         auto& config = evt->config;
 
         //若未定义事件发送者则直接返回
         if (evt->sender_object.empty() || evt->target_object.empty())
         {
-            Log::warn("Event_Broker::事件收发对象定义不完整\n已略过该事件");
+            logger.warn("Event_Broker::事件收发对象定义不完整\n已略过该事件");
             return nullptr;
         }
+
         //若事件发送者不存在则直接返回
         if (!mapping_set.count(evt->sender_object))
         {
-            Log::warn("Event_Broker::事件发送者不存在\n已略过该事件");
+            logger.warn("Event_Broker::事件发送者不存在\n已略过该事件");
             return nullptr;
         }
 
@@ -206,16 +214,18 @@ namespace engine
             {
                 //构造回复事件
                 shared_ptr<Event> response_event(new(nothrow)Event("Subscriber","Response"));
+                //注入查询目标对象名
+                response_event->config["object"] = evt->target_object;
                 //查询目标对象
                 auto it = mapping_set.find(evt->target_object);
                 //若目标对象不存在
                 if (it == mapping_set.end())
                     //设置目标对象不存在
-                    response_event->config["object_existence"] = false;
+                    response_event->config["existence"] = false;
                 else
                 {
                     //设置目标对象存在
-                    response_event->config["object_existence"] = true;
+                    response_event->config["existence"] = true;
                     //若为目标呼叫事件
                     if (evt->tag == "Call")
                         //将呼叫事件转发给目标对象
@@ -227,6 +237,9 @@ namespace engine
             }
             
         }
+
+        //返回空事件（无可处理分类）
+        return nullptr;
     }
 
     //事件处理 —— 多事件重载

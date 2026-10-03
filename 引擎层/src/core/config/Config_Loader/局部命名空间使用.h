@@ -1,10 +1,12 @@
 #pragma once
 #include "配置加载器.h"
 
+// ---------- 容器 -----------
+using std::vector;
+
 // ---------- 输入输出与流 ----------
-using std::cout;
-using std::endl;
 using std::ifstream;
+using std::ofstream;
 
 // ---------- 错误与异常 ----------
 using std::error_code;

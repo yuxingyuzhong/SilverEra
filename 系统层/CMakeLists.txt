@@ -66,6 +66,19 @@ file(GLOB_RECURSE SYSTEM_SOURCES CONFIGURE_DEPENDS
     "${PROJECT_ROOT_DIR}/src/effect/*.c"
 )
 
+# 导出编译数据库（供 IDE / 语言工具链读取本层包含路径与宏）
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+# 递归收集本层头文件：仅用于让 IDE 与生成系统建立文件索引（不参与编译）
+file(GLOB_RECURSE SYSTEM_HEADERS CONFIGURE_DEPENDS
+    "${PROJECT_ROOT_DIR}/src/entity/*.h"
+    "${PROJECT_ROOT_DIR}/src/entity/*.hpp"
+    "${PROJECT_ROOT_DIR}/src/prop/*.h"
+    "${PROJECT_ROOT_DIR}/src/prop/*.hpp"
+    "${PROJECT_ROOT_DIR}/src/effect/*.h"
+    "${PROJECT_ROOT_DIR}/src/effect/*.hpp"
+)
+
 if(SYSTEM_SOURCES)
     # 1) 排除构建目录下的文件（防止把生成的临时文件误编译进去）
     string(REPLACE "\\" "/" SAFE_BINARY_DIR "${CMAKE_BINARY_DIR}")
@@ -77,6 +90,9 @@ if(SYSTEM_SOURCES)
 
     # 3) 排除配置编辑器目录（含独立 main()，不应编入静态库）
     list(FILTER SYSTEM_SOURCES EXCLUDE REGEX "/src/gui/Config_Editor/")
+
+    # 头文件同样排除测试目录
+    list(FILTER SYSTEM_HEADERS EXCLUDE REGEX "/Tests/")
 endif()
 
 if(NOT SYSTEM_SOURCES)
@@ -96,9 +112,38 @@ message(STATUS "系统层源文件: ${SYSTEM_SOURCES}")
 # 该接口已并入引擎层对外面，所以这一份声明同时覆盖「本层源码编译」与「上层使用」。
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/对外接口.cmake")
 
-add_library(SystemCore STATIC ${SYSTEM_SOURCES})
+# =============================================================================
+# 3.5 引擎层头快照接入（本层改为按「与 EngineCore.lib 同版次」的引擎头编译）
+# =============================================================================
+# 本层包含目录里既有本层自有面，也并入了引擎层对外面（${BYJY_ENGINE_OUT_INC}，指向引擎层
+# 源码树）。此处把其中位于引擎层源码树下的条目改指引擎层构建目录内的头快照，消除
+# 「引擎头已改、EngineCore.lib 未重建」时新头配旧库地编译链接的风险。
+# 说明：普通库目标自身的编译包含路径由 INCLUDE_DIRECTORIES 决定，因此必须先把对外包含
+#       目录「按列表换算」再交给 target_include_directories；只改导入目标
+#       （EngineCore）的 INTERFACE 面不足以改变 SystemCore 自身的编译包含路径。
+# =============================================================================
+get_target_property(BYJY_ENGINE_LIB_FILE EngineCore IMPORTED_LOCATION)
+get_filename_component(BYJY_ENGINE_BUILD_DIR "${BYJY_ENGINE_LIB_FILE}/../.." ABSOLUTE)
+get_filename_component(BYJY_ENGINE_SOURCE_DIR "${PROJECT_ROOT_DIR}/../引擎层" ABSOLUTE)
 
-target_include_directories(SystemCore PUBLIC ${BYJY_SYSTEM_OUT_INC})
+if(NOT IS_DIRECTORY "${BYJY_ENGINE_BUILD_DIR}/include")
+    message(FATAL_ERROR
+        "系统层：找不到引擎层头快照\n"
+        "  期望位置：${BYJY_ENGINE_BUILD_DIR}/include\n"
+        "  该目录由引擎层构建时导出，请先构建引擎层：\n"
+        "      cmake --build \"${PROJECT_ROOT_DIR}/../引擎层/out/build/x64-Debug\"")
+endif()
+
+# 把包含目录里位于引擎层源码树下的条目改指引擎层头快照
+byjy_kuaizhao_lujing(BYJY_SYSTEM_INC_SNAPSHOT
+    "${BYJY_ENGINE_BUILD_DIR}/include" "${BYJY_ENGINE_SOURCE_DIR}" "${BYJY_SYSTEM_OUT_INC}")
+
+# 引擎层导入面同步改指快照（否则其源码树条目仍会随链接进入本层编译包含路径）
+byjy_qiehuan_tou_kuaizhao(EngineCore "${BYJY_ENGINE_BUILD_DIR}/include" "${BYJY_ENGINE_SOURCE_DIR}")
+
+add_library(SystemCore STATIC ${SYSTEM_SOURCES} ${SYSTEM_HEADERS})
+
+target_include_directories(SystemCore PUBLIC ${BYJY_SYSTEM_INC_SNAPSHOT})
 
 if(BYJY_SYSTEM_OUT_DEF)
     target_compile_definitions(SystemCore PUBLIC ${BYJY_SYSTEM_OUT_DEF})
@@ -123,6 +168,26 @@ endif()
 set_target_properties(SystemCore PROPERTIES
     ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
+)
+
+# =============================================================================
+# 3.6 对外头快照导出（供上层按「与本层静态库同版次」的头编译）
+# =============================================================================
+# 镜像范围与本层 cmake/对外接口.cmake 声明的自有包含目录一一对应：
+#   层根 ＋ 层根/src ← common、src（层根对应预编译头与 src/ 两种引用形式）
+#   external/Sol2/include、external/Lua ← 本层公共头暴露 LuaState 所需
+# 脚本复用引擎层的同名通用脚本（纯路径操作，与本层无耦合）。
+# =============================================================================
+set(BYJY_SYSTEM_INCLUDE_SNAPSHOT_DIR "${CMAKE_BINARY_DIR}/include")
+
+add_custom_target(SystemIncludeSnapshot ALL
+    COMMAND "${CMAKE_COMMAND}"
+        "-DSRC_ROOT=${PROJECT_ROOT_DIR}"
+        "-DDST_ROOT=${BYJY_SYSTEM_INCLUDE_SNAPSHOT_DIR}"
+        "-DMIRROR_DIRS=common;src;external/Sol2/include;external/Lua"
+        -P "${PROJECT_ROOT_DIR}/../引擎层/cmake/导出头快照.cmake"
+    COMMENT "导出系统层对外头快照 → ${BYJY_SYSTEM_INCLUDE_SNAPSHOT_DIR}"
+    VERBATIM
 )
 
 # =============================================================================

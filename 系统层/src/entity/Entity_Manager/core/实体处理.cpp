@@ -1,5 +1,5 @@
 #include "../局部命名空间使用.h"
-#include "src/tools/Logging/日志系统.h"
+#include "src/tools/Logging/日志系统运行包.h"
 
 //引擎命名空间
 namespace engine
@@ -12,7 +12,7 @@ namespace engine
         //若迭代器无效则直接返回
         if (action_it == action_load_path.end())
         {
-            Log::warn("Entity_Manager::未定义目标实体类型行为加载路径");
+            logger.warn("Entity_Manager::未定义目标实体类型行为加载路径");
             return {};
         }
 
@@ -21,7 +21,7 @@ namespace engine
         //若迭代器无效则直接返回
         if (prop_it == prop_config_paths.end())
         {
-            Log::warn("Entity_Manager::未定义目标实体类型属性槽配置加载路径");
+            logger.warn("Entity_Manager::未定义目标实体类型属性槽配置加载路径");
             return {};
         }
         //新实体ID集合记录

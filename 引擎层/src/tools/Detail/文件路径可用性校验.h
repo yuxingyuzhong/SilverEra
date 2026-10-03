@@ -4,7 +4,7 @@
 //获取路径字符串转换方法
 #include "路径字符串转换.h"
 //获取日志系统
-#include "src/tools/Logging/日志系统.h"
+#include "src/tools/Logging/日志系统运行包.h"
 
 //通用算法模块
 namespace engine
@@ -18,7 +18,7 @@ namespace engine
             //若未解析出有效路径
             if (target_path.begin() == target_path.end())
             {
-                Log::info("路径无效");
+                logger.info("路径无效");
                 return false;
             }
 
@@ -28,9 +28,9 @@ namespace engine
             if (!std::filesystem::exists(target_path, ec) || 
                 !std::filesystem::is_regular_file(target_path, ec))
             {
-                Log::info("访问路径异常\n请自行排查访问路径是否存在及是否可读取");
+                logger.info("访问路径异常\n请自行排查访问路径是否存在及是否可读取");
                 //输出异常信息
-                Log::info("{}", ec);
+                logger.info("{}", ec);
                 //清空异常信息
                 ec.clear();
                 //返回检查未通过

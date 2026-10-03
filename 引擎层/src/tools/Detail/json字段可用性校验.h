@@ -2,7 +2,7 @@
 //预编译头
 #include "common/前置头文件包含.h"
 //获取日志系统
-#include "src/tools/Logging/日志系统.h"
+#include "src/tools/Logging/日志系统运行包.h"
 
 namespace engine
 {
@@ -16,7 +16,7 @@ namespace engine
             //字段存在性检查
             if (!config.contains(field))
             {
-                Log::warn("detail::未包含指定字段: {}", field);
+                logger.warn("detail::未包含指定字段: {}", field);
                 return false;
             }
 
@@ -25,7 +25,7 @@ namespace engine
             {
                 if (!config[field].is_boolean())
                 {
-                    Log::info("detail::字段 {} 非布尔格式", field);
+                    logger.info("detail::字段 {} 非布尔格式", field);
                     return false;
                 }
             }
@@ -35,7 +35,7 @@ namespace engine
                 //匹配所有整数类型
                 if (!config[field].is_number_integer())
                 {
-                    Log::info("detail::字段 {} 非整数格式", field);
+                    logger.info("detail::字段 {} 非整数格式", field);
                     return false;
                 }
             }
@@ -45,7 +45,7 @@ namespace engine
                 //匹配所有浮点类型
                 if (!config[field].is_number_float())
                 {
-                    Log::info("detail::字段 {} 非浮点数格式", field);
+                    logger.info("detail::字段 {} 非浮点数格式", field);
                     return false;
                 }
             }
@@ -55,13 +55,13 @@ namespace engine
                 //若字段非字符串
                 if (!config[field].is_string())
                 {
-                    Log::info("detail::字段 {} 类型不匹配", field);
+                    logger.info("detail::字段 {} 类型不匹配", field);
                     return false;
                 }
                 //若字符串为空
                 if (config[field].get_ref<const std::string&>().empty())
                 {
-                    Log::info("detail::字段 {} 内容为空", field);
+                    logger.info("detail::字段 {} 内容为空", field);
                     return false;
                 }
             }
@@ -75,7 +75,7 @@ namespace engine
                 }
                 catch (const nlohmann::json::type_error&)
                 {
-                    Log::info("detail::字段 {} 类型不匹配", field);
+                    logger.info("detail::字段 {} 类型不匹配", field);
                     return false;
                 }
 
@@ -83,7 +83,7 @@ namespace engine
                 if ((config[field].is_array() || config[field].is_object()) &&
                     config[field].empty())
                 {
-                    Log::info("detail::字段 {} 内容为空", field);
+                    logger.info("detail::字段 {} 内容为空", field);
                     return false;
                 }
             }

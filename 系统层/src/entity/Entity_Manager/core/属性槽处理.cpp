@@ -1,5 +1,5 @@
 #include "../局部命名空间使用.h"
-#include "src/tools/Logging/日志系统.h"
+#include "src/tools/Logging/日志系统运行包.h"
 
 namespace engine
 {
@@ -10,14 +10,14 @@ namespace engine
 		//若属性槽分发器未注册事件中转站
 		if (!event_terminal.interact("Prop_Distributor"))
 		{
-			Log::warn("Entity_Manager::属性槽分发器尚未注册事件中转站信息\n分发密钥生成失败");
+			logger.warn("Entity_Manager::属性槽分发器尚未注册事件中转站信息\n分发密钥生成失败");
 			return false;
 		}
 		/**/
 		//若当前已生成分发密钥
 		if (this->distribute_key.has_value())
 		{
-			Log::warn("Entity_Manager::分发密钥未已生成!!!");
+			logger.warn("Entity_Manager::分发密钥未已生成!!!");
 			return false;
 		}
 
@@ -51,13 +51,13 @@ namespace engine
 		//若当前未生成分发密钥
 		if (!this->distribute_key.has_value())
 		{
-			Log::warn("Entity_Manager::属性槽分发器尚未注册事件中转站信息\n分发密钥未生成");
+			logger.warn("Entity_Manager::属性槽分发器尚未注册事件中转站信息\n分发密钥未生成");
 			return nullptr;
 		}
 		//若分发密钥不匹配
 		else if (this->distribute_key != distribute_key)
 		{
-			Log::warn("Entity_Manager::分发密钥匹配失败");
+			logger.warn("Entity_Manager::分发密钥匹配失败");
 			return nullptr;
 		}
 		//若分发密钥匹配

@@ -1,5 +1,5 @@
 #include "../局部命名空间使用.h"
-#include "src/tools/Logging/日志系统.h"
+#include "src/tools/Logging/日志系统运行包.h"
 
 namespace engine
 {
@@ -53,7 +53,7 @@ namespace engine
 		//读取目标碰撞体编号
 		if (!number_read(config, "collider_ID", collider_ID))
 		{
-			Log::warn("Collision_Proxy::位移事件缺少有效字段(collider_ID)");
+			logger.warn("Collision_Proxy::位移事件缺少有效字段(collider_ID)");
 			return;
 		}
 
@@ -62,12 +62,35 @@ namespace engine
 		//读取位移向量（非法配置不予保存）
 		if (!vector_read(config, "displacement", displacement))
 		{
-			Log::warn("Collision_Proxy::碰撞体({})字段(displacement)非法", collider_ID);
+			logger.warn("Collision_Proxy::碰撞体({})字段(displacement)非法", collider_ID);
 			return;
 		}
 
-		//保存位移事件（同编号的新事件覆盖旧事件）
+		/*
+		位移作用频率
+		缺省或非法（为零、逻辑帧率不可用、不整除逻辑帧率）时取零，
+		此时碰撞空间按旧行为每次检测都重读并施加全量位移。
+		*/
+		uint64_t frequency = 0;
+		//读取作用频率（可选字段）
+		number_read(config, "frequency", frequency);
+		//逻辑帧率
+		uint64_t frame_rate = Engine_Env::logic_frames_get();
+		//作用频率合法性检查（作用频率必须为逻辑帧率的因数以保证整除）
+		if (frequency != 0 && (frame_rate == 0 || frame_rate % frequency != 0))
+		{
+			logger.warn("Collision_Proxy::碰撞体({})字段(frequency={})非法，须整除逻辑帧率({})，改按每帧全量位移处理",
+				collider_ID, frequency, frame_rate);
+			frequency = 0;
+		}
+
+		//保存位移事件（同编号的新事件覆盖旧事件，待生效帧重读）
 		displacement_events[collider_ID] = config;
+		//下发作用频率（频率与生效计时随碰撞体保存于碰撞空间，并重新起算生效计时）
+		collider_set_dispatch(collider_ID, [collider_ID, frequency](Collision_Region& region)
+			{
+				return region.collider_frequency_set(collider_ID, frequency);
+			});
 		//新位移事件重新启用位移（解除此前碰撞响应产生的作废）
 		collider_set_dispatch(collider_ID, [collider_ID, &displacement](Collision_Region& region)
 			{

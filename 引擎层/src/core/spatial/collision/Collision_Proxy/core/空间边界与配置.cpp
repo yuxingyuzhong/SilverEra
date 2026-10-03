@@ -1,6 +1,6 @@
 #include "../局部命名空间使用.h"
 #include "src/tools/Detail/package/数据校验工具.h"
-#include "src/tools/Logging/日志系统.h"
+#include "src/tools/Logging/日志系统运行包.h"
 
 namespace engine
 {
@@ -40,14 +40,14 @@ namespace engine
 			//读取空间名称
 			if (!text_read(boundary_data, "region", region))
 			{
-				Log::warn("Collision_Proxy::边界配置缺少有效字段(region)");
+				logger.warn("Collision_Proxy::边界配置缺少有效字段(region)");
 				all_set = false;
 				continue;
 			}
 			//读取空间边界网格路径
 			if (!text_read(boundary_data, "mesh_path", mesh_path))
 			{
-				Log::warn("Collision_Proxy::边界配置缺少有效字段(mesh_path)");
+				logger.warn("Collision_Proxy::边界配置缺少有效字段(mesh_path)");
 				all_set = false;
 				continue;
 			}
@@ -57,7 +57,7 @@ namespace engine
 			//若目标碰撞空间不存在
 			if (!target)
 			{
-				Log::warn("Collision_Proxy::待设置边界的碰撞空间({})不存在", region);
+				logger.warn("Collision_Proxy::待设置边界的碰撞空间({})不存在", region);
 				all_set = false;
 				continue;
 			}
@@ -65,7 +65,7 @@ namespace engine
 			//构建空间边界
 			if (!target->boundary_build(mesh_path))
 			{
-				Log::warn("Collision_Proxy::碰撞空间({})边界构建失败({})", region, mesh_path);
+				logger.warn("Collision_Proxy::碰撞空间({})边界构建失败({})", region, mesh_path);
 				all_set = false;
 			}
 		}
@@ -79,7 +79,7 @@ namespace engine
 		//配置内容格式检查
 		if (!config.is_object() || !config.contains("regions") || !config["regions"].is_array())
 		{
-			Log::warn("Collision_Proxy::配置缺少有效字段(regions)");
+			logger.warn("Collision_Proxy::配置缺少有效字段(regions)");
 			return;
 		}
 
@@ -91,7 +91,7 @@ namespace engine
 			//读取空间名称
 			if (!text_read(region_config, "region", region))
 			{
-				Log::warn("Collision_Proxy::空间配置缺少有效字段(region)");
+				logger.warn("Collision_Proxy::空间配置缺少有效字段(region)");
 				continue;
 			}
 
@@ -114,7 +114,7 @@ namespace engine
 				string mesh_path = region_config["boundary"].get<string>();
 				//构建空间边界
 				if (!target->boundary_build(mesh_path))
-					Log::warn("Collision_Proxy::碰撞空间({})边界构建失败({})", region, mesh_path);
+					logger.warn("Collision_Proxy::碰撞空间({})边界构建失败({})", region, mesh_path);
 			}
 
 			//若空间内无碰撞体清单则结束本空间
@@ -141,7 +141,7 @@ namespace engine
 		//边界配置文件路径检查
 		if (!detail::path_check(path))
 		{
-			Log::warn("Collision_Proxy::边界配置路径不可读取({})", path);
+			logger.warn("Collision_Proxy::边界配置路径不可读取({})", path);
 			return false;
 		}
 
@@ -150,7 +150,7 @@ namespace engine
 		//若文件打开失败
 		if (!file.is_open())
 		{
-			Log::warn("Collision_Proxy::边界配置文件打开失败({})", path);
+			logger.warn("Collision_Proxy::边界配置文件打开失败({})", path);
 			return false;
 		}
 
@@ -161,14 +161,14 @@ namespace engine
 		}
 		catch (const std::exception&)
 		{
-			Log::warn("Collision_Proxy::边界配置内容非法({})", path);
+			logger.warn("Collision_Proxy::边界配置内容非法({})", path);
 			return false;
 		}
 
 		//边界配置须为空间数组
 		if (!receiver.is_array())
 		{
-			Log::warn("Collision_Proxy::边界配置须为空间数组({})", path);
+			logger.warn("Collision_Proxy::边界配置须为空间数组({})", path);
 			return false;
 		}
 
