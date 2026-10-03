@@ -63,18 +63,29 @@ file(GLOB_RECURSE GAME_SOURCES CONFIGURE_DEPENDS
     "${PROJECT_ROOT_DIR}/src/*.c"
 )
 
+# 导出编译数据库（供 IDE / 语言工具链读取本层包含路径与宏）
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+# 递归收集本层头文件：仅用于让 IDE 与生成系统建立文件索引（不参与编译）
+file(GLOB_RECURSE GAME_HEADERS CONFIGURE_DEPENDS
+    "${PROJECT_ROOT_DIR}/src/*.h"
+    "${PROJECT_ROOT_DIR}/src/*.hpp"
+)
+
 if(GAME_SOURCES)
     # 排除构建目录下的文件
     string(REPLACE "\\" "/" SAFE_BINARY_DIR "${CMAKE_BINARY_DIR}")
     string(REGEX REPLACE "([.+*?^$()])" "\\\\\\1" SAFE_BINARY_REGEX "${SAFE_BINARY_DIR}")
     list(FILTER GAME_SOURCES EXCLUDE REGEX "^${SAFE_BINARY_REGEX}/")
+    # 头文件同样排除构建目录下的生成物
+    list(FILTER GAME_HEADERS EXCLUDE REGEX "^${SAFE_BINARY_REGEX}/")
 endif()
 
 # =============================================================================
 # 3. 创建游戏层静态库（无源码时跳过，不报错）
 # =============================================================================
 if(GAME_SOURCES)
-    add_library(GameCore STATIC ${GAME_SOURCES})
+    add_library(GameCore STATIC ${GAME_SOURCES} ${GAME_HEADERS})
 
     # 公共包含路径：本层根目录
     target_include_directories(GameCore PUBLIC "${PROJECT_ROOT_DIR}")

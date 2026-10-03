@@ -491,6 +491,8 @@ cmake -S 游戏层 -B 游戏层/out/build/x64-Debug -G Ninja
 cmake --build 游戏层/out/build/x64-Debug
 ```
 
+- **配置期须处于 UTF-8 代码页**（先 `chcp 65001`），否则头文件依赖不会被记录（详见顶层 README 的构建说明）。
+
 也可使用统一入口脚本（脚本位于工程根的 `out/_verify/` 下，自动布置 MSVC 环境）：
 
 ```bash
@@ -596,8 +598,8 @@ bash out/_verify/构建层.sh 游戏层
 | `assets/scripts/`（initialize / behavior） | **游戏层** `assets/scripts/` | 两级脚本资产留在本层 |
 | `Property_Manager`（模块） | 系统层 `src/prop/Prop_Distributor/` | 模块改名为 `Prop_Distributor`；本层仅保留 `format/Property_Manager.json` 等旧命名的资产 |
 | `Entity_Manager` / `Entity` / `Prop`（模块与类） | 系统层 `src/entity/`、`src/prop/` | 实体、属性相关模块迁入系统层 |
-| `Config_Loader`（模块） | 引擎层 `src/tools/Config_Loader/` | 配置加载器迁入引擎层，消费本层的 `route/` 资产 |
-| `Data_Validator` | 引擎层 `src/tools/Data_Validator/` | 旧名 `Config_Checker`（配置检查器），迁入引擎层 |
+| `Config_Loader`（模块） | 引擎层 `src/core/config/Config_Loader/` | 配置加载器迁入引擎层（后由 `src/tools/` 移入 `src/core/config/`），消费本层的 `route/` 资产 |
+| `Data_Validator` | 引擎层 `src/tools/Detail/package/数据校验工具.h` | 旧名 `Config_Checker`（配置检查器）；工具重组后改为 `engine::detail` 命名空间自由函数（`field_check` / `path_check`） |
 | 绑定层（Sol2） | 系统层 `common/external/Sol2/` | C++ ↔ Lua 绑定属于系统层，本层只提供脚本资产 |
 | 组合根可执行文件 | **已移除** | 与宿主职责重叠，且会把下层源码拉入本层构建树 |
 | `BYJY_JOIN_TEST_HOST` 开关 | **已取消**（残留于 `CMakeSettings.json`） | 把测试层宿主并入本构建树的开关，已无消费方 |
