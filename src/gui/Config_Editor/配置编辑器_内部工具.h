@@ -4,7 +4,7 @@
 // 由 配置编辑器.cpp 的匿名命名空间工具拆分而来（架构改革 阶段 1）
 // 原工具位于匿名命名空间，拆分后改为 engine 命名空间共享函数，行为与拆分前完全一致。
 //============================================================================
-#include "gui/Config_Editor/配置编辑器.h"
+#include "Engine/EngineSystem/src/gui/Config_Editor/配置编辑器.h"
 
 namespace engine
 {

@@ -2,8 +2,8 @@
 // 配置编辑器 —— 实体属性面板（属性面板/校验结果/权限列表/事件列表/脚本选择器）
 // 由 配置编辑器.cpp 拆分而来（架构改革 阶段 1），行为与拆分前完全一致
 //============================================================================
-#include "gui/Config_Editor/配置编辑器.h"
-#include "gui/Config_Editor/配置编辑器_内部工具.h"
+#include "Engine/EngineSystem/src/gui/Config_Editor/配置编辑器.h"
+#include "Engine/EngineSystem/src/gui/Config_Editor/配置编辑器_内部工具.h"
 
 namespace engine
 {

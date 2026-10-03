@@ -8,9 +8,9 @@
 // 外观函数（中文字体/粉色主题/梦幻背景）已拆分到 配置编辑器主程序_外观.cpp（架构改革 阶段 4）
 //============================================================================
 
-#include "common/前置头文件包含.h"
-#include "gui/Config_Editor/配置编辑器.h"
-#include "gui/Config_Editor/配置编辑器主程序_外观.h"
+#include "Engine/EngineSystem/common/前置头文件包含.h"
+#include "Engine/EngineSystem/src/gui/Config_Editor/配置编辑器.h"
+#include "Engine/EngineSystem/src/gui/Config_Editor/配置编辑器主程序_外观.h"
 
 #include <random>
 #include <cmath>

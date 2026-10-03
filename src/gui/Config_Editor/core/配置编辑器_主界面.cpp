@@ -5,9 +5,9 @@
 //   - 实体档案列表：列出全部实体类型，选择后进入详情
 //   - 实体档案详情：阶段 4 为基础展示（档案视觉/图片/条目跳转在阶段 5-7 完善）
 //============================================================================
-#include "gui/Config_Editor/配置编辑器.h"
-#include "gui/Config_Editor/配置编辑器_内部工具.h"
-#include "gui/Config_Editor/core/配置编辑器_视觉.h"
+#include "Engine/EngineSystem/src/gui/Config_Editor/配置编辑器.h"
+#include "Engine/EngineSystem/src/gui/Config_Editor/配置编辑器_内部工具.h"
+#include "Engine/EngineSystem/src/gui/Config_Editor/core/配置编辑器_视觉.h"
 
 namespace engine
 {

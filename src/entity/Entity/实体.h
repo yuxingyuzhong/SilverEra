@@ -1,16 +1,16 @@
 #pragma once
 //预编译头
-#include "common/前置头文件包含.h"
+#include "Engine/EngineSystem/common/前置头文件包含.h"
 //获取预定义对象类型
-#include "src/core/object/Object/对象.h"
+#include "Engine/EngineCore/src/core/object/Object/对象.h"
 //获取预定义事件类型
-#include "src/core/event/Event/事件.h"
+#include "Engine/EngineCore/src/core/event/Event/事件.h"
 //获取事件终端
-#include "src/core/event/Event_Terminal/事件终端.h"
+#include "Engine/EngineCore/src/core/event/Event_Terminal/事件终端.h"
 //获取C++类型Lua端注册方法
-#include "common/external/Sol2/sol类型注册.h"
+#include "Engine/EngineSystem/common/external/Sol2/sol类型注册.h"
 //获取预定义sol2库类型别名
-#include "common/external/Sol2/sol类型别名.h"
+#include "Engine/EngineSystem/common/external/Sol2/sol类型别名.h"
 
 //游戏引擎命名空间
 namespace engine

@@ -1,20 +1,20 @@
 #pragma once
 //预编译头
-#include "common/前置头文件包含.h"
+#include "Engine/EngineSystem/common/前置头文件包含.h"
 //获取预定义事件类型
-#include "src/core/event/Event/事件.h"
+#include "Engine/EngineCore/src/core/event/Event/事件.h"
 //获取事件终端
-#include "src/core/event/Event_Terminal/事件终端.h"
+#include "Engine/EngineCore/src/core/event/Event_Terminal/事件终端.h"
 //获取C++类型Lua端注册方法
-#include "common/external/Sol2/sol类型注册.h"
+#include "Engine/EngineSystem/common/external/Sol2/sol类型注册.h"
 //获取预定义sol2库类型别名
-#include "common/external/Sol2/sol类型别名.h"
+#include "Engine/EngineSystem/common/external/Sol2/sol类型别名.h"
 //获取数据校验工具
-#include "src/tools/Detail/package/数据校验工具.h"
+#include "Engine/EngineCore/src/tools/Detail/package/数据校验工具.h"
 //获取引擎环境
-#include "src/tools/Engine_Env/引擎环境.h"
+#include "Engine/EngineCore/src/tools/Engine_Env/引擎环境.h"
 //获取路径字符串转化方法
-#include "src/tools/Detail/路径字符串转换.h"
+#include "Engine/EngineCore/src/tools/Detail/路径字符串转换.h"
 
 //脚本系统模块
 namespace engine

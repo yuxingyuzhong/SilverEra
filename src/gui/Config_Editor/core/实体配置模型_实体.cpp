@@ -1,5 +1,5 @@
-#include "gui/Config_Editor/实体配置模型_内部工具.h"
-#include "src/tools/Engine_Env/引擎环境.h"
+#include "Engine/EngineSystem/src/gui/Config_Editor/实体配置模型_内部工具.h"
+#include "Engine/EngineCore/src/tools/Engine_Env/引擎环境.h"
 
 #include <set>
 

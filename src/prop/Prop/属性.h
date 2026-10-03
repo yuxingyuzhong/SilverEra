@@ -1,8 +1,8 @@
 #pragma once
 //预编译头
-#include "common/前置头文件包含.h"
+#include "Engine/EngineSystem/common/前置头文件包含.h"
 //获取预定义对象类型
-#include "src/core/object/Object/对象.h"
+#include "Engine/EngineCore/src/core/object/Object/对象.h"
 
 namespace engine
 {

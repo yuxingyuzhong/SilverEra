@@ -2,8 +2,8 @@
 // 配置编辑器 —— 模块面板（新建配置区/模块列表/模块面板/属性槽面板/通用配置面板/字段编辑器/通用校验/构建候选）
 // 由 配置编辑器.cpp 拆分而来（架构改革 阶段 1），行为与拆分前完全一致
 //============================================================================
-#include "gui/Config_Editor/配置编辑器.h"
-#include "gui/Config_Editor/配置编辑器_内部工具.h"
+#include "Engine/EngineSystem/src/gui/Config_Editor/配置编辑器.h"
+#include "Engine/EngineSystem/src/gui/Config_Editor/配置编辑器_内部工具.h"
 
 namespace engine
 {

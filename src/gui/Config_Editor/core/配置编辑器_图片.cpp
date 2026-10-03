@@ -5,9 +5,9 @@
 #include <cstdio>
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
-#include "gui/Config_Editor/配置编辑器.h"
-#include "gui/Config_Editor/配置编辑器_内部工具.h"
-#include "gui/Config_Editor/实体配置模型_内部工具.h"
+#include "Engine/EngineSystem/src/gui/Config_Editor/配置编辑器.h"
+#include "Engine/EngineSystem/src/gui/Config_Editor/配置编辑器_内部工具.h"
+#include "Engine/EngineSystem/src/gui/Config_Editor/实体配置模型_内部工具.h"
 
 //Win32 文件选择对话框（GetOpenFileNameW）；NOMINMAX 避免 windows.h 的 min/max 宏污染
 #ifdef _WIN32

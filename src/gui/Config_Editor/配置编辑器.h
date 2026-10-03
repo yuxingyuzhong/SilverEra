@@ -16,7 +16,7 @@
 //   └───────────────────────────────────────────────┘
 //============================================================================
 
-#include "gui/Config_Editor/实体配置模型.h"
+#include "Engine/EngineSystem/src/gui/Config_Editor/实体配置模型.h"
 
 //引擎命名空间
 namespace engine

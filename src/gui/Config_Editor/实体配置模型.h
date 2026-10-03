@@ -26,7 +26,7 @@
 //       （旧格式仅 initialize_path，引擎已无法加载旧配置，编辑器兼容读取并在校验中提示）。
 //============================================================================
 
-#include "common/前置头文件包含.h"
+#include "Engine/EngineSystem/common/前置头文件包含.h"
 
 //引擎命名空间
 namespace engine

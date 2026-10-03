@@ -3,7 +3,7 @@
 // 由 配置编辑器.cpp 的匿名命名空间工具拆分而来（架构改革 阶段 1）
 // 保留原缩进，仅去掉匿名命名空间外壳，行为与拆分前完全一致。
 //============================================================================
-#include "gui/Config_Editor/配置编辑器_内部工具.h"
+#include "Engine/EngineSystem/src/gui/Config_Editor/配置编辑器_内部工具.h"
 
 namespace engine
 {

@@ -3,7 +3,7 @@
 // UI 美容计划 任务 2：渐变 / 投影 / 圆角卡片 / 标签 chip / 档案纸横线 / 圆角图片
 // 所有函数均为纯绘制辅助，不持有状态、不触碰数据逻辑。
 //============================================================================
-#include "gui/Config_Editor/core/配置编辑器_视觉.h"
+#include "Engine/EngineSystem/src/gui/Config_Editor/core/配置编辑器_视觉.h"
 
 namespace engine
 {

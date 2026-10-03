@@ -5,7 +5,7 @@
 // 相对路径以 assets/ 为基准；引擎契约四字段零侵入，实体 JSON 不写入图片字段。
 // 元数据文件损坏时忽略该条映射，不影响实体配置加载。
 //============================================================================
-#include "gui/Config_Editor/实体配置模型_内部工具.h"
+#include "Engine/EngineSystem/src/gui/Config_Editor/实体配置模型_内部工具.h"
 
 //引擎命名空间
 namespace engine

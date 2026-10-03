@@ -2,7 +2,7 @@
 // 配置编辑器主程序 —— 外观（中文字体 / 粉色主题 / 梦幻背景）
 // 由 配置编辑器主程序.cpp 拆分而来（架构改革 阶段 4），行为与拆分前完全一致
 //============================================================================
-#include "gui/Config_Editor/配置编辑器主程序_外观.h"
+#include "Engine/EngineSystem/src/gui/Config_Editor/配置编辑器主程序_外观.h"
 
 #include <random>
 #include <cmath>
