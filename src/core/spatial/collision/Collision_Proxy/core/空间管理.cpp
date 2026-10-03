@@ -1,5 +1,5 @@
 #include "../局部命名空间使用.h"
-#include "src/tools/Logging/日志系统.h"
+#include "src/tools/Logging/日志系统运行包.h"
 
 namespace engine
 {
@@ -16,7 +16,7 @@ namespace engine
 		//若目标碰撞空间已存在
 		if(regions.count(region))
 		{
-			Log::warn("Collision_Proxy::待构建碰撞空间({})已存在",region);
+			logger.warn("Collision_Proxy::待构建碰撞空间({})已存在",region);
 			return false;
 		}
 		else
@@ -26,7 +26,7 @@ namespace engine
 			//若内存分配失败
 			if (!regions[region])
 			{
-				Log::error("Collision_Proxy::内存分配失败\n目标碰撞空间({})无法创建", region);
+				logger.error("Collision_Proxy::内存分配失败\n目标碰撞空间({})无法创建", region);
 				return false;
 			}
 			else
@@ -46,7 +46,7 @@ namespace engine
 		//若目标碰撞空间不存在
 		if (it == regions.end())
 		{
-			Log::warn("Collision_Proxy::待卸载碰撞空间({})不存在", region);
+			logger.warn("Collision_Proxy::待卸载碰撞空间({})不存在", region);
 			return false;
 		}
 		else
@@ -68,7 +68,7 @@ namespace engine
 		//若目标碰撞空间不存在
 		if (!target)
 		{
-			Log::warn("Collision_Proxy::待检测碰撞空间({})不存在", region);
+			logger.warn("Collision_Proxy::待检测碰撞空间({})不存在", region);
 			return false;
 		}
 
@@ -77,7 +77,7 @@ namespace engine
 		//若空间未激活或后端不可用
 		if (!detected)
 		{
-			Log::warn("Collision_Proxy::碰撞空间({})未激活，检测未执行", region);
+			logger.warn("Collision_Proxy::碰撞空间({})未激活，检测未执行", region);
 			return false;
 		}
 
@@ -127,7 +127,7 @@ namespace engine
 		//若目标碰撞空间不存在
 		if (!target)
 		{
-			Log::warn("Collision_Proxy::待设置状态的碰撞空间({})不存在", region);
+			logger.warn("Collision_Proxy::待设置状态的碰撞空间({})不存在", region);
 			return false;
 		}
 

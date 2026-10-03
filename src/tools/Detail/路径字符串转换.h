@@ -1,8 +1,6 @@
 #pragma once
 //预编译头
 #include "common/前置头文件包含.h"
-//获取引擎环境
-#include "src/tools/Engine_Env/引擎环境.h"
 
 //通用算法模块
 namespace engine
@@ -30,5 +28,6 @@ namespace engine
             //返回转化结果
             return std::filesystem::path(u8string);
         }
+
     }
 }

@@ -48,9 +48,10 @@ namespace engine
 		bool attach(const std::string& module_name,const std::vector<Event>& needed_events,
 			const int64_t& acl_key);
 		//中转站交互 —— 单事件重载
-		bool interact(std::shared_ptr<Event> evt, const int64_t& acl_key);
+		bool interact(std::shared_ptr<Event> evt, std::shared_ptr<Event>& receiver, const int64_t& acl_key);
 		//中转站交互 —— 多事件重载
-		bool interact(std::vector<std::shared_ptr<Event>> events, const int64_t& acl_key);
+		bool interact(std::vector<std::shared_ptr<Event>> events, std::vector<std::shared_ptr<Event>> receiver
+			,const int64_t& acl_key);
 
 		//事件构造
 		std::shared_ptr<Event> build(void) const;

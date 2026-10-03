@@ -2,7 +2,7 @@
 //获取数据校验器
 #include "src/tools/Detail/package/数据校验工具.h"
 //获取日志系统
-#include "src/tools/Logging/日志系统.h"
+#include "src/tools/Logging/日志系统运行包.h"
 //获取网格加载器
 #include "src/tools/Mesh_Loader/网格加载器.h"
 
@@ -67,7 +67,7 @@ namespace engine
 		//空间有效性检查
 		if (!valid())
 		{
-			Log::warn("Collision_Region::碰撞空间后端不可用，空间边界无法构建");
+			logger.warn("Collision_Region::碰撞空间后端不可用，空间边界无法构建");
 			return false;
 		}
 
@@ -77,7 +77,7 @@ namespace engine
 		//构建网格形状
 		if (!mesh_shape_build(mesh_path, shape, mesh))
 		{
-			Log::warn("Collision_Region::空间边界网格构建失败({})", mesh_path);
+			logger.warn("Collision_Region::空间边界网格构建失败({})", mesh_path);
 			return false;
 		}
 

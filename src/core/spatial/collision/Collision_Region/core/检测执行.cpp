@@ -1,6 +1,6 @@
 #include "../局部命名空间使用.h"
 //获取日志系统
-#include "src/tools/Logging/日志系统.h"
+#include "src/tools/Logging/日志系统运行包.h"
 //获取引擎环境(逻辑帧计数与逻辑帧率)
 #include "src/tools/Engine_Env/引擎环境.h"
 

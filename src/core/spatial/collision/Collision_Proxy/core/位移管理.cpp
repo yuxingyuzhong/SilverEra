@@ -1,5 +1,5 @@
 #include "../局部命名空间使用.h"
-#include "src/tools/Logging/日志系统.h"
+#include "src/tools/Logging/日志系统运行包.h"
 
 namespace engine
 {
@@ -53,7 +53,7 @@ namespace engine
 		//读取目标碰撞体编号
 		if (!number_read(config, "collider_ID", collider_ID))
 		{
-			Log::warn("Collision_Proxy::位移事件缺少有效字段(collider_ID)");
+			logger.warn("Collision_Proxy::位移事件缺少有效字段(collider_ID)");
 			return;
 		}
 
@@ -62,7 +62,7 @@ namespace engine
 		//读取位移向量（非法配置不予保存）
 		if (!vector_read(config, "displacement", displacement))
 		{
-			Log::warn("Collision_Proxy::碰撞体({})字段(displacement)非法", collider_ID);
+			logger.warn("Collision_Proxy::碰撞体({})字段(displacement)非法", collider_ID);
 			return;
 		}
 
@@ -79,7 +79,7 @@ namespace engine
 		//作用频率合法性检查（作用频率必须为逻辑帧率的因数以保证整除）
 		if (frequency != 0 && (frame_rate == 0 || frame_rate % frequency != 0))
 		{
-			Log::warn("Collision_Proxy::碰撞体({})字段(frequency={})非法，须整除逻辑帧率({})，改按每帧全量位移处理",
+			logger.warn("Collision_Proxy::碰撞体({})字段(frequency={})非法，须整除逻辑帧率({})，改按每帧全量位移处理",
 				collider_ID, frequency, frame_rate);
 			frequency = 0;
 		}

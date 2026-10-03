@@ -23,10 +23,9 @@
 #     <nlohmann/json.hpp> 与 <GLFW/glfw3.h>，上层只要 include 这个预编译头
 #     就会用到这两条路径。
 #
-#     glm 要把 external/glm 本身带上：src/core/spatial/common/几何体类型.h
-#     里写的是 <glm.hpp>，只给 external 这一层是解析不到的（引擎层自身构建
-#     时同样把 GLM_ROOT 加进了包含路径）。空间划分与碰撞相关的公共头都会
-#     带进这个头，上层只要 include 四叉树一类的头文件就会用到。
+#     原 glm 条目已移除：external/glm 目录已不存在，且引擎层源码经检索已无
+#     任何 glm 引用；保留该路径会使上层在 CMake 生成阶段直接报
+#     「Imported target "EngineCore" includes non-existent path」。
 #
 #     external 目录本身也保留在列表里（原有声明，未改动）。
 #
@@ -45,7 +44,6 @@ set(BYJY_ENGINE_OUT_INC
     "${BYJY_ENGINE_ROOT}"
     "${BYJY_ENGINE_ROOT}/external/Json"
     "${BYJY_ENGINE_ROOT}/external/glfw"
-    "${BYJY_ENGINE_ROOT}/external/glm"
     "${BYJY_ENGINE_ROOT}/external"
     "${BYJY_ENGINE_ROOT}/external/bullet3/src"
 )

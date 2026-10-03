@@ -2,7 +2,7 @@
 //获取数据校验器
 #include "src/tools/Detail/package/数据校验工具.h"
 //获取日志系统
-#include "src/tools/Logging/日志系统.h"
+#include "src/tools/Logging/日志系统运行包.h"
 //获取网格加载器
 #include "src/tools/Mesh_Loader/网格加载器.h"
 
@@ -29,7 +29,7 @@ namespace engine
 			}
 			catch (const std::exception&)
 			{
-				Log::warn("Collision_Region::内存分配失败");
+				logger.warn("Collision_Region::内存分配失败");
 				return false;
 			}
 		}
@@ -65,7 +65,7 @@ namespace engine
 		//数组长度检查
 		if (values.size() != 3)
 		{
-			Log::warn("Collision_Region::字段 {} 数组长度非三", field);
+			logger.warn("Collision_Region::字段 {} 数组长度非三", field);
 			return false;
 		}
 
@@ -87,7 +87,7 @@ namespace engine
 		//数组长度检查
 		if (values.size() != 4)
 		{
-			Log::warn("Collision_Region::字段 {} 数组长度非四", field);
+			logger.warn("Collision_Region::字段 {} 数组长度非四", field);
 			return false;
 		}
 
@@ -146,7 +146,7 @@ namespace engine
 		//形状类型字段检查
 		if (!detail::field_check<std::string>(geometry_config, "type"))
 		{
-			Log::warn("Collision_Region::几何配置缺少有效字段(type)");
+			logger.warn("Collision_Region::几何配置缺少有效字段(type)");
 			return false;
 		}
 		//形状类型
@@ -160,13 +160,13 @@ namespace engine
 			//读取盒体半长
 			if (!vector_read(geometry_config, "half_extent", half_extent))
 			{
-				Log::warn("Collision_Region::盒体缺少有效字段(half_extent)");
+				logger.warn("Collision_Region::盒体缺少有效字段(half_extent)");
 				return false;
 			}
 			//半长取值检查
 			if (half_extent.getX() <= 0 || half_extent.getY() <= 0 || half_extent.getZ() <= 0)
 			{
-				Log::warn("Collision_Region::盒体半长非正");
+				logger.warn("Collision_Region::盒体半长非正");
 				return false;
 			}
 			//分配盒体形状
@@ -181,7 +181,7 @@ namespace engine
 			//读取球体半径
 			if (!scalar_read(geometry_config, "radius", radius) || radius <= 0)
 			{
-				Log::warn("Collision_Region::球体缺少有效字段(radius)");
+				logger.warn("Collision_Region::球体缺少有效字段(radius)");
 				return false;
 			}
 			//分配球体形状
@@ -196,19 +196,19 @@ namespace engine
 			//读取胶囊半径
 			if (!scalar_read(geometry_config, "radius", radius) || radius <= 0)
 			{
-				Log::warn("Collision_Region::胶囊缺少有效字段(radius)");
+				logger.warn("Collision_Region::胶囊缺少有效字段(radius)");
 				return false;
 			}
 			//读取胶囊全高
 			if (!scalar_read(geometry_config, "height", height) || height <= 0)
 			{
-				Log::warn("Collision_Region::胶囊缺少有效字段(height)");
+				logger.warn("Collision_Region::胶囊缺少有效字段(height)");
 				return false;
 			}
 			//全高须容纳两端半球
 			if (height < 2.0 * radius)
 			{
-				Log::warn("Collision_Region::胶囊全高({})不足以容纳两端半球", height);
+				logger.warn("Collision_Region::胶囊全高({})不足以容纳两端半球", height);
 				return false;
 			}
 			//分配胶囊形状（沿 Y 轴，子弹库第二参数为圆柱段长度）
@@ -224,13 +224,13 @@ namespace engine
 			//读取圆柱半径
 			if (!scalar_read(geometry_config, "radius", radius) || radius <= 0)
 			{
-				Log::warn("Collision_Region::圆柱缺少有效字段(radius)");
+				logger.warn("Collision_Region::圆柱缺少有效字段(radius)");
 				return false;
 			}
 			//读取圆柱全高
 			if (!scalar_read(geometry_config, "height", height) || height <= 0)
 			{
-				Log::warn("Collision_Region::圆柱缺少有效字段(height)");
+				logger.warn("Collision_Region::圆柱缺少有效字段(height)");
 				return false;
 			}
 			//分配圆柱形状（沿 Y 轴，子弹库以半长描述）
@@ -247,13 +247,13 @@ namespace engine
 			//读取圆锥半径
 			if (!scalar_read(geometry_config, "radius", radius) || radius <= 0)
 			{
-				Log::warn("Collision_Region::圆锥缺少有效字段(radius)");
+				logger.warn("Collision_Region::圆锥缺少有效字段(radius)");
 				return false;
 			}
 			//读取圆锥全高
 			if (!scalar_read(geometry_config, "height", height) || height <= 0)
 			{
-				Log::warn("Collision_Region::圆锥缺少有效字段(height)");
+				logger.warn("Collision_Region::圆锥缺少有效字段(height)");
 				return false;
 			}
 			//分配圆锥形状（沿 Y 轴）
@@ -267,21 +267,21 @@ namespace engine
 			//网格路径字段检查
 			if (!detail::field_check<std::string>(geometry_config, "mesh_path"))
 			{
-				Log::warn("Collision_Region::网格缺少有效字段(mesh_path)");
+				logger.warn("Collision_Region::网格缺少有效字段(mesh_path)");
 				return false;
 			}
 			//构建网格形状
 			if (!mesh_shape_build(geometry_config["mesh_path"].get<std::string>(), shape_receiver,
 				mesh_receiver))
 			{
-				Log::warn("Collision_Region::网格形状构建失败");
+				logger.warn("Collision_Region::网格形状构建失败");
 				return false;
 			}
 		}
 		//---------- 未知形状类型 ----------
 		else
 		{
-			Log::warn("Collision_Region::未知形状类型({})", shape_type);
+			logger.warn("Collision_Region::未知形状类型({})", shape_type);
 			return false;
 		}
 
@@ -293,7 +293,7 @@ namespace engine
 			//读取碰撞边距
 			if (!scalar_read(geometry_config, "margin", margin) || margin < 0)
 			{
-				Log::warn("Collision_Region::字段(margin)非法");
+				logger.warn("Collision_Region::字段(margin)非法");
 				shape_receiver.reset();
 				mesh_receiver.reset();
 				return false;
@@ -324,7 +324,7 @@ namespace engine
 				//几何体元素格式检查
 				if (!item.is_object())
 				{
-					Log::warn("Collision_Region::几何体集合含非对象元素");
+					logger.warn("Collision_Region::几何体集合含非对象元素");
 					return false;
 				}
 
@@ -342,7 +342,7 @@ namespace engine
 					//读取相对位置
 					if (!vector_read(item, "position", position))
 					{
-						Log::warn("Collision_Region::几何体集合元素字段(position)非法");
+						logger.warn("Collision_Region::几何体集合元素字段(position)非法");
 						return false;
 					}
 					//写入部件相对位置
@@ -356,7 +356,7 @@ namespace engine
 					//读取相对旋转
 					if (!quaternion_read(item, "rotation", rotation))
 					{
-						Log::warn("Collision_Region::几何体集合元素字段(rotation)非法");
+						logger.warn("Collision_Region::几何体集合元素字段(rotation)非法");
 						return false;
 					}
 					//写入部件相对旋转
@@ -370,7 +370,7 @@ namespace engine
 			//几何体集合不可为空
 			if (parts.empty())
 			{
-				Log::warn("Collision_Region::几何体集合为空");
+				logger.warn("Collision_Region::几何体集合为空");
 				return false;
 			}
 		}
@@ -395,7 +395,7 @@ namespace engine
 			//分配复合形状内存
 			if (!memory_malloc<Compound_Shape>(compound))
 			{
-				Log::warn("Collision_Region::复合形状分配失败");
+				logger.warn("Collision_Region::复合形状分配失败");
 				return false;
 			}
 			//逐个加入子形状（子形状所有权仍由各部件持有）

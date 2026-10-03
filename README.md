@@ -142,7 +142,7 @@ C++20 特性在源码中的使用：`concepts`（`Object_Pool` 的 `requires std
 ├── src/
 │   ├── core/                   # 核心能力
 │   │   ├── config/             #   配置加载
-│   │   │   └── Config_Loader/{配置加载器.h, 局部命名空间使用.h, core/配置加载器.cpp}
+│   │   │   └── Config_Loader/{配置加载器.h, 局部命名空间使用.h, core/（9 个按功能域拆分的编译单元）}
 │   │   ├── Event/              #   事件系统
 │   │   │   ├── 事件系统运行包.h
 │   │   │   ├── Event/事件.h
@@ -1059,7 +1059,7 @@ namespace engine
 
 | 模块 | 涉及文件 | 职责 |
 | --- | --- | --- |
-| `Detail`（辅助算法与校验细节） | `Detail/二分查找.h`、`Detail/路径字符串转换.h`、`Detail/哈希混合.h`、`Detail/json字段可用性校验.h`、`Detail/文件路径可用性校验.h` | 容器二分 / 区间查找；中文路径与字符串互转；哈希混合；JSON 字段与文件路径可用性校验 |
+| `Detail`（辅助算法与校验细节） | `Detail/二分查找.h`、`Detail/路径字符串转换.h`、`Detail/哈希混合.h`、`Detail/json字段可用性校验.h`、`Detail/文件路径可用性校验.h`、`Detail/文件路径规范化.h`、`Detail/标准库format特化.h`（另见 `package/` 下的聚合头） | 容器二分 / 区间查找；中文路径与字符串互转；哈希混合；JSON 字段与文件路径可用性校验；路径规范化与路径键规范化；标准库 `std::format` 缺口特化（`error_code`／`error_condition`／`filesystem::path`） |
 | `Detail/package`（数据校验工具聚合头） | `Detail/package/数据校验工具.h` | 聚合 JSON 字段校验与文件路径校验头，供上层一行引入 |
 | `Logging`（日志系统） | `Logging/日志系统.h`（151 行） | 分级日志格式化输出 |
 | `Mesh_Loader`（网格加载器） | `Mesh_Loader/网格加载器.h`（31 行）、`core/网格加载器.cpp`（194 行）、`局部命名空间使用.h` | 解析 OBJ 为 `Mesh_Data`，供碰撞网格形状使用 |
@@ -1068,19 +1068,21 @@ namespace engine
 | `Random_Generator`（随机数生成器） | `Random_Generator/随机数生成器.h` | 基于 PCG32 的全范围 / 无偏区间随机数（模板类，约束 `std::is_integral_v<T>`） |
 | `Number_Allocator`（数值分配器） | `Number_Allocator/数值分配器.h`（78 行） | 编号分配与回收（复用池） |
 
-> `Config_Loader`（配置加载器）已从 `src/tools/` 迁至 `src/core/config/Config_Loader/`（头文件 `配置加载器.h`、实现 `core/配置加载器.cpp`），职责与接口不变。
+> `Config_Loader`（配置加载器）已从 `src/tools/` 迁至 `src/core/config/Config_Loader/`（头文件 `配置加载器.h`），职责与接口不变。
+> 实现已按功能域拆分为 `core/` 下的 **9 个编译单元**：配置加载器（构造与接入）／路径与文件／脏标记／路由文件读写／配置投递／路由文件处理／配置加载／缓存清除／事件分发。
+> 头文件中的函数声明与各编译单元内的实现**同序**，排序规则为「被依赖者在依赖者前面 ＋ 功能相近者相邻」（公开门面 构造/析构/接入 置顶）。
 
 **要点摘录**：
 
 - `Detail`（校验部分）：命名空间自由函数 `template <typename T> inline bool engine::detail::field_check(const nlohmann::json&, const std::string&)` 检查字段是否存在且类型匹配；`inline bool engine::detail::path_check(path/string)` 两个重载校验路径有效性；`inline void engine::detail::hash_combine(size_t&, size_t)` 做哈希混合。这是历史文档中「配置检查器」的现名（类 `Data_Validator` 已改为命名空间自由函数）。
 - `Config_Loader`：私有成员 `std::u8string scan_content = u8"assets/config/route/"` 与 `allowed_root = u8"assets/config/"`，即**它只扫描路由目录，并限制在配置根目录之内**（防止越权跳转，内部有 `skip_safety_inspect` 恶意跳转检查）；读取成功后构造事件，填写 `category = "Config"`、`tag = "Load"`，并设置 `target_object` 为路由里声明的目标模块名；`act()` 是入口。
-- `Logging`：`Log` 类提供静态模板 `info / warn / error / debug`，签名接受 `std::format_string<Args...>` 支持 `{}` 占位格式化；`stream_set()` 可切换输出流（用于重定向到文件）；内部另有 `std::formatter<std::error_code>` 特化以便直接打印错误码。
+- `Logging`：`Log` 类提供静态模板 `info / warn / error / debug`，签名接受 `std::format_string<Args...>` 支持 `{}` 占位格式化；`stream_set()` 可切换输出流（用于重定向到文件）；标准库缺失的格式化器集中于 `Detail/标准库format特化.h`（`error_code`／`error_condition`／`filesystem::path`），由 `Log/日志系统.h` 包含；项目自定义类型的格式化器放在各自类型所在的头文件（如 `Config_Content` 在 `配置加载器.h`）。
 - `Mesh_Loader`：`struct Mesh_Data { std::vector<float> vertices; std::vector<uint32_t> indices; }`；`static bool load_obj(const std::string&, Mesh_Data&)` 解析 OBJ；带两个硬上限——`max_file_size = 64MiB`（文件大小）与 `max_vertex_count = 1000000`（顶点数量）；面索引支持四种常见写法，非三角面用扇形三角化，末尾做完整性终检；路径采取双源回退。
 - `Detail`（算法部分）：`binary_search(first, last, target, comp, proj)` 返回相对 `first` 的全局下标，未命中返回 `std::nullopt`（返回类型 `std::optional<uint64_t>`），另有容器重载；`range_binary_search` 返回闭区间 `std::optional<std::pair<uint64_t, uint64_t>>`，未命中返回 `std::nullopt`。`path_to_string()` / `string_to_path()` 经 `std::filesystem::path::u8string()` 往返，用于处理包含中文的文件路径。
 - `Engine_Env`：`exe_path_get()`、`exe_dir_get()`、`absolute_path_get(path/string)`；可执行路径的获取按平台分派（Windows `GetModuleFileNameW` / Linux `/proc/self/exe` / macOS `_NSGetExecutablePath`），失败时回退到当前工作目录。
 - `Timer`：`using Clock = std::chrono::steady_clock`，`task_build()` 建任务、`elapsed(task, restart = false)` 读耗时，静态 `units()` / `Milli_units()` / `Micro_units()` / `Nano_units()` 提供单位换算。
 - `Random_Generator`：模板类 `template <typename T> requires std::is_integral_v<T> class Random_Generator`；内核是结构 `Pcg32 { uint64_t state, inc; }`，`operator()()` 生成 `T` 的全范围无偏随机数，`operator()(min, max)` 生成 `[min, max]` 无偏区间随机数；构造函数可传种子；`acl_key_gen()` 就是它的使用者。
-- `Number_Allocator`：`set(min)` 设下限、`get()` 取号、`recycle(单/多)` 回收、`reset()` 复位；回收时用二分查找查重，重复回收会打 `Log::warn("Number_Pool::待回收数值已被回收!!!")`。
+- `Number_Allocator`：`set(min)` 设下限、`get()` 取号、`recycle(单/多)` 回收、`reset()` 复位；回收时用二分查找查重，重复回收会打 `logger.warn("Number_Pool::待回收数值已被回收!!!")`。
 
 ---
 
@@ -1145,6 +1147,11 @@ cmake -S . -B out/build/x64-Debug -G Ninja
 # 构建
 cmake --build out/build/x64-Debug
 ```
+
+- **配置期须处于 UTF-8 代码页**（先 `chcp 65001`），否则头文件依赖不会被记录（详见顶层 README 的构建说明）。
+- 本层构建时会向导出的**对外头快照**写入 `out/build/<配置>/include/`（`cmake/导出头快照.cmake`
+  由常驻目标每轮调用，只复制内容有变化的头、并清理源侧已删除的头）。测试层改为按该快照编译，
+  从而保证「头与 `EngineCore.lib` 同版次」；快照镜像范围与 `cmake/对外接口.cmake` 声明的包含目录一一对应（含第三方头）。
 
 若使用 Visual Studio，直接以 `CMakeSettings.json` 中已配置好的 `x64-Debug`（Ninja + `msvc_x64_x64`）打开本层根目录即可。
 

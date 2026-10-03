@@ -1,5 +1,5 @@
 #include "../局部命名空间使用.h"
-#include "src/tools/Logging/日志系统.h"
+#include "src/tools/Logging/日志系统运行包.h"
 
 namespace engine
 {
@@ -11,7 +11,7 @@ namespace engine
 		//若目标碰撞空间不存在
 		if (!target)
 		{
-			Log::warn("Collision_Proxy::待构建碰撞体的碰撞空间({})不存在", region);
+			logger.warn("Collision_Proxy::待构建碰撞体的碰撞空间({})不存在", region);
 			return nullopt;
 		}
 
@@ -30,7 +30,7 @@ namespace engine
 		//若目标碰撞空间不存在
 		if (!target)
 		{
-			Log::warn("Collision_Proxy::待卸载碰撞体的碰撞空间({})不存在", region);
+			logger.warn("Collision_Proxy::待卸载碰撞体的碰撞空间({})不存在", region);
 			return false;
 		}
 
@@ -50,7 +50,7 @@ namespace engine
 		//若目标碰撞空间不存在
 		if (!target)
 		{
-			Log::warn("Collision_Proxy::待转移至的碰撞空间({})不存在", region);
+			logger.warn("Collision_Proxy::待转移至的碰撞空间({})不存在", region);
 			return false;
 		}
 
@@ -59,13 +59,13 @@ namespace engine
 		//若该编号未被任何空间持有
 		if (!collider_owner_seek(collider_ID, owner))
 		{
-			Log::warn("Collision_Proxy::待转移碰撞体({})不存在", collider_ID);
+			logger.warn("Collision_Proxy::待转移碰撞体({})不存在", collider_ID);
 			return false;
 		}
 		//归属空间即目标空间时无需转移
 		if (owner == region)
 		{
-			Log::warn("Collision_Proxy::待转移碰撞体({})已在目标空间({})内", collider_ID, region);
+			logger.warn("Collision_Proxy::待转移碰撞体({})已在目标空间({})内", collider_ID, region);
 			return false;
 		}
 
@@ -74,7 +74,7 @@ namespace engine
 		//若源碰撞空间不存在
 		if (!source)
 		{
-			Log::warn("Collision_Proxy::碰撞体({})的归属空间({})不存在", collider_ID, owner);
+			logger.warn("Collision_Proxy::碰撞体({})的归属空间({})不存在", collider_ID, owner);
 			return false;
 		}
 
@@ -84,7 +84,7 @@ namespace engine
 		//在目标空间内按原编号接管（接管失败时源空间尚未改动）
 		if (!target->collider_adopt(collider_ID))
 		{
-			Log::warn("Collision_Proxy::碰撞体({})编号在目标空间({})内冲突，转移中止", collider_ID, region);
+			logger.warn("Collision_Proxy::碰撞体({})编号在目标空间({})内冲突，转移中止", collider_ID, region);
 			return false;
 		}
 		//卸载源碰撞体
@@ -107,7 +107,7 @@ namespace engine
 		geometry["collider_ID"] = collider_ID;
 		if (!target->collider_set(geometry))
 		{
-			Log::warn("Collision_Proxy::碰撞体({})几何体在目标空间({})重建失败", collider_ID, region);
+			logger.warn("Collision_Proxy::碰撞体({})几何体在目标空间({})重建失败", collider_ID, region);
 			return false;
 		}
 
@@ -122,7 +122,7 @@ namespace engine
 		//若目标碰撞空间不存在
 		if (!target)
 		{
-			Log::warn("Collision_Proxy::待镜像至的碰撞空间({})不存在", region);
+			logger.warn("Collision_Proxy::待镜像至的碰撞空间({})不存在", region);
 			return false;
 		}
 
@@ -131,7 +131,7 @@ namespace engine
 		//若该编号未被任何空间持有
 		if (!collider_owner_seek(collider_ID, owner))
 		{
-			Log::warn("Collision_Proxy::待镜像碰撞体({})不存在", collider_ID);
+			logger.warn("Collision_Proxy::待镜像碰撞体({})不存在", collider_ID);
 			return false;
 		}
 
@@ -140,7 +140,7 @@ namespace engine
 		//若源碰撞空间不存在
 		if (!source)
 		{
-			Log::warn("Collision_Proxy::碰撞体({})的归属空间({})不存在", collider_ID, owner);
+			logger.warn("Collision_Proxy::碰撞体({})的归属空间({})不存在", collider_ID, owner);
 			return false;
 		}
 
@@ -161,7 +161,7 @@ namespace engine
 		geometry["collider_ID"] = *mirror_ID;
 		if (!target->collider_set(geometry))
 		{
-			Log::warn("Collision_Proxy::镜像碰撞体({})几何体构建失败", *mirror_ID);
+			logger.warn("Collision_Proxy::镜像碰撞体({})几何体构建失败", *mirror_ID);
 			return false;
 		}
 

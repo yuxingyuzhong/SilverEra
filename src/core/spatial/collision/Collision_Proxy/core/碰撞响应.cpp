@@ -1,5 +1,5 @@
 #include "../局部命名空间使用.h"
-#include "src/tools/Logging/日志系统.h"
+#include "src/tools/Logging/日志系统运行包.h"
 
 namespace engine
 {
@@ -64,7 +64,7 @@ namespace engine
 		//读取目标碰撞体编号
 		if (!number_read(config, "collider_ID", collider_ID))
 		{
-			Log::warn("Collision_Proxy::碰撞响应缺少有效字段(collider_ID)");
+			logger.warn("Collision_Proxy::碰撞响应缺少有效字段(collider_ID)");
 			return;
 		}
 
@@ -95,7 +95,7 @@ namespace engine
 		//读取回复类型
 		if (!text_read(response, "response", kind))
 		{
-			Log::warn("Collision_Proxy::碰撞体({})的碰撞响应缺少有效字段(response)", collider_ID);
+			logger.warn("Collision_Proxy::碰撞体({})的碰撞响应缺少有效字段(response)", collider_ID);
 			return false;
 		}
 
@@ -121,7 +121,7 @@ namespace engine
 			//读取改写后的位移向量
 			if (!vector_read(response, "displacement", displacement))
 			{
-				Log::warn("Collision_Proxy::碰撞体({})的碰撞响应字段(displacement)非法", collider_ID);
+				logger.warn("Collision_Proxy::碰撞体({})的碰撞响应字段(displacement)非法", collider_ID);
 				return false;
 			}
 
@@ -139,7 +139,7 @@ namespace engine
 		}
 
 		//未识别的回复类型
-		Log::warn("Collision_Proxy::碰撞体({})的碰撞响应类型({})未识别", collider_ID, kind);
+		logger.warn("Collision_Proxy::碰撞体({})的碰撞响应类型({})未识别", collider_ID, kind);
 		return false;
 	}
 
@@ -223,7 +223,7 @@ namespace engine
 			}
 
 			//仍无响应则日志报错并搁置处理
-			Log::error("Collision_Proxy::碰撞体({})未收到碰撞响应，事件搁置处理", collider_ID);
+			logger.error("Collision_Proxy::碰撞体({})未收到碰撞响应，事件搁置处理", collider_ID);
 		}
 	}
 }

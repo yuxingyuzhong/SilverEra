@@ -1,5 +1,5 @@
 #include "../局部命名空间使用.h"
-#include "src/tools/Logging/日志系统.h"
+#include "src/tools/Logging/日志系统运行包.h"
 
 namespace engine
 {
@@ -28,7 +28,7 @@ namespace engine
 		//若该编号未被任何空间持有
 		if (range.first == range.second)
 		{
-			Log::warn("Collision_Proxy::待设置碰撞体({})不存在", collider_ID);
+			logger.warn("Collision_Proxy::待设置碰撞体({})不存在", collider_ID);
 			return false;
 		}
 
@@ -59,7 +59,7 @@ namespace engine
 		//若目标碰撞空间不存在
 		if (!target)
 		{
-			Log::warn("Collision_Proxy::待设置碰撞体的碰撞空间({})不存在", region);
+			logger.warn("Collision_Proxy::待设置碰撞体的碰撞空间({})不存在", region);
 			return;
 		}
 
@@ -98,7 +98,7 @@ namespace engine
 			{
 				//设置几何体
 				if (!target->collider_set(geometry))
-					Log::warn("Collision_Proxy::碰撞体({})几何体设置失败", collider_ID);
+					logger.warn("Collision_Proxy::碰撞体({})几何体设置失败", collider_ID);
 			}
 		}
 
@@ -124,7 +124,7 @@ namespace engine
 				collider_set(collider_ID, detection_mode);
 			}
 			else
-				Log::warn("Collision_Proxy::碰撞体({})字段(detection_mode)非法", collider_ID);
+				logger.warn("Collision_Proxy::碰撞体({})字段(detection_mode)非法", collider_ID);
 		}
 
 		//若配置中带有豁免标记
@@ -136,7 +136,7 @@ namespace engine
 			if (number_read(config, "exemption_flag", exemption_flag))
 				collider_set(collider_ID, exemption_flag);
 			else
-				Log::warn("Collision_Proxy::碰撞体({})字段(exemption_flag)非法", collider_ID);
+				logger.warn("Collision_Proxy::碰撞体({})字段(exemption_flag)非法", collider_ID);
 		}
 	}
 }

@@ -2,7 +2,7 @@
 //预编译头
 #include "common/前置头文件包含.h"
 //获取日志系统
-#include "src/tools/Logging/日志系统.h"
+#include "src/tools/Logging/日志系统运行包.h"
 
 #ifdef _WIN32
 #include <windows.h>
@@ -88,8 +88,8 @@ namespace engine
 				}
 				catch (const std::exception& e) 
 				{
-					Log::error("错误: {}",e.what());
-					Log::error("已回退到工作目录");
+					logger.error("错误: {}",e.what());
+					logger.error("已回退到工作目录");
 					//回退到当前工作目录
 					exe_path = std::filesystem::current_path();
 					exe_dir = exe_path.parent_path();
@@ -110,8 +110,8 @@ namespace engine
 				}
 				catch (const std::exception& e)
 				{
-					Log::error("错误: {}", e.what());
-					Log::error("已回退到工作目录");
+					logger.error("错误: {}", e.what());
+					logger.error("已回退到工作目录");
 					//回退到当前工作目录
 					exe_path = std::filesystem::current_path();
 					exe_dir = exe_path.parent_path();

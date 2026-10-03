@@ -1,5 +1,5 @@
 #include "../局部命名空间使用.h"
-#include "src/tools/Logging/日志系统.h"
+#include "src/tools/Logging/日志系统运行包.h"
 
 namespace engine
 {
@@ -36,7 +36,7 @@ namespace engine
 		//若事件中转站接入入口尚未注册（接入入口由事件中转站的持有者注册）
 		if (!event_terminal->interface_check(Interface_ID::ATTACH_HANDLER))
 		{
-			Log::error("Collision_Proxy::事件中转站接入入口未注册，接入中止");
+			logger.error("Collision_Proxy::事件中转站接入入口未注册，接入中止");
 			return;
 		}
 
@@ -46,7 +46,7 @@ namespace engine
 		//若事件接收入口注册失败
 		if (!event_terminal->interface_check(Interface_ID::EVENT_RECEIVER))
 		{
-			Log::error("Collision_Proxy::事件接收入口注册失败，接入中止");
+			logger.error("Collision_Proxy::事件接收入口注册失败，接入中止");
 			return;
 		}
 
@@ -69,7 +69,7 @@ namespace engine
 
 		//接入事件中转站
 		if (!event_terminal.attach(module_name, needed_events, acl_key))
-			Log::error("Collision_Proxy::事件中转站接入失败");
+			logger.error("Collision_Proxy::事件中转站接入失败");
 	}
 
 	//事件处理
@@ -93,7 +93,7 @@ namespace engine
 		//---------- 碰撞模块指令 ----------
 		if (evt->category != "Collision")
 		{
-			Log::debug("Collision_Proxy::未识别事件({}/{})", evt->category, evt->tag);
+			logger.debug("Collision_Proxy::未识别事件({}/{})", evt->category, evt->tag);
 			return;
 		}
 
@@ -105,7 +105,7 @@ namespace engine
 			//读取目标空间名称
 			if (!text_read(evt->config, "region", region))
 			{
-				Log::warn("Collision_Proxy::空间构建事件缺少有效字段(region)");
+				logger.warn("Collision_Proxy::空间构建事件缺少有效字段(region)");
 				return;
 			}
 			//构建碰撞空间
@@ -121,7 +121,7 @@ namespace engine
 			//读取目标空间名称
 			if (!text_read(evt->config, "region", region))
 			{
-				Log::warn("Collision_Proxy::空间卸载事件缺少有效字段(region)");
+				logger.warn("Collision_Proxy::空间卸载事件缺少有效字段(region)");
 				return;
 			}
 			//卸载碰撞空间
@@ -137,13 +137,13 @@ namespace engine
 			//读取目标空间名称
 			if (!text_read(evt->config, "region", region))
 			{
-				Log::warn("Collision_Proxy::空间状态事件缺少有效字段(region)");
+				logger.warn("Collision_Proxy::空间状态事件缺少有效字段(region)");
 				return;
 			}
 			//若缺少活跃性字段
 			if (!evt->config.contains("active") || !evt->config["active"].is_boolean())
 			{
-				Log::warn("Collision_Proxy::空间状态事件缺少有效字段(active)");
+				logger.warn("Collision_Proxy::空间状态事件缺少有效字段(active)");
 				return;
 			}
 			//设置空间活跃性
@@ -159,7 +159,7 @@ namespace engine
 			//读取空间边界配置路径
 			if (!text_read(evt->config, "path", path))
 			{
-				Log::warn("Collision_Proxy::空间边界事件缺少有效字段(path)");
+				logger.warn("Collision_Proxy::空间边界事件缺少有效字段(path)");
 				return;
 			}
 			//设置空间边界
@@ -175,7 +175,7 @@ namespace engine
 			//读取目标空间名称
 			if (!text_read(evt->config, "region", region))
 			{
-				Log::warn("Collision_Proxy::空间检测事件缺少有效字段(region)");
+				logger.warn("Collision_Proxy::空间检测事件缺少有效字段(region)");
 				return;
 			}
 			//执行碰撞检测
@@ -191,7 +191,7 @@ namespace engine
 			//读取目标空间名称
 			if (!text_read(evt->config, "region", region))
 			{
-				Log::warn("Collision_Proxy::碰撞体构建事件缺少有效字段(region)");
+				logger.warn("Collision_Proxy::碰撞体构建事件缺少有效字段(region)");
 				return;
 			}
 			//构建碰撞体
@@ -237,13 +237,13 @@ namespace engine
 			//读取目标空间名称
 			if (!text_read(evt->config, "region", region))
 			{
-				Log::warn("Collision_Proxy::碰撞体事件缺少有效字段(region)");
+				logger.warn("Collision_Proxy::碰撞体事件缺少有效字段(region)");
 				return;
 			}
 			//读取目标碰撞体编号
 			if (!number_read(evt->config, "collider_ID", collider_ID))
 			{
-				Log::warn("Collision_Proxy::碰撞体事件缺少有效字段(collider_ID)");
+				logger.warn("Collision_Proxy::碰撞体事件缺少有效字段(collider_ID)");
 				return;
 			}
 
@@ -263,7 +263,7 @@ namespace engine
 		}
 
 		//未识别的碰撞模块指令
-		Log::debug("Collision_Proxy::未识别事件({}/{})", evt->category, evt->tag);
+		logger.debug("Collision_Proxy::未识别事件({}/{})", evt->category, evt->tag);
 	}
 
 	//事件发布
@@ -274,7 +274,7 @@ namespace engine
 		//若事件内存分配失败
 		if (!evt)
 		{
-			Log::error("Collision_Proxy::事件内存分配失败，发布中止");
+			logger.error("Collision_Proxy::事件内存分配失败，发布中止");
 			return false;
 		}
 		//写入事件载荷
@@ -283,7 +283,7 @@ namespace engine
 		//发送事件（事件终端按单事件通道发送）
 		if (!event_terminal.send(evt, acl_key))
 		{
-			Log::warn("Collision_Proxy::事件({})发送失败，事件发送通道不可用", tag);
+			logger.warn("Collision_Proxy::事件({})发送失败，事件发送通道不可用", tag);
 			return false;
 		}
 
