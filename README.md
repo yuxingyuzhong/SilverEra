@@ -1,6 +1,6 @@
-# 白银纪元 · 引擎层
+# 白银纪元 · EngineCore 层
 
-引擎层是「白银纪元」四层仓库中**拓扑最底层的基础能力层**：向上提供事件、对象、空间分区、碰撞与通用工具集，自身**不包含任何具体游戏逻辑**，不感知任何上层存在。本层是独立 git 仓库，源码通过远端 `engine` 分支发布。
+EngineCore 层是「白银纪元」四层仓库中**拓扑最底层的基础能力层**：向上提供事件、对象、空间分区、碰撞与通用工具集，自身**不包含任何具体游戏逻辑**，不感知任何上层存在。本层是独立 git 仓库，源码通过远端 `engine` 分支发布。
 
 本层的历史名字是「游戏引擎」——那是一个「源码 / 资源 / 可执行文件 / 配置编辑器」一体的单体工程。分层改造后，本层只保留与具体游戏无关的基础能力，原先属于本层的实体体系、属性槽、效应、配置编辑器、资源与脚本目录均已迁出（详见[第十二节·历史沿革](#十二历史沿革旧名--现名现归属)）。
 
@@ -12,8 +12,8 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 层名称 | 引擎层（源码命名空间为 `engine`） |
-| 本层根目录 | `引擎层/`（相对工程根） |
+| 层名称 | EngineCore 层（源码命名空间为 `engine`） |
+| 本层根目录 | `Engine/EngineCore/`（相对工程根） |
 | 名义角色 | 基础能力层，拓扑最底层，**无下层依赖** |
 | 本地分支 | `main` |
 | 远端名 | `sliverera` |
@@ -22,18 +22,18 @@
 | 构建产物 | `out/build/x64-Debug/lib/EngineCore.lib`（静态库） |
 | 对外库名 | `EngineCore` |
 | 对外面自描述 | `cmake/对外接口.cmake` |
-| 接入函数 | **本层没有**（本层无下层可并入；`cmake/接入下层.cmake` 位于系统层 / 测试层 / 游戏层，三份逐字节相同） |
+| 接入函数 | **本层没有**（本层无下层可并入；`cmake/接入下层.cmake` 位于EngineSystem 层 / Test 层 / Game 层，三份逐字节相同） |
 
 ### 1.2 分层位置
 
 ```
-引擎层  ←  系统层  ←  游戏层          测试层（横跨各层，唯一可执行文件产地）
+EngineCore 层  ←  EngineSystem 层  ←  Game 层          Test 层（横跨各层，唯一可执行文件产地）
 ```
 
-- 依赖方向**单向**：`引擎层 ← 系统层 ← 游戏层`。系统层只消费引擎层，游戏层只消费系统层，反向依赖不存在。
-- **测试层横跨各层**：测试层同时接入引擎层与系统层，承载单元测试与全项目唯一的可执行入口。
+- 依赖方向**单向**：`EngineCore 层 ← EngineSystem 层 ← Game 层`。EngineSystem 层只消费EngineCore 层，Game 层只消费EngineSystem 层，反向依赖不存在。
+- **Test 层横跨各层**：Test 层同时接入EngineCore 层与EngineSystem 层，承载单元测试与全项目唯一的可执行入口。
 - 层与层之间**只链接下层已构建的静态库**，绝不通过 `add_subdirectory` 回退编译下层源码。
-- 本层**不感知任何上层**：`src/` 与 `common/` 下不存在对 `系统层` / `游戏层` / `测试层` 的任何引用；上层消费本层的方式是「源码 include 本层公共头 + 链接 `EngineCore.lib`」。
+- 本层**不感知任何上层**：`src/` 与 `common/` 下不存在对 `EngineSystem 层` / `Game 层` / `Test 层` 的任何引用；上层消费本层的方式是「源码 include 本层公共头 + 链接 `EngineCore.lib`」。
 
 ### 1.3 版次与提交历史
 
@@ -63,9 +63,9 @@
 
 **本层不负责**：
 
-- 具体游戏逻辑（实体、属性、效应、行为）——归系统层；
-- 资源配置与脚本（`assets/config/`、`assets/scripts/`）——归游戏层；
-- 进程入口与帧循环——归测试层（全项目唯一可执行文件由测试层产出）；
+- 具体游戏逻辑（实体、属性、效应、行为）——归EngineSystem 层；
+- 资源配置与脚本（`assets/config/`、`assets/scripts/`）——归Game 层；
+- 进程入口与帧循环——归Test 层（全项目唯一可执行文件由Test 层产出）；
 - 渲染管线与窗口主循环——本层只把 GLFW 作为第三方依赖随库传递，不建立渲染体系。
 
 ### 2.2 核心特性
@@ -107,7 +107,7 @@ C++20 特性在源码中的使用：`concepts`（`Object_Pool` 的 `requires std
 补充说明：
 
 - `EngineCore` 的第三方包含路径在本层构建中是 `PRIVATE` 的；`cmake/对外接口.cmake` 是按「上层实际需要什么」重新声明的**对外面**，两者若出现差异以 `cmake/对外接口.cmake` 为准。
-- googletest 不属于本层，它由测试层持有。
+- googletest 不属于本层，它由Test 层持有。
 
 ### 3.3 构建工具链
 
@@ -126,14 +126,14 @@ C++20 特性在源码中的使用：`concepts`（`Object_Pool` 的 `requires std
 以本层根为基准（`out/` 为构建输出，不纳入版本控制）：
 
 ```
-引擎层/
+Engine/EngineCore/
 ├── CMakeLists.txt              # 构建 EngineCore 静态库（CMake ≥ 3.20，C++20）
 ├── CMakeSettings.json          # Visual Studio CMake 配置（x64-Debug / Ninja）
 ├── LICENSE.txt                 # MIT 许可证
 ├── README.md                   # 本文档
 ├── .gitignore
 ├── cmake/
-│   ├── 对外接口.cmake          # 本层对外面自描述（BYJY_ENGINE_OUT_*）
+│   ├── 对外接口.cmake          # 本层对外面自描述（BYJY_ENGINE_CORE_OUT_*）
 │   └── ar_rsp_bom.ps1          # 归档响应文件 BOM 包装脚本（MSVC + Ninja 专用）
 ├── common/
 │   ├── 前置头文件包含.h        # 统一预编译头：集中引入标准库与第三方库
@@ -1092,29 +1092,30 @@ namespace engine
 
 ### 7.1 本层对外面：`cmake/对外接口.cmake`
 
-本层是拓扑最底层，没有下层可并入，故该文件只描述本层自身，按约定导出五个变量（前缀 `ENGINE`）：
+本层是拓扑最底层，没有下层可并入，故该文件只描述本层自身，按约定导出六个变量（前缀 `ENGINE_CORE`）：
 
 | 变量 | 值 | 含义 |
 | --- | --- | --- |
-| `BYJY_ENGINE_OUT_LIB` | `EngineCore` | 本层静态库文件名（不含扩展名） |
-| `BYJY_ENGINE_OUT_INC` | 本层根目录、`external/Json`、`external/glfw`、`external/glm`、`external`、`external/bullet3/src` | 使用本层公共头所需的包含目录（共 6 条） |
-| `BYJY_ENGINE_OUT_DEF` | `GLFW_STATIC` | 使用本层公共头所需的编译定义 |
-| `BYJY_ENGINE_OUT_LINK` | `external/glfw/glfw3.lib` | 本层对外传递的第三方库 |
-| `BYJY_ENGINE_OUT_SYS` | `opengl32`、`user32`、`gdi32`、`shell32` | 本层对外传递的系统库 |
+| `BYJY_ENGINE_CORE_OUT_LIB` | `EngineCore` | 本层静态库名（`OUT_LIB` 自本版次起为**分号列表**形态，本层仍单元素） |
+| `BYJY_ENGINE_CORE_OUT_LIBDIR` | `Engine/EngineCore`（本层根） | 与 `OUT_LIB` 一一对应的「该库所在层目录」，供上层自动探测（**本版次新增**） |
+| `BYJY_ENGINE_CORE_OUT_INC` | **项目根**、`external/Json`、`external/glfw`、`external`、`external/bullet3/src` | 使用本层公共头所需的包含目录（共 5 条） |
+| `BYJY_ENGINE_CORE_OUT_DEF` | `GLFW_STATIC` | 使用本层公共头所需的编译定义 |
+| `BYJY_ENGINE_CORE_OUT_LINK` | `external/glfw/glfw3.lib` | 本层对外传递的第三方库 |
+| `BYJY_ENGINE_CORE_OUT_SYS` | `opengl32`、`user32`、`gdi32`、`shell32` | 本层对外传递的系统库 |
 
-包含目录为什么这么多：本层的预编译头 `common/前置头文件包含.h` 内部 `#include` 了 `<nlohmann/json.hpp>` 与 `<GLFW/glfw3.h>`，上层只要包含这个预编译头就会用到 `external/Json` 与 `external/glfw`；bullet3 的头文件由 `src/core/spatial/collision/` 下的公共头引用，故 `external/bullet3/src` 也一并声明。
+包含目录为什么这么多：**首项是「项目根」**（本版次起），使上层与本源码都能按项目根相对全路径 `Engine/EngineCore/...` 解析本层头，彻底消除直接 `src/...` 包含带来的路径归属不明与文件重名；本层的预编译头 `Engine/EngineCore/common/前置头文件包含.h` 内部 `#include` 了 `<nlohmann/json.hpp>` 与 `<GLFW/glfw3.h>`，故还需 `external/Json` 与 `external/glfw`；bullet3 的头文件由 `Engine/EngineCore/src/core/spatial/collision/` 下的公共头引用，故 `external/bullet3/src` 也一并声明。原 `external/glm` 条目已随目录删除而移除。
 
-`BYJY_ENGINE_ROOT` 由 `get_filename_component(... ABSOLUTE)` 在本文件内推导，**不是硬编码路径**。
+`BYJY_ENGINE_CORE_ROOT` 与 `BYJY_ENGINE_CORE_PROJECT_ROOT` 由 `get_filename_component(... ABSOLUTE)` 在本文件内推导，**不是硬编码路径**。
 
 ### 7.2 接入函数 `byjy_jieru_xiaceng()`
 
-`cmake/接入下层.cmake` **不属于本层**（本层无下层可接入），它位于系统层 / 测试层 / 游戏层，三份逐字节相同。上层通过其中的 `byjy_jieru_xiaceng(接口文件, 前缀, 覆盖变量)` 读取本层对外面，按**三级策略**定位已构建的 `EngineCore.lib`：
+`cmake/接入下层.cmake` **不属于本层**（本层无下层可接入），它位于 EngineSystem / **Engine 聚合层** / Test / Game，**四份逐字节相同**。上层通过其中的 `byjy_jieru_xiaceng(接口文件, 前缀, 覆盖变量)` 读取本层对外面，按**三级策略**定位已构建的 `EngineCore.lib`：
 
-1. **覆盖变量优先**：形如 `BYJY_ENGINE_LIB_PATH` 的缓存变量非空且文件存在 → 直接使用；非空但文件不存在 → **硬失败**，不静默降级。
-2. **自动探测**：覆盖变量为空 → 扫描 `out/build/*/lib/EngineCore.lib`，多个候选取时间戳最新的一份。
+1. **覆盖变量优先**：`BYJY_ENGINE_CORE_LIB_PATH`（EngineSystem 层）或聚合面转交的 `BYJY_ENGINE_LIB_PATH`（分号列表，须与库数等长）非空且文件存在 → 直接使用；非空但文件不存在 → **硬失败**，不静默降级。
+2. **自动探测**：覆盖变量为空 → 按 `OUT_LIBDIR` **逐库**扫描 `<该库所在层目录>/out/build/*/lib/<库名>.lib`，多个候选取时间戳最新的一份。
 3. **硬失败**：仍找不到 → 报错并给出构建本层的命令。
 
-定位成功后建立 `IMPORTED STATIC GLOBAL` 目标 `EngineCore`，并把包含目录 / 编译定义 / 链接库与系统库挂到 `INTERFACE` 属性上，逐层向上传递。**任何情况下都不回退编译本层源码。**
+定位成功后建立 `IMPORTED STATIC GLOBAL` 目标 `EngineCore`，并把包含目录 / 编译定义 / 链接库与系统库挂到 `INTERFACE` 属性上，逐层向上传递。**任何情况下都不回退编译本层源码。** 同一文件内的 `byjy_tou_kuaizhao_gen(<结果变量> <导入目标>)` 负责由导入目标反推本层的**对外头快照根**（`<本层构建目录>/include`）。
 
 ### 7.3 归档响应文件 BOM 包装：`cmake/ar_rsp_bom.ps1`
 
@@ -1148,23 +1149,23 @@ cmake -S . -B out/build/x64-Debug -G Ninja
 cmake --build out/build/x64-Debug
 ```
 
-- **配置期须处于 UTF-8 代码页**（先 `chcp 65001`），否则头文件依赖不会被记录（详见顶层 README 的构建说明）。
-- 本层构建时会向导出的**对外头快照**写入 `out/build/<配置>/include/`（`cmake/导出头快照.cmake`
-  由常驻目标每轮调用，只复制内容有变化的头、并清理源侧已删除的头）。测试层改为按该快照编译，
-  从而保证「头与 `EngineCore.lib` 同版次」；快照镜像范围与 `cmake/对外接口.cmake` 声明的包含目录一一对应（含第三方头）。
+- **配置期须处于 UTF-8 代码页**（先进 VS 开发人员环境，再 `chcp 65001`），否则头文件依赖不会被记录；`TMP`/`TEMP` 须为**纯 ASCII** 路径，否则 cl 只要带调试信息就报 `D8050`（详见顶层 README 的构建说明）。
+- 本层构建时会向导出的**对外头快照**写入 `out/build/<配置>/include/`（`cmake/导出头快照.cmake` 由常驻目标 `EngineCoreIncludeSnapshot` 每轮调用，只复制内容有变化的头、并清理源侧已删除的头）。上层改为按该快照编译，从而保证「头与 `EngineCore.lib` 同版次」；**镜像范围自本版次起收窄为自有头**（`Engine/EngineCore/common` 与 `Engine/EngineCore/src`）——第三方头在对外面上是独立的绝对路径条目、不经快照解析，故不必逐头复制。
 
 若使用 Visual Studio，直接以 `CMakeSettings.json` 中已配置好的 `x64-Debug`（Ninja + `msvc_x64_x64`）打开本层根目录即可。
 
 ### 8.3 产物与关键构建行为
 
 - **产物**：`out/build/x64-Debug/lib/EngineCore.lib`（静态库；输出目录由 `ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"` 指定）。该库的外部符号约 16342 条。
-- **源文件收集**：`file(GLOB_RECURSE ENGINE_SOURCES CONFIGURE_DEPENDS src/*.cpp common/*.cpp external/*.cpp)`——增删源文件无需手动重跑 CMake；构建目录内的文件会被正则过滤掉，防止误编译临时产物；若过滤后无源文件则 `FATAL_ERROR` 终止。
-- **包含路径**：本层构建时 `target_include_directories(EngineCore PRIVATE "${PROJECT_ROOT_DIR}")` 使源码可用 `src/...` 形式的自根包含；第三方路径（Json / glfw / glm / bullet3）同样为 `PRIVATE`。
+- **源文件收集**：`file(GLOB_RECURSE ENGINE_SOURCES CONFIGURE_DEPENDS src/*.cpp common/*.cpp external/*.cpp)`；构建目录内的文件会被正则过滤掉，防止误编译临时产物；若过滤后无源文件则 `FATAL_ERROR` 终止。
+- **增删文件自动重配（本版次）**：GLOB 之后另把 `src`、`common`、`external` 三个源根目录登记进 `set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ...)`；增删文件后**直接构建**即自动重跑配置并重扫 GLOB（ninja 会打印 `Re-checking globbed directories...`），不必手动「重新生成缓存」，VS 目录视图随之刷新。
+- **包含路径**：`target_include_directories(EngineCore PRIVATE "${BYJY_PROJECT_ROOT}")` —— 私有包含根为**项目根**，本层源码以 `Engine/EngineCore/...` 形式互相包含，与对外面同一套写法；第三方路径（Json / glfw / bullet3）同样为 `PRIVATE`。
 - **链接**：`find_package(OpenGL REQUIRED)`；链接 `external/glfw/glfw3.lib` 与 `OpenGL::GL`；`target_compile_definitions(EngineCore PUBLIC GLFW_STATIC)`；MSVC 追加 `opengl32.lib user32.lib gdi32.lib shell32.lib`。
 - **编译选项（MSVC）**：`/MP`（多核）、`/utf-8`（源文件 UTF-8）、`/WX-`（不将警告视为错误，全局设置）、`_CRT_SECURE_NO_WARNINGS`。
 - **编译选项（GCC / Clang）**：`-Wall -Wextra -pedantic`，并定义 `_GNU_SOURCE`。
-- **安装规则**：头文件（`*.h` / `*.hpp`）安装到 `include/EngineCore` 下（排除 `Private` 目录），静态库安装到 `lib` 下。
-- **本层不产出任何 `.exe`**：全项目唯一的可执行文件由测试层产出，本层只交出一份静态库。
+- **IDE 索引**：另递归收集 `.h/.hpp`（`src`、`common`）纳入目标，**仅供 IDE 与生成系统建索引、不参与编译**；并开启 `set(CMAKE_EXPORT_COMPILE_COMMANDS ON)`。
+- **安装规则**：头文件（`*.h` / `*.hpp`）安装到 `include/Engine/EngineCore/` 下（与源码内 `Engine/EngineCore/...` 的包含写法一致），静态库安装到 `lib` 下。
+- **本层不产出任何 `.exe`**：全项目唯一的可执行文件由 `Application/Test` 产出，本层只交出一份静态库。
 
 ### 8.4 与其他层的协作
 
@@ -1184,7 +1185,7 @@ cmake --build out/build/x64-Debug
 - 工具模块群：上表九个模块全部可用。
 - 层间契约：`cmake/对外接口.cmake` 五个变量齐备；本层可被上层以 `IMPORTED` 目标方式接入。
 - 构建工程化：MSVC + Ninja 下中文对象名归档问题已有 `ar_rsp_bom.ps1` 方案。
-- 测试现状（测试层视角）：22 个测试套件、349 个用例全部通过。
+- 测试现状（Test 层视角）：22 个测试套件、349 个用例全部通过。
 
 ### 9.2 尚未完成
 
@@ -1253,29 +1254,29 @@ cmake --build out/build/x64-Debug
 
 ## 十二、历史沿革（旧名 → 现名／现归属）
 
-本层的前身是单体工程「游戏引擎」。分层改造后，原工程中与具体游戏相关的内容已分配到其他层或取消。**下面这些旧内容在引擎层已不存在**，列在此处只为追溯来源；它们的现归属请查阅对应层的 README。
+本层的前身是单体工程「游戏引擎」。分层改造后，原工程中与具体游戏相关的内容已分配到其他层或取消。**下面这些旧内容在EngineCore 层已不存在**，列在此处只为追溯来源；它们的现归属请查阅对应层的 README。
 
 | 旧（单体「游戏引擎」时期） | 现名 / 现归属 | 说明 |
 | --- | --- | --- |
-| 仓库 / 工程名「游戏引擎」 | 「白银纪元 · 引擎层」 | 一体工程拆分为四层，本层只是基础能力层 |
-| 根目录下嵌套 `游戏引擎/` 子目录 | 本层根即 `引擎层/` | 源码不再嵌套一层 |
-| `common/types/对象类型.h`（`Object` + `Prop`） | `Object` → `src/core/object/Object/对象.h`（本层）；`Prop` 属性槽 → 系统层 | 对象基类留在本层，属性槽随实体体系迁出 |
+| 仓库 / 工程名「游戏引擎」 | 「白银纪元 · EngineCore 层」 | 一体工程拆分为四层，本层只是基础能力层 |
+| 根目录下嵌套 `游戏引擎/` 子目录 | 本层根即 `Engine/EngineCore/` | 源码不再嵌套一层 |
+| `common/types/对象类型.h`（`Object` + `Prop`） | `Object` → `src/core/object/Object/对象.h`（本层）；`Prop` 属性槽 → EngineSystem 层 | 对象基类留在本层，属性槽随实体体系迁出 |
 | `common/types/事件类型.h` | `src/core/Event/Event/事件.h` | 事件类型定义位置调整 |
 | `common/types/坐标类型.h`、`几何体类型.h`、`计时器类型.h` | `src/core/spatial/common/core/坐标类型.h`（本层）；`几何体类型.h` 已不存在 | 计时器类型并入 `src/tools/Timer/计时器.h` 内部；几何体相关定义已不保留 |
 | `common/引擎总头文件.h` | `common/引擎.h` | 聚合范围收窄为事件系统运行包 |
-| `common/external/Sol2/`（sol 类型别名 / 注册） | Lua 绑定层 → 游戏层 | 脚本绑定迁出本层 |
-| `src/core/entity/`（`Entity`、`Entity_Manager`、`Prop_Distributor`） | 实体系统、属性、效应（旧 `Prop_Effect`）、实体管理器、属性槽分发器 → 系统层 | 整体迁出本层 |
+| `common/external/Sol2/`（sol 类型别名 / 注册） | Lua 绑定层 → Game 层 | 脚本绑定迁出本层 |
+| `src/core/entity/`（`Entity`、`Entity_Manager`、`Prop_Distributor`） | 实体系统、属性、效应（旧 `Prop_Effect`）、实体管理器、属性槽分发器 → EngineSystem 层 | 整体迁出本层 |
 | `src/core/space/` | `src/core/spatial/` | 目录改名并细分为 `common` / `collision` / `partition` |
 | `src/core/collision/Collision_Agent/` | `Collision_Proxy`（`src/core/spatial/collision/Collision_Proxy/`） | 旧「碰撞代理器」命名被 `Collision_Proxy` 取代 |
 | `src/core/collision/Collision_Processer/` | `Collision_Region`（`src/core/spatial/collision/Collision_Region/`） | 旧「碰撞处理器」命名被 `Collision_Region` 取代 |
 | `src/tools/Object_Pool/` | `src/core/object/Object_Pool/` | 对象池升入对象系统 |
 | `Config_Checker` / 「配置检查器」 | `detail`（`src/tools/Detail/package/数据校验工具.h`） | 更名，职责不变 |
 | `src/tools/Non_GUI/` 中间层 | 已取消 | 工具模块直接挂在 `src/tools/` 下 |
-| `src/tools/GUI/Config_Editor/`（配置编辑器 GUI 与 `ConfigEditor.exe`、`imgui.ini`） | 配置编辑器 → 系统层 | 图形化编辑器迁出本层 |
-| `主调文件/主调文件.cpp`（宿主组合根、依赖注入装配、`for(;;)` 帧循环） | 已取消 | 宿主机制取消；全项目唯一可执行文件由测试层产出 |
-| `游戏引擎/TestEngine.exe` | 测试层产出的可执行文件 | 测试入口改由测试层承载 |
-| `assets/config/`、`assets/scripts/`、`assets/UI/` | 游戏层 | 资源、JSON 配置、Lua 脚本、UI 资源整体迁出 |
-| `排除编译代码/effect/`（旧效应系统） | 效应系统 → 系统层 | 效应系统从本层移出 |
+| `src/tools/GUI/Config_Editor/`（配置编辑器 GUI 与 `ConfigEditor.exe`、`imgui.ini`） | 配置编辑器 → EngineSystem 层 | 图形化编辑器迁出本层 |
+| `主调文件/主调文件.cpp`（宿主组合根、依赖注入装配、`for(;;)` 帧循环） | 已取消 | 宿主机制取消；全项目唯一可执行文件由Test 层产出 |
+| `游戏引擎/TestEngine.exe` | Test 层产出的可执行文件 | 测试入口改由Test 层承载 |
+| `assets/config/`、`assets/scripts/`、`assets/UI/` | Game 层 | 资源、JSON 配置、Lua 脚本、UI 资源整体迁出 |
+| `排除编译代码/effect/`（旧效应系统） | 效应系统 → EngineSystem 层 | 效应系统从本层移出 |
 | `external/` 下的 `Dear_ImGui`、`glad`、`Lua`、`Sol2`、`stb` | 已移出本层 | 本层现仅保留 `Json`、`glfw`、`glm`、`bullet3` |
 | 旧坐标类型命名（如 `coord2D_int`） | `Point2i` / `Point2d` / `Point2l`、`Rect2i` / `Rect2d` / `Rect2l`（均在 `namespace engine`） | 统一收敛到模板 + 精度别名 |
 | `四叉树通信结构体.h` / `四叉树管理器通信结构体.h` | `Quadtree/数据结构.h` / `Quadtree_Manager/数据结构.h` | 通信结构体更名为数据结构，并统一为 `Tree_Chunk_Data` / `Tree_State` / `Tree_Record` / `Tree_Manager_Settings` |
