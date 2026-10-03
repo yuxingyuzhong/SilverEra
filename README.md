@@ -1,12 +1,12 @@
-# 白银纪元 · 游戏层
+# 白银纪元 · Game 层
 
-游戏层是「白银纪元」四层仓库中依赖链顶端的**游戏内容层**，也是整个工程数据驱动的**终点消费层**。游戏中「有哪些怪物、每个怪物订阅哪些事件、属性怎么初始化、如何决策行动」这些问题，在本层都以可核查的资产数据（JSON 配置 + Lua 脚本）落盘，而驱动这些数据的通用机制则位于下层的引擎层与系统层。
+Game 层是「白银纪元」四层仓库中依赖链顶端的**游戏内容层**，也是整个工程数据驱动的**终点消费层**。游戏中「有哪些怪物、每个怪物订阅哪些事件、属性怎么初始化、如何决策行动」这些问题，在本层都以可核查的资产数据（JSON 配置 + Lua 脚本）落盘，而驱动这些数据的通用机制则位于下层的EngineCore 层与EngineSystem 层。
 
-本层是一个**独立的 git 仓库**（与引擎层、系统层、测试层各自独立），不与其余三层共享工作树；四层再以「快照」形式被顶层仓库收录。本层的代码推送目标是远端仓库的 `game` 分支。
+本层是一个**独立的 git 仓库**（与 EngineCore、EngineSystem、Test 各自独立），不与其余各层共享工作树；顶层仓库只记录目录指针（不再做源码快照）。本层的代码推送目标是远端仓库的 `game` 分支。
 
 当前本层处于**骨架状态**：`src/` 为空，不产出静态库、也不产出可执行文件。工程里已有的实质内容是 `assets/` 下的配置资产与脚本资产、以及一套与其余三层完全一致的层间契约构建骨架（`CMakeLists.txt` + `cmake/` 两份脚本）。本文档即按这一现状如实记录。
 
-> 提示：本层不产出可执行文件。全项目**唯一**的可执行入口由测试层产出（`EngineTests.exe`）；本层将来若游戏本体需要独立入口，再单独追加一个可执行目标。
+> 提示：本层不产出可执行文件。全项目**唯一**的可执行入口由Test 层产出（`EngineTests.exe`）；本层将来若游戏本体需要独立入口，再单独追加一个可执行目标。
 
 ---
 
@@ -48,18 +48,19 @@
   ```bash
   git push sliverera main:game
   ```
-- 远端同时承载其余三层的分支：`engine`（引擎层）、`system`（系统层）、`test`（测试层），以及 `main`（顶层合并线）。`remotes/sliverera/HEAD` 当前指向 `sliverera/main`。
+- 远端同时承载其余三层的分支：`engine`（EngineCore 层）、`system`（EngineSystem 层）、`test`（Test 层），以及 `main`（顶层合并线）。`remotes/sliverera/HEAD` 当前指向 `sliverera/main`。
 
 ### 1.2 本层在依赖链中的位置
 
 ```
-引擎层 ← 系统层 ← 游戏层        （依赖方向单向）
-测试层           横跨各层，是全项目唯一产出可执行文件的层
+EngineCore ──▶ EngineSystem ──▶ Engine（聚合层） ──▶ Application/Game        （依赖方向单向）
+                                                       Application/Test      同样经 Engine 聚合层接入
 ```
 
-- 依赖方向**单向**：游戏层依赖系统层，系统层依赖引擎层，不反向依赖。
-- 本层只链接系统层**已经构建好的**静态库 `SystemCore`（`SystemCore.lib`），绝不把下层源码拉进本层构建树编译，也没有任何源码回退路径。
-- 系统层的对外面已并入引擎层的对外面，因此链接 `SystemCore` 即同时取得系统层与引擎层两层的公共包含路径、编译定义与第三方链接库。
+- 依赖方向**单向**：Game 依赖 EngineSystem，EngineSystem 依赖 EngineCore，不反向依赖。
+- 本层**只接 Engine 聚合层一次**：只链接**已经构建好的**两个静态库 `EngineSystem.lib` 与 `EngineCore.lib`（由聚合面一并转交），绝不把下层源码拉进本层构建树编译，也没有任何源码回退路径。
+- 聚合面已把两层的公共包含路径、编译定义与第三方链接库摊平为 `BYJY_ENGINE_*`，因此接一次即同时取得引擎两层的全部对外面。
+- 本层编译包含根次序为 `[EngineCore 快照根, EngineSystem 快照根, 项目根]`（快照根在前，防被源码树旁路）。
 
 ### 1.3 本层产物
 
@@ -75,16 +76,17 @@
 
 本层目录下**没有**独立的 `LICENSE` 文件；许可证信息见工程根目录的 `LICENSE`（MIT License，Copyright (c) 2026 雨行雨中）。详见[十三、许可](#十三许可)。
 
-### 1.5 与其余三层的关系
+### 1.5 与其余各层的关系
 
 | 层级 | 仓库分支 | 产物 | 与本层的关系 |
 | --- | --- | --- | --- |
-| 引擎层 | `main` → `engine` | `EngineCore.lib` | 经系统层对外面**间接**传递到本层（包含路径 / 链接库 / 系统库 / `GLFW_STATIC`） |
-| 系统层 | `main` → `system` | `SystemCore.lib` | 本层**直接依赖**：链接其已构建静态库；本层的配置与脚本资产是系统层运行时的数据源 |
-| 测试层 | `test` → `test` | `EngineTests.exe` | 未来可选择接入 `GameCore` 做游戏逻辑测试（当前未接） |
-| 游戏层 | `main` → `game` | `GameCore.lib`（条件产出） | 本层自身 |
+| EngineCore | `main` → `engine` | `EngineCore.lib` | 经 Engine 聚合面传递到本层（包含路径 / 链接库 / 系统库 / `GLFW_STATIC`） |
+| EngineSystem | `main` → `system` | `EngineSystem.lib` | 本层同时链接两个库；本层的配置与脚本资产是 EngineSystem 运行时的数据源 |
+| Engine（聚合层） | 随顶层 `main` 入库 | 无 | 本层**只接这一次**：`byjy_jieru_xiaceng(Engine/cmake/对外接口.cmake, ...)` |
+| Application/Test | `test` → `test` | `EngineTests.exe` | 未来可选择接入 `GameCore` 做游戏逻辑测试（当前未接） |
+| Application/Game | 本层自身 | `GameCore.lib`（条件产出） | — |
 
-工程根目录下另有一个统一的临时构建脚本 `out/_verify/构建层.sh`，用法为 `bash 构建层.sh <层目录名>`（如 `bash 构建层.sh 游戏层`），手工布置 MSVC 环境后把指定层构建到该层的 `out/build/x64-Debug`。
+构建入口为**逐层独立配置与构建**（顶层无编排）：`cmake -S <层目录> -B <层目录>/out/build/x64-Debug -G Ninja` ＋ `cmake --build ...`；本层的前置条件是 EngineCore 与 EngineSystem 已构建（可选再跑一次 Engine 聚合层自检）。
 
 ---
 
@@ -92,9 +94,9 @@
 
 ### 2.1 职责
 
-1. **游戏本体逻辑的归属地**：实体类型如何组合、战斗规则、玩法系统等「游戏玩法」代码，未来都落在本层 `src/` 下，与引擎层/系统层的通用能力分离。
-2. **数据驱动的配置资产**：`assets/` 承载全部运行时数据——实体配置 JSON、属性槽配置 JSON、格式定义 JSON、路由表 JSON、初始化 Lua 脚本、行为 Lua 脚本。这些资产是下层（尤其系统层）消费的数据源。
-3. **层间契约链路的末端**：作为四层链路的最上层，本层 `对外接口.cmake` 完整并入系统层（进而并入引擎层）对外面，验证「对外面逐层传递」契约的末端形态。
+1. **游戏本体逻辑的归属地**：实体类型如何组合、战斗规则、玩法系统等「游戏玩法」代码，未来都落在本层 `src/` 下，与EngineCore / EngineSystem 层的通用能力分离。
+2. **数据驱动的配置资产**：`assets/` 承载全部运行时数据——实体配置 JSON、属性槽配置 JSON、格式定义 JSON、路由表 JSON、初始化 Lua 脚本、行为 Lua 脚本。这些资产是下层（尤其EngineSystem 层）消费的数据源。
+3. **层间契约链路的末端**：作为依赖链的最上层之一，本层 `对外接口.cmake` 并入 **Engine 聚合层**对外面（聚合面已摊平 EngineSystem 与 EngineCore 两面），验证「对外面逐层传递」契约的末端形态。
 
 ### 2.2 核心特性
 
@@ -115,25 +117,25 @@
 | 项 | 值 |
 | --- | --- |
 | 语言 | C++20（`CMAKE_CXX_STANDARD 20` + `CMAKE_CXX_STANDARD_REQUIRED ON`，`CMAKE_CXX_EXTENSIONS OFF`） |
-| 资产脚本 | Lua（行为脚本 / 初始化脚本，由系统层运行时加载） |
-| 数据格式 | JSON（`nlohmann::json` 解析，解析器位于引擎层） |
+| 资产脚本 | Lua（行为脚本 / 初始化脚本，由EngineSystem 层运行时加载） |
+| 数据格式 | JSON（`nlohmann::json` 解析，解析器位于EngineCore 层） |
 | 编码约定 | 源文件与资产统一 UTF-8（MSVC `/utf-8`）；中文路径经 `u8string` 转换处理 |
 
 说明：本层当前没有 C++ 源码，上述 C++ 标准由其构建骨架声明，用于与下层保持一致；一旦 `src/` 下放入源码即按此标准编译。
 
 ### 3.2 本层消费的第三方依赖
 
-本层自身**不引入**任何第三方库，也不维护 `external/` 目录内容（该目录当前为空）。所有第三方能力均由**下层对外面经 `SystemCore` 导入目标传递**进来：
+本层自身**不引入**任何第三方库，也不维护 `external/` 目录内容（该目录当前为空）。所有第三方能力均由**下层对外面经 `EngineSystem` 导入目标传递**进来：
 
 | 依赖 | 来源 | 传递形式 |
 | --- | --- | --- |
-| `nlohmann::json` | 引擎层 `external/Json` | 包含路径（经引擎层对外面 → 系统层对外面 → 本层） |
-| GLFW | 引擎层 `external/glfw` | 包含路径 + `glfw3.lib` + 编译定义 `GLFW_STATIC` |
-| glm | 引擎层 `external/glm` | 包含路径 |
-| bullet3 | 引擎层 `external/bullet3/src` | 包含路径 |
-| opengl32 / user32 / gdi32 / shell32 | 引擎层对外面 | 系统库（`BYJY_SYSTEM_OUT_SYS`） |
+| `nlohmann::json` | EngineCore 层 `external/Json` | 包含路径（经EngineCore 层对外面 → EngineSystem 层对外面 → 本层） |
+| GLFW | EngineCore 层 `external/glfw` | 包含路径 + `glfw3.lib` + 编译定义 `GLFW_STATIC` |
+| glm | —（EngineCore 的 `external/glm` 已移除；本层 `external/glm` 副本存在但**不进对外面**、未被源码引用） | 无 |
+| bullet3 | EngineCore 层 `external/bullet3/src` | 包含路径 |
+| opengl32 / user32 / gdi32 / shell32 | EngineCore 层对外面 | 系统库（`BYJY_ENGINE_OUT_SYS`） |
 
-因此本层的 `GameCore` 只要 `target_link_libraries(GameCore PUBLIC SystemCore)`，即自动继承上述全部依赖，无需在本层重复声明。
+因此本层的 `GameCore` 只要 `target_link_libraries(GameCore PUBLIC EngineSystem)`，即自动继承上述全部依赖，无需在本层重复声明。
 
 ### 3.3 构建工具链
 
@@ -150,12 +152,12 @@
 ## 四、目录结构
 
 ```
-游戏层/
-├── CMakeLists.txt          # 构建脚本（接入 SystemCore + 条件产出 GameCore）
+Application/Game/
+├── CMakeLists.txt          # 构建脚本（接入 EngineSystem + 条件产出 GameCore）
 ├── CMakeSettings.json      # VS 的 CMake 集成配置（含已无消费方的 BYJY_JOIN_TEST_HOST 遗留项）
 ├── .gitignore              # 忽略 out/、编译产物、IDE 目录
 ├── cmake/
-│   ├── 对外接口.cmake       # 本层对外面 = 本层自有面 + 系统层对外面
+│   ├── 对外接口.cmake       # 本层对外面 = 本层自有面 + Engine 聚合面（= EngineSystem 面 ＋ EngineCore 面）
 │   └── 接入下层.cmake       # byjy_jieru_xiaceng()：把下层已构建静态库接进本层
 ├── assets/                 # 资产根（运行时数据；相对 assets/ 的路径即数据契约）
 │   ├── config/             # JSON 配置
@@ -193,15 +195,17 @@
 
 ### 5.1 层间契约骨架
 
-本层保留 `CMakeLists.txt` 与 `cmake/` 两份脚本，目的不是产出库，而是与其余三层保持**完全一致的层间契约接入方式**。将来在 `src/` 下放入第一份 `.cpp`/`.c` 时，`GLOB_RECURSE ... CONFIGURE_DEPENDS` 会自动纳入，无需改动 CMake 即可产出 `GameCore` 静态库。
+本层保留 `CMakeLists.txt` 与 `cmake/` 两份脚本，目的不是产出库，而是与其余各层保持**完全一致的层间契约接入方式**。将来在 `src/` 下放入第一份 `.cpp`/`.c` 时，`GLOB_RECURSE ... CONFIGURE_DEPENDS`（＋ 目录级 `CMAKE_CONFIGURE_DEPENDS`）会自动纳入，无需改动 CMake 即可产出 `GameCore` 静态库。
 
 ```
-游戏层（GameCore，条件产出）
-   │  include 系统层对外接口（经 byjy_jieru_xiaceng 建立 IMPORTED 目标 SystemCore）
+Application/Game（GameCore，条件产出）
+   │  include Engine 聚合层对外接口（经 byjy_jieru_xiaceng 逐库建立 IMPORTED 目标 EngineSystem、EngineCore）
    ▼
-系统层（SystemCore.lib）—— 对外面 = 自有面 + 并入的引擎层对外面
+Engine（聚合层，无产物）—— 对外面 = EngineSystem 面 ＋ EngineCore 面（OUT_LIB = EngineSystem;EngineCore）
    ▼
-引擎层（EngineCore.lib）—— 包含路径 / glfw3.lib / GLFW_STATIC / 四个系统库
+EngineSystem（EngineSystem.lib）—— 对外面 = 自有面 + 并入的 EngineCore 对外面
+   ▼
+EngineCore（EngineCore.lib）—— 包含路径（首项项目根） / glfw3.lib / GLFW_STATIC / 四个系统库
 ```
 
 ### 5.2 条件目标 `GameCore`
@@ -216,32 +220,37 @@ file(GLOB_RECURSE GAME_SOURCES CONFIGURE_DEPENDS
 
 if(GAME_SOURCES)
     add_library(GameCore STATIC ${GAME_SOURCES})
-    target_include_directories(GameCore PUBLIC "${PROJECT_ROOT_DIR}")
-    target_link_libraries(GameCore PUBLIC SystemCore)
+    target_include_directories(GameCore PUBLIC ${BYJY_APP_INC})   # [EngineCore 快照根, EngineSystem 快照根, 项目根]
+    target_link_libraries(GameCore PUBLIC EngineCore EngineSystem)
     # 编译选项 / 输出目录同下层，产物落 <构建目录>/lib/
 else()
-    message(STATUS "游戏层暂无源码，未生成 GameCore 目标。")
+    message(STATUS "Game 暂无源码，未生成 GameCore 目标。")
 endif()
 ```
 
-- **空源文件不是错误**：与引擎层、系统层「无源码即 `FATAL_ERROR`」不同，本层把空源码视为**预期状态**，只打印 STATUS 提示、不报错。
-- `GameCore` 链接的是 `byjy_jieru_xiaceng()` 建立的**导入目标** `SystemCore`，其 `INTERFACE` 上已挂有系统层 + 引擎层的全部对外面。
+- **空源文件不是错误**：与 EngineCore、EngineSystem「无源码即 `FATAL_ERROR`」不同，本层把空源码视为**预期状态**，只打印 STATUS 提示、不报错。
+- `GameCore` 链接的是 `byjy_jieru_xiaceng()` 建立的**两个导入目标**（`EngineCore`、`EngineSystem`），其 `INTERFACE` 上已挂有引擎两层的全部对外面。
 
-### 5.3 接入方式与其余三层一致
+### 5.3 接入方式与其余各层一致
 
-本层在 `CMakeLists.txt` 中调用通用接入函数（系统层、测试层、本层三份 `接入下层.cmake` 逐字节相同）：
+本层在 `CMakeLists.txt` 中调用通用接入函数（EngineSystem、Engine、Test、本层**四份** `接入下层.cmake` 逐字节相同）：
 
 ```cmake
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/接入下层.cmake")
 
-set(BYJY_SYSTEM_LIB_PATH "" CACHE FILEPATH
-    "系统层静态库路径；留空则自动探测 系统层/out/build/*/lib/SystemCore.lib")
+set(BYJY_ENGINE_LIB_PATH "" CACHE STRING
+    "Engine 聚合层静态库路径（分号列表，顺序同 EngineSystem;EngineCore）；留空则自动探测")
 
 byjy_jieru_xiaceng(
-    "${PROJECT_ROOT_DIR}/../系统层/cmake/对外接口.cmake"
-    "BYJY_SYSTEM"
-    "BYJY_SYSTEM_LIB_PATH"
+    "${PROJECT_ROOT_DIR}/../../Engine/cmake/对外接口.cmake"
+    "BYJY_ENGINE"
+    "BYJY_ENGINE_LIB_PATH"
 )
+
+# 头快照接入：两个子层快照根作为本层自身包含目录，排在项目根之前
+byjy_tou_kuaizhao_gen(BYJY_CORE_SNAPSHOT   EngineCore)
+byjy_tou_kuaizhao_gen(BYJY_SYSTEM_SNAPSHOT EngineSystem)
+set(BYJY_APP_INC "${BYJY_CORE_SNAPSHOT}" "${BYJY_SYSTEM_SNAPSHOT}" "${BYJY_PROJECT_ROOT}")
 ```
 
 ---
@@ -345,7 +354,7 @@ byjy_jieru_xiaceng(
 
 **`format/Entity_Manager.json`** 是实体配置的字段契约，除 `fields` 外还带元字段：`dir: "entities"`、`route: "entity.json"`、`builtin: true`、`module: "Entity_Manager"`。其 `fields` 逐条对应 §6.2 的字段表（含 `desc` 描述与 `display` 显示名，供配置编辑器使用）。
 
-**`format/Property_Manager.json`** 是属性配置的字段契约，元字段为 `dir: "property"`、`route: "property.json"`、`module: "Property_Manager"`。它沿用了旧模块名 `Property_Manager`（实际对应模块此后改名为 `Prop_Distributor`，位于系统层）。
+**`format/Property_Manager.json`** 是属性配置的字段契约，元字段为 `dir: "property"`、`route: "property.json"`、`module: "Property_Manager"`。它沿用了旧模块名 `Property_Manager`（实际对应模块此后改名为 `Prop_Distributor`，位于EngineSystem 层）。
 
 **路由表 `route/entity.json`** 是一个 JSON 数组，每项 `{config_path, module}` 描述一条装载指令，覆盖 6 个怪物实体（不含 `au`）：
 
@@ -422,7 +431,7 @@ end
 
 行为脚本的两阶段结构：**阶段一**构建行动指令（优先读取事件集合中的 `Entity/Command` 定向命令，否则自主决策生成指令表）；**阶段二**逐条执行指令（`UseSkill` 走 `wrap_<技能名>` 打包脚本、`MoveTo` 走 `wrap_MoveTo`、`Idle` 忽略）。函数返回后事件集合由引擎端自动清空。
 
-> 说明：C++ ↔ Lua 的**绑定层（Sol2）**属于系统层（`common/external/Sol2/`），负责把 C++ 类型注册给 Lua；本层只提供脚本资产，不承担绑定职责。
+> 说明：C++ ↔ Lua 的**绑定层（Sol2）**属于EngineSystem 层（`common/external/Sol2/`），负责把 C++ 类型注册给 Lua；本层只提供脚本资产，不承担绑定职责。
 
 ### 6.5 属性槽在 Lua 中的读写约定
 
@@ -438,34 +447,39 @@ end
 
 ### 7.1 `cmake/对外接口.cmake`
 
-声明「本层向上层提供什么」，供未来上层读取并建立 IMPORTED 目标（不使用 `add_subdirectory` 回退编源码）。首行 `include` 系统层的对外接口文件，把系统层对外面并入本层，因此本层对外面 = **本层自有面 + 系统层对外面**（系统层又已并入引擎层对外面）。并入是纯数据赋值，重复 include 无副作用。
+声明「本层向上层提供什么」，供未来上层读取并建立 IMPORTED 目标（不使用 `add_subdirectory` 回退编源码）。首行 `include` **Engine 聚合层**的对外接口文件，把聚合面并入本层，因此本层对外面 = **本层自有面 + Engine 聚合面**（聚合面已摊平 EngineSystem 与 EngineCore 两面）。并入是纯数据赋值，重复 include 无副作用。
 
 | 变量 | 本层取值 |
 | --- | --- |
 | `BYJY_GAME_OUT_LIB` | `GameCore`（当前尚无源码，声明先于产物） |
-| `BYJY_GAME_OUT_INC` | 本层根目录 + `BYJY_SYSTEM_OUT_INC` |
-| `BYJY_GAME_OUT_DEF` | 继承 `BYJY_SYSTEM_OUT_DEF`（即引擎层的 `GLFW_STATIC`） |
-| `BYJY_GAME_OUT_LINK` | 继承 `BYJY_SYSTEM_OUT_LINK`（`glfw3.lib` 等） |
-| `BYJY_GAME_OUT_SYS` | 继承 `BYJY_SYSTEM_OUT_SYS`（`opengl32` / `user32` / `gdi32` / `shell32`） |
+| `BYJY_GAME_OUT_LIBDIR` | `Application/Game`（与 `OUT_LIB` 一一对应，供上层自动探测） |
+| `BYJY_GAME_OUT_INC` | 承接 `BYJY_ENGINE_OUT_INC`（其首项为**项目根**，统一承担 `Application/Game/...` 全路径） |
+| `BYJY_GAME_OUT_DEF` | 继承 `BYJY_ENGINE_OUT_DEF`（`GLFW_STATIC`） |
+| `BYJY_GAME_OUT_LINK` | 继承 `BYJY_ENGINE_OUT_LINK`（`glfw3.lib`） |
+| `BYJY_GAME_OUT_SYS` | 继承 `BYJY_ENGINE_OUT_SYS`（`opengl32` / `user32` / `gdi32` / `shell32`） |
 
-`BYJY_GAME_OUT_LIB` 声明为 `GameCore`，但当前 `src/` 为空、尚未产出库；此时若真有上层来链接它，自动探测会找不到库而硬失败——属源码注释明确标注的**预期行为**。因此**任何上层接入 `GameCore` 的动作，都必须发生在游戏层产出库之后**。
+`BYJY_GAME_OUT_LIB` 声明为 `GameCore`，但当前 `src/` 为空、尚未产出库；此时若真有上层来链接它，自动探测会找不到库而硬失败——属源码注释明确标注的**预期行为**。因此**任何上层接入 `GameCore` 的动作，都必须发生在 Game 产出库之后**。
 
 ### 7.2 `cmake/接入下层.cmake`
 
-提供通用接入函数 `byjy_jieru_xiaceng(<下层对外接口文件> <变量前缀> <覆盖库路径变量>)`，系统层、测试层、本层三份逐字节相同（改动必须同步三层）。它：
+提供两个函数：`byjy_jieru_xiaceng(<下层对外接口文件> <变量前缀> <覆盖库路径变量>)` 与 `byjy_tou_kuaizhao_gen(<结果变量> <导入目标>)`；**EngineSystem、Engine、Test、本层四份逐字节相同**（改动必须同步四处；EngineCore 无下层，无此文件）。它：
 
-- 读入下层对外面并校验五个 `_OUT_*` 变量是否齐备（缺一即 `FATAL_ERROR`）；
-- 建立 `IMPORTED STATIC`（GLOBAL）静态库目标，把包含目录、编译定义、链接库挂到其 `INTERFACE` 上，供本层向上继续传递；
-- **三级库定位**：① 覆盖变量非空且文件存在 → 用它（非空但文件不存在则直接 `FATAL_ERROR`，不静默降级）；② 留空 → 自动探测 `<下层>/out/build/*/lib/<库名>.lib`，多候选取时间戳最新的一份；③ 仍无 → `FATAL_ERROR` 并给出构建下层的命令；
+- 读入下层对外面并校验五个必需 `_OUT_*` 变量是否齐备（`_OUT_LIBDIR` 为可选扩展项；缺必需项即 `FATAL_ERROR`）；
+- 按 `OUT_LIB` **逐库**建立 `IMPORTED STATIC`（GLOBAL）静态库目标，把包含目录、编译定义、链接库挂到其 `INTERFACE` 上，供本层向上继续传递；
+- **三级库定位**：① 覆盖变量非空（须与库数等长）且文件存在 → 用它（非空但文件不存在则直接 `FATAL_ERROR`，不静默降级）；② 留空 → 按 `OUT_LIBDIR` **逐库**自动探测 `<该库所在层目录>/out/build/*/lib/<库名>.lib`，多候选取时间戳最新的一份；③ 仍无 → `FATAL_ERROR` 并给出构建下层的命令；
 - **任何情况下都不回退编译下层源码**。
 
-### 7.3 覆盖变量 `BYJY_SYSTEM_LIB_PATH`
+### 7.3 覆盖变量 `BYJY_ENGINE_LIB_PATH`
 
 | 变量 | 类型 | 默认 | 说明 |
 | --- | --- | --- | --- |
-| `BYJY_SYSTEM_LIB_PATH` | `FILEPATH` | `""` | 系统层静态库路径覆盖；留空则自动探测 `系统层/out/build/*/lib/SystemCore.lib` |
+| `BYJY_ENGINE_LIB_PATH` | `STRING` | `""` | Engine 聚合层静态库路径（**分号列表**，顺序同 `OUT_LIB` = `EngineSystem;EngineCore`）；留空则**逐库**自动探测各自层目录下的 `out/build/*/lib/<库名>.lib` |
 
-若留空且探测不到 `SystemCore.lib`，接入函数会硬失败并提示先构建系统层；此时可显式指定：`-DBYJY_SYSTEM_LIB_PATH=<SystemCore.lib 的绝对路径>`。
+若留空且探测不到库，接入函数会硬失败并提示先构建相应下层；此时可显式指定（**须与库数等长**）：
+
+```bash
+-DBYJY_ENGINE_LIB_PATH="<EngineSystem.lib 绝对路径>;<EngineCore.lib 绝对路径>"
+```
 
 ---
 
@@ -473,7 +487,7 @@ end
 
 ### 8.1 前置条件
 
-先构建**系统层**（系统层又依赖已构建的**引擎层**）。顺序为：引擎层 → 系统层 → 游戏层。若系统层尚未构建，本层配置期会在库定位阶段硬失败。
+先构建 **EngineCore**，再构建 **EngineSystem**（后者依赖前者），最后配置本层。顺序为：`EngineCore → EngineSystem →（可选）Engine 聚合层自检 → Application/Game`。若任一子层库尚未构建，本层配置期会在库定位阶段硬失败。
 
 ### 8.2 逐条命令
 
@@ -487,27 +501,21 @@ cmake --build out/build/x64-Debug
 在工程根目录内（等价的显式路径形式）：
 
 ```bash
-cmake -S 游戏层 -B 游戏层/out/build/x64-Debug -G Ninja
-cmake --build 游戏层/out/build/x64-Debug
+cmake -S Application/Game -B Application/Game/out/build/x64-Debug -G Ninja
+cmake --build Application/Game/out/build/x64-Debug
 ```
 
-- **配置期须处于 UTF-8 代码页**（先 `chcp 65001`），否则头文件依赖不会被记录（详见顶层 README 的构建说明）。
-
-也可使用统一入口脚本（脚本位于工程根的 `out/_verify/` 下，自动布置 MSVC 环境）：
-
-```bash
-bash out/_verify/构建层.sh 游戏层
-```
+- **配置期须处于 UTF-8 代码页**（先进 VS 开发人员环境，再 `chcp 65001`），否则头文件依赖不会被记录；`TMP`/`TEMP` 须为**纯 ASCII** 路径（详见顶层 README 的构建说明）。
 
 ### 8.3 当前无源码时的行为
 
 - 由于本层当前无源码，**配置可以通过，但不生成任何静态库**；`cmake --build` 无编译任务即成功退出。
-- 配置期完成「接入系统层 + 空源文件判定」两步；构建期无目标可构建。
-- 若覆盖变量 `BYJY_SYSTEM_LIB_PATH` 留空，则自动探测 `系统层/out/build/*/lib/SystemCore.lib`；探测不到会硬失败并提示先构建系统层。
+- 配置期完成「接入 Engine 聚合层 ＋ 反推两个头快照根 ＋ 空源文件判定」几步；构建期无目标可构建。
+- 若覆盖变量 `BYJY_ENGINE_LIB_PATH` 留空，则逐库自动探测 `Engine/EngineSystem/out/build/*/lib/EngineSystem.lib` 与 `Engine/EngineCore/out/build/*/lib/EngineCore.lib`；探测不到会硬失败并提示先构建相应下层。
 
 ### 8.4 本层不产出可执行文件
 
-宿主机制取消后，可执行文件只在测试层产生（`EngineTests.exe`）。本层根目录残留的 `TestEngine.exe` / `.ilk` / `.pdb` 属旧宿主时期的历史遗留产物，不是本层现在的构建产物。
+宿主机制取消后，可执行文件只在 `Application/Test` 产生（`EngineTests.exe`）。本层根目录残留的 `TestEngine.exe` / `.ilk` / `.pdb` 属旧宿主时期的历史遗留产物，不是本层现在的构建产物。
 
 ---
 
@@ -518,27 +526,27 @@ bash out/_verify/构建层.sh 游戏层
 - 层间契约骨架齐全：`CMakeLists.txt`、`cmake/对外接口.cmake`、`cmake/接入下层.cmake` 全部就位，接入方式与其余三层一致。
 - `assets/` 配置资产落盘：`entities/`（7 份）、`property/`（7 份）、`format/`（2 份）、`route/`（2 份）。
 - 两级脚本骨架落盘：哥布林的初始化脚本与行为脚本各一份。
-- 接入系统层已构建静态库的链路可跑通（配置期校验通过）。
+- 接入EngineSystem 层已构建静态库的链路可跑通（配置期校验通过）。
 
 ### 9.2 尚未完成
 
 - **本层无源码**：`src/` 为空，`GameCore` 目标未生成、无 `GameCore.lib`。
 - **脚本覆盖不全**：仅哥布林具备初始化脚本与行为脚本，其余实体类型（含 `au`）尚无对应 Lua。
 - **运行时闭环缺失**：资产数据已就位，但缺少本层自己的运行时来驱动「配置 → 实体 → 战斗」的完整闭环；当前配置只能被下层的接口消费。
-- **测试层尚未接入 `GameCore`**：需等本层产出库之后才能接入。
+- **Test 层尚未接入 `GameCore`**：需等本层产出库之后才能接入。
 
 ### 9.3 已知问题
 
 | 位置 | 现象 |
 | --- | --- |
-| 宿主机制（历史决策） | 本层过去挂着「组合根可执行文件」与「把测试层宿主并入本构建树」的开关（`BYJY_JOIN_TEST_HOST`），两者均已移除 |
+| 宿主机制（历史决策） | 本层过去挂着「组合根可执行文件」与「把Test 层宿主并入本构建树」的开关（`BYJY_JOIN_TEST_HOST`），两者均已移除 |
 | `CMakeSettings.json` | 仍保留 `cacheVariables.BYJY_JOIN_TEST_HOST = true`，但 `CMakeLists.txt` 全文已无任何代码读取该变量——**已无消费方的遗留项**，CMake 会忽略未消费的缓存变量，不影响构建 |
 | `route/entity.json` | 路由中的模块名存在拼写错误：`"Entity_Mangaer"`（应为 `Entity_Manager`），读取方若按正确名匹配将落空 |
 | 资产与脚本目录不一致 | 除哥布林外，`property/*.json` 的 `initialize_path` 均指向 `scripts/monster/*.lua`，但 `assets/scripts/` 下**不存在** `monster/` 子目录，这些路径当前悬空；`au.json` 指向的 `scripts/initialize/au.lua` 同样不存在 |
 | 配置文件名 | `entities/` 与 `property/` 的配置文件名带空格与括号（如 `史莱姆 (Slime).json`）——中文 + 空格路径在 MSVC/Ninja 与 googletest 下是已知风险区 |
 | 字段命名不统一 | `format/Entity_Manager.json` 声明行为脚本字段为 `decision_load_path`，而实际初始化脚本写入的键为 `entity.behavior_script_path`；两者命名尚未统一 |
 
-> 关于 **宿主机制取消的原因**：其一，本层的组合根与测试层宿主职责重叠；其二，组合根会把下层源码拉进本层构建树重复编译，与「层间一律链接已构建静态库」的契约冲突。现在各层分工为：引擎层产出 `EngineCore.lib`、系统层产出 `SystemCore.lib`、本层产出 `GameCore.lib`（条件）、测试层产出唯一可执行文件 `EngineTests.exe`。
+> 关于 **宿主机制取消的原因**：其一，本层的组合根与Test 层宿主职责重叠；其二，组合根会把下层源码拉进本层构建树重复编译，与「层间一律链接已构建静态库」的契约冲突。现在各层分工为：EngineCore 层产出 `EngineCore.lib`、EngineSystem 层产出 `EngineSystem.lib`、本层产出 `GameCore.lib`（条件）、Test 层产出唯一可执行文件 `EngineTests.exe`。
 
 ---
 
@@ -571,7 +579,7 @@ bash out/_verify/构建层.sh 游戏层
 - **注释**：中文注释；不足三行用 `//`（无空格），三行及以上用 `/**/`；换行注释。
 - **编码**：源文件与资产统一 UTF-8（无 BOM）；中文路径经 `u8string` 处理。
 - **数据**：JSON 字段名使用英文小写（`type` / `acls` / `needed_events`）；事件 `category`/`tag` 使用英文（如 `Entity` / `Request`）。
-- **契约**：CMake 变量名与函数名全部 ASCII（`byjy_jieru_xiaceng`）；三份 `接入下层.cmake` 改动必须同步三层。
+- **契约**：CMake 变量名与函数名全部 ASCII（`byjy_jieru_xiaceng`）；**四份** `接入下层.cmake`（EngineSystem / Engine / Test / Game）改动必须同步四处。
 
 ---
 
@@ -581,7 +589,7 @@ bash out/_verify/构建层.sh 游戏层
 - [ ] 脚本覆盖：为全部实体类型补齐初始化脚本与行为脚本
 - [ ] 资产一致性修复：修正 `route/entity.json` 的 `module` 拼写、对齐 `initialize_path` 与脚本目录、补全 `entities/` 缺失字段
 - [ ] 字段命名收敛：统一 `decision_load_path` 与 `behavior_script_path` 两套命名
-- [ ] 测试层接入 `GameCore`，为游戏逻辑建立用例
+- [ ] Test 层接入 `GameCore`，为游戏逻辑建立用例
 - [ ] 运行时闭环：接通「配置 → 实体 → 战斗」的完整数据流
 - [ ] 游戏本体入口：若需要独立可执行程序，在本层单独追加一个可执行目标
 
@@ -589,20 +597,20 @@ bash out/_verify/构建层.sh 游戏层
 
 ## 十二、历史沿革
 
-本层是在「分层之前的一体化引擎」时期之后，从旧工程《游戏引擎》中按依赖方向切分出来的层。旧工程的部分模块与资产在本层保留，部分迁往引擎层/系统层。对照如下：
+本层是在「分层之前的一体化引擎」时期之后，从旧工程《游戏引擎》中按依赖方向切分出来的层。旧工程的部分模块与资产在本层保留，部分迁往 EngineCore / EngineSystem。对照如下：
 
 | 旧工程中的名称 | 现名 / 现归属 | 说明 |
 | --- | --- | --- |
-| 一体化工程《游戏引擎》 | 拆分为引擎层 / 系统层 / 游戏层 / 测试层四层 | 旧 README 题名《游戏引擎》，对应分层前的一体化时期 |
-| `assets/config/`（entities / property / format / route） | **游戏层** `assets/config/` | 配置资产整体留在本层，作为数据驱动终点 |
-| `assets/scripts/`（initialize / behavior） | **游戏层** `assets/scripts/` | 两级脚本资产留在本层 |
-| `Property_Manager`（模块） | 系统层 `src/prop/Prop_Distributor/` | 模块改名为 `Prop_Distributor`；本层仅保留 `format/Property_Manager.json` 等旧命名的资产 |
-| `Entity_Manager` / `Entity` / `Prop`（模块与类） | 系统层 `src/entity/`、`src/prop/` | 实体、属性相关模块迁入系统层 |
-| `Config_Loader`（模块） | 引擎层 `src/core/config/Config_Loader/` | 配置加载器迁入引擎层（后由 `src/tools/` 移入 `src/core/config/`），消费本层的 `route/` 资产 |
-| `Data_Validator` | 引擎层 `src/tools/Detail/package/数据校验工具.h` | 旧名 `Config_Checker`（配置检查器）；工具重组后改为 `engine::detail` 命名空间自由函数（`field_check` / `path_check`） |
-| 绑定层（Sol2） | 系统层 `common/external/Sol2/` | C++ ↔ Lua 绑定属于系统层，本层只提供脚本资产 |
+| 一体化工程《游戏引擎》 | 拆分为 EngineCore / EngineSystem / Game / Test 四层（另有 Engine 聚合层） | 旧 README 题名《游戏引擎》，对应分层前的一体化时期 |
+| `assets/config/`（entities / property / format / route） | **Game 层** `assets/config/` | 配置资产整体留在本层，作为数据驱动终点 |
+| `assets/scripts/`（initialize / behavior） | **Game 层** `assets/scripts/` | 两级脚本资产留在本层 |
+| `Property_Manager`（模块） | EngineSystem 层 `src/prop/Prop_Distributor/` | 模块改名为 `Prop_Distributor`；本层仅保留 `format/Property_Manager.json` 等旧命名的资产 |
+| `Entity_Manager` / `Entity` / `Prop`（模块与类） | EngineSystem 层 `src/entity/`、`src/prop/` | 实体、属性相关模块迁入EngineSystem 层 |
+| `Config_Loader`（模块） | EngineCore 层 `src/core/config/Config_Loader/` | 配置加载器迁入EngineCore 层（后由 `src/tools/` 移入 `src/core/config/`），消费本层的 `route/` 资产 |
+| `Data_Validator` | EngineCore 层 `src/tools/Detail/package/数据校验工具.h` | 旧名 `Config_Checker`（配置检查器）；工具重组后改为 `engine::detail` 命名空间自由函数（`field_check` / `path_check`） |
+| 绑定层（Sol2） | EngineSystem 层 `common/external/Sol2/` | C++ ↔ Lua 绑定属于EngineSystem 层，本层只提供脚本资产 |
 | 组合根可执行文件 | **已移除** | 与宿主职责重叠，且会把下层源码拉入本层构建树 |
-| `BYJY_JOIN_TEST_HOST` 开关 | **已取消**（残留于 `CMakeSettings.json`） | 把测试层宿主并入本构建树的开关，已无消费方 |
+| `BYJY_JOIN_TEST_HOST` 开关 | **已取消**（残留于 `CMakeSettings.json`） | 把Test 层宿主并入本构建树的开关，已无消费方 |
 | `TestEngine.exe` 等旧宿主产物 | 历史遗留（未跟踪） | 已被 `.gitignore` 覆盖，非本层现产物 |
 
 ---
