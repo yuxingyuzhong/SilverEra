@@ -1,12 +1,12 @@
-# 白银纪元 · 测试层
+# 白银纪元 · Test 层
 
-测试层是「白银纪元」四层工程（引擎层 → 系统层 → 游戏层，测试层横跨各层）中的**验证与启动层**。工程按依赖方向分层，每一层都是一个独立的 git 仓库，各推各的分支；本层对应的分支是 `test`，向远端 `sliverera/test` 推送。工程根目录另有一个 `main` 分支仓库，以「快照」形式收录四层源码，只作总览与合并线。
+Test 是「白银纪元」分层工程中的**验证与启动层**。工程按依赖方向分层：`Engine/EngineCore` → `Engine/EngineSystem` → `Engine`（聚合层）→ `Application/{Game,Test}`；每一层都是一个独立的 git 仓库，各推各的分支；本层对应的分支是 `test`，向远端 `sliverera/test` 推送。顶层 `main` 仓库只记录各层目录指针（不再做源码快照），作总览与合并线。
 
-本层在依赖链中处于**横跨**位置：它与引擎层、系统层之间没有上下游的单向关系，而是同时接入两层——只链接两层**已经构建好的静态库**（`EngineCore.lib`、`SystemCore.lib`），绝不通过 `add_subdirectory` 把下层源码拉进本构建树重复编译，也没有任何源码回退路径。这条「层间一律链接已构建静态库」的契约由每层的 `cmake/对外接口.cmake` 与 `cmake/接入下层.cmake` 共同保证。
+本层在依赖链中处于**最上层**：它**只接 Engine 聚合层一次**——只链接两个**已经构建好的静态库**（`EngineCore.lib`、`EngineSystem.lib`，由聚合面一并转交），绝不通过 `add_subdirectory` 把下层源码拉进本构建树重复编译，也没有任何源码回退路径。这条「层间一律链接已构建静态库」的契约由每层的 `cmake/对外接口.cmake` 与 `cmake/接入下层.cmake` 共同保证。
 
 本层是**全项目唯一产出可执行文件的层**：`EngineTests.exe` 既是单元测试入口，也是整套工程的启动项。「宿主机制」（把下层组件按由浅到深的范围接在一起、各自产出启动项）已经取消，各层不再各自维护运行入口，可执行文件只由本层产生。
 
-本层承载两件事：一是 **googletest 单元测试体系**（22 个套件 / 349 个用例，覆盖引擎层与系统层的核心模块，以及本层主调自身的逻辑）；二是**测试模块选择器**（图形窗口 / 控制台菜单 / 命令行开关三种交互形态），让同一份可执行文件同时服务「开发期按模块精准复跑」与「CI 一键全量回归」两类场景。
+本层承载两件事：一是 **googletest 单元测试体系**（27 个套件 / 625 个用例，覆盖 EngineCore 与 EngineSystem 的核心模块，以及本层主调自身的逻辑）；二是**测试模块选择器**（图形窗口 / 控制台菜单 / 命令行开关三种交互形态），让同一份可执行文件同时服务「开发期按模块精准复跑」与「CI 一键全量回归」两类场景。
 
 ---
 
@@ -25,29 +25,28 @@
 
 说明：
 
-- 四层共用同一个远端仓库，各自推自己的分支（引擎层 `engine`、系统层 `system`、测试层 `test`、游戏层 `game`）。本层本地分支就叫 `test`，因此推送时本地名与远端名一致，无需像引擎层那样做 `main:engine` 的改名推送。
-- 顶层 `main` 分支仓库是独立的一层仓库，与本层的 git 历史互不包含；它只做「四层源码快照 + 总览」，不会自动跟随本层更新。
+- 各层共用同一个远端仓库，各自推自己的分支（EngineCore `engine`、EngineSystem `system`、Test `test`、Game `game`）。本层本地分支就叫 `test`，因此推送时本地名与远端名一致，无需像 EngineCore 那样做 `main:engine` 的改名推送。
+- 顶层 `main` 分支仓库是独立的一层仓库，与本层的 git 历史互不包含；它只记录各层目录指针（顶层不再收录含自身 `.git` 的子目录源码），不会自动跟随本层更新。
 
 ### 1.2 本层在依赖链中的位置
 
 ```
-引擎层 EngineCore.lib ──▶ 系统层 SystemCore.lib
-        （已构建）              （已构建）
-              ▲                      ▲
-              └────── 测试层 ────────┘
-                        │
-                        ▼
-              EngineTests.exe（全项目唯一可执行产物）
+EngineCore（EngineCore.lib，已构建） ──▶ EngineSystem（EngineSystem.lib，已构建）
+                     ▲                                    ▲
+                     └──────── Engine（聚合层，无产物）────┘
+                                        │
+                                        ▼
+                    Application/Test ──▶ EngineTests.exe（全项目唯一可执行产物）
 ```
 
 - 本层不产出供上层链接的库（对外面里的 `BYJY_TEST_OUT_LIB` 仅声明 `TestCore`，而 `TestCore` 当前无源文件、不产出）；`EngineTests.exe` 是运行产物，不写进对外面。
-- 本层对下层只做「消费」：拿到两层的静态库与公共头文件路径，编译用例并链接。
+- 本层对下层只做「消费」：经 Engine 聚合层拿到两个子层的静态库与公共头文件路径，编译用例并链接。
 
 ### 1.3 仓库内布局与产物
 
 | 项 | 值 |
 | --- | --- |
-| 本层根目录 | 工程根下的 `测试层/` |
+| 本层根目录 | 工程根下的 `Application/Test/` |
 | 可执行产物 | `EngineTests.exe`，落在**本层根目录**（与 `assets/` 同级） |
 | 伴随调试产物 | `EngineTests.ilk`、`EngineTests.pdb`，同样落在层根目录 |
 | 中间产物与静态库 | `out/build/<配置>/`（`lib/` 下为 `TestCore.lib` / `TestLauncher.lib` / `TestGui.lib` / `gtest.lib`） |
@@ -59,14 +58,15 @@
 
 本层**不单独维护许可证文件**，许可见工程根目录的 `LICENSE`。
 
-### 1.5 与其余三层的关系
+### 1.5 与其余各层的关系
 
-| 层 | 与测试层的关系 |
+| 层 | 与 Test 的关系 |
 | --- | --- |
-| 引擎层 | 本层链接其已构建的 `EngineCore.lib`；用例直接 include 引擎层头文件（事件、对象、空间分区、碰撞、工具集）验证真实现 |
-| 系统层 | 本层链接其已构建的 `SystemCore.lib`；其对外面已并入引擎层对外面，故接入系统层即同时得到两层的公共路径 |
-| 游戏层 | 当前无源码、不参与本层构建；本层通过 `assets/`（指向 `游戏层/assets` 的目录联接）共用资产 |
-| 顶层 `main` | 只做四层快照与总览，不参与本层构建 |
+| EngineCore | 本层链接其已构建的 `EngineCore.lib`；用例直接 include 其头文件（事件、对象、空间分区、碰撞、工具集）验证真实现 |
+| EngineSystem | 本层链接其已构建的 `EngineSystem.lib`；两个库均由 Engine 聚合面一并转交 |
+| Engine（聚合层） | 本层**只接这一次**：`byjy_jieru_xiaceng(Engine/cmake/对外接口.cmake, ...)`，两个导入目标随即可用 |
+| Application/Game | 当前无源码、不参与本层构建；本层通过 `assets/`（指向 `Application/Game/assets` 的目录联接）共用资产 |
+| 顶层 `main` | 只记录各层目录指针与总览，不参与本层构建 |
 
 ---
 
@@ -75,13 +75,13 @@
 | 特性 | 说明 |
 | --- | --- |
 | 唯一可执行入口 | 全项目只此一份 `EngineTests.exe`；`main` 由本层主调提供，不链接 googletest 自带的 `gtest_main` |
-| 全量单元测试 | 22 个套件 / 349 个用例，覆盖引擎层与系统层核心模块，外加本层主调逻辑自测 |
+| 全量单元测试 | 27 个套件 / 625 个用例，覆盖EngineCore 层与EngineSystem 层核心模块，外加本层主调逻辑自测 |
 | 反射驱动的选择树 | 通过 googletest 反射枚举已注册的套件与用例，运行时建立「套件 → 用例」两层选择树，新增用例自动可见，无需维护名单 |
 | 三种交互形态 | 图形窗口（GLFW + OpenGL3 + Dear ImGui）、控制台编号菜单、命令行开关全跑；无图形环境时自动降级 |
 | 所见即所测 | 勾选结果压缩成 googletest 原生 `--gtest_filter` 过滤串执行；执行前打印过滤串与复跑命令 |
 | 自动化友好 | 已带 `--gtest_*` 参数即透传、不弹窗、不等按键；`--selector=off` 不开窗直接全量回归（ctest 走这条） |
 | 中文可读 | 套件名与用例名全中文；控制台强制切 UTF-8 代码页；图形窗口加载中文字体候选链 |
-| 资产单一真源 | `assets/` 是指向游戏层资产的目录联接，本层不重复维护一份资产 |
+| 资产单一真源 | `assets/` 是指向Game 层资产的目录联接，本层不重复维护一份资产 |
 
 ---
 
@@ -105,7 +105,7 @@
 | Dear ImGui | 图形选择窗口的即时模式界面 | `external/Dear_ImGui/` 源码副本；编 imgui 核心 4 文件（`imgui.cpp`/`imgui_draw.cpp`/`imgui_tables.cpp`/`imgui_widgets.cpp`）+ 后端（`imgui_impl_glfw.cpp`/`imgui_impl_opengl3.cpp`）；**不编 `imgui_demo.cpp`**（示例窗口用不到） |
 | glad | OpenGL 函数加载器 | `external/glad/` 源码副本；编 `src/gl.c`，供图形窗口自身的 `glViewport`/`glClearColor`/`glClear` 调用 |
 
-引擎层/系统层的第三方库（GLFW、nlohmann::json、bullet3、glm 等）**不在本层重复**，随下层的导入目标与对外面一并传递。
+EngineCore / EngineSystem 层的第三方库（GLFW、nlohmann::json、bullet3、glm 等）**不在本层重复**，随下层的导入目标与对外面一并传递。
 
 ### 3.3 构建工具链
 
@@ -122,7 +122,7 @@
 ## 四、目录结构
 
 ```
-测试层/
+Application/Test/
 ├── CMakeLists.txt                 # 构建脚本：TestCore / TestGui / TestLauncher / EngineTestObjects / EngineTests
 ├── CMakeSettings.json             # Visual Studio CMake 配置（x64-Debug / Ninja）
 ├── .gitignore                     # 忽略构建产物、.vs、assets/ 联接等
@@ -151,13 +151,13 @@
 │       ├── 主调/                  # 2 文件
 │       ├── 工具/                  # 9 文件
 │       └── 核心/                  # 9 文件
-├── assets/                        # 目录联接 → 游戏层/assets（不入库）
+├── assets/                        # 目录联接 → Application/Game/assets（不入库）
 └── out/build/                     # 构建输出目录（不入库）
 ```
 
 说明：
 
-- `assets/` 是一个**指向 `游戏层/assets` 的目录联接**，不是本层的真实目录。这样做的目的是让资产保持**单一真源**（实体/属性配置与 Lua 脚本只在游戏层维护一份），同时让本层运行时的相对路径与游戏层一致。联接本身已列入 `.gitignore`（否则 git 会把联接当真实目录递归追踪，产生大量重复条目），因此**克隆本层不会得到 `assets/`**，需要自行建立联接或从游戏层复制。
+- `assets/` 是一个**指向 `Application/Game/assets` 的目录联接**，不是本层的真实目录。这样做的目的是让资产保持**单一真源**（实体/属性配置与 Lua 脚本只在Game 层维护一份），同时让本层运行时的相对路径与Game 层一致。联接本身已列入 `.gitignore`（否则 git 会把联接当真实目录递归追踪，产生大量重复条目），因此**克隆本层不会得到 `assets/`**，需要自行建立联接或从Game 层复制。
 - `src/主调/` 与 `src/单元测试/` 是两个彼此独立的子树：前者是可执行入口与交互逻辑，后者是用例；两者都通过 `file(GLOB_RECURSE ... CONFIGURE_DEPENDS)` 自动收编，新增文件后重新构建即可，无需手改构建脚本。
 
 ---
@@ -167,7 +167,7 @@
 ### 5.1 分层与依赖方向
 
 ```
-         ┌───────────────── 测试层（本层） ─────────────────┐
+         ┌───────────────── Test 层（本层） ─────────────────┐
          │  EngineTests.exe                                 │
          │   ├── main()            分流 / 过滤串 / 收尾等待  │
          │   ├── 测试选择模型        反射 gtest 注册表建树    │
@@ -178,7 +178,7 @@
                  │ 链接已构建静态库               │ 反射 / 过滤
         ┌────────▼────────┐              ┌───────▼────────┐
         │ EngineCore.lib  │              │  googletest    │
-        │ SystemCore.lib  │              │ (GTest::gtest) │
+        │ EngineSystem.lib  │              │ (GTest::gtest) │
         └─────────────────┘              └───────┬────────┘
                                                  │ 注册 TEST
                                         ┌────────▼────────┐
@@ -203,10 +203,10 @@
 ### 5.3 一次完整运行的链路
 
 ```
-[构建] 引擎层 EngineCore.lib → 系统层 SystemCore.lib → 本层 EngineTests.exe
+[构建] EngineCore.lib → EngineSystem.lib → 本层 EngineTests.exe
 [启动] EngineTests.exe（可带 --selector=... / --gtest_*）
    ├─ 交互路径（默认 window / console）：
-   │     建立选择模型 → 反射 22 套件 / 349 用例 → 用户勾选 → 生成过滤串
+   │     建立选择模型 → 反射 27 套件 / 625 用例 → 用户勾选 → 生成过滤串
    └─ 自动化路径（--gtest_* 透传 / --selector=off）：不建模型、不开窗
 [执行] GTEST_FLAG(filter) = 过滤串 → RUN_ALL_TESTS() → 逐用例 SetUp / 用例体 / TearDown
 [收尾] 交互运行打印提示并等待按键；自动化运行立即返回退出码（0 全过 / 非 0 有失败）
@@ -281,7 +281,7 @@ namespace engine
   - 初始化时序：`glfwInit` → 请求 OpenGL 3.3 核心上下文建窗 → `gladLoadGL` → 创建 ImGui 上下文 → 应用蓝色渐变主题 → 加载中文字体 → 主循环；三处失败点（GLFW 初始化、建窗、glad 加载）均返回 `false` 触发降级。
   - 界面：铺满视口的无标题面板；工具条含全选 / 清空 / 反选、搜索框与「已选 N / M」计数；选择树为「套件节点 + 用例复选」；底部为「开始测试」（或 Enter）与「取消（全跑）」（或 Esc）。
   - 细节：不写 `imgui.ini`（保持工作区整洁）；套件展开态由模型持有，避免每帧复位；搜索是「隐藏」而非「删除」，隐藏项勾选态保留；中文字体按候选链（微软雅黑 → 等线 → 黑体 → 宋体 → 楷体；非 Windows 另有一组）逐个探测，全部失败时界面仍可运行（中文显示为方块）。
-- **涉及文件**：`图形选择窗口.h` / `.cpp`；第三方 `external/Dear_ImGui`、`external/glad`；GLFW 头文件与 `glfw3.lib` 由引擎层对外面传递。
+- **涉及文件**：`图形选择窗口.h` / `.cpp`；第三方 `external/Dear_ImGui`、`external/glad`；GLFW 头文件与 `glfw3.lib` 由EngineCore 层对外面传递。
 
 ### 6.5 退出等待判定（`src/主调/退出等待判定.h`）
 
@@ -307,7 +307,7 @@ namespace engine
 
 ## 七、单元测试体系
 
-用例统一放在 `src/单元测试/` 下，按被测层分**三棵子树**，共 **20 个用例源文件**、**22 个套件**、**349 个用例**。套件名 = googletest 夹具类名。
+用例统一放在 `src/单元测试/` 下，按被测层分**三棵子树**，共 **25 个用例源文件**、**27 个套件**、**625 个用例**。套件名 = googletest 夹具类名。
 
 ### 7.1 规模统计
 
@@ -316,17 +316,17 @@ namespace engine
 | 主调 | `src/单元测试/主调/` | 2 | 2 | 24 |
 | 工具 | `src/单元测试/工具/` | 9 | 9 | 120 |
 | 核心 | `src/单元测试/核心/` | 9 | 11 | 205 |
-| **合计** | — | **20** | **22** | **349** |
+| **合计** | — | **25** | **27** | **625**（619 通过 / 2 跳过 / 4 失败） |
 
-全量回归结果：**349 / 349 通过 / 0 失败 / 0 禁用**。
+全量回归结果：**625 例 / 619 通过 / 2 跳过 / 4 失败**（2 例跳过为既有引擎缺陷；4 例失败全在 `Config_Loader_Test`，属在建功能缺口，与本版构建改造无关）。
 
 ### 7.2 覆盖内容
 
 | 子树 | 套件（夹具类名） | 被测对象 |
 | --- | --- | --- |
 | 主调 | `测试选择模型测试`（16 例）、`退出暂停判定测试`（8 例） | 本层 `Test_Selection_Model`、`需要等待退出` |
-| 工具 | `Binary_Search_Test`、`Engine_Env_Test`、`Number_Allocator_Test`、`Data_Validator_Test`、`Log_Test`、`Mesh_Loader_Test`、`Timer_Test`、`Path_String_Test`、`Random_Generator_Test` | 系统层工具模块组：二分查找、引擎环境、数值分配器、数据校验器、日志系统、网格加载器、计时器、路径字符串转换、随机数生成器 |
-| 核心 | `Event_Test`、`Event_Broker_Test`、`Event_Terminal_Test`、`Quadtree_Test`、`Quadtree_Manager_Test`、`Coord_Type_Test`、`Object_Pool_Test`、`Object_Test`、`Collider_Test`、`Collision_Region_Test`、`Collision_Proxy_Test` | 引擎层核心模块：事件结构体、事件中转器、事件终端、四叉树、四叉树管理器、坐标类型、对象池、对象基类、碰撞系统三件套 |
+| 工具 | `Binary_Search_Test`、`Engine_Env_Test`、`Number_Allocator_Test`、`Data_Validator_Test`、`Log_Test`、`Mesh_Loader_Test`、`Timer_Test`、`Path_String_Test`、`Random_Generator_Test` | EngineCore 工具模块组：二分查找、引擎环境、数值分配器、数据校验器、日志系统、网格加载器、计时器、路径字符串转换、随机数生成器 |
+| 核心 | `Event_Test`、`Event_Broker_Test`、`Event_Terminal_Test`、`Quadtree_Test`、`Quadtree_Manager_Test`、`Coord_Type_Test`、`Object_Pool_Test`、`Object_Test`、`Collider_Test`、`Collision_Region_Test`、`Collision_Proxy_Test` | EngineCore 核心模块：事件结构体、事件中转器、事件终端、四叉树、四叉树管理器、坐标类型、对象池、对象基类、碰撞系统三件套 |
 
 > 核心子树 9 个文件却含 11 个套件，因为 `碰撞测试.cpp` 一个文件里注册了三个套件（`Collider_Test` / `Collision_Region_Test` / `Collision_Proxy_Test`）。
 
@@ -352,46 +352,46 @@ namespace engine
 
 ### 8.1 本层对外面（`cmake/对外接口.cmake`）
 
-本层对外面遵循统一契约，导出五个变量（前缀 `BYJY_TEST`）：
+本层对外面遵循统一契约，导出六个变量（前缀 `BYJY_TEST`）：
 
 | 变量 | 值 / 含义 |
 | --- | --- |
-| `BYJY_TEST_OUT_LIB` | `TestCore`（本层静态库文件名，不含扩展名） |
-| `BYJY_TEST_OUT_INC` | 本层根目录 + 系统层对外包含目录 |
-| `BYJY_TEST_OUT_DEF` | 接系统层对外编译定义 |
-| `BYJY_TEST_OUT_LINK` | 接系统层对外第三方库 |
-| `BYJY_TEST_OUT_SYS` | 接系统层对外系统库 |
+| `BYJY_TEST_OUT_LIB` | `TestCore`（本层静态库名） |
+| `BYJY_TEST_OUT_LIBDIR` | `Application/Test`（与 `OUT_LIB` 一一对应，供上层自动探测） |
+| `BYJY_TEST_OUT_INC` | 接 Engine 聚合面（`${BYJY_ENGINE_OUT_INC}`，其首项为项目根） |
+| `BYJY_TEST_OUT_DEF` | 接 Engine 聚合面编译定义 |
+| `BYJY_TEST_OUT_LINK` | 接 Engine 聚合面第三方库 |
+| `BYJY_TEST_OUT_SYS` | 接 Engine 聚合面系统库 |
 
-- 「本层对外面 = 本层自有面 + 下层对外面」的并入动作，由本层对外接口文件**直接 include 系统层对外接口**完成（纯数据赋值，重复 include 无副作用）；系统层又并入了引擎层对外面，因此接入系统层即同时取得两层公共路径。
+- 「本层对外面 = 本层自有面 + 下层对外面」的并入动作，由本层对外接口文件**直接 include `Engine/cmake/对外接口.cmake`** 完成（纯数据赋值，重复 include 无副作用）；聚合面又并入了 EngineSystem 与 EngineCore 两面，因此接入本层即取得引擎全部公共路径。
+- 本层自有包含目录由**项目根**统一承担（`Application/Test/...` 全路径），该条目已在聚合面首项里，故此处只承接。
 - 备注：`TestCore` 当前只在 `src/` 下有源文件时才产出（`src/` 暂无功能测试源码，尚未产出库）；`EngineTests.exe` 不写进对外面——它是本层运行产物，不是供上层链接的东西。
 
 ### 8.2 接入下层（`cmake/接入下层.cmake`）
 
-本层通过 `cmake/接入下层.cmake` 提供的 `byjy_jieru_xiaceng()` 接入引擎层与系统层。该文件在系统层 / 测试层 / 游戏层三份**逐字节相同**，改动须同步三层。函数签名：
+本层通过 `cmake/接入下层.cmake` 提供的两个函数接入下层：`byjy_jieru_xiaceng(<下层对外接口文件> <对外接口变量前缀> <覆盖库路径变量名>)` 与 `byjy_tou_kuaizhao_gen(<结果变量> <导入目标>)`。该文件在 **EngineSystem / Engine / Test / Game 四份逐字节相同**，改动须同步四处（EngineCore 无下层，无此文件）。
+
+调用方式（本层**只接 Engine 聚合层一次**）：
 
 ```cmake
-byjy_jieru_xiaceng(<下层对外接口文件> <对外接口变量前缀> <覆盖库路径变量名>)
+byjy_jieru_xiaceng("${PROJECT_ROOT_DIR}/../../Engine/cmake/对外接口.cmake" "BYJY_ENGINE" "BYJY_ENGINE_LIB_PATH")
 ```
 
-调用方式（本层接两层）：
-
-```cmake
-byjy_jieru_xiaceng("${PROJECT_ROOT_DIR}/../引擎层/cmake/对外接口.cmake" "BYJY_ENGINE" "BYJY_ENGINE_LIB_PATH")
-byjy_jieru_xiaceng("${PROJECT_ROOT_DIR}/../系统层/cmake/对外接口.cmake" "BYJY_SYSTEM" "BYJY_SYSTEM_LIB_PATH")
-```
+聚合面 `OUT_LIB = "EngineSystem;EngineCore"`，函数会**逐库**定位。
 
 **三级库定位顺序**（任何情况下都不回退编译下层源码）：
 
-1. **覆盖变量优先**：`BYJY_ENGINE_LIB_PATH` / `BYJY_SYSTEM_LIB_PATH` 非空且指向已存在的文件 → 直接使用；非空但文件不存在 → 直接 `FATAL_ERROR`，不静默降级。
-2. **自动探测**：覆盖变量留空 → 扫 `<下层>/out/build/*/lib/<库名>.lib`，多个候选取**时间戳最新**的一份。
-3. **硬失败**：仍找不到 → `FATAL_ERROR`，并给出构建下层的命令。
+1. **覆盖变量优先**：`BYJY_ENGINE_LIB_PATH` 非空（**分号列表**，顺序同 `OUT_LIB`，须与库数等长）且指向已存在的文件 → 直接使用；非空但文件不存在 → 直接 `FATAL_ERROR`，不静默降级。
+2. **自动探测**：覆盖变量留空 → 按 `OUT_LIBDIR` **逐库**扫 `<该库所在层目录>/out/build/*/lib/<库名>.lib`，多个候选取**时间戳最新**的一份。
+3. **硬失败**：仍找不到 → `FATAL_ERROR`，并给出构建相应下层的命令。
 
-定位成功后，以下层声明库名为目标名建立 `IMPORTED STATIC GLOBAL` 静态库，把包含目录 / 编译定义 / 链接库挂到其 `INTERFACE` 上，供本层继续传递。
+定位成功后，以下层声明库名为目标名建立 `IMPORTED STATIC GLOBAL` 静态库（`EngineCore`、`EngineSystem` 两个目标），把包含目录 / 编译定义 / 链接库挂到其 `INTERFACE` 上，供本层继续传递。
 
 ### 8.3 分层契约的硬约束
 
 - 上层**只链接下层已构建的 `.lib`**，绝不通过 `add_subdirectory` 把下层源码拉进本层构建树重复编译。
-- 包含路径沿依赖方向叠加：本层接入两层后自动获得引擎层全部包含路径（`common/` 预编译头、`src/` 头文件、`external/Json`、`external/glfw`、`external/bullet3/src` 等），无需重复声明。
+- 包含路径沿依赖方向叠加：本层接入聚合面后自动获得引擎两层全部包含路径（项目根、`external/Json`、`external/glfw`、`external/bullet3/src`、`external/Sol2/include`、`external/Lua` 等），无需重复声明。
+- 本层编译包含根次序为 `[EngineCore 快照根, EngineSystem 快照根, 项目根]`：前两项由 `byjy_tou_kuaizhao_gen()` 反推并**排在项目根之前**，防止 `Engine/...` 命中源码树、绕过快照。
 
 ---
 
@@ -401,9 +401,10 @@ byjy_jieru_xiaceng("${PROJECT_ROOT_DIR}/../系统层/cmake/对外接口.cmake" "
 
 本层在配置阶段就会定位下层的**已构建静态库**，找不到即硬失败。因此必须**逐层构建**，顺序不能颠倒：
 
-1. 构建引擎层，产出 `引擎层/out/build/<配置>/lib/EngineCore.lib`；
-2. 构建系统层，产出 `系统层/out/build/<配置>/lib/SystemCore.lib`；
-3. 再配置并构建本层。
+1. 构建 EngineCore，产出 `Engine/EngineCore/out/build/<配置>/lib/EngineCore.lib` 与其对外头快照；
+2. 构建 EngineSystem，产出 `Engine/EngineSystem/out/build/<配置>/lib/EngineSystem.lib` 与其对外头快照；
+3. （可选自检）构建 Engine 聚合层，确认两个子层库齐备；
+4. 再配置并构建本层。
 
 ### 9.2 构建命令
 
@@ -415,22 +416,19 @@ cmake -S . -B out/build/x64-Debug -G Ninja
 cmake --build out/build/x64-Debug
 ```
 
-- **配置期须处于 UTF-8 代码页**（先 `chcp 65001`），否则头文件依赖不会被记录（详见顶层 README 的构建说明）。
-- 本层**按下层（引擎层、系统层）的对外头快照编译**，不再实时读取下层源码树：配置期由
-  `byjy_qiehuan_tou_kuaizhao()` 把导入目标的包含目录改指各下层的构建目录头快照
-  （`<下层构建目录>/include`）。因此「改了某个下层的源码头但没重建该层」时本层不会看到新头
-  —— 正是为了避免新头配旧库；要让新头生效，先构建对应下层。快照目录缺失会在配置期直接报错。
-  （当前用例只覆盖引擎层模块，不含系统层头；系统层快照的接线已就位，含系统头的用例将自动生效。）
+- **配置期须处于 UTF-8 代码页**（先进 VS 开发人员环境，再 `chcp 65001`），否则头文件依赖不会被记录；`TMP`/`TEMP` 须为**纯 ASCII** 路径（详见顶层 README 的构建说明）。
+- 本层**按两个下层（EngineCore、EngineSystem）的对外头快照编译**，不再实时读取下层源码树：配置期由 `byjy_tou_kuaizhao_gen()` 反推各下层的快照根（`<下层构建目录>/include`），并把它们列为**本层自身包含目录、排在项目根之前**。因此「改了某个下层的源码头但没重建该层」时本层不会看到新头 —— 正是为了避免新头配旧库；要让新头生效，先构建对应下层。快照目录缺失会在配置期直接报错。
+  （当前用例只覆盖 EngineCore 模块，不含 EngineSystem 头；EngineSystem 快照的接线已就位，含系统头的用例将自动生效。实测 `compile_commands.json` 的 `-I` 次序为 `EngineCore 快照根 → EngineSystem 快照根 → 项目根 → 第三方(Sol2/Lua/Json/glfw/bullet3) → gtest`。）
+- **增删文件自动重配（本版次）**：`src`、`src/单元测试`、`src/主调` 三个 GLOB 基点目录均登记进 `CMAKE_CONFIGURE_DEPENDS`；新增用例文件后**直接构建**即被收编，不必手动重生成缓存。
 - 运行期引擎日志被**屏蔽到文件** `out/引擎运行日志.txt`（由 `src/主调/引擎日志屏蔽.cpp` 把日志根节点
   绑到该文件），从而不与 googletest 的输出混在同一位置；日志系统用例本身要验证「未绑定即走控制台」，
   其夹具会临时关闭屏蔽、用例结束再恢复。
 
-如需跳过自动探测、显式指定下层库路径：
+如需跳过自动探测、显式指定下层库路径（**分号列表，顺序同 `EngineSystem;EngineCore`**）：
 
 ```bash
 cmake -S . -B out/build/x64-Debug -G Ninja \
-      -DBYJY_ENGINE_LIB_PATH=<EngineCore.lib 路径> \
-      -DBYJY_SYSTEM_LIB_PATH=<SystemCore.lib 路径>
+      -DBYJY_ENGINE_LIB_PATH="<EngineSystem.lib 路径>;<EngineCore.lib 路径>"
 ```
 
 在 Visual Studio 中，用「打开本地文件夹」选中层目录，会读取本层 `CMakeSettings.json` 自动生成 `x64-Debug（Ninja）` 配置。
@@ -467,14 +465,14 @@ cmake -S . -B out/build/x64-Debug -G Ninja \
 
 - 四步分流固化：透传 / `off` / `console` / `window` 四条路径与失败降级均已实现并有回归。
 - 过滤串三态压缩与退出等待三参数判定均有专门用例覆盖。
-- 单元测试体系 22 套件 / 349 用例全绿，`ctest` 1/1 通过。
-- 产物落层根目录，资源相对路径解析与游戏层一致。
+- 单元测试体系 27 套件 / 625 用例（619 通过 / 2 跳过 / 4 失败，失败项属 `Config_Loader_Test` 在建功能缺口），`ctest` 1/1 通过。
+- 产物落层根目录，资源相对路径解析与Game 层一致。
 - 层间契约就位：只链接两层已构建静态库，无源码回退路径。
 
 ### 10.2 尚未完成
 
 - `src/` 下功能测试代码（`TestCore` 目标）当前为空，尚未产出 `TestCore.lib`；测试能力集中于单元测试与选择器。
-- 系统层/游戏层的模块尚未被本层用例覆盖（当前用例集中在引擎层核心与系统层工具模块）。
+- Game 层的模块尚未被本层用例覆盖（当前用例集中在EngineCore 层核心与EngineSystem 层工具模块）。
 
 ### 10.3 已知问题
 
@@ -516,10 +514,10 @@ cmake -S . -B out/build/x64-Debug -G Ninja \
 
 - [ ] 补足 `src/` 下的功能测试代码，让 `TestCore` 目标真正产出静态库
 - [ ] 图形选择窗口的鼠标点选交互自动化，把「选择 → 过滤串 → 执行」全链路纳入回归
-- [ ] 扩大用例覆盖面至系统层的实体/属性/效应模块
+- [ ] 扩大用例覆盖面至EngineSystem 层的实体/属性/效应模块
 - [ ] 四叉树超大树上范围查询的专项验证
 - [ ] 过滤串对特殊字符的转义或校验，消除命名相关边界
-- [ ] 为游戏层预留用例接入位（本层已同时接入引擎层与系统层，将来出现系统层/游戏层用例不必再改接入代码）
+- [ ] 为Game 层预留用例接入位（本层已同时接入EngineCore 层与EngineSystem 层，将来出现 Game 层用例不必再改接入代码）
 
 ---
 
@@ -529,13 +527,13 @@ cmake -S . -B out/build/x64-Debug -G Ninja \
 
 | 旧（一体化引擎时期） | 现（分层后） | 说明 |
 | --- | --- | --- |
-| `主调文件/主调文件.cpp`（唯一入口，负责构造核心对象 + 依赖注入装配 + 事件中枢接入） | `测试层/src/主调/主程序.cpp` 等六个文件 | 入口职责被拆到测试层主调；旧文件承担的对象装配职责已移出本层，本层入口只保留进程启动与测试调度 |
-| 旧「启动流程」：构造四个核心对象并注入 `attach_entry` / `event_entry` / `event_set_entry` / `prop_bind_entry` 通道 | 已取消，不再属于本层 | 「依赖注入装配」随分层重构移出测试层 |
+| `主调文件/主调文件.cpp`（唯一入口，负责构造核心对象 + 依赖注入装配 + 事件中枢接入） | `Application/Test/src/主调/主程序.cpp` 等六个文件 | 入口职责被拆到Test 层主调；旧文件承担的对象装配职责已移出本层，本层入口只保留进程启动与测试调度 |
+| 旧「启动流程」：构造四个核心对象并注入 `attach_entry` / `event_entry` / `event_set_entry` / `prop_bind_entry` 通道 | 已取消，不再属于本层 | 「依赖注入装配」随分层重构移出Test 层 |
 | 旧「宿主组合根」与分层宿主（引擎宿主 / 系统宿主 / 全栈宿主） | 已取消 | 宿主把下层源码拉进本层构建树重复编译，与「层间一律链接已构建静态库」的契约冲突；且与测试入口职责重叠，故只保留一个入口 |
 | `TestEngine.exe`（旧引擎测试入口） | `EngineTests.exe` | 改名并升级为全工程唯一可执行文件 |
-| 引擎层 `EngineCore.lib` 与旧测试入口同树构建 | 各自产出静态库，本层只消费 | 层间契约由此确立 |
+| EngineCore 层 `EngineCore.lib` 与旧测试入口同树构建 | 各自产出静态库，本层只消费 | 层间契约由此确立 |
 
-构建脚本中留有明确的旁证注释：本层「过去是宿主产地」，宿主机制取消后，可执行文件只在测试层产生。
+构建脚本中留有明确的旁证注释：本层「过去是宿主产地」，宿主机制取消后，可执行文件只在Test 层产生。
 
 ---
 
