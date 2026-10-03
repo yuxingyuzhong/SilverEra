@@ -1,16 +1,15 @@
-# 白银纪元 · 系统层
+# 白银纪元 · EngineSystem 层
 
-系统层是「白银纪元」四层结构中的**玩法逻辑层**，位于引擎层之上、游戏层之下。它把引擎层提供的
+EngineSystem 是「白银纪元」分层结构中的**玩法逻辑层**，位于 `Engine/EngineCore` 之上、`Application/Game` 之下。它把 EngineCore 提供的
 「对象、事件、数据校验、资源路径」等基础能力，组合成三类游戏要素：**实体（Entity）**、**属性（Prop）**、
-**效应（Effect）**。本层对外产出静态库 `SystemCore.lib`，供游戏层与测试层链接。
+**效应（Effect）**。本层对外产出静态库 `EngineSystem.lib`，经 **Engine 聚合层**（摊平 EngineSystem 与 EngineCore 两面）供 `Application/Game` 与 `Application/Test` 链接。
 
-本层是一个**独立的 git 仓库**，与引擎层、游戏层、测试层在同一目录树下并存（顶层仓库只以「快照」形式
-收录四层目录，不跟踪各层内容）。本层只依赖引擎层，并被游戏层依赖，依赖方向单向；层与层之间**只链接
+本层是一个**独立的 git 仓库**，与 `Engine/EngineCore`、`Application/Game`、`Application/Test` 在同一目录树下并存（四个实体层各自独立仓库，顶层仓库只记录目录指针，**不再做源码快照**）。本层只依赖 EngineCore，并被 `Application/Game` 依赖，依赖方向单向；层与层之间**只链接
 下层已构建好的静态库，绝不回退编译下层源码**。本层**不产出任何可执行文件**：全项目唯一的可执行入口
-由测试层产出。
+由 `Application/Test` 产出。
 
 本层的三大子系统全部由**事件驱动**：模块之间不直接互相持有指针，而是各自持有事件终端（`Event_Terminal`），
-通过引擎层的事件中转器（`Event_Broker`）订阅与发布事件进行协作；实体的行为逻辑与效应的触发逻辑由
+通过 EngineCore 的事件中转器（`Event_Broker`）订阅与发布事件进行协作；实体的行为逻辑与效应的触发逻辑由
 **Lua 脚本**承载，C++ 侧负责生命周期、事件路由与属性槽绑定。
 
 ---
@@ -28,40 +27,42 @@
 | 本地分支与上游分支的关系 | 本地 `main` 跟踪远端 `sliverera/system`（二者名字不同） |
 | 推送命令 | 分支名不一致会被 `push.default=simple` 拦下，须显式推送 `git push sliverera main:system` |
 | 仓库形态 | 本层为独立 git 仓库，`.git` 位于本层目录下 |
-| 最近提交 | `a3a85d4 新增 README：本层自述`（前序：`0e27d7b` 接入层间静态库契约、`0980ab4` 目录迁移落地、`257daf4` 仓库初始提交） |
+| 最近提交 | `52d3704 构建系统适配 Engine 聚合层：目录迁至 Engine/EngineSystem/、产物与目标改名 EngineSystem、接入 EngineCore 接口路径调整、include 全量改写为项目根相对全路径`（前序：`a3a85d4` README、`0e27d7b` 接入层间静态库契约、`0980ab4` 目录迁移落地、`257daf4` 仓库初始提交） |
 
 ### 1.2 本层在依赖链中的位置
 
-「白银纪元」由四层嵌套的独立仓库组成，依赖方向单向：
+「白银纪元」由四个实体层（各自独立仓库）＋ 一个聚合层组成，依赖方向单向：
 
 ```
-引擎层（EngineCore.lib）  ←──  系统层（SystemCore.lib）  ←──  游戏层（GameCore.lib）
-                                         ▲
-                                         │ 横跨各层，链接引擎层 + 系统层
-                                     测试层（EngineTests.exe，全项目唯一可执行文件）
+EngineCore（EngineCore.lib） ──▶ EngineSystem（EngineSystem.lib） ──▶ ┬─▶ Application/Game（GameCore.lib，条件产出）
+                                    ▲                                 └─▶ Application/Test（EngineTests.exe，全项目唯一可执行文件）
+                                    │
+                              Engine（聚合层：摊平 EngineSystem + EngineCore 两面，不产出库）
 ```
 
-- 系统层**只依赖引擎层**；引擎层不反向依赖系统层。游戏层依赖系统层；系统层不反向依赖游戏层。
-- 测试层**横跨**各层，同时接入引擎层与系统层，是全项目唯一产出可执行文件的层。
+- EngineSystem **只依赖 EngineCore**；EngineCore 不反向依赖 EngineSystem。`Application/Game` 依赖本层；本层不反向依赖 Game。
+- `Application/Test` **横跨**引擎两层，经 **Engine 聚合层一次接入**，是全项目唯一产出可执行文件的层。
 - 层与层的交接一律通过「层间静态库契约」完成（见第七节），不通过 `add_subdirectory` 拉入下层源码。
 
 ### 1.3 本层产物
 
 | 目标名 | 类型 | 产物 | 落点 |
 | --- | --- | --- | --- |
-| `SystemCore` | STATIC | `SystemCore.lib` | `系统层/out/build/x64-Debug/lib/SystemCore.lib` |
+| `EngineSystem` | STATIC | `EngineSystem.lib` | `Engine/EngineSystem/out/build/x64-Debug/lib/EngineSystem.lib` |
+| `EngineSystemIncludeSnapshot` | CUSTOM（ALL） | 对外头快照 | `Engine/EngineSystem/out/build/x64-Debug/include/Engine/EngineSystem/**` |
 
 - 本层**不产出任何 `.exe`**；配置编辑器虽带独立 `main()`，但当前未被 CMake 建立为可执行目标（见第十节）。
 - 静态库落点由 `ARCHIVE_OUTPUT_DIRECTORY` 设为构建目录下的 `lib/`；这也是上层 `byjy_jieru_xiaceng()`
-  自动探测时扫描的路径（`<下层>/out/build/*/lib/<库名>.lib`）。
+  自动探测时扫描的路径（`<该库所在层目录>/out/build/*/lib/<库名>.lib`）。
 
-### 1.4 与其余三层的关系
+### 1.4 与其余各层的关系
 
 | 层 | 方向 | 关系 |
 | --- | --- | --- |
-| 引擎层 | 下游（本层依赖它） | 链接其已构建的 `EngineCore.lib`，使用 `Object`、`Object_Pool<T>`、`Event_Terminal`、`Event_Broker`、`detail`（`field_check` / `path_check` / `binary_search` 等）、`Engine_Env`、`Log` 等基础件 |
-| 游戏层 | 上游（依赖本层） | 通过 `BYJY_SYSTEM_OUT_*` 对外面接入 `SystemCore`，创建实体、发事件、触发效应（当前 `src/` 为空壳） |
-| 测试层 | 横跨 | 同时链接 `EngineCore.lib` 与 `SystemCore.lib` 承载单元测试；当前用例集中于引擎层，系统层用例尚未落位 |
+| EngineCore | 下游（本层依赖它） | 链接其已构建的 `EngineCore.lib`，使用 `Object`、`Object_Pool<T>`、`Event_Terminal`、`Event_Broker`、`detail`（`field_check` / `path_check` / `binary_search` 等）、`Engine_Env`、`logger` 等基础件 |
+| Engine（聚合层） | 上游（消费本层对外面） | 本层 `cmake/对外接口.cmake` 被聚合层 `include`，其 `BYJY_ENGINE_SYSTEM_OUT_*` 被摊平为 `BYJY_ENGINE_*` |
+| Application/Game | 上游（依赖本层） | 经 Engine 聚合层接入，取得 `EngineCore` + `EngineSystem` 两个库与全部包含路径（当前 `src/` 为空壳） |
+| Application/Test | 横跨 | 经 Engine 聚合层接入，按两个子层快照编译，承载单元测试；当前用例集中于 EngineCore，本层用例尚未落位 |
 
 ### 1.5 许可证
 
@@ -83,12 +84,12 @@
 
 | 特性 | 说明 |
 | --- | --- |
-| 事件驱动架构 | 三个管理器（`Entity_Manager` / `Prop_Distributor` / `Effect_Manager`）均通过 `Event_Terminal` 接入引擎层 `Event_Broker`，以 `Event` 为唯一协作媒介 |
+| 事件驱动架构 | 三个管理器（`Entity_Manager` / `Prop_Distributor` / `Effect_Manager`）均通过 `Event_Terminal` 接入EngineCore 层 `Event_Broker`，以 `Event` 为唯一协作媒介 |
 | 数据与行为解耦 | 实体持有行为脚本（Lua 决策树）与属性槽**指针**；属性槽本体由 `Prop` 承载、由 `Entity_Manager` 统一管理 |
 | 对象池托管 | `Object_Pool<Entity>`（实体池）与 `Object_Pool<Prop>`（属性槽池）统一分配与回收，两池同 ID 对齐 |
 | Lua 脚本化 | 实体行为、效应逻辑全部由 Lua 脚本承载；Sol2 负责 C++/Lua 桥接，脚本可读写 `pros`、查阅 `event_set`、调用 `send()` |
 | 权限控制 | 事件发送与查阅需 `acl_key`（事件终端生成的权限密钥）；属性槽池借用需 `distribute_key`（64 位随机分发密钥） |
-| 配置驱动 | 实体类型与效应的行为/属性/订阅事件均从 JSON 配置加载，配置字段经引擎层数据校验器校验后注册为加载路径 |
+| 配置驱动 | 实体类型与效应的行为/属性/订阅事件均从 JSON 配置加载，配置字段经EngineCore 层数据校验器校验后注册为加载路径 |
 | 效应分组与优先级 | 效应按归属分组（`Effect_Group`），按执行阶段（`act_phase` 哈希）触发，按优先级（`priority` 降序）排序 |
 
 ---
@@ -100,7 +101,7 @@
 | 项 | 值 |
 | --- | --- |
 | 语言 | C++20（`CMAKE_CXX_STANDARD 20` + `CMAKE_CXX_STANDARD_REQUIRED ON`，`CMAKE_CXX_EXTENSIONS OFF`） |
-| CMake 工程语言 | `project(系统层 LANGUAGES C CXX)`（比引擎层多声明了 C——Lua 源码为 C） |
+| CMake 工程语言 | `project(EngineSystem LANGUAGES C CXX)`（比 EngineCore 多声明了 C —— Lua 源码为 C） |
 | 命名空间 | `engine` |
 | 源码风格 | 中文注释 + 中文类名/文件名（如 `实体.h`、`属性槽分发器.h` 所在的 `Prop_Distributor/` 目录） |
 
@@ -108,19 +109,19 @@
 
 本层 `external/` 下存有多份第三方库副本；其中**只有 Sol2 / Lua 进入对外面**，其余为配置编辑器预留。
 
-| 库 | 用途 | 在本层的位置 | 是否进 `SystemCore` |
+| 库 | 用途 | 在本层的位置 | 是否进 `EngineSystem` |
 | --- | --- | --- | --- |
 | [Sol2](https://github.com/ThePhD/sol2) | C++ ↔ Lua 绑定层 | `external/Sol2/include` | 是（公共头暴露 `LuaState`，必须进对外包含目录） |
 | [Lua](https://www.lua.org/) | 脚本语言运行时 | `external/Lua` | 是（Sol2 依赖的 Lua 解释器头） |
 | [Dear ImGui](https://github.com/ocornut/imgui) | 即时模式 GUI | `external/Dear_ImGui`（imgui + backends） | 否（配置编辑器专用，当前被 CMake 排除） |
 | [glad](https://glad.dav1d.de/) | OpenGL 函数加载 | `external/glad` | 否（同上） |
-| [GLFW](https://www.glfw.org/) | 窗口与输入 | `external/glfw`（含 `glfw3.h`、`glfw3.lib`） | 否（由引擎层对外面提供同一份能力） |
-| [glm](https://github.com/g-truc/glm) | 数学库 | `external/glm` | 否（由引擎层对外面提供） |
+| [GLFW](https://www.glfw.org/) | 窗口与输入 | `external/glfw`（含 `glfw3.h`、`glfw3.lib`） | 否（由EngineCore 层对外面提供同一份能力） |
+| [glm](https://github.com/g-truc/glm) | 数学库 | `external/glm` | 否（由EngineCore 层对外面提供） |
 | [stb](https://github.com/nothings/stb) | 单头文件图像库 | `external/stb`（`stb_image.h`） | 否（仅配置编辑器直接引用） |
 
-> 本层 `common/前置头文件包含.h` 是系统层专有的预编译头：先整体包含引擎层的 `common/前置头文件包含.h`
-> （标准库 + `nlohmann/json` + GLFW + Windows 头），再补上 `<sol/sol.hpp>`。因为 Sol2 已由引擎层搬到系统层，
-> 引擎层那份预编译头里没有它。
+> 本层 `common/前置头文件包含.h` 是EngineSystem 层专有的预编译头：先整体包含EngineCore 层的 `common/前置头文件包含.h`
+> （标准库 + `nlohmann/json` + GLFW + Windows 头），再补上 `<sol/sol.hpp>`。因为 Sol2 已由EngineCore 层搬到EngineSystem 层，
+> EngineCore 层那份预编译头里没有它。
 
 ### 3.3 构建工具链
 
@@ -140,16 +141,16 @@
 以下为到模块一级的真实目录树（省略 `out/`、`.vs/`、`.git/` 等构建与工具产物）：
 
 ```
-系统层/
-├── CMakeLists.txt                    # 构建脚本：产出 SystemCore 静态库
+Engine/EngineSystem/
+├── CMakeLists.txt                    # 构建脚本：产出 EngineSystem 静态库
 ├── CMakeSettings.json                # VS 配置（x64-Debug / Ninja）
 ├── README.md                         # 本文档
 ├── .gitignore                        # 忽略 out/、构建产物、.vs/、.cyrene/ 等
 ├── cmake/
-│   ├── 对外接口.cmake                # 本层对外面自描述（并入引擎层对外面）
-│   └── 接入下层.cmake                # 通用接入函数 byjy_jieru_xiaceng()（三份逐字节相同之一）
+│   ├── 对外接口.cmake                # 本层对外面自描述（并入 EngineCore 对外面）
+│   └── 接入下层.cmake                # 通用接入函数 byjy_jieru_xiaceng() + 头快照函数 byjy_tou_kuaizhao_gen()（四份逐字节相同之一）
 ├── common/
-│   ├── 前置头文件包含.h              # 系统层预编译头（引擎层预编译头 + sol/sol.hpp）
+│   ├── 前置头文件包含.h              # EngineSystem 层预编译头（EngineCore 层预编译头 + sol/sol.hpp）
 │   └── external/Sol2/
 │       ├── sol类型别名.h             # LuaTable / LuaScript / LuaState 别名
 │       └── sol类型注册.h             # JSON ↔ Lua 表互转（json_to_table / table_to_json）
@@ -174,7 +175,7 @@
 
 **模块目录通行布局**：每个类一个 `<类名>.h` + 一个 `core/<类名>.cpp`（`Prop` 例外，纯头文件内联；
 `Entity_Manager` 按职责拆成 4 个 `.cpp`）。`.cpp` 首行 `#include "../局部命名空间使用.h"`，
-第二行 `#include "src/tools/Logging/日志系统.h"`。
+第二行 `#include "Engine/EngineCore/src/tools/Logging/日志系统运行包.h"`。
 
 ---
 
@@ -187,7 +188,7 @@
   │  ① event_terminal->event_receiver_register(λ(evt){ event_process(evt); })
   │  ② event_terminal.attach("<模块名>", needed_events, acl_key)
   ▼
-Event_Broker（引擎层中转站）——按订阅集合把事件路由给各模块的 event_process
+Event_Broker（EngineCore 层中转站）——按订阅集合把事件路由给各模块的 event_process
   ▼
 event_process(evt) —— 按 category/tag 分派到具体业务函数
 ```
@@ -198,7 +199,7 @@ event_process(evt) —— 按 category/tag 分派到具体业务函数
 | `Prop_Distributor` | `"Prop_Distributor"` | 空 `{}` | `category=="Key"` → 取分发密钥 |
 | `Effect_Manager` | `"Effect_Manager"` | 4 类固定事件 | `category=="Effect"` 按 tag：Build / Unload / Act / 其他（定向） |
 
-### 5.2 系统层启动时序（准备期 → 配置期 → 运行期）
+### 5.2 EngineSystem 层启动时序（准备期 → 配置期 → 运行期）
 
 ```
 准备期（C++ 侧装配）
@@ -240,10 +241,10 @@ Effect/Unload → 组内唯一则删组，否则通知组内并摘出 → effect
 
 ### 6.1 实体 `Entity`（`src/entity/Entity/实体.h`）
 
-**功能**：可被 Lua 脚本驱动的活动对象。它继承引擎层 `Object`（提供 `object_ID`、`is_valid`、
+**功能**：可被 Lua 脚本驱动的活动对象。它继承EngineCore 层 `Object`（提供 `object_ID`、`is_valid`、
 `ID()` / `ID_set()` / `valid()` / `valid_set()`），持有事件终端、属性槽指针与行为脚本运行时。
 
-> 注意：基类 `Object` **属于引擎层**（`src/core/object/Object/对象.h`），不在系统层；系统层只是继承它。
+> 注意：基类 `Object` **属于EngineCore 层**（`src/core/object/Object/对象.h`），不在EngineSystem 层；EngineSystem 层只是继承它。
 
 **对外接口**（关键签名）：
 
@@ -472,73 +473,74 @@ public:
 
 ### 7.1 `cmake/对外接口.cmake`——本层对外面自描述
 
-本层对外面 = **本层自有面 + 下层（引擎层）对外面**，通过首行 `include` 并入引擎层的 `BYJY_ENGINE_OUT_*`：
+本层对外面 = **本层自有面 + 下层（EngineCore）对外面**，通过首行 `include` 并入 EngineCore 的 `BYJY_ENGINE_CORE_OUT_*`：
 
 ```cmake
-include("${CMAKE_CURRENT_LIST_DIR}/../../引擎层/cmake/对外接口.cmake")
-get_filename_component(BYJY_SYSTEM_ROOT "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
+include("${CMAKE_CURRENT_LIST_DIR}/../../EngineCore/cmake/对外接口.cmake")
+get_filename_component(BYJY_ENGINE_SYSTEM_ROOT "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
 
-set(BYJY_SYSTEM_OUT_LIB "SystemCore")
-set(BYJY_SYSTEM_OUT_INC
-    "${BYJY_SYSTEM_ROOT}"
-    "${BYJY_SYSTEM_ROOT}/src"
-    "${BYJY_SYSTEM_ROOT}/external/Sol2/include"
-    "${BYJY_SYSTEM_ROOT}/external/Lua"
-    ${BYJY_ENGINE_OUT_INC}
+set(BYJY_ENGINE_SYSTEM_OUT_LIB "EngineSystem")
+set(BYJY_ENGINE_SYSTEM_OUT_LIBDIR "${BYJY_ENGINE_SYSTEM_ROOT}")
+set(BYJY_ENGINE_SYSTEM_OUT_INC
+    "${BYJY_ENGINE_SYSTEM_ROOT}/external/Sol2/include"
+    "${BYJY_ENGINE_SYSTEM_ROOT}/external/Lua"
+    ${BYJY_ENGINE_CORE_OUT_INC}
 )
-set(BYJY_SYSTEM_OUT_DEF  ${BYJY_ENGINE_OUT_DEF})
-set(BYJY_SYSTEM_OUT_LINK ${BYJY_ENGINE_OUT_LINK})
-set(BYJY_SYSTEM_OUT_SYS  ${BYJY_ENGINE_OUT_SYS})
+set(BYJY_ENGINE_SYSTEM_OUT_DEF  ${BYJY_ENGINE_CORE_OUT_DEF})
+set(BYJY_ENGINE_SYSTEM_OUT_LINK ${BYJY_ENGINE_CORE_OUT_LINK})
+set(BYJY_ENGINE_SYSTEM_OUT_SYS  ${BYJY_ENGINE_CORE_OUT_SYS})
 ```
 
-五个契约变量取值与含义（变量名与含义是层间契约的一部分，改名必须同步上层）：
+六个契约变量取值与含义（变量名与含义是层间契约的一部分，改名必须同步上层）：
 
 | 变量 | 取值 | 含义 |
 | --- | --- | --- |
-| `BYJY_SYSTEM_OUT_LIB` | `SystemCore` | 本层静态库文件名（不含扩展名） |
-| `BYJY_SYSTEM_OUT_INC` | 本层根目录、`src/`、`external/Sol2/include`、`external/Lua`，再接引擎层包含目录 | 使用本层公共头文件所需的包含目录 |
-| `BYJY_SYSTEM_OUT_DEF` | 承自引擎层（`GLFW_STATIC`） | 使用本层公共头文件所需的编译定义 |
-| `BYJY_SYSTEM_OUT_LINK` | 承自引擎层（`.../glfw/glfw3.lib`） | 本层对外传递的第三方库 |
-| `BYJY_SYSTEM_OUT_SYS` | 承自引擎层（`opengl32;user32;gdi32;shell32`） | 本层对外传递的系统库 |
+| `BYJY_ENGINE_SYSTEM_OUT_LIB` | `EngineSystem` | 本层静态库名（`OUT_LIB` 自本版次起为**分号列表**形态，本层仍单元素） |
+| `BYJY_ENGINE_SYSTEM_OUT_LIBDIR` | `Engine/EngineSystem`（本层根） | 与 `OUT_LIB` 一一对应的「该库所在层目录」，供上层自动探测（**本版次新增**） |
+| `BYJY_ENGINE_SYSTEM_OUT_INC` | `external/Sol2/include`、`external/Lua`，再接 EngineCore 对外面（其首项为**项目根**） | 使用本层公共头文件所需的包含目录 |
+| `BYJY_ENGINE_SYSTEM_OUT_DEF` | 承自 EngineCore（`GLFW_STATIC`） | 使用本层公共头文件所需的编译定义 |
+| `BYJY_ENGINE_SYSTEM_OUT_LINK` | 承自 EngineCore（`.../glfw/glfw3.lib`） | 本层对外传递的第三方库 |
+| `BYJY_ENGINE_SYSTEM_OUT_SYS` | 承自 EngineCore（`opengl32;user32;gdi32;shell32`） | 本层对外传递的系统库 |
 
-**为什么 Sol2 / Lua 路径必须进对外包含目录**：本层公共头文件 `src/entity/Entity/实体.h` 与
-`src/effect/Effect/效应.h` 对外暴露 `LuaState`（= `sol::state`），`common/external/Sol2/` 下的包装头也直接
-使用 `sol::` 类型；「使用本层公共头文件」必然要解析 `LuaState`，故这两条路径是硬性要求。`SystemCore`
+> **本层不再声明自身层根与 `src/` 两个包含目录**（本版次起）：项目内部一律写「项目根相对全路径」（`Engine/EngineSystem/src/...`），由 EngineCore 对外面首项「项目根」统一解析。
+
+**为什么 Sol2 / Lua 路径必须进对外包含目录**：本层公共头文件 `Engine/EngineSystem/src/entity/Entity/实体.h` 与
+`Engine/EngineSystem/src/effect/Effect/效应.h` 对外暴露 `LuaState`（= `sol::state`），`Engine/EngineSystem/common/external/Sol2/` 下的包装头也直接
+使用 `sol::` 类型；「使用本层公共头文件」必然要解析 `LuaState`，故这两条路径是硬性要求。`EngineSystem`
 自身编译用的是同一份声明。
 
-**未列入的第三方目录**：本层 `external/` 下的 Dear_ImGui、glad、glfw、glm、stb 目前不被 `SystemCore`
+**未列入的第三方目录**：本层 `external/` 下的 Dear_ImGui、glad、glfw、glm、stb 目前不被 `EngineSystem`
 源文件直接引用（唯一直接引用 `stb_image.h` 的 `src/gui/Config_Editor/` 含独立 `main()`，已排除在静态库之外；
-glfw / glm 由引擎层对外面提供同一份能力）。将来把配置编辑器接进来时需要一起补上其包含路径。
+glfw / glm 由EngineCore 层对外面提供同一份能力）。将来把配置编辑器接进来时需要一起补上其包含路径。
 
 ### 7.2 `cmake/接入下层.cmake`——通用接入函数
 
-提供函数 `byjy_jieru_xiaceng(<下层对外接口文件> <变量前缀> <覆盖库路径变量名>)`，把**下层已构建好的静态库**
-接进当前层。本层调用：
+提供两个函数：`byjy_jieru_xiaceng(<下层对外接口文件> <变量前缀> <覆盖库路径变量名>)` 把**下层已构建好的静态库**接进当前层；`byjy_tou_kuaizhao_gen(<结果变量> <导入目标>)` 由导入目标反推下层的**头快照根**。本层调用：
 
 ```cmake
 byjy_jieru_xiaceng(
-    "${PROJECT_ROOT_DIR}/../引擎层/cmake/对外接口.cmake"
-    "BYJY_ENGINE"
-    "BYJY_ENGINE_LIB_PATH"
+    "${PROJECT_ROOT_DIR}/../EngineCore/cmake/对外接口.cmake"
+    "BYJY_ENGINE_CORE"
+    "BYJY_ENGINE_CORE_LIB_PATH"
 )
 ```
 
 **库定位三级策略**（任何情况下都不回退编译下层源码）：
 
-1. **覆盖变量优先**：`BYJY_ENGINE_LIB_PATH` 非空且文件存在 → 用它；非空但不存在 → `FATAL_ERROR`，不静默降级。
-2. **自动探测**：覆盖变量为空 → 扫 `引擎层/out/build/*/lib/EngineCore.lib`，多个候选取时间戳最新的一份。
+1. **覆盖变量优先**：`BYJY_ENGINE_CORE_LIB_PATH` 非空且文件存在 → 用它；非空但不存在 → `FATAL_ERROR`，不静默降级。
+2. **自动探测**：覆盖变量为空 → 扫 `Engine/EngineCore/out/build/*/lib/EngineCore.lib`，多个候选取时间戳最新的一份。
 3. **硬失败**：仍无 → `FATAL_ERROR`，并给出先构建下层的命令。
 
 随后以下层库名为目标名建立 `IMPORTED STATIC GLOBAL` 目标（目标名即 `EngineCore`），把包含目录 / 编译定义 /
-链接库挂到其 `INTERFACE` 属性上，供本层向上继续传递。本文件在本层 / 测试层 / 游戏层各一份，**逐字节相同**，
-改动需同步三层。
+链接库挂到其 `INTERFACE` 属性上，供本层向上继续传递。本文件在本层 / **Engine 聚合层** / Test / Game 各一份，
+**四份逐字节相同**，改动需同步四处（EngineCore 无下层，故无此文件）。
 
 ### 7.3 覆盖变量
 
 | 变量 | 归属 | 类型 | 默认 | 说明 |
 | --- | --- | --- | --- | --- |
-| `BYJY_ENGINE_LIB_PATH` | 本层（消费方，定位引擎层库） | `FILEPATH` | `""` | 引擎层静态库路径覆盖；留空则自动探测 |
-| `BYJY_SYSTEM_LIB_PATH` | 上层（游戏层 / 测试层，消费方，定位本层库） | `FILEPATH` | `""` | 系统层静态库路径覆盖；本层作为提供方对应的覆盖变量 |
+| `BYJY_ENGINE_CORE_LIB_PATH` | 本层（消费方，定位 EngineCore 库） | `FILEPATH` | `""` | EngineCore 静态库路径覆盖；留空则自动探测 `Engine/EngineCore/out/build/*/lib/EngineCore.lib` |
+| `BYJY_ENGINE_LIB_PATH` | 上层（Engine 聚合层 / Test / Game，消费方，定位引擎两个库） | `STRING` | `""` | **分号列表**，顺序同 `OUT_LIB`（`EngineSystem;EngineCore`）；一经非空须与库数**等长**，不再自动探测 |
 
 ---
 
@@ -546,38 +548,39 @@ byjy_jieru_xiaceng(
 
 ### 8.1 前置条件
 
-**必须先构建引擎层**（产出 `EngineCore.lib`），本层链接的是已构建的引擎层静态库：
+**必须先构建 EngineCore**（产出 `EngineCore.lib` 与其对外头快照），本层链接的是已构建的 EngineCore 静态库：
 
 ```bash
-cmake -S 引擎层 -B 引擎层/out/build/x64-Debug -G Ninja
-cmake --build 引擎层/out/build/x64-Debug
+cmake -S Engine/EngineCore -B Engine/EngineCore/out/build/x64-Debug -G Ninja
+cmake --build Engine/EngineCore/out/build/x64-Debug
 ```
 
 ### 8.2 构建本层
 
 ```bash
-cmake -S 系统层 -B 系统层/out/build/x64-Debug -G Ninja
-cmake --build 系统层/out/build/x64-Debug
+cmake -S Engine/EngineSystem -B Engine/EngineSystem/out/build/x64-Debug -G Ninja
+cmake --build Engine/EngineSystem/out/build/x64-Debug
 ```
 
-- **配置期须处于 UTF-8 代码页**（先 `chcp 65001`），否则头文件依赖不会被记录，改头文件永不触发重编（详见顶层 README 的构建说明）。
-- 本层**按引擎层的对外头快照编译**，不再实时读取引擎层源码树：配置期由 `byjy_kuaizhao_lujing()` 把对外包含目录中位于引擎层源码树下的条目改指 `<引擎构建目录>/include`，并同步切换 `EngineCore` 导入面。因此「改了引擎层源码头但没重建引擎层」时本层不会看到新头（正是为了避免新头配旧库）；要让新头生效，先构建引擎层。引擎层快照缺失会在配置期直接 `FATAL_ERROR`。
-- 本层同时向 `<本层构建目录>/include` **导出自身的对外头快照**（`SystemIncludeSnapshot` 常驻目标，镜像 `common`、`src`、`external/Sol2/include`、`external/Lua`），供测试层按「与 `SystemCore.lib` 同版次」的头编译。
+- **配置期须处于 UTF-8 代码页**（先进 VS 开发人员环境，再 `chcp 65001`），否则头文件依赖不会被记录，改头文件永不触发重编；`TMP`/`TEMP` 须为**纯 ASCII** 路径（详见顶层 README 的构建说明）。
+- 本层**按 EngineCore 的对外头快照编译**，不再实时读取 EngineCore 源码树：配置期由 `byjy_tou_kuaizhao_gen(BYJY_ENGINE_CORE_SNAPSHOT EngineCore)` 反推 `<EngineCore 构建目录>/include`，并把它作为**本层自身包含目录**、排在项目根**之前**（否则 `Engine/...` 会命中源码树、快照被旁路）。因此「改了 EngineCore 源码头但没重建 EngineCore」时本层不会看到新头（正是为了避免新头配旧库）；要让新头生效，先构建 EngineCore。EngineCore 快照缺失会在配置期直接 `FATAL_ERROR`。
+- 本层同时向 `<本层构建目录>/include` **导出自身的对外头快照**（`EngineSystemIncludeSnapshot` 常驻目标，镜像 `Engine/EngineSystem/common` 与 `Engine/EngineSystem/src`；第三方头不经快照），供上层按「与 `EngineSystem.lib` 同版次」的头编译。
 
 - 源文件由 `GLOB_RECURSE ... CONFIGURE_DEPENDS` 自动收集 `src/entity/`、`src/prop/`、`src/effect/` 下的
   `.cpp` / `.c`，并依次排除：① 构建目录下的文件；② `Tests/` 目录；③ `src/gui/Config_Editor/`（含独立 `main()`）。
+- **增删文件自动重配（本版次）**：`src/entity`、`src/prop`、`src/effect` 三个 GLOB 基点目录均登记进 `CMAKE_CONFIGURE_DEPENDS`；增删文件后**直接构建**即自动重配并重扫，不必手动「重新生成缓存」。
 - 若收集结果为空，`CMakeLists.txt` 以 `FATAL_ERROR` 报错终止。
-- `SystemCore` 的 **PUBLIC 面直接取自 `cmake/对外接口.cmake`**（唯一真源），使包含目录/编译定义/链接库
+- `EngineSystem` 的 **PUBLIC 面直接取自 `cmake/对外接口.cmake`**（唯一真源），使包含目录/编译定义/链接库
   漏写或写错在构建期立刻暴露。
-- 链接面：`target_link_libraries(SystemCore PUBLIC EngineCore ${BYJY_SYSTEM_OUT_LINK} ${BYJY_SYSTEM_OUT_SYS})`。
-- 若引擎层库缺失，配置期即报 `接入下层：找不到 引擎层 的静态库 EngineCore.lib`，并按提示给出构建命令。
-  可用 `-DBYJY_ENGINE_LIB_PATH=<绝对路径>` 显式指定；一旦非空即不再自动探测。
+- 链接面：`target_link_libraries(EngineSystem PUBLIC EngineCore ${BYJY_ENGINE_SYSTEM_OUT_LINK} ${BYJY_ENGINE_SYSTEM_OUT_SYS})`。
+- 若 EngineCore 库缺失，配置期即报 `接入下层：找不到 EngineCore 的静态库 EngineCore.lib`，并按提示给出构建命令。
+  可用 `-DBYJY_ENGINE_CORE_LIB_PATH=<绝对路径>` 显式指定；一旦非空即不再自动探测。
 
 ### 8.3 产物
 
 | 产物 | 落点 |
 | --- | --- |
-| `SystemCore.lib` | `系统层/out/build/x64-Debug/lib/SystemCore.lib` |
+| `EngineSystem.lib` | `Engine/EngineSystem/out/build/x64-Debug/lib/EngineSystem.lib` |
 
 ---
 
@@ -590,8 +593,8 @@ cmake --build 系统层/out/build/x64-Debug
 | `sol类型别名.h` | 在 `engine` 命名空间内定义别名：`LuaTable = sol::table`、`LuaScript = sol::function`、`LuaState = sol::state` |
 | `sol类型注册.h` | JSON ↔ Lua 表互转：`json_to_table(lua, json)` 把 `nlohmann::json` 递归转成 `sol::table`；`table_to_json(lua, table, empty_as_array)` 反向转换（识别整数连续键为数组） |
 
-- 两个头文件均只 `#include "common/前置头文件包含.h"` 后直接使用 `sol::` 类型，因此「谁提供 Sol2」由
-  系统层预编译头兜住。
+- 两个头文件均只 `#include "Engine/EngineCore/common/前置头文件包含.h"` 后直接使用 `sol::` 类型，因此「谁提供 Sol2」由
+  EngineSystem 层预编译头兜住。
 - 原 `register_event`（把 C++ 的 `Event` 类型注册到 Lua）已从 `sol类型注册.h` 移除，`实体.cpp` 与
   `效应.cpp` 中留有 TODO 注释——脚本当前无法直接构造 `Event` 对象，只能通过 `send` 接收已构造的
   `shared_ptr<Event>`。
@@ -628,7 +631,7 @@ cmake --build 系统层/out/build/x64-Debug
 - 属性名使用**小写下划线**命名（如 `max_hp`、`attack_power`）；所有属性值为 `double`。
 - 状态类属性约定为 `state_*` 前缀（如 `state_giddy`、`state_frozen`），数值表示剩余持续时间。
 
-> 说明：具体的实体类型配置 JSON、属性槽初始化脚本与行为脚本属于**上层（游戏层）的资源**，不在本层目录内；
+> 说明：具体的实体类型配置 JSON、属性槽初始化脚本与行为脚本属于**上层（Game 层）的资源**，不在本层目录内；
 > 本层只提供「配置驱动的加载路径注册」与「脚本运行时符号暴露」这套机制。
 
 ---
@@ -637,11 +640,11 @@ cmake --build 系统层/out/build/x64-Debug
 
 ### 10.1 现状
 
-`src/gui/Config_Editor/` 是一套完整的 ImGui 配置编辑器（由引擎层迁入本层），当前**含独立 `main()`、未接入构建**。
+`src/gui/Config_Editor/` 是一套完整的 ImGui 配置编辑器（由EngineCore 层迁入本层），当前**含独立 `main()`、未接入构建**。
 
 - 入口：`core/配置编辑器主程序.cpp` 第 49 行 `int main(void)`——初始化 GLFW 窗口 + OpenGL 上下文 →
   初始化 Dear ImGui（GLFW + OpenGL3 后端）→ 载入中文字体与粉色主题 → 运行主循环并驱动编辑器界面。
-  含独立 `main` 是其与静态库/测试层入口互斥的原因。
+  含独立 `main` 是其与静态库/Test 层入口互斥的原因。
 - 模块：`配置编辑器.cpp`（主窗口 / 主界面 / 实体面板 / 模块面板 / 格式管理 / 保存 / 图片 / 内部工具 / 视觉）、
   `实体配置模型_*.cpp`（实体 / 属性槽 / 格式 / 通用配置 / 图片 / 内部工具）。
 - 依赖：Dear_ImGui、glad、stb_image（本层 `external/` 下副本）。
@@ -651,11 +654,11 @@ cmake --build 系统层/out/build/x64-Debug
 ### 10.2 构建状态与接入缺口
 
 `CMakeLists.txt` 的过滤规则 `list(FILTER SYSTEM_SOURCES EXCLUDE REGEX "/src/gui/Config_Editor/")` 将其整体
-排除在 `SystemCore` 之外；**没有为其建立独立 `add_executable`**，因此本层当前不产出 `ConfigEditor.exe`。
+排除在 `EngineSystem` 之外；**没有为其建立独立 `add_executable`**，因此本层当前不产出 `ConfigEditor.exe`。
 接入时需要补齐：
 
-1. 在 `系统层/CMakeLists.txt` 追加 `add_executable` 并链接 `SystemCore`；
-2. 把 `系统层/external/` 下 Dear_ImGui、glad、glfw、glm、stb 对应的包含路径补进 `cmake/对外接口.cmake`；
+1. 在 `Engine/EngineSystem/CMakeLists.txt` 追加 `add_executable` 并链接 `EngineSystem`；
+2. 把 `Engine/EngineSystem/external/` 下 Dear_ImGui、glad、glfw、glm、stb 对应的包含路径补进 `cmake/对外接口.cmake`；
 3. 处理 `main()` 与其它入口的互斥关系。
 
 ---
@@ -664,8 +667,8 @@ cmake --build 系统层/out/build/x64-Debug
 
 ### 11.1 已完成
 
-- 已接入层间静态库契约（`对外接口.cmake` + `接入下层.cmake`），可独立配置并构建出 `SystemCore.lib`。
-- 实体、属性、效应三模块的全部源码已纳入 `SystemCore` 编译（`src/entity/`、`src/prop/`、`src/effect/`）。
+- 已接入层间静态库契约（`对外接口.cmake` + `接入下层.cmake`），可独立配置并构建出 `EngineSystem.lib`。
+- 实体、属性、效应三模块的全部源码已纳入 `EngineSystem` 编译（`src/entity/`、`src/prop/`、`src/effect/`）。
 - 三个管理器的事件接入与分派骨架完整：`Entity_Manager`（动态订阅）、`Prop_Distributor`（Key 事件）、
   `Effect_Manager`（4 类固定事件）。
 - Lua 绑定层（Sol2 别名与 JSON 互转）与实体/效应两级的脚本运行时符号暴露已就位。
@@ -673,7 +676,7 @@ cmake --build 系统层/out/build/x64-Debug
 ### 11.2 尚未完成
 
 - 配置编辑器未接入构建（见第十节）。
-- 本层当前无独立用例；单元测试由测试层承载（链接本层已构建的静态库），系统层用例尚未落位。
+- 本层当前无独立用例；单元测试由Test 层承载（链接本层已构建的静态库），EngineSystem 层用例尚未落位。
 - `register_event`（C++ 事件类型注册到 Lua）已移除，脚本尚不能直接构造事件对象。
 
 ### 11.3 已知问题
@@ -689,7 +692,7 @@ cmake --build 系统层/out/build/x64-Debug
 | 7 | `core/效应管理器.cpp` `event_process`(Build) | `optional<uint64_t> effect_ID = effect_build(evt)` 返回值被丢弃，调用方拿不到新效应 ID |
 | 8 | `效应管理器.h` `Effect_Group.effects` | 存的是**裸指针**；`effect_set.build()` 触发 `std::vector` 扩容会使旧 `Effect_Record` 地址失效，分组内指针可能悬垂 |
 | 9 | `core/属性槽分发器.cpp` vs `core/属性槽处理.cpp` | 发送端 `Entity_Manager` 构造的事件 tag 为 `"Distribute"`，接收端 `Prop_Distributor` 判断的是 `tag == "Distributor"`，**两者不一致**，密钥事件可能无法被接收 |
-| 10 | 4 个头文件的 include | **已关闭**：`实体管理器.h`、`属性槽分发器.h`、`效应.h`、`效应管理器.h` 的 include 已随引擎层工具重组改为 `src/tools/Detail/package/数据校验工具.h` 与 `src/tools/Detail/二分查找.h`，源码内 `field_check<T>` / `path_check` / `binary_search` 调用点已全部改为 `engine::detail::` 命名空间自由函数（其中 `binary_search` 语义由「返回 `-1`」改为返回 `std::optional`，未命中为 `std::nullopt`） |
+| 10 | 4 个头文件的 include | **已关闭**：`实体管理器.h`、`属性槽分发器.h`、`效应.h`、`效应管理器.h` 的 include 已随EngineCore 层工具重组改为 `src/tools/Detail/package/数据校验工具.h` 与 `src/tools/Detail/二分查找.h`，源码内 `field_check<T>` / `path_check` / `binary_search` 调用点已全部改为 `engine::detail::` 命名空间自由函数（其中 `binary_search` 语义由「返回 `-1`」改为返回 `std::optional`，未命中为 `std::nullopt`） |
 
 > 提示：上表第 1～5 项是**代码行为事实**（逐行核对源码得出），不代表模块设计意图；重开发时应以「设计意图」为准修复。
 
@@ -740,7 +743,7 @@ cmake --build 系统层/out/build/x64-Debug
 - [ ] 治理效应分组裸指针悬垂：`Effect_Group.effects` 改存 ID / 索引
 - [ ] 按 TODO 补回 `register_event`（C++ 事件类型注册到 Lua）
 - [ ] 接入配置编辑器：在 `CMakeLists.txt` 追加 `add_executable`，并在对外面补 ImGui / stb 包含路径
-- [ ] 在测试层补齐系统层单元测试用例
+- [ ] 在Test 层补齐EngineSystem 层单元测试用例
 
 ---
 
@@ -750,17 +753,17 @@ cmake --build 系统层/out/build/x64-Debug
 
 | 旧名 / 旧位置 | 现名 / 现归属 | 说明 |
 | --- | --- | --- |
-| `src/core/entity/Entity/` | `系统层/src/entity/Entity/` | 实体迁入系统层 |
-| `src/core/entity/Entity_Manager/` | `系统层/src/entity/Entity_Manager/` | 实体管理器迁入系统层 |
-| `common/types/对象类型.h` 中的 `Prop` | `系统层/src/prop/Prop/属性.h` | 属性槽从类型定义独立为模块 |
-| `Property_Manager` | `Prop_Distributor`（`系统层/src/prop/Prop_Distributor/`） | 属性槽分发器更名；上层资源中仍保留旧名 `Property_Manager` 命名的格式文件 |
-| `src/core/effect/`（后移出为 `排除编译代码/effect/`） | `系统层/src/effect/` | 效应系统曾一度移出源码树不参与编译，本次已回归本层 |
-| `src/tools/GUI/Config_Editor/` | `系统层/src/gui/Config_Editor/` | 配置编辑器迁入系统层（仍未接入构建） |
-| `common/external/Sol2/`、`external/Sol2`、`external/Lua` | `系统层/common/external/Sol2/`、`系统层/external/Sol2`、`系统层/external/Lua` | Sol2 / Lua 由引擎层搬到系统层（因公共头暴露 `LuaState`） |
-| `src/tools/Config_Checker/配置检查器.h`（类 `Config_Checker`） | 引擎层 `src/tools/Detail/package/数据校验工具.h`（命名空间 `engine::detail` 自由函数 `field_check` / `path_check`） | 引擎层先更名 `Data_Validator`，后于工具重组中改为 `Detail` 命名空间自由函数（目录 `Config_Checker`、`Data_Validator` 均已不存在）；本层 4 个头文件与调用点已同步 |
-| `src/core/event/`、`src/core/object/`、`src/core/space/`、`src/core/collision/`、其余工具 | 引擎层 | 事件、对象、空间、碰撞与其余工具均属引擎层，不在本层 |
-| 实体/属性配置 JSON 与初始化、行为 Lua 脚本 | 游戏层 `assets/` | 属上层运行时资源 |
-| 旧仓库的 `TestEngine.exe` / `ConfigEditor.exe` 双可执行目标 | 可执行文件统一由测试层产出 | 层级契约改为「各层只产出静态库，只有测试层产出可执行文件」 |
+| `src/core/entity/Entity/` | `Engine/EngineSystem/src/entity/Entity/` | 实体迁入EngineSystem 层 |
+| `src/core/entity/Entity_Manager/` | `Engine/EngineSystem/src/entity/Entity_Manager/` | 实体管理器迁入EngineSystem 层 |
+| `common/types/对象类型.h` 中的 `Prop` | `Engine/EngineSystem/src/prop/Prop/属性.h` | 属性槽从类型定义独立为模块 |
+| `Property_Manager` | `Prop_Distributor`（`Engine/EngineSystem/src/prop/Prop_Distributor/`） | 属性槽分发器更名；上层资源中仍保留旧名 `Property_Manager` 命名的格式文件 |
+| `src/core/effect/`（后移出为 `排除编译代码/effect/`） | `Engine/EngineSystem/src/effect/` | 效应系统曾一度移出源码树不参与编译，本次已回归本层 |
+| `src/tools/GUI/Config_Editor/` | `Engine/EngineSystem/src/gui/Config_Editor/` | 配置编辑器迁入EngineSystem 层（仍未接入构建） |
+| `common/external/Sol2/`、`external/Sol2`、`external/Lua` | `Engine/EngineSystem/common/external/Sol2/`、`Engine/EngineSystem/external/Sol2`、`Engine/EngineSystem/external/Lua` | Sol2 / Lua 由EngineCore 层搬到EngineSystem 层（因公共头暴露 `LuaState`） |
+| `src/tools/Config_Checker/配置检查器.h`（类 `Config_Checker`） | EngineCore 层 `src/tools/Detail/package/数据校验工具.h`（命名空间 `engine::detail` 自由函数 `field_check` / `path_check`） | EngineCore 层先更名 `Data_Validator`，后于工具重组中改为 `Detail` 命名空间自由函数（目录 `Config_Checker`、`Data_Validator` 均已不存在）；本层 4 个头文件与调用点已同步 |
+| `src/core/event/`、`src/core/object/`、`src/core/space/`、`src/core/collision/`、其余工具 | EngineCore 层 | 事件、对象、空间、碰撞与其余工具均属EngineCore 层，不在本层 |
+| 实体/属性配置 JSON 与初始化、行为 Lua 脚本 | Game 层 `assets/` | 属上层运行时资源 |
+| 旧仓库的 `TestEngine.exe` / `ConfigEditor.exe` 双可执行目标 | 可执行文件统一由Test 层产出 | 层级契约改为「各层只产出静态库，只有Test 层产出可执行文件」 |
 
 ---
 
