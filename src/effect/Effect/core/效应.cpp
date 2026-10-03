@@ -1,5 +1,5 @@
 #include "../局部命名空间使用.h"
-#include "src/tools/Logging/日志系统.h"
+#include "src/tools/Logging/日志系统运行包.h"
 
 namespace engine
 {
@@ -60,7 +60,7 @@ namespace engine
         //若效应未绑定ID
         if (!ID.has_value())
         {
-            Log::error("Effect::效应ID未绑定\n无法完成数据注入");
+            logger.error("Effect::效应ID未绑定\n无法完成数据注入");
             return;
         }
         //注册效应归属

@@ -85,7 +85,7 @@ namespace engine
 
         //分组效应集合
         std::vector<Effect_Group> effect_groups;
-        //效应总集合
+        //效应总集合（默认投影器以对象ID为定位键）
         Object_Pool<Effect_Record> effect_set;
     };
 }

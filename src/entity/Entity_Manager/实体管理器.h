@@ -45,9 +45,9 @@ namespace engine
         std::unordered_map<std::string, LuaState> prop_config_paths;
         //行为脚本加载路径集合
         std::unordered_map<std::string,std::string> action_load_path;
-        //属性槽集合
+        //属性槽集合（默认投影器以对象ID为定位键）
         Object_Pool<Prop> props;
-        //实体集合
+        //实体集合（默认投影器以对象ID为定位键）
         Object_Pool<Entity> entities;
 
     public:
