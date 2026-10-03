@@ -1,10 +1,10 @@
 #include "../局部命名空间使用.h"
 //获取数据校验器
-#include "src/tools/Detail/package/数据校验工具.h"
+#include "Engine/EngineCore/src/tools/Detail/package/数据校验工具.h"
 //获取日志系统
-#include "src/tools/Logging/日志系统运行包.h"
+#include "Engine/EngineCore/src/tools/Logging/日志系统运行包.h"
 //获取网格加载器
-#include "src/tools/Mesh_Loader/网格加载器.h"
+#include "Engine/EngineCore/src/tools/Mesh_Loader/网格加载器.h"
 
 namespace engine
 {

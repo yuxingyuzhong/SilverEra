@@ -1,12 +1,12 @@
 #pragma once
 //预编译头
-#include "common/前置头文件包含.h"
+#include "Engine/EngineCore/common/前置头文件包含.h"
 //获取自定义数据结构(内部包含四叉树自定义数据结构)
 #include "数据结构.h"
 //获取四叉树
 #include "../Quadtree/四叉树.h"
 //获取辅助算法
-#include "src/tools/Detail/二分查找.h"
+#include "Engine/EngineCore/src/tools/Detail/二分查找.h"
 
 //展开命名空间
 namespace engine

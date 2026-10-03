@@ -1,10 +1,10 @@
 #pragma once
 //预编译头
-#include "common/前置头文件包含.h"
+#include "Engine/EngineCore/common/前置头文件包含.h"
 //获取流节点链表树
 #include "../Stream_Tree/流节点树.h"
 //获取标准库 format 特化集（错误码 / 错误条件 / 文件系统路径）
-#include "src/tools/Detail/标准库format特化.h"
+#include "Engine/EngineCore/src/tools/Detail/标准库format特化.h"
 
 namespace engine
 {

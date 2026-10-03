@@ -1,16 +1,16 @@
 #pragma once
 //预编译头
-#include "common/前置头文件包含.h"
+#include "Engine/EngineCore/common/前置头文件包含.h"
 //获取引擎环境
-#include "src/tools/Engine_Env/引擎环境.h"
+#include "Engine/EngineCore/src/tools/Engine_Env/引擎环境.h"
 //获取路径字符串转化方法
-#include "src/tools/Detail/路径字符串转换.h"
+#include "Engine/EngineCore/src/tools/Detail/路径字符串转换.h"
 //获取碰撞库依赖封装
 #include "../../common/core/依赖库封装.h"
 //获取空间系统运行包
 #include "../../common/碰撞系统运行包.h"
 //获取事件系统运行包
-#include "src/core/event/事件系统运行包.h"
+#include "Engine/EngineCore/src/core/event/事件系统运行包.h"
 
 namespace engine
 {

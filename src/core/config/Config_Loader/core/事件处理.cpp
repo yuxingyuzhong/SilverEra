@@ -1,9 +1,35 @@
 #include "../局部命名空间使用.h"
-#include "src/tools/Logging/日志系统运行包.h"
+#include "Engine/EngineCore/src/tools/Logging/日志系统运行包.h"
 
 //引擎命名空间
 namespace engine
 {
+    //事件终端接入
+    void Config_Loader::attach(void)
+    {
+        //注册本模块事件接收入口（事件送达后交由事件处理分派）
+        event_terminal->event_receiver_register(
+            [this](shared_ptr<Event> evt) { this->event_process(evt); });
+        //若事件接收入口注册失败
+        if (!event_terminal->interface_check(Interface_ID::EVENT_RECEIVER))
+        {
+            logger.error("Config_Loader::事件接收入口注册失败，接入中止");
+            return;
+        }
+
+        //待订阅事件清单
+        vector<Event> needed_events{
+            Event("", "", "Believed_Root", "Load"),
+            Event("", "", "Believed_Root", "Unload"),
+            Event("", "", "Route", "load"),
+            Event("", "", "Config", "load"),
+        };
+
+        //接入事件中转站
+        if (!event_terminal.attach("Config_Loader", needed_events, acl_key))
+            logger.error("Config_Loader::事件中转站接入失败");
+    }
+
     //事件处理
     void Config_Loader::event_process(std::shared_ptr<Event> evt)
     {
@@ -30,7 +56,7 @@ namespace engine
         }
 
         //可信根目录修改
-        if (evt->category == "Belived_Root")
+        if (evt->category == "Believed_Root")
         {
             //若载荷可信根目录字段无效(包含非空检查)
             if (!detail::field_check<string>(evt->config, "route") ||
@@ -149,9 +175,6 @@ namespace engine
                         files.push_back(file.get<std::string>());
                 }
             }
-            //若事件未指定加载文件清单
-            else
-                files = evt->config["files"];
             //执行对象配置加载（脏标记命中者告警并跳过）
             config_load(object, files);
             return;

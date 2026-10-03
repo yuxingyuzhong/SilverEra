@@ -1,6 +1,6 @@
 #pragma once
 //预编译头
-#include "common/前置头文件包含.h"
+#include "Engine/EngineCore/common/前置头文件包含.h"
 //获取碰撞检测库
 #include "btBulletCollisionCommon.h"
 //获取持久流形（碰撞检测的接触点容器）

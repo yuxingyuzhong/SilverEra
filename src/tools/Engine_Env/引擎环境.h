@@ -1,8 +1,8 @@
 #pragma once
 //预编译头
-#include "common/前置头文件包含.h"
+#include "Engine/EngineCore/common/前置头文件包含.h"
 //获取日志系统
-#include "src/tools/Logging/日志系统运行包.h"
+#include "Engine/EngineCore/src/tools/Logging/日志系统运行包.h"
 
 #ifdef _WIN32
 #include <windows.h>

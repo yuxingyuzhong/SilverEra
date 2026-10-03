@@ -1,12 +1,12 @@
 #pragma once
 //预编译头
-#include "common/前置头文件包含.h"
+#include "Engine/EngineCore/common/前置头文件包含.h"
 //获取预定义对象类型
 #include "../Object/对象.h"
 //获取数值分配器
-#include "src/tools/Number_Allocator/数值分配器.h"
+#include "Engine/EngineCore/src/tools/Number_Allocator/数值分配器.h"
 //获取二分查找算法
-#include "src/tools/Detail/二分查找.h"
+#include "Engine/EngineCore/src/tools/Detail/二分查找.h"
 
 namespace engine
 {

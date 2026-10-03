@@ -1,8 +1,10 @@
 #pragma once
 //预编译头
-#include "common/前置头文件包含.h"
+#include "Engine/EngineCore/common/前置头文件包含.h"
+//获取 JSON 解析外部库
+#include <nlohmann/json.hpp>
 //获取哈希混合工具
-#include "src/tools/Detail/哈希混合.h"
+#include "Engine/EngineCore/src/tools/Detail/哈希混合.h"
 
 //游戏引擎命名空间
 namespace engine

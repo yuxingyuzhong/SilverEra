@@ -1,12 +1,12 @@
 #pragma once
 //预编译头
-#include "common/前置头文件包含.h"
+#include "Engine/EngineCore/common/前置头文件包含.h"
 //获取预定义事件类型
 #include "../Event/事件.h"
 //获取终端接口
 #include "终端接口.h"
 //获取随机数生成器(用于权限密钥生成)
-#include "src/tools/Random_Generator/随机数生成器.h"
+#include "Engine/EngineCore/src/tools/Random_Generator/随机数生成器.h"
 
 //游戏引擎命名空间
 namespace engine

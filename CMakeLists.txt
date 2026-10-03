@@ -1,5 +1,19 @@
 # =============================================================================
-# CMake 最低版本要求（必须 ≥ 3.20，因为使用了 CONFIGURE_DEPENDS 等特性）
+# EngineCore —— 构建脚本
+# =============================================================================
+# 位置：白银纪元/Engine/EngineCore
+# 依赖：无（拓扑最底层）
+# 产物：EngineCore.lib（静态库）
+# 用法（本层独立配置与构建）：
+#     cmake -S <本目录> -B <本目录>/out/build/x64-Debug -G Ninja
+#     cmake --build <本目录>/out/build/x64-Debug
+# 包含路径：项目内部一律写「项目根相对全路径」——
+#           本层头   Engine/EngineCore/...
+#           编译包含根 = 项目根（本层不消费任何下层头，无需头快照）
+# 层间契约：
+#     cmake/对外接口.cmake   本层对外自描述（前缀 BYJY_ENGINE_CORE）
+#     cmake/导出头快照.cmake 对外头快照导出脚本（上层按与本层库同版次的头编译）
+# 说明：本层不含 cmake/接入下层.cmake —— 无下层可接。
 # =============================================================================
 cmake_minimum_required(VERSION 3.20)
 
@@ -10,8 +24,7 @@ endif()
 # =============================================================================
 # 1. 项目基本信息
 # =============================================================================
-# 项目名称：引擎层（支持中文，但建议英文）
-project(引擎层 LANGUAGES CXX)
+project(EngineCore LANGUAGES C CXX)
 
 # 导出编译数据库（供 IDE / 语言工具链读取本层的包含路径与宏；Ninja 生成器默认不产出该文件）
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -43,7 +56,7 @@ if(MSVC AND CMAKE_GENERATOR MATCHES "Ninja")
     endif()
 endif()
 
-# 强制使用 C++20 标准（Sol2 需要 C++17 以上，这里设 20 更现代）
+# 强制使用 C++20 标准
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)   # 如果编译器不支持 C++20 则报错
 set(CMAKE_CXX_EXTENSIONS OFF)         # 禁用 GCC/MSVC 的编译器扩展，提高跨平台兼容性
@@ -51,8 +64,9 @@ set(CMAKE_CXX_EXTENSIONS OFF)         # 禁用 GCC/MSVC 的编译器扩展，提
 # =============================================================================
 # 2. 源文件收集
 # =============================================================================
-# 获取当前 CMakeLists.txt 所在目录的绝对路径（即项目根目录）
+# 本层根目录；项目根 = Engine/EngineCore 上溯两级（项目内部包含路径的基准）
 get_filename_component(PROJECT_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}" ABSOLUTE)
+get_filename_component(BYJY_PROJECT_ROOT "${PROJECT_ROOT_DIR}/../.." ABSOLUTE)
 
 # 递归搜索引擎源码目录（src / common / external）下的所有 .cpp 和 .c 文件
 # CONFIGURE_DEPENDS 让 CMake 在构建时自动检测新增/删除的源文件（不必手动重新运行 cmake）
@@ -69,6 +83,15 @@ file(GLOB_RECURSE ENGINE_HEADERS CONFIGURE_DEPENDS
     "${PROJECT_ROOT_DIR}/src/*.hpp"
     "${PROJECT_ROOT_DIR}/common/*.h"
     "${PROJECT_ROOT_DIR}/common/*.hpp"
+)
+
+# 任务<1>：把被 GLOB 的目录登记为配置依赖 —— 目录内容变化（增删文件）时，
+# 生成系统自动重跑配置并重扫 GLOB，不必手动「重新生成缓存」才刷新目录视图。
+# 说明：GLOB_RECURSE 覆盖子目录，但 CMAKE_CONFIGURE_DEPENDS 要逐个目录登记。
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    "${PROJECT_ROOT_DIR}/src"
+    "${PROJECT_ROOT_DIR}/common"
+    "${PROJECT_ROOT_DIR}/external"
 )
 
 # ----- 过滤掉不需要的文件 -----
@@ -93,7 +116,7 @@ if(NOT ENGINE_SOURCES)
 endif()
 
 # 打印源文件数量，方便调试
-message(STATUS "引擎源文件数量: ${ENGINE_SOURCES}")
+message(STATUS "EngineCore 源文件数量: ${ENGINE_SOURCES}")
 
 # =============================================================================
 # 3. 创建引擎静态库（核心）
@@ -103,7 +126,9 @@ add_library(EngineCore STATIC ${ENGINE_SOURCES} ${ENGINE_HEADERS})
 # =============================================================================
 # 4. 头文件搜索路径设置
 # =============================================================================
-target_include_directories(EngineCore PRIVATE "${PROJECT_ROOT_DIR}")
+# 私有包含根 = 项目根：本层源码以 Engine/EngineCore/... 形式互相包含，
+# 与对外面使用同一套写法，彻底消除「直接 src/... 包含」的路径归属不明与重名问题
+target_include_directories(EngineCore PRIVATE "${BYJY_PROJECT_ROOT}")
 
 # =============================================================================
 # 5. 第三方库
@@ -117,33 +142,37 @@ target_include_directories(EngineCore PRIVATE "${JSON_ROOT}")
 set(GLFW_ROOT "${PROJECT_ROOT_DIR}/external/glfw")
 target_include_directories(EngineCore PRIVATE "${GLFW_ROOT}")
 
-# ---------- GLM ---------- 碰撞检测库
+# ---------- bullet3 ---------- 碰撞检测库
 set(BULLET_ROOT "${PROJECT_ROOT_DIR}/external/bullet3/src")
 target_include_directories(EngineCore PRIVATE "${BULLET_ROOT}")
 
 # =============================================================================
 # 5.5 对外头快照导出（供上层按「与本层静态库同版次」的头编译）
 # =============================================================================
-# 背景：上层的引擎包含目录此前直接指向本层源码树，与本层构建目录里的 .lib 无绑定关系，
+# 背景：上层的包含目录此前直接指向本层源码树，与本层构建目录里的 .lib 无绑定关系，
 #       一旦「头已改、库未重建」，上层就会新头配旧库地编译链接。
 # 做法：每轮构建把对外包含目录下的头镜像到 <构建目录>/include/，上层改读该快照；
 #       只复制内容有变化的头，未变头不改变时间戳，不会引起上层无谓重编。
-#       镜像目录与 对外接口.cmake 里声明的包含目录一一对应（含第三方头）。
+# 路径形态：镜像目录相对「项目根」保留完整层级 —— 快照根/Engine/EngineCore/...
+#           上层把对外面里的「项目根」条目换成该快照根即可无缝解析同一个前缀。
+# 镜像范围：只镜像本层自有头（common、src）。第三方（external/Json、external/glfw、
+#           external/bullet3/src）在外对面上是独立的绝对路径条目，不经过快照解析，
+#           也就不必镜像 —— 少复制上千个第三方头，构建更快。
 # =============================================================================
-set(BYJY_ENGINE_INCLUDE_SNAPSHOT_DIR "${CMAKE_BINARY_DIR}/include")
+set(BYJY_ENGINE_CORE_INCLUDE_SNAPSHOT_DIR "${CMAKE_BINARY_DIR}/include")
 
-add_custom_target(EngineIncludeSnapshot ALL
+add_custom_target(EngineCoreIncludeSnapshot ALL
     COMMAND "${CMAKE_COMMAND}"
-        "-DSRC_ROOT=${PROJECT_ROOT_DIR}"
-        "-DDST_ROOT=${BYJY_ENGINE_INCLUDE_SNAPSHOT_DIR}"
-        "-DMIRROR_DIRS=common;src;external/Json;external/glfw;external/bullet3/src"
+        "-DSRC_ROOT=${BYJY_PROJECT_ROOT}"
+        "-DDST_ROOT=${BYJY_ENGINE_CORE_INCLUDE_SNAPSHOT_DIR}"
+        "-DMIRROR_DIRS=Engine/EngineCore/common;Engine/EngineCore/src"
         -P "${PROJECT_ROOT_DIR}/cmake/导出头快照.cmake"
-    COMMENT "导出引擎层对外头快照 → ${BYJY_ENGINE_INCLUDE_SNAPSHOT_DIR}"
+    COMMENT "导出 EngineCore 对外头快照 → ${BYJY_ENGINE_CORE_INCLUDE_SNAPSHOT_DIR}"
     VERBATIM
 )
 
 # =============================================================================
-# 6. 链接第三方库（新增）
+# 6. 链接第三方库
 # =============================================================================
 
 # 查找 OpenGL 库（跨平台）
@@ -185,7 +214,7 @@ else()
     target_compile_definitions(EngineCore PRIVATE _GNU_SOURCE)
 endif()
 
-# 设置输出的库文件和可执行文件的目录（统一放在 build/bin 和 build/lib）
+# 设置输出的库文件和可执行文件的目录（统一放在 build/lib）
 set_target_properties(EngineCore PROPERTIES
     ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"   # 静态库 .lib / .a
 )
@@ -193,9 +222,10 @@ set_target_properties(EngineCore PROPERTIES
 # =============================================================================
 # 8. 安装规则（方便部署）
 # =============================================================================
-# 将引擎的头文件安装到 include/EngineCore/ 下
+# 头文件按「项目根相对」层级安装到 include/Engine/EngineCore/，
+# 与源码内 Engine/EngineCore/... 的包含写法保持一致
 install(DIRECTORY "${PROJECT_ROOT_DIR}/"
-    DESTINATION "include/EngineCore"
+    DESTINATION "include/Engine/EngineCore"
     FILES_MATCHING PATTERN "*.h" PATTERN "*.hpp"   # 只安装 .h 和 .hpp
     PATTERN "Private" EXCLUDE                     # 排除 Private 子目录（内部实现）
 )
