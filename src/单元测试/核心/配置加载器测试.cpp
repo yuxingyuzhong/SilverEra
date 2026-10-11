@@ -183,7 +183,7 @@ TEST_F(Config_Loader_Test, 可信根添加后配置可加载)
 	object_attach();
 
 	//加载可信根目录
-	event_send("Belived_Root", "Load", root_payload(root_route, root_config));
+	event_send("Believed_Root", "Load", root_payload(root_route, root_config));
 	//请求对象配置加载
 	event_send("Config", "load", object_payload());
 
@@ -203,13 +203,13 @@ TEST_F(Config_Loader_Test, 重复添加可信根被跳过)
 	object_attach();
 
 	//加载可信根目录
-	event_send("Belived_Root", "Load", root_payload(root_route, root_config));
+	event_send("Believed_Root", "Load", root_payload(root_route, root_config));
 	//请求对象配置加载
 	event_send("Config", "load", object_payload());
 	ASSERT_EQ(delivered.size(), 1u);
 
 	//再次加载同一可信根目录（应被跳过，缓存条目脏标记不被重置）
-	event_send("Belived_Root", "Load", root_payload(root_route, root_config));
+	event_send("Believed_Root", "Load", root_payload(root_route, root_config));
 	//再次请求对象配置加载
 	event_send("Config", "load", object_payload());
 
@@ -227,15 +227,15 @@ TEST_F(Config_Loader_Test, 可信根增量重建恢复缓存)
 	object_attach();
 
 	//加载可信根目录（登记并建立缓存；加载本身即时投递一次）
-	event_send("Belived_Root", "Load", root_payload(root_route, root_config));
+	event_send("Believed_Root", "Load", root_payload(root_route, root_config));
 	ASSERT_EQ(delivered.size(), 1u);
 	//卸载可信根目录（清除该根下的对象缓存并取消登记）
-	event_send("Belived_Root", "Unload", root_payload(root_route, root_config));
+	event_send("Believed_Root", "Unload", root_payload(root_route, root_config));
 
 	//重置路由文件脏标记：使重建扫描不会被文件头脏标记跳过
 	route_file_reset();
 	//增量重建可信根目录（已随卸载取消登记 ⇒ 重新登记并重扫建立缓存，再次投递）
-	event_send("Belived_Root", "Load", root_payload(root_route, root_config));
+	event_send("Believed_Root", "Load", root_payload(root_route, root_config));
 	ASSERT_EQ(delivered.size(), 2u);
 
 	//请求对象配置加载：缓存条目已带本轮脏标记 ⇒ 不再重复投递
@@ -255,7 +255,7 @@ TEST_F(Config_Loader_Test, 可信根载荷缺失被驳回)
 	nlohmann::json payload;
 	payload["route"] = "可信根测试_载荷";
 	//发送载荷不完整的添加事件
-	event_send("Belived_Root", "Add", payload);
+	event_send("Believed_Root", "Add", payload);
 	//请求对象配置加载
 	event_send("Config", "load", object_payload());
 
@@ -273,7 +273,7 @@ TEST_F(Config_Loader_Test, 路由加载仅认对象自身目录对)
 	object_attach();
 
 	//加载可信根目录（本语义下「加载」会登记并建立缓存，且即时投递一次）
-	event_send("Belived_Root", "Load", root_payload(root_route, root_config));
+	event_send("Believed_Root", "Load", root_payload(root_route, root_config));
 
 	//以可信根目录对请求路由加载（非对象自身目录对，应被驳回：投递数不增加）
 	const size_t baseline_count = delivered.size();
