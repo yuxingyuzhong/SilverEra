@@ -420,6 +420,7 @@ cmake --build out/build/x64-Debug
 - 本层**按两个下层（EngineCore、EngineSystem）的对外头快照编译**，不再实时读取下层源码树：配置期由 `byjy_tou_kuaizhao_gen()` 反推各下层的快照根（`<下层构建目录>/include`），并把它们列为**本层自身包含目录、排在项目根之前**。因此「改了某个下层的源码头但没重建该层」时本层不会看到新头 —— 正是为了避免新头配旧库；要让新头生效，先构建对应下层。快照目录缺失会在配置期直接报错。
   （当前用例只覆盖 EngineCore 模块，不含 EngineSystem 头；EngineSystem 快照的接线已就位，含系统头的用例将自动生效。实测 `compile_commands.json` 的 `-I` 次序为 `EngineCore 快照根 → EngineSystem 快照根 → 项目根 → 第三方(Sol2/Lua/Json/glfw/bullet3) → gtest`。）
 - **增删文件自动重配（本版次）**：`src`、`src/单元测试`、`src/主调` 三个 GLOB 基点目录均登记进 `CMAKE_CONFIGURE_DEPENDS`；新增用例文件后**直接构建**即被收编，不必手动重生成缓存。
+- **源文件经显式清单提供**：本层有四个目标，各自对应本层根目录下的一份清单——`源文件列表_TestCore.cmake`、`源文件列表_TestLauncher.cmake`、`源文件列表_EngineTestObjects.cmake`、`源文件列表_EngineTests.cmake`（均为生成物，由共享脚本 `Engine/EngineCore/cmake/生成源文件列表.cmake` 维护，`add_executable` 不再传源文件）。其用途与「在 VS 文件视图里改名 / 迁移」的完整说明见 `Engine/EngineCore/README.md` 第 8.5 节。
 - 运行期引擎日志被**屏蔽到文件** `out/引擎运行日志.txt`（由 `src/主调/引擎日志屏蔽.cpp` 把日志根节点
   绑到该文件），从而不与 googletest 的输出混在同一位置；日志系统用例本身要验证「未绑定即走控制台」，
   其夹具会临时关闭屏蔽、用例结束再恢复。

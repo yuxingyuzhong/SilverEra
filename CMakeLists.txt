@@ -49,12 +49,14 @@ get_filename_component(BYJY_PROJECT_ROOT "${PROJECT_ROOT_DIR}/../.." ABSOLUTE)
 #
 # 库定位顺序由 cmake/接入下层.cmake 的 byjy_jieru_xiaceng() 统一实现：
 #   ① 覆盖变量非空（须与库数等长的分号列表）→ 用它；文件不存在则直接报错
-#   ② 留空 → 自动探测 <该库所在层目录>/out/build/*/lib/<库名>.lib，取时间戳最新的一份
+#   ② 留空 → 对每个库，先看 <该库所在层目录>/out/build/x64-Debug/lib/<库名>.lib；
+#            没有则扫 <该库所在层目录>/out/build/*/lib/<库名>.lib，取时间戳最新的一份
+#            （双构建树并存时，自动探测固定默认 Debug；要 Release 请用 ①）
 #   ③ 都没有 → FATAL_ERROR，并提示先构建产出该库的下层
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/接入下层.cmake")
 
 set(BYJY_ENGINE_LIB_PATH "" CACHE STRING
-    "Engine 聚合层静态库路径（分号列表，顺序同 EngineSystem;EngineCore）；留空则自动探测")
+    "Engine 聚合层静态库路径（分号列表，顺序同 EngineSystem;EngineCore）；留空则自动探测（各库优先 out/build/x64-Debug/lib，其次 out/build/*/lib 取最新）")
 
 byjy_jieru_xiaceng(
     "${PROJECT_ROOT_DIR}/../../Engine/cmake/对外接口.cmake"
@@ -104,6 +106,17 @@ file(GLOB_RECURSE MAIN_HEADERS CONFIGURE_DEPENDS
     "${PROJECT_ROOT_DIR}/src/主调/*.hpp"
 )
 
+# 本层各目标共用同一份生成脚本（与 EngineCore 共用，属构建工具而非层间契约）。
+# 用途：把 GLOB 扫描结果落成显式清单（target_sources 形式），使 VS 文件视图的
+#       改名 / 迁移操作有「可改写的引用」，从而触发 CMake 重新配置；原理与约束
+#       见 Engine/EngineCore/cmake/生成源文件列表.cmake 头部说明。
+# 说明：本层有多个目标，故按目标各一份清单文件 —— 目标多为条件创建，逐目标清单
+#       可随目标所在的条件块按需 include，不会引用到不存在的目标。
+include("${PROJECT_ROOT_DIR}/../../Engine/EngineCore/cmake/生成源文件列表.cmake")
+
+# 占位空列表：供「只登记头文件、无源文件」的清单调用使用（同步函数要求传源 / 头两个变量名）
+set(BYJY_NO_SOURCES "")
+
 # 任务<1>：把被 GLOB 的目录登记为配置依赖 —— 目录内容变化（增删文件）时，
 # 生成系统自动重跑配置并重扫 GLOB，不必手动「重新生成缓存」才刷新目录视图。
 # 说明：GLOB_RECURSE 覆盖子目录，但 CMAKE_CONFIGURE_DEPENDS 要逐个目录登记，
@@ -144,7 +157,17 @@ if(TEST_SOURCES)
     # =========================================================================
     # 3. 创建测试层静态库
     # =========================================================================
-    add_library(TestCore STATIC ${TEST_SOURCES} ${TEST_HEADERS})
+    # 源与头经 源文件列表_TestCore.cmake 的 target_sources 提供（理由见该清单头部）
+    byjy_source_list_sync(
+        "${PROJECT_ROOT_DIR}/源文件列表_TestCore.cmake"
+        "${PROJECT_ROOT_DIR}"
+        TestCore
+        TEST_SOURCES
+        TEST_HEADERS
+        "Application/Test"
+    )
+    add_library(TestCore STATIC)
+    include("${PROJECT_ROOT_DIR}/源文件列表_TestCore.cmake")
 
     # 包含根：下层头快照 + 项目根（供 Application/Test/... 全路径）
     target_include_directories(TestCore PUBLIC ${BYJY_APP_INC})
@@ -254,11 +277,22 @@ else()
     # =========================================================================
     # 只收纯逻辑部分：图形窗口依赖 ImGui，单独编进 EngineTests，不并入此库，
     # 使用例不必拖上图形库。
+    # 主调头文件（MAIN_HEADERS）经 源文件列表_TestLauncher.cmake 的 target_sources
+    # 提供，使 VS 文件视图对其改名 / 迁移时可改写引用并触发重配；两个 .cpp 是固定条目，
+    # 仍写字面量（本就不属 GLOB 产物）。
+    byjy_source_list_sync(
+        "${PROJECT_ROOT_DIR}/源文件列表_TestLauncher.cmake"
+        "${PROJECT_ROOT_DIR}"
+        TestLauncher
+        BYJY_NO_SOURCES
+        MAIN_HEADERS
+        "Application/Test"
+    )
     add_library(TestLauncher STATIC
-        ${MAIN_HEADERS}
         "${PROJECT_ROOT_DIR}/src/主调/测试选择模型.cpp"
         "${PROJECT_ROOT_DIR}/src/主调/控制台选择菜单.cpp"
     )
+    include("${PROJECT_ROOT_DIR}/源文件列表_TestLauncher.cmake")
     # 主调仅引用本层自身头（Application/Test/src/主调/...），故只需项目根
     target_include_directories(TestLauncher PUBLIC "${BYJY_PROJECT_ROOT}")
     target_link_libraries(TestLauncher PUBLIC GTest::gtest)
@@ -271,8 +305,19 @@ else()
         LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
     )
 
+    # 用例源与头经 源文件列表_EngineTestObjects.cmake 的 target_sources 提供
+    #（理由见该清单头部说明）
+    byjy_source_list_sync(
+        "${PROJECT_ROOT_DIR}/源文件列表_EngineTestObjects.cmake"
+        "${PROJECT_ROOT_DIR}"
+        EngineTestObjects
+        BYJY_TEST_SOURCES
+        BYJY_TEST_HEADERS
+        "Application/Test"
+    )
     #用例目标：编一次，EngineTests 取一份 .obj
-    add_library(EngineTestObjects OBJECT ${BYJY_TEST_SOURCES} ${BYJY_TEST_HEADERS})
+    add_library(EngineTestObjects OBJECT)
+    include("${PROJECT_ROOT_DIR}/源文件列表_EngineTestObjects.cmake")
 
     #包含根：下层快照 + 项目根（用例要 include "Application/Test/src/主调/测试选择模型.h"）
     target_include_directories(EngineTestObjects PUBLIC ${BYJY_APP_INC})
@@ -296,13 +341,23 @@ else()
     # 图形选择窗口（依赖 ImGui）只编进本可执行文件。
     # 产物落在本层根目录，与 assets/ 同级
     #（Engine_Env 以「可执行文件所在目录」为基准解析资源路径，这是硬性要求）
+    # 主调头文件（MAIN_HEADERS）经 源文件列表_EngineTests.cmake 的 target_sources
+    # 提供；$<TARGET_OBJECTS> 与三个 .cpp 是固定条目，仍写字面量。
+    byjy_source_list_sync(
+        "${PROJECT_ROOT_DIR}/源文件列表_EngineTests.cmake"
+        "${PROJECT_ROOT_DIR}"
+        EngineTests
+        BYJY_NO_SOURCES
+        MAIN_HEADERS
+        "Application/Test"
+    )
     add_executable(EngineTests
         $<TARGET_OBJECTS:EngineTestObjects>
-        ${MAIN_HEADERS}
         "${PROJECT_ROOT_DIR}/src/主调/主程序.cpp"
         "${PROJECT_ROOT_DIR}/src/主调/图形选择窗口.cpp"
         "${PROJECT_ROOT_DIR}/src/主调/引擎日志屏蔽.cpp"
     )
+    include("${PROJECT_ROOT_DIR}/源文件列表_EngineTests.cmake")
     target_include_directories(EngineTests PRIVATE ${BYJY_APP_INC})
     target_link_libraries(EngineTests PRIVATE
         EngineTestObjects EngineCore EngineSystem
