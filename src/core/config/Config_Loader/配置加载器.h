@@ -157,8 +157,8 @@ namespace engine
         //路由文件读取（解出顶层脏标记与路由条目数组）
         void route_file_read(const std::filesystem::path& file_path, nlohmann::json& mark,
             nlohmann::json& entries) const;
-        //路由文件写回（刷新顶层脏标记与条目内脏标记）
-        bool route_file_write(const std::filesystem::path& file_path, uint64_t mark,
+        //路由文件写回（写入条目内脏标记；顶层脏标记为空值时不写，以便卸载后抹除文件头标记）
+        bool route_file_write(const std::filesystem::path& file_path, const nlohmann::json& mark,
             const nlohmann::json& entries) const;
 
         // ---------- 组4 配置投递 ----------
@@ -179,6 +179,10 @@ namespace engine
             const std::string& only_object, const std::vector<std::string>& only_files,
             bool deliver = true);
 
+        //单份路由文件卸载（按可选过滤条件抹除条目标记与顶层标记，并移除对应配置文件缓存）
+        bool route_file_unload(const Config_Content& content, const std::filesystem::path& file_path,
+            const std::string& only_object, const nlohmann::json& only_files);
+
         // ---------- 组6 配置加载 ----------
 
         //配置路由加载（事件指定配置目录）
@@ -191,6 +195,10 @@ namespace engine
 
         //可信根目录缓存清除（按目录前缀清除该根下的对象缓存）
         void root_cache_clear(const Config_Content& root);
+        //配置路由卸载（事件指定配置目录）
+        void route_unload(const Config_Content& content, const std::string& object);
+        //配置卸载（事件指定对象与可选配置文件清单）
+        void config_unload(const std::string object, const nlohmann::json& request);
 
         // ---------- 组8 事件分发 ----------
 

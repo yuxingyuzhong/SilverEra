@@ -62,8 +62,14 @@ namespace engine
         if (config_data.is_object())
             config_data.erase("dirty_mark");
 
-        //构造配置事件
-        auto evt = event_terminal.build("Config_Loader", object, "Config", "Load");
+        //取条目自定义配置事件类别（缺省回落 Config）
+        const string event_category = detail::field_check<string>(entry, "event_category")
+            ? entry["event_category"].get<string>() : "Config";
+        //取条目自定义配置事件标签（缺省回落 Load）
+        const string event_tag = detail::field_check<string>(entry, "event_tag")
+            ? entry["event_tag"].get<string>() : "Load";
+        //构造配置事件（事件名由路由条目决定，支持按 category/tag 个性化投递）
+        auto evt = event_terminal.build("Config_Loader", object, event_category, event_tag);
         //若配置事件构造失败
         if (evt == nullptr)
         {

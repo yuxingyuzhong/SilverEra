@@ -27,13 +27,15 @@ namespace engine
             entries = json();
     }
 
-    //路由文件写回（刷新顶层脏标记与条目内脏标记）
-    bool Config_Loader::route_file_write(const path& file_path, uint64_t mark,
+    //路由文件写回（写入条目内脏标记；顶层脏标记为空值时不写，以便卸载后抹除文件头标记）
+    bool Config_Loader::route_file_write(const path& file_path, const json& mark,
         const json& entries) const
     {
         //组装路由文件内容
         json route_file;
-        route_file["dirty_mark"] = mark;
+        //若顶层脏标记非空则写入（空值表示本轮不写顶层标记）
+        if (!mark.is_null())
+            route_file["dirty_mark"] = mark;
         route_file["config_routes"] = entries;
         //打开目标文件
         ofstream file(file_path);
@@ -135,6 +137,95 @@ namespace engine
 
         //返回本轮是否投递过配置
         return delivered;
+    }
+
+    //单份路由文件卸载（按可选过滤条件抹除条目标记与顶层标记，并移除对应配置文件缓存）
+    bool Config_Loader::route_file_unload(const Config_Content& content, const path& file_path,
+        const std::string& only_object, const json& only_files)
+    {
+        //顶层脏标记与路由条目
+        json mark = json();
+        json entries = json();
+        //读取路由文件
+        route_file_read(file_path, mark, entries);
+
+        //若路由条目格式非法
+        if (!entries.is_array())
+        {
+            logger.error("Config_Loader::当前路由文件内容格式非法");
+            return false;
+        }
+
+        //本轮是否真正改动过路由条目
+        bool changed = false;
+
+        //逐条读取路由条目
+        for (auto& entry : entries)
+        {
+            //若目标字段无效
+            if (!detail::field_check<string>(entry, "object") ||
+                !detail::field_check<string>(entry, "config_path"))
+            {
+                logger.error("Config_Loader::目标字段无效");
+                continue;
+            }
+
+            //存储目标对象名称
+            const std::string object = entry["object"];
+            //存储配置文件路径
+            const std::string config_path = entry["config_path"];
+
+            //若存在对象过滤条件且不匹配则跳过
+            if (!only_object.empty() && object != only_object)
+                continue;
+            //若存在文件过滤条件
+            if (!only_files.is_null())
+            {
+                //判断当前文件是否落在卸载清单内
+                bool in_files = false;
+                for (const auto& file : only_files)
+                {
+                    //若清单项为字符串且与当前文件一致则命中
+                    if (file.is_string() && file.get<std::string>() == config_path)
+                    {
+                        in_files = true;
+                        break;
+                    }
+                }
+                //若未命中卸载清单则跳过
+                if (!in_files)
+                    continue;
+            }
+
+            //若配置文件不在本目录对的配置目录下则跳过（卸载不要求文件仍存在）
+            if (!path_prefix_check(content.config, detail::string_to_path(config_path).parent_path()))
+                continue;
+
+            //移除对象配置文件缓存
+            const auto file_caches = config_files.find(object);
+            //若目标对象存在配置文件缓存
+            if (file_caches != config_files.end())
+            {
+                file_caches->second.erase(config_path);
+                //若该对象已无配置文件记录则删除对象条目
+                if (file_caches->second.empty())
+                    config_files.erase(file_caches);
+            }
+
+            //抹除条目脏标记（使同进程内重新加载不再被条目脏标记短路）
+            if (entry.contains("dirty_mark"))
+            {
+                entry.erase("dirty_mark");
+                changed = true;
+            }
+        }
+
+        //仅当本轮真正改动过才回写路由文件（以空顶层标记抹除文件头脏标记）
+        if (changed)
+            route_file_write(file_path, json(), entries);
+
+        //返回本轮是否改动过路由条目
+        return changed;
     }
 
 }

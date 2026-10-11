@@ -22,7 +22,9 @@ namespace engine
             Event("", "", "Believed_Root", "Load"),
             Event("", "", "Believed_Root", "Unload"),
             Event("", "", "Route", "load"),
+            Event("", "", "Route", "Unload"),
             Event("", "", "Config", "load"),
+            Event("", "", "Config", "Unload"),
         };
 
         //接入事件中转站
@@ -151,6 +153,48 @@ namespace engine
             return;
         }
 
+        //配置路由卸载
+        if (evt->category == "Route" && evt->tag == "Unload")
+        {
+            //若配置路由卸载对象未定义
+            if (!detail::field_check<string>(evt->config, "object"))
+            {
+                logger.error("Config_Loader::未定义路由卸载对象\n已略过该事件处理");
+                return;
+            }
+            //若载荷配置目录字段无效
+            if (!detail::field_check<string>(evt->config, "route") ||
+                !detail::field_check<string>(evt->config, "config"))
+            {
+                logger.error("Config_Loader::未定义配置目录字段\n已驳回");
+                return;
+            }
+
+            //取卸载对象名称
+            const string object = evt->config["object"].get<std::string>();
+            //取索引目录与配置目录
+            const path route_dir = detail::string_to_path(evt->config["route"].get<std::string>());
+            const path config_dir = detail::string_to_path(evt->config["config"].get<std::string>());
+            //构造配置目录对象
+            const Config_Content content(route_dir, config_dir);
+
+            //若目标对象不存在
+            if (!config_routes.count(object))
+            {
+                logger.warn("Config_Loader::配置索引卸载对象不存在\n已略过该事件处理");
+                return;
+            }
+            //若未缓存目标配置目录
+            else if (!config_routes[object].count(content))
+            {
+                logger.warn("Config_Loader::配置索引目录未缓存\n已略过该事件处理");
+                return;
+            }
+            //执行配置路由卸载（保留配置目录登记，使同目录对可再次加载重建）
+            route_unload(content, object);
+            return;
+        }
+
         //对象配置加载
         if (evt->category == "Config" && evt->tag == "load")
         {
@@ -164,6 +208,22 @@ namespace engine
             const std::string object = evt->config["object"];
             //加载指定配置文件
             config_load(object,evt->config);
+            return;
+        }
+
+        //对象配置卸载
+        if (evt->category == "Config" && evt->tag == "Unload")
+        {
+            //若载荷缺少对象字段
+            if (!detail::field_check<string>(evt->config, "object"))
+            {
+                logger.error("Config_Loader::对象字段无效\n已略过该事件处理");
+                return;
+            }
+            //取目标对象名称
+            const std::string object = evt->config["object"];
+            //卸载指定对象配置缓存
+            config_unload(object, evt->config);
             return;
         }
     }
