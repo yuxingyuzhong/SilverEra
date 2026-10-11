@@ -16,66 +16,7 @@ namespace engine
 	template <typename T>
 	Quadtree<T>::~Quadtree(void)
 	{
-		//根节点递归总级数声明
-		int max_level = 0;
-		//递归总级数计算
-		recur_level_calcu(max_level);
-
-		//当前节点指针
-		Node* ptr_now = &root;
-		//子节点指针
-		Node* ptr_next = ptr_now;
-
-		for (int recur_direct = 0; recur_direct <= SE; recur_direct++)
-		{
-			//递归子节点
-			child_node_recur(ptr_next, recur_direct, MIDDLE,true);
-			//递归子函数
-			recur_unload(1, max_level, ptr_next);
-			//还原当前节点指针
-			ptr_next = ptr_now;
-		}
-	}
-
-	//析构函数辅助函数
-	template <typename T>
-	void Quadtree<T>::recur_unload(int now_level, const int& max_level, Node* ptr_now)
-	{
-		//若当前节点为空指针则直接返回
-		if (ptr_now == nullptr)
-			return;
-
-		//若当前为最后一级节点
-		if (now_level == max_level)
-		{
-			//释放叶子节点
-			//区块数据由叶子持有的 shared_ptr 随节点析构自动释放
-			delete ptr_now;
-			//返回上级递归
-			return;
-		}
-
-		//默认下级节点为中间节点
-		Node_Type type = MIDDLE;
-		//若当前为最后一次递归寻址
-		if (now_level == max_level - 1)
-			type = LEAF;
-
-		//子节点指针
-		Node* ptr_next = ptr_now;
-
-		for (int recur_direct = 0; recur_direct <= SE; recur_direct++)
-		{
-			//递归子节点
-			child_node_recur(ptr_next, recur_direct, type, true);
-			//递归子函数
-			recur_unload(now_level + 1, max_level, ptr_next);
-			//还原当前节点指针
-			ptr_next = ptr_now;
-		}
-
-		//删除中间节点指针
-		delete ptr_now;
+		//子节点由根节点持有的 shared_ptr 链自动递归释放，无需手工回收
 	}
 
 	//最小区块单元大小设置

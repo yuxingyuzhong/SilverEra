@@ -11,17 +11,17 @@ namespace engine
 		//若当前节点持有区块数据(分支 1)却需要子节点
 		//则先转换为中间节点，原区块数据交由外部持有者释放
 		if (this_node->data.index() == 1)
-			this_node->data.template emplace<0>(std::array<Node*, 4>{ nullptr, nullptr, nullptr, nullptr });
+			this_node->data.template emplace<0>(std::array<std::shared_ptr<Node>, 4>{ nullptr, nullptr, nullptr, nullptr });
 
-		//获取当前节点子节点指针列表
-		std::array<Node*, 4>& child_list = std::get<0>(this_node->data);
+		//获取当前节点子节点列表
+		std::array<std::shared_ptr<Node>, 4>& child_list = std::get<0>(this_node->data);
 		//若当前子节点为空且为稳定查询模式
-		//则为子节点分配内存
+		//则为子节点分配内存(由 shared_ptr 持有)
 		if (child_list[direct] == nullptr && !read_only)
-			child_list[direct] = new(std::nothrow) Node(type);
+			child_list[direct].reset(new(std::nothrow) Node(type));
 
-		//递归指针子节点
-		this_node = child_list[direct];
+		//递归推进至子节点(裸指针仅作观察，所有权仍在父节点)
+		this_node = child_list[direct].get();
 
 		//若子节点为空则返回false
 		if (this_node == nullptr)
@@ -35,32 +35,28 @@ namespace engine
 	template <typename T>
 	bool Quadtree<T>::tree_expand(void)
 	{
-		//分配中间节点内存
-		Node* ptr_NW_new = new(std::nothrow) Node(MIDDLE);
-		Node* ptr_NE_new = new(std::nothrow) Node(MIDDLE);
-		Node* ptr_SW_new = new(std::nothrow) Node(MIDDLE);
-		Node* ptr_SE_new = new(std::nothrow) Node(MIDDLE);
+		//分配中间节点内存(由 shared_ptr 持有)
+		std::shared_ptr<Node> ptr_NW_new(new(std::nothrow) Node(MIDDLE));
+		std::shared_ptr<Node> ptr_NE_new(new(std::nothrow) Node(MIDDLE));
+		std::shared_ptr<Node> ptr_SW_new(new(std::nothrow) Node(MIDDLE));
+		std::shared_ptr<Node> ptr_SE_new(new(std::nothrow) Node(MIDDLE));
 		//若存在内存分配失败
 		if (ptr_NW_new == nullptr ||
 			ptr_NE_new == nullptr ||
 			ptr_SW_new == nullptr ||
 			ptr_SE_new == nullptr)
 		{
-			//释放所有内存
-			delete ptr_NW_new;
-			delete ptr_NE_new;
-			delete ptr_SW_new;
-			delete ptr_SE_new;
+			//已分配的节点由 shared_ptr 离开作用域自动回收
 			//放弃四叉树扩大
 			return false;
 		}
 		//若根节点持有区块数据(分支 1)则先转换为中间节点
 		//(边长与区块单元相等的退化树扩大时，原根区块不再由树持有)
 		if (root.data.index() == 1)
-			root.data.template emplace<0>(std::array<Node*, 4>{ nullptr, nullptr, nullptr, nullptr });
+			root.data.template emplace<0>(std::array<std::shared_ptr<Node>, 4>{ nullptr, nullptr, nullptr, nullptr });
 
-		//获取根节点子节点指针列表
-		std::array<Node*, 4>& root_child = std::get<0>((*this).root.data);
+		//获取根节点子节点列表
+		std::array<std::shared_ptr<Node>, 4>& root_child = std::get<0>((*this).root.data);
 		//将树原数据链接进中间节点
 		//注：由于四叉树是原地扩大
 		//所以原来根节点直接管辖的区块间多了层中间节点

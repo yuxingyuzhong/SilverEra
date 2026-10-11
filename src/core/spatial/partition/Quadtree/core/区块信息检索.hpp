@@ -225,10 +225,8 @@ namespace engine
 				//若为区块卸载模式
 				if (mode == Operate_Mode::Unload)
 				{
-					//获取待卸载叶子节点
-					Node* leaf_node = std::get<0>(parent_node->data)[recur_direct];
-					//释放叶子节点持有的区块数据
-					std::get<1>(leaf_node->data).reset();
+					//卸载叶子节点本身(子节点槽置空即删除该叶子)
+					std::get<0>(parent_node->data)[recur_direct].reset();
 					continue;
 				}
 				//若为其余模式
@@ -352,19 +350,17 @@ namespace engine
 				//若为区块构建模式
 				if (mode == Operate_Mode::Build)
 				{
-					//获取当前节点子节点指针列表
-					std::array<Node*, 4>& child_list = std::get<0>(child_node->data);
-					//挂载外部数据
-					child_list[recur_direct] = new(std::nothrow) Node(Node_Type::LEAF, data);
+					//获取当前节点子节点列表
+					std::array<std::shared_ptr<Node>, 4>& child_list = std::get<0>(child_node->data);
+					//挂载外部数据(新叶子由 shared_ptr 持有)
+					child_list[recur_direct].reset(new(std::nothrow) Node(Node_Type::LEAF, data));
 					return;
 				}
 				//若为区块卸载模式
 				else if (mode == Operate_Mode::Unload)
 				{
-					//获取待卸载叶子节点
-					Node* leaf_node = std::get<0>(child_node->data)[recur_direct];
-					//释放叶子节点持有的区块数据
-					std::get<1>(leaf_node->data).reset();
+					//卸载叶子节点本身(子节点槽置空即删除该叶子)
+					std::get<0>(child_node->data)[recur_direct].reset();
 					return;
 				}
 				//若为区块查找/获取模式
@@ -394,7 +390,7 @@ namespace engine
 
 			//记录查询结果
 			//结果对象与叶子区块数据共享所有权
-			receiver->ptr_data = std::get<1>(child_node->data);
+			receiver->data = std::get<1>(child_node->data);
 			//范围边界为 64 位整数，故以双精度求中点避免精度损失
 			receiver->node.X = static_cast<double>(node_range.left + node_range.right) / 2.0;
 			receiver->node.Y = static_cast<double>(node_range.down + node_range.up) / 2.0;

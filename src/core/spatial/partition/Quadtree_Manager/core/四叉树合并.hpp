@@ -294,7 +294,7 @@ namespace engine
             auto* new_tree = X_sequence[new_tree_index.value()];
 
             //数据迁移结果
-            std::shared_ptr<Tree_Chunk_Data<T>> ptr_data;
+            std::shared_ptr<Tree_Chunk_Data<T>> data;
             //待合并四叉树范围存储
             Rect2l merged_tree_range{};
             //重置待合并四叉树索引集合
@@ -317,7 +317,7 @@ namespace engine
                 //迁移数据
                 for (int copy_time = 0; copy_time < buffer.size(); copy_time++)
                     //构建新树区块并迁移数据
-                    new_tree->tree->build(point_to_l(buffer[copy_time]->node), buffer[copy_time]->ptr_data);
+                    new_tree->tree->build(point_to_l(buffer[copy_time]->node), buffer[copy_time]->data);
             }
 
             //卸载已经被合并的四叉树

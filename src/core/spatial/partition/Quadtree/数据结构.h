@@ -23,11 +23,11 @@ namespace engine
 		//根节点坐标
 		Point2d root = { 0.5,0.5 };
 		//四叉树大小
-		uint64_t size = 256;
+		uint64_t size = 0;
 		//四叉树大小上限
-		uint64_t max_size = 9223372036854775808;//初始化2的63次方
+		uint64_t max_size = 0;//初始化2的63次方
 		//最小区块单元大小
-		uint64_t block_size = 16;
+		uint64_t block_size = 0;
 	};
 
 	//节点数据结构体
@@ -41,13 +41,13 @@ namespace engine
 		{
 			node.X = x;
 			node.Y = y;
-			ptr_data = ptr;
+			data = ptr;
 		}
 		//默认析构函数
 		~Tree_Chunk_Data() {}
 
 		Point2d node = { 0.5f, 0.5f };  // 使用 0.5f 强调 float 类型
 		//数据
-		std::shared_ptr<T> ptr_data = nullptr;
+		std::shared_ptr<T> data = nullptr;
 	};
 }

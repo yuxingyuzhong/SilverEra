@@ -26,7 +26,7 @@ namespace engine
 		{
 			//节点数据
 			//中间节点存放四个子节点指针，叶子节点存放区块数据
-			std::variant<std::array<Node*, 4>, std::shared_ptr<T>> data;
+			std::variant<std::array<std::shared_ptr<Node>, 4>, std::shared_ptr<T>> data;
 
 			//按参数类型构造(默认为中间节点)
 			explicit Node(Node_Type mode = Node_Type::MIDDLE,std::shared_ptr<T> external_data = nullptr)
@@ -34,7 +34,7 @@ namespace engine
 				//若为中间节点
 				if (mode == Node_Type::MIDDLE)
 					//子节点指针一律置空
-					data.template emplace<0>(std::array<Node*, 4>{ nullptr, nullptr, nullptr, nullptr });
+					data.template emplace<0>(std::array<std::shared_ptr<Node>, 4>{ nullptr, nullptr, nullptr, nullptr });
 				//若为叶子节点且外界传入数据
 				else if(external_data)
 					//分配区块数据存储
@@ -155,9 +155,6 @@ namespace engine
 
 		// ———— 结构维护 ————
 	private:
-		//四叉树递归卸载
-		void recur_unload(int now_level, const int& max_level, Node* ptr_now);
-
 		//子节点递归
 		bool child_node_recur(Node*& this_node, const int& direct, const Node_Type& type,bool read_only);
 
