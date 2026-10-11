@@ -7,6 +7,8 @@
 #include "../Node_Cache/节点缓存.h"
 //获取路径操作工具（路径键规范化）
 #include "Engine/EngineCore/src/tools/Detail/package/路径操作工具.h"
+//获取日志规则（越界截断与选择性输出判定）
+#include "../Rule/日志规则.h"
 
 namespace engine
 {
@@ -130,6 +132,12 @@ namespace engine
             epoch_bump();
             return true;
         }
+        //控制台兜底输出目标是否可用（用于判定绑定被拒时是否存在其他可用输出接口）
+        bool console_available()
+        {
+            //控制台输出目标非空即视为可用
+            return sink_console() != nullptr;
+        }
         //输出流落盘（把整棵树内所有输出目标的缓冲内容写出并刷新）
         void stream_flush()
         {
@@ -152,11 +160,15 @@ namespace engine
                     sink->flush();
             }
         }
-        //日志行路由输出（按调用处路径定位节点 → 锁内解析容器 → 解锁后逐流输出）
-        void stream_output(const char* file_name, const std::string& msg)
+        //日志行路由输出（按调用处路径定位节点 → 越界与许可判定 → 锁内解析容器 → 解锁后逐流输出）
+        void stream_output(const char* file_name, const std::string& level, const std::string& msg,
+            const Log_Rules& rules)
         {
             //定位调用处节点（缓存命中则不做任何路径规范化）
             Stream_Node* node = node_locate(file_name);
+            //越界截断与选择性输出一体判定：未放行则直接丢弃该条日志
+            if (node && !output_pass_check(*node, level, rules))
+                return;
             //解析生效输出目标容器（锁内完成，取到容器后即已解锁）
             Sink_Group group = node ? group_resolve(*node) : group_console();
             //若容器不可用则直接写控制台
@@ -336,6 +348,13 @@ namespace engine
             //把调用点登记进缓存，后续输出直接命中
             node_cache.cache_store(file_name, node);
             return node;
+        }
+        //输出放行判定（持节点锁就地读取路径键后交由规则判定，避免每行键拷贝带来的内存分配）
+        bool output_pass_check(Stream_Node& node, const std::string& level, const Log_Rules& rules)
+        {
+            //持节点锁读取路径键并完成判定
+            std::lock_guard<std::mutex> lock(node.node_mtx);
+            return rules.output_pass(node.key, level);
         }
         //当前树版本号
         uint64_t epoch_current() const
