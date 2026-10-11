@@ -219,7 +219,11 @@ file(GLOB_RECURSE GAME_SOURCES CONFIGURE_DEPENDS
 )
 
 if(GAME_SOURCES)
-    add_library(GameCore STATIC ${GAME_SOURCES})
+    # 先把扫描结果同步进层根 源文件列表.cmake，再由它提供全部源与头
+    byjy_source_list_sync(".../源文件列表.cmake" "${PROJECT_ROOT_DIR}" GameCore
+                          GAME_SOURCES GAME_HEADERS "Application/Game")
+    add_library(GameCore STATIC)                    # 不传源文件
+    include("${PROJECT_ROOT_DIR}/源文件列表.cmake")  # 由清单的 target_sources 提供
     target_include_directories(GameCore PUBLIC ${BYJY_APP_INC})   # [EngineCore 快照根, EngineSystem 快照根, 项目根]
     target_link_libraries(GameCore PUBLIC EngineCore EngineSystem)
     # 编译选项 / 输出目录同下层，产物落 <构建目录>/lib/
@@ -228,7 +232,8 @@ else()
 endif()
 ```
 
-- **空源文件不是错误**：与 EngineCore、EngineSystem「无源码即 `FATAL_ERROR`」不同，本层把空源码视为**预期状态**，只打印 STATUS 提示、不报错。
+- **空源文件不是错误**：与 EngineCore、EngineSystem「无源码即 `FATAL_ERROR`」不同，本层把空源码视为**预期状态**，只打印 STATUS 提示、不报错；此时**不会生成** `源文件列表.cmake`（清单位于 `if(GAME_SOURCES)` 分支内，与目标同生共死）。首个 `.cpp` 落地后，清单会随之生成。
+- 与其余各层一致，源文件经**层根显式清单**（`源文件列表.cmake`）用 `target_sources` 提供，而非直接交给 `add_library`；目的与「在 VS 文件视图里改名 / 迁移」的说明见 `Engine/EngineCore/README.md` 第 8.5 节。
 - `GameCore` 链接的是 `byjy_jieru_xiaceng()` 建立的**两个导入目标**（`EngineCore`、`EngineSystem`），其 `INTERFACE` 上已挂有引擎两层的全部对外面。
 
 ### 5.3 接入方式与其余各层一致

@@ -45,12 +45,14 @@ get_filename_component(BYJY_PROJECT_ROOT "${PROJECT_ROOT_DIR}/../.." ABSOLUTE)
 #
 # 库定位顺序由 cmake/接入下层.cmake 的 byjy_jieru_xiaceng() 统一实现：
 #   ① 覆盖变量非空（须与库数等长的分号列表）→ 用它；文件不存在则直接报错
-#   ② 留空 → 自动探测 <该库所在层目录>/out/build/*/lib/<库名>.lib，取时间戳最新的一份
+#   ② 留空 → 对每个库，先看 <该库所在层目录>/out/build/x64-Debug/lib/<库名>.lib；
+#            没有则扫 <该库所在层目录>/out/build/*/lib/<库名>.lib，取时间戳最新的一份
+#            （双构建树并存时，自动探测固定默认 Debug；要 Release 请用 ①）
 #   ③ 都没有 → FATAL_ERROR，并提示先构建产出该库的下层
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/接入下层.cmake")
 
 set(BYJY_ENGINE_LIB_PATH "" CACHE STRING
-    "Engine 聚合层静态库路径（分号列表，顺序同 EngineSystem;EngineCore）；留空则自动探测")
+    "Engine 聚合层静态库路径（分号列表，顺序同 EngineSystem;EngineCore）；留空则自动探测（各库优先 out/build/x64-Debug/lib，其次 out/build/*/lib 取最新）")
 
 byjy_jieru_xiaceng(
     "${PROJECT_ROOT_DIR}/../../Engine/cmake/对外接口.cmake"
@@ -112,7 +114,28 @@ endif()
 # 3. 创建游戏层静态库（无源码时跳过，不报错）
 # =============================================================================
 if(GAME_SOURCES)
-    add_library(GameCore STATIC ${GAME_SOURCES} ${GAME_HEADERS})
+    # 任务<2>：把扫描结果同步进显式清单 源文件列表.cmake（仅在路径集合有差异
+    # 时写回），清单随后以 target_sources 提供全部源与头。
+    # 动机：GLOB 工程里构建脚本不含任何「具体文件名」，VS 的文件视图改名 / 迁移操作
+    #       找不到可改写的引用，于是既不触发 CMake 重新配置，VS 的模型与错误列表也
+    #       停在旧版次。清单把扫描结果显式化，为该操作提供可改写的引用。
+    # 说明：清单被 include，因此它本身也是配置依赖 —— 被改写即触发重新配置。
+    #       脚本与 EngineCore 共用同一份（构建工具，非层间契约）。
+    include("${PROJECT_ROOT_DIR}/../../Engine/EngineCore/cmake/生成源文件列表.cmake")
+    byjy_source_list_sync(
+        "${PROJECT_ROOT_DIR}/源文件列表.cmake"
+        "${PROJECT_ROOT_DIR}"
+        GameCore
+        GAME_SOURCES
+        GAME_HEADERS
+        "Application/Game"
+    )
+
+    # 此处不传任何源文件：源与头全部由 源文件列表.cmake 的 target_sources 提供。
+    # 原因见清单头部说明 —— 只有由 target_sources 直接加入的字面文件名，其 File API
+    # backtrace 才落在清单文件上，VS 的改名 / 迁移操作才改写得到引用。
+    add_library(GameCore STATIC)
+    include("${PROJECT_ROOT_DIR}/源文件列表.cmake")
 
     # 包含根：下层头快照 + 项目根（供 Application/Game/... 全路径）
     target_include_directories(GameCore PUBLIC ${BYJY_APP_INC})
