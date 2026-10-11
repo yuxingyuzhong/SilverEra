@@ -74,9 +74,9 @@ namespace engine
         //填充配置数据
         evt->config = config_data;
         //发送配置事件
-        if (event_terminal->interface_check(Interface_ID::EVENT_SENDOR))
+        if (event_terminal->check(Port_ID::Evt_Sender))
             event_terminal.send(evt, acl_key);
-        else if (event_terminal->interface_check(Interface_ID::EVENTS_SENDOR))
+        else if (event_terminal->check(Port_ID::Evts_Sender))
             event_terminal.send(vector<shared_ptr<Event>>{evt}, acl_key);
         else
         {
@@ -118,43 +118,6 @@ namespace engine
         //若配置投递失败
         else
             return true;
-    }
-
-    //配置加载 —— 对象配置加载
-    void Config_Loader::config_load(const std::string& object, const vector<string>& paths)
-    {
-        //查找目标对象的配置文件缓存
-        auto file_caches = config_files.find(object);
-        //若目标对象尚无配置记录
-        if (file_caches == config_files.end())
-        {
-            logger.error("Config_Loader::目标对象尚无配置记录: {}", object);
-            return;
-        }
-
-        //若指定加载文件集非空
-        if(!paths.empty())
-        {
-            //逐份处理路由文件（仅处理指定对象的指定文件）
-            for (const auto& path : paths)
-            {
-                //查找目标文件是否缓存
-                auto file_cache = file_caches->second.find(path);
-                //若目标文件已缓存
-                if (file_cache != file_caches->second.end())
-                    config_file_process(path, file_cache->second, object);
-                //若目标文件未缓存
-                else
-                    logger.warn("Config_Loader::目标配置文件未缓存\n请更新配置路由索引再次尝试");
-            }
-        }
-        //若指定加载文件集为空
-        else
-        {
-            //全量加载缓存配置数据
-            for (auto& file:file_caches->second)
-                config_file_process(file.first,file.second, object);
-        }
     }
 
     //配置路由加载（事件指定配置目录）
@@ -203,5 +166,47 @@ namespace engine
             //重新解析该路由文件并更新对象配置文件路径缓存
             route_file_process(content, file_path, object, {}, delivery);
         }
+    }
+
+    //配置加载(事件指定配置文件)
+    void Config_Loader::config_load(const std::string object, const json& request)
+    {
+        //查找目标对象的配置文件缓存
+        auto file_caches = config_files.find(object);
+        //若目标对象尚无配置记录
+        if (file_caches == config_files.end())
+        {
+            logger.error("Config_Loader::目标对象尚无配置记录: {}", object);
+            return;
+        }
+
+        //若事件指定加载文件清单(存在容器非空检查)
+        if (detail::field_check<vector<string>>(request, "files"))
+        {
+            //逐个收集有效文件路径
+            for (const auto& file : request["files"])
+            {
+                //若文件非空
+                if (!file.empty())
+                {
+                    //查找目标文件是否缓存
+                    auto file_cache = file_caches->second.find(file);
+                    //若目标文件已缓存
+                    if (file_cache != file_caches->second.end())
+                        config_file_process(file, file_cache->second, object);
+                    //若目标文件未缓存
+                    else
+                        logger.warn("Config_Loader::目标配置文件未缓存\n请更新配置路由索引再次尝试");
+                }
+            }
+        }
+        //若指定加载文件集为空
+        else
+        {
+            //全量加载缓存配置数据
+            for (auto& file : file_caches->second)
+                config_file_process(file.first, file.second, object);
+        }
+
     }
 }

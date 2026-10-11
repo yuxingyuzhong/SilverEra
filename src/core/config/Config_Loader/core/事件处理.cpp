@@ -8,10 +8,10 @@ namespace engine
     void Config_Loader::attach(void)
     {
         //注册本模块事件接收入口（事件送达后交由事件处理分派）
-        event_terminal->event_receiver_register(
+        event_terminal->bind(Port_ID::Evt_Receiver,
             [this](shared_ptr<Event> evt) { this->event_process(evt); });
         //若事件接收入口注册失败
-        if (!event_terminal->interface_check(Interface_ID::EVENT_RECEIVER))
+        if (!event_terminal->check(Port_ID::Evt_Receiver))
         {
             logger.error("Config_Loader::事件接收入口注册失败，接入中止");
             return;
@@ -37,18 +37,18 @@ namespace engine
         if (evt->category == "Subscriber" && evt->tag == "Call")
         {
             //获取目标对象迭代器
-            auto it = waited_objects.find(evt->sender_object);
+            auto it = waited_objects.find(evt->sender);
             //若事件发送者为配置待发送对象
             if(it != waited_objects.end())
             {
-                if (config_routes[evt->sender_object].empty())
+                if (config_routes[evt->sender].empty())
                 {
                     logger.warn("Config_Loader::配置请求对象不存在配置缓存\n");
                     logger.warn("Config_Loader::配置加载请求已驳回\n");
                 }
                 //逐份加载路由目录
-                for (const auto& cotent : config_routes[evt->sender_object])
-                    route_load(cotent,true,evt->sender_object);
+                for (const auto& cotent : config_routes[evt->sender])
+                    route_load(cotent,true,evt->sender);
                 //清除该配置待发送对象信息
                 waited_objects.erase(it);
             }
@@ -162,21 +162,8 @@ namespace engine
             }
             //取目标对象名称
             const std::string object = evt->config["object"];
-            //指定文件清单（缺省表示该对象全部文件）
-            vector<std::string> files{};
-            //若事件指定加载文件清单
-            if (detail::field_check<vector<string>>(evt->config, "files"))
-            {
-                //逐个收集有效文件路径
-                for (const auto& file : evt->config["files"])
-                {
-                    //若文件非空
-                    if (!file.empty())
-                        files.push_back(file.get<std::string>());
-                }
-            }
-            //执行对象配置加载（脏标记命中者告警并跳过）
-            config_load(object, files);
+            //加载指定配置文件
+            config_load(object,evt->config);
             return;
         }
     }

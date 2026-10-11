@@ -113,7 +113,7 @@ namespace engine
         Config_Loader()
         {
             //生成权限密钥
-            this->acl_key = event_terminal.acl_key_gen();
+            this->acl_key = event_terminal.key().value();
         }
         //析构函数
         ~Config_Loader() = default;
@@ -181,11 +181,11 @@ namespace engine
 
         // ---------- 组6 配置加载 ----------
 
-        //配置加载 —— 对象配置加载
-        void config_load(const std::string& object, const std::vector<std::string>& paths = {});
         //配置路由加载（事件指定配置目录）
         void route_load(const Config_Content& content,bool delivery = true,
             const std::string& object = {});
+        //配置加载(事件指定配置文件)
+        void config_load(const std::string object, const nlohmann::json& request);
 
         // ---------- 组7 缓存清除 ----------
 
