@@ -558,7 +558,7 @@ TEST_F(Collision_Proxy_Test, 事件接入登记订阅清单)
 	std::vector<engine::Event> attached_events;
 
 	//注册中转站接入入口
-	proxy.event_terminal->attach_handler_register(
+	proxy.event_terminal->bind(engine::Port_ID::Broker_Attacher,
 		[&](auto&& module_name, auto&& needed_events, auto&& event_entry)
 		{
 			//留存模块名
@@ -585,9 +585,9 @@ TEST_F(Collision_Proxy_Test, 事件驱动碰撞体构建)
 	std::function<void(std::shared_ptr<engine::Event>)> entry;
 
 	//注册发送通道与接入入口
-	proxy.event_terminal->event_sender_register(
+	proxy.event_terminal->bind(engine::Port_ID::Evt_Sender,
 		[&sent](std::shared_ptr<engine::Event> evt) { sent.push_back(evt); });
-	proxy.event_terminal->attach_handler_register(
+	proxy.event_terminal->bind(engine::Port_ID::Broker_Attacher,
 		[&entry](auto&&, auto&&, auto&& event_entry) { entry = event_entry; });
 	proxy.attach();
 	ASSERT_TRUE(static_cast<bool>(entry));
@@ -620,9 +620,9 @@ TEST_F(Collision_Proxy_Test, 事件驱动检测链路)
 	std::function<void(std::shared_ptr<engine::Event>)> entry;
 
 	//注册发送通道与接入入口
-	proxy.event_terminal->event_sender_register(
+	proxy.event_terminal->bind(engine::Port_ID::Evt_Sender,
 		[&sent](std::shared_ptr<engine::Event> evt) { sent.push_back(evt); });
-	proxy.event_terminal->attach_handler_register(
+	proxy.event_terminal->bind(engine::Port_ID::Broker_Attacher,
 		[&entry](auto&&, auto&&, auto&& event_entry) { entry = event_entry; });
 	proxy.attach();
 	ASSERT_TRUE(static_cast<bool>(entry));
@@ -692,9 +692,9 @@ TEST_F(Collision_Proxy_Test, 位移事件持续生效)
 	std::function<void(std::shared_ptr<engine::Event>)> entry;
 
 	//注册发送通道与接入入口
-	proxy.event_terminal->event_sender_register(
+	proxy.event_terminal->bind(engine::Port_ID::Evt_Sender,
 		[&sent](std::shared_ptr<engine::Event> evt) { sent.push_back(evt); });
-	proxy.event_terminal->attach_handler_register(
+	proxy.event_terminal->bind(engine::Port_ID::Broker_Attacher,
 		[&entry](auto&&, auto&&, auto&& event_entry) { entry = event_entry; });
 	proxy.attach();
 	ASSERT_TRUE(static_cast<bool>(entry));
@@ -747,9 +747,9 @@ TEST_F(Collision_Proxy_Test, 几何体集合经事件设置生效)
 	std::function<void(std::shared_ptr<engine::Event>)> entry;
 
 	//注册发送通道与接入入口
-	proxy.event_terminal->event_sender_register(
+	proxy.event_terminal->bind(engine::Port_ID::Evt_Sender,
 		[&sent](std::shared_ptr<engine::Event> evt) { sent.push_back(evt); });
-	proxy.event_terminal->attach_handler_register(
+	proxy.event_terminal->bind(engine::Port_ID::Broker_Attacher,
 		[&entry](auto&&, auto&&, auto&& event_entry) { entry = event_entry; });
 	proxy.attach();
 	ASSERT_TRUE(static_cast<bool>(entry));
@@ -853,7 +853,7 @@ TEST_F(Collision_Proxy_Test, 碰撞响应停止运动作废位移)
 	std::function<void(std::shared_ptr<engine::Event>)> entry;
 
 	//注册发送通道：收到碰撞事件时立即按编号回发响应（模拟外部同步应答）
-	proxy.event_terminal->event_sender_register(
+	proxy.event_terminal->bind(engine::Port_ID::Evt_Sender,
 		[&sent, &entry](std::shared_ptr<engine::Event> evt)
 		{
 			sent.push_back(evt);
@@ -868,7 +868,7 @@ TEST_F(Collision_Proxy_Test, 碰撞响应停止运动作废位移)
 			entry(std::make_shared<engine::Event>(
 				"", "Collision_Proxy", "Collision", "ColliderCollisionResponse", response));
 		});
-	proxy.event_terminal->attach_handler_register(
+	proxy.event_terminal->bind(engine::Port_ID::Broker_Attacher,
 		[&entry](auto&&, auto&&, auto&& event_entry) { entry = event_entry; });
 	proxy.attach();
 	ASSERT_TRUE(static_cast<bool>(entry));
@@ -924,7 +924,7 @@ TEST_F(Collision_Proxy_Test, 碰撞响应继续运动保持位移)
 	std::function<void(std::shared_ptr<engine::Event>)> entry;
 
 	//注册发送通道：收到碰撞事件时立即回发"保持位移"响应
-	proxy.event_terminal->event_sender_register(
+	proxy.event_terminal->bind(engine::Port_ID::Evt_Sender,
 		[&sent, &entry](std::shared_ptr<engine::Event> evt)
 		{
 			sent.push_back(evt);
@@ -939,7 +939,7 @@ TEST_F(Collision_Proxy_Test, 碰撞响应继续运动保持位移)
 			entry(std::make_shared<engine::Event>(
 				"", "Collision_Proxy", "Collision", "ColliderCollisionResponse", response));
 		});
-	proxy.event_terminal->attach_handler_register(
+	proxy.event_terminal->bind(engine::Port_ID::Broker_Attacher,
 		[&entry](auto&&, auto&&, auto&& event_entry) { entry = event_entry; });
 	proxy.attach();
 	ASSERT_TRUE(static_cast<bool>(entry));
@@ -994,7 +994,7 @@ TEST_F(Collision_Proxy_Test, 碰撞响应位移变化)
 	uint64_t changed_ID = 0;
 
 	//注册发送通道：对指定碰撞体回发"位移变化"响应，其余回发"保持位移"
-	proxy.event_terminal->event_sender_register(
+	proxy.event_terminal->bind(engine::Port_ID::Evt_Sender,
 		[&sent, &entry, &changed_ID](std::shared_ptr<engine::Event> evt)
 		{
 			sent.push_back(evt);
@@ -1016,7 +1016,7 @@ TEST_F(Collision_Proxy_Test, 碰撞响应位移变化)
 			entry(std::make_shared<engine::Event>(
 				"", "Collision_Proxy", "Collision", "ColliderCollisionResponse", response));
 		});
-	proxy.event_terminal->attach_handler_register(
+	proxy.event_terminal->bind(engine::Port_ID::Broker_Attacher,
 		[&entry](auto&&, auto&&, auto&& event_entry) { entry = event_entry; });
 	proxy.attach();
 	ASSERT_TRUE(static_cast<bool>(entry));
@@ -1090,7 +1090,7 @@ TEST_F(Collision_Proxy_Test, 碰撞响应缺失时搁置重发)
 	uint64_t replied_ID = 0;
 
 	//注册发送通道：首个碰撞事件不回发响应，重发时才回发"停止运动"响应
-	proxy.event_terminal->event_sender_register(
+	proxy.event_terminal->bind(engine::Port_ID::Evt_Sender,
 		[&sent, &entry, &collision_times, &replied_ID](std::shared_ptr<engine::Event> evt)
 		{
 			sent.push_back(evt);
@@ -1112,7 +1112,7 @@ TEST_F(Collision_Proxy_Test, 碰撞响应缺失时搁置重发)
 			entry(std::make_shared<engine::Event>(
 				"", "Collision_Proxy", "Collision", "ColliderCollisionResponse", response));
 		});
-	proxy.event_terminal->attach_handler_register(
+	proxy.event_terminal->bind(engine::Port_ID::Broker_Attacher,
 		[&entry](auto&&, auto&&, auto&& event_entry) { entry = event_entry; });
 	proxy.attach();
 	ASSERT_TRUE(static_cast<bool>(entry));
@@ -1170,9 +1170,9 @@ TEST_F(Collision_Proxy_Test, 碰撞响应始终缺失时不崩溃)
 	std::function<void(std::shared_ptr<engine::Event>)> entry;
 
 	//注册发送通道：只记录不回发响应
-	proxy.event_terminal->event_sender_register(
+	proxy.event_terminal->bind(engine::Port_ID::Evt_Sender,
 		[&sent](std::shared_ptr<engine::Event> evt) { sent.push_back(evt); });
-	proxy.event_terminal->attach_handler_register(
+	proxy.event_terminal->bind(engine::Port_ID::Broker_Attacher,
 		[&entry](auto&&, auto&&, auto&& event_entry) { entry = event_entry; });
 	proxy.attach();
 	ASSERT_TRUE(static_cast<bool>(entry));
@@ -1229,9 +1229,9 @@ TEST_F(Collision_Proxy_Test, 跨越通知事件发布)
 	std::function<void(std::shared_ptr<engine::Event>)> entry;
 
 	//注册发送通道与接入入口
-	proxy.event_terminal->event_sender_register(
+	proxy.event_terminal->bind(engine::Port_ID::Evt_Sender,
 		[&sent](std::shared_ptr<engine::Event> evt) { sent.push_back(evt); });
-	proxy.event_terminal->attach_handler_register(
+	proxy.event_terminal->bind(engine::Port_ID::Broker_Attacher,
 		[&entry](auto&&, auto&&, auto&& event_entry) { entry = event_entry; });
 	proxy.attach();
 	ASSERT_TRUE(static_cast<bool>(entry));
@@ -1382,9 +1382,9 @@ TEST_F(Collision_Proxy_Test, 空几何配置经事件被忽略)
 	std::function<void(std::shared_ptr<engine::Event>)> entry;
 
 	//注册发送通道与接入入口
-	proxy.event_terminal->event_sender_register(
+	proxy.event_terminal->bind(engine::Port_ID::Evt_Sender,
 		[&sent](std::shared_ptr<engine::Event> evt) { sent.push_back(evt); });
-	proxy.event_terminal->attach_handler_register(
+	proxy.event_terminal->bind(engine::Port_ID::Broker_Attacher,
 		[&entry](auto&&, auto&&, auto&& event_entry) { entry = event_entry; });
 	proxy.attach();
 	ASSERT_TRUE(static_cast<bool>(entry));

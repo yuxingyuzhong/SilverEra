@@ -26,7 +26,7 @@ protected:
 TEST_F(Event_Terminal_Test, 首次生成密钥有效)
 {
 	//生成权限密钥
-	const int64_t key = terminal.acl_key_gen();
+	const int64_t key = terminal.key().value();
 	//密钥不应为零
 	EXPECT_NE(key, 0);
 }
@@ -35,22 +35,22 @@ TEST_F(Event_Terminal_Test, 首次生成密钥有效)
 TEST_F(Event_Terminal_Test, 重复生成密钥返回无效值)
 {
 	//首次生成
-	const int64_t first = terminal.acl_key_gen();
+	const int64_t first = terminal.key().value();
 	//再次生成
-	const int64_t second = terminal.acl_key_gen();
+	const std::optional<int64_t> second = terminal.key();
 	//首次有效
 	EXPECT_NE(first, 0);
 	//再次应返回无效值
-	EXPECT_EQ(second, 0);
+	EXPECT_FALSE(second.has_value());
 }
 
 //密钥校验：密钥不匹配时发送失败
 TEST_F(Event_Terminal_Test, 错误密钥发送失败)
 {
 	//生成权限密钥
-	const int64_t key = terminal.acl_key_gen();
+	const int64_t key = terminal.key().value();
 	//注册发送通道
-	terminal->event_sender_register([](std::shared_ptr<engine::Event>) {});
+	terminal->bind(engine::Port_ID::Evt_Sender, [](std::shared_ptr<engine::Event>) {});
 	//以错误密钥发送
 	EXPECT_FALSE(terminal.send(make_event("输入", "按键"), key + 1));
 }
@@ -59,7 +59,7 @@ TEST_F(Event_Terminal_Test, 错误密钥发送失败)
 TEST_F(Event_Terminal_Test, 未注册发送通道时发送失败)
 {
 	//生成权限密钥
-	const int64_t key = terminal.acl_key_gen();
+	const int64_t key = terminal.key().value();
 	//未注册任何发送通道
 	EXPECT_FALSE(terminal.send(make_event("输入", "按键"), key));
 }
@@ -68,11 +68,11 @@ TEST_F(Event_Terminal_Test, 未注册发送通道时发送失败)
 TEST_F(Event_Terminal_Test, 注册后发送成功)
 {
 	//生成权限密钥
-	const int64_t key = terminal.acl_key_gen();
+	const int64_t key = terminal.key().value();
 	//送出次数
 	int sent = 0;
-	//注册发送通道（注册接口返回 Terminal_Interface&，仅注册）
-	terminal->event_sender_register(
+	//注册发送通道（注册接口返回 Terminal_Port&，仅注册）
+	terminal->bind(engine::Port_ID::Evt_Sender,
 		[&sent](std::shared_ptr<engine::Event>) { ++sent; });
 	//发送事件
 	EXPECT_TRUE(terminal.send(make_event("输入", "按键"), key));
@@ -84,11 +84,11 @@ TEST_F(Event_Terminal_Test, 注册后发送成功)
 TEST_F(Event_Terminal_Test, 批量发送重载可用)
 {
 	//生成权限密钥
-	const int64_t key = terminal.acl_key_gen();
+	const int64_t key = terminal.key().value();
 	//送出事件数
 	size_t sent_count = 0;
 	//注册批量发送通道（多事件重载，仅注册）
-	terminal->event_sender_register(
+	terminal->bind(engine::Port_ID::Evts_Sender,
 		[&sent_count](std::vector<std::shared_ptr<engine::Event>> events)
 		{ sent_count = events.size(); });
 	//批量发送两条事件
@@ -104,7 +104,7 @@ TEST_F(Event_Terminal_Test, 批量发送重载可用)
 TEST_F(Event_Terminal_Test, 未注册接收通道时落原生集合)
 {
 	//生成权限密钥
-	const int64_t key = terminal.acl_key_gen();
+	const int64_t key = terminal.key().value();
 	//接收一条事件
 	terminal.receive(make_event("输入", "按键"));
 	//原生集合应留存该事件
@@ -115,11 +115,11 @@ TEST_F(Event_Terminal_Test, 未注册接收通道时落原生集合)
 TEST_F(Event_Terminal_Test, 注册接收通道后事件被转发)
 {
 	//生成权限密钥
-	const int64_t key = terminal.acl_key_gen();
+	const int64_t key = terminal.key().value();
 	//接收次数
 	int received = 0;
 	//注册接收通道（仅注册）
-	terminal->event_receiver_register(
+	terminal->bind(engine::Port_ID::Evt_Receiver,
 		[&received](std::shared_ptr<engine::Event>) { ++received; });
 	//接收一条事件
 	terminal.receive(make_event("输入", "按键"));
@@ -133,11 +133,11 @@ TEST_F(Event_Terminal_Test, 注册接收通道后事件被转发)
 TEST_F(Event_Terminal_Test, 批量接收入口可用)
 {
 	//生成权限密钥
-	const int64_t key = terminal.acl_key_gen();
+	const int64_t key = terminal.key().value();
 	//接收事件数
 	size_t received_count = 0;
 	//注册批量接收通道（多事件重载，仅注册）
-	terminal->event_receiver_register(
+	terminal->bind(engine::Port_ID::Evts_Receiver,
 		[&received_count](std::vector<std::shared_ptr<engine::Event>> events)
 		{ received_count = events.size(); });
 	//批量接收两条事件
@@ -155,7 +155,7 @@ TEST_F(Event_Terminal_Test, 批量接收入口可用)
 TEST_F(Event_Terminal_Test, 错误密钥清空失败)
 {
 	//生成权限密钥
-	const int64_t key = terminal.acl_key_gen();
+	const int64_t key = terminal.key().value();
 	//接收一条事件
 	terminal.receive(make_event("输入", "按键"));
 	//以错误密钥清空
@@ -168,7 +168,7 @@ TEST_F(Event_Terminal_Test, 错误密钥清空失败)
 TEST_F(Event_Terminal_Test, 正确密钥清空成功)
 {
 	//生成权限密钥
-	const int64_t key = terminal.acl_key_gen();
+	const int64_t key = terminal.key().value();
 	//接收两条事件
 	terminal.receive(make_event("输入", "按键"));
 	terminal.receive(make_event("输入", "松开"));
@@ -184,11 +184,11 @@ TEST_F(Event_Terminal_Test, 正确密钥清空成功)
 TEST_F(Event_Terminal_Test, 发送走通道且接收落入原生集合)
 {
 	//生成权限密钥
-	const int64_t key = terminal.acl_key_gen();
+	const int64_t key = terminal.key().value();
 	//送出次数
 	int sent = 0;
 	//注册发送通道
-	terminal->event_sender_register([&sent](std::shared_ptr<engine::Event>) { ++sent; });
+	terminal->bind(engine::Port_ID::Evt_Sender, [&sent](std::shared_ptr<engine::Event>) { ++sent; });
 	//发送：走发送通道，计数应增加
 	EXPECT_TRUE(terminal.send(make_event("输入", "按键"), key));
 	EXPECT_EQ(sent, 1);
@@ -201,7 +201,7 @@ TEST_F(Event_Terminal_Test, 发送走通道且接收落入原生集合)
 TEST_F(Event_Terminal_Test, 错误密钥接入失败)
 {
 	//生成权限密钥
-	const int64_t key = terminal.acl_key_gen();
+	const int64_t key = terminal.key().value();
 	//以错误密钥接入
 	EXPECT_FALSE(terminal.attach("模块", {}, key + 1));
 }
@@ -210,7 +210,7 @@ TEST_F(Event_Terminal_Test, 错误密钥接入失败)
 TEST_F(Event_Terminal_Test, 接入信息被传递给接入入口)
 {
 	//生成权限密钥
-	const int64_t key = terminal.acl_key_gen();
+	const int64_t key = terminal.key().value();
 	//接入入口收到的模块名
 	std::string received_name;
 	//接入入口收到的订阅事件数
@@ -219,10 +219,10 @@ TEST_F(Event_Terminal_Test, 接入信息被传递给接入入口)
 	std::function<void(std::shared_ptr<engine::Event>)> received_entry;
 
 	//先注册单事件接收入口，避免接入时解引用未初始化的入口指针
-	terminal->event_receiver_register(
+	terminal->bind(engine::Port_ID::Evt_Receiver,
 		[](std::shared_ptr<engine::Event>) {});
 	//注册中转站接入入口
-	terminal->attach_handler_register(
+	terminal->bind(engine::Port_ID::Broker_Attacher,
 		[&](auto&& module_name, auto&& needed_events, auto&& entry)
 		{
 			//留存模块名
@@ -250,17 +250,17 @@ TEST_F(Event_Terminal_Test, 接入信息被传递给接入入口)
 TEST_F(Event_Terminal_Test, 接入后经通道送入事件)
 {
 	//生成权限密钥
-	const int64_t key = terminal.acl_key_gen();
+	const int64_t key = terminal.key().value();
 	//接入入口接到的接收通道
 	std::function<void(std::shared_ptr<engine::Event>)> received_entry;
 	//已注册接收通道的转发次数
 	int forwarded = 0;
 
 	//注册单事件接收入口
-	terminal->event_receiver_register(
+	terminal->bind(engine::Port_ID::Evt_Receiver,
 		[&forwarded](std::shared_ptr<engine::Event>) { ++forwarded; });
 	//注册中转站接入入口
-	terminal->attach_handler_register(
+	terminal->bind(engine::Port_ID::Broker_Attacher,
 		[&received_entry](auto&&, auto&&, auto&& entry) { received_entry = entry; });
 
 	//接入中转站
@@ -279,7 +279,7 @@ TEST_F(Event_Terminal_Test, 接入后经通道送入事件)
 TEST_F(Event_Terminal_Test, 密钥未生成时接口全部锁定)
 {
 	//注册发送通道（仅注册，不涉及权限校验）
-	terminal->event_sender_register([](std::shared_ptr<engine::Event>) {});
+	terminal->bind(engine::Port_ID::Evt_Sender, [](std::shared_ptr<engine::Event>) {});
 	//未生成密钥时发送被拒绝
 	EXPECT_FALSE(terminal.send(make_event("输入", "按键"), 0));
 	//未生成密钥时清空被拒绝
@@ -298,7 +298,7 @@ TEST_F(Event_Terminal_Test, 密钥未生成时接口全部锁定)
 TEST_F(Event_Terminal_Test, 错误密钥查询返回空指针)
 {
 	//生成权限密钥
-	const int64_t key = terminal.acl_key_gen();
+	const int64_t key = terminal.key().value();
 	//以错误密钥查询应返回空指针
 	EXPECT_EQ(terminal.query(key + 1), nullptr);
 	//以正确密钥查询应可用
@@ -309,11 +309,11 @@ TEST_F(Event_Terminal_Test, 错误密钥查询返回空指针)
 TEST_F(Event_Terminal_Test, 零密钥访问被拒绝)
 {
 	//生成权限密钥
-	const int64_t key = terminal.acl_key_gen();
+	const int64_t key = terminal.key().value();
 	//密钥应为非零
 	EXPECT_NE(key, 0);
 	//注册发送通道
-	terminal->event_sender_register([](std::shared_ptr<engine::Event>) {});
+	terminal->bind(engine::Port_ID::Evt_Sender, [](std::shared_ptr<engine::Event>) {});
 	//以零密钥发送被拒绝
 	EXPECT_FALSE(terminal.send(make_event("输入", "按键"), 0));
 	//以零密钥清空被拒绝
@@ -328,11 +328,11 @@ TEST_F(Event_Terminal_Test, 零密钥访问被拒绝)
 TEST_F(Event_Terminal_Test, 空事件批量发送成功)
 {
 	//生成权限密钥
-	const int64_t key = terminal.acl_key_gen();
+	const int64_t key = terminal.key().value();
 	//批量送出事件数（初值设为他值以确认被刷新）
 	size_t sent_count = 999;
 	//注册批量发送通道
-	terminal->event_sender_register(
+	terminal->bind(engine::Port_ID::Evts_Sender,
 		[&sent_count](std::vector<std::shared_ptr<engine::Event>> events)
 		{ sent_count = events.size(); });
 	//空事件集合
@@ -347,7 +347,7 @@ TEST_F(Event_Terminal_Test, 空事件批量发送成功)
 TEST_F(Event_Terminal_Test, 大批量接收落入原生集合)
 {
 	//生成权限密钥
-	const int64_t key = terminal.acl_key_gen();
+	const int64_t key = terminal.key().value();
 	//构造大批量事件
 	std::vector<std::shared_ptr<engine::Event>> events;
 	for (int index = 0; index < 128; index++)
@@ -362,16 +362,16 @@ TEST_F(Event_Terminal_Test, 大批量接收落入原生集合)
 TEST_F(Event_Terminal_Test, 重复注册接收通道以最新为准)
 {
 	//生成权限密钥
-	const int64_t key = terminal.acl_key_gen();
+	const int64_t key = terminal.key().value();
 	//旧通道转发次数
 	int old_received = 0;
 	//新通道转发次数
 	int new_received = 0;
 	//注册旧接收通道
-	terminal->event_receiver_register(
+	terminal->bind(engine::Port_ID::Evt_Receiver,
 		[&old_received](std::shared_ptr<engine::Event>) { ++old_received; });
 	//注册新接收通道覆盖旧通道
-	terminal->event_receiver_register(
+	terminal->bind(engine::Port_ID::Evt_Receiver,
 		[&new_received](std::shared_ptr<engine::Event>) { ++new_received; });
 	//接收一条事件
 	terminal.receive(make_event("输入", "按键"));
@@ -387,15 +387,15 @@ TEST_F(Event_Terminal_Test, 重复注册接收通道以最新为准)
 TEST_F(Event_Terminal_Test, 接入后多次发送累计)
 {
 	//生成权限密钥
-	const int64_t key = terminal.acl_key_gen();
+	const int64_t key = terminal.key().value();
 	//送出次数
 	int sent = 0;
 	//注册接收通道（接入时使用）
-	terminal->event_receiver_register([](std::shared_ptr<engine::Event>) {});
+	terminal->bind(engine::Port_ID::Evt_Receiver, [](std::shared_ptr<engine::Event>) {});
 	//注册接入入口
-	terminal->attach_handler_register([](auto&&, auto&&, auto&&) {});
+	terminal->bind(engine::Port_ID::Broker_Attacher,[](auto&&, auto&&, auto&&) {});
 	//注册发送通道
-	terminal->event_sender_register([&sent](std::shared_ptr<engine::Event>) { ++sent; });
+	terminal->bind(engine::Port_ID::Evt_Sender, [&sent](std::shared_ptr<engine::Event>) { ++sent; });
 	//接入中转站
 	EXPECT_TRUE(terminal.attach("模块", {}, key));
 	//连续发送三条事件
@@ -410,13 +410,13 @@ TEST_F(Event_Terminal_Test, 接入后多次发送累计)
 TEST_F(Event_Terminal_Test, 错误密钥接入信息不落地)
 {
 	//生成权限密钥
-	const int64_t key = terminal.acl_key_gen();
+	const int64_t key = terminal.key().value();
 	//接入入口收到的模块名
 	std::string received_name;
 	//注册接收通道（避免接入时使用未初始化的入口）
-	terminal->event_receiver_register([](std::shared_ptr<engine::Event>) {});
+	terminal->bind(engine::Port_ID::Evt_Receiver, [](std::shared_ptr<engine::Event>) {});
 	//注册接入入口
-	terminal->attach_handler_register(
+	terminal->bind(engine::Port_ID::Broker_Attacher,
 		[&received_name](auto&& name, auto&&, auto&&) { received_name = name; });
 	//以错误密钥接入
 	EXPECT_FALSE(terminal.attach("模块", {}, key + 1));
@@ -428,7 +428,7 @@ TEST_F(Event_Terminal_Test, 错误密钥接入信息不落地)
 TEST_F(Event_Terminal_Test, 清空后原密钥仍可用)
 {
 	//生成权限密钥
-	const int64_t key = terminal.acl_key_gen();
+	const int64_t key = terminal.key().value();
 	//接收两条事件
 	terminal.receive(make_event("输入", "按键"));
 	terminal.receive(make_event("输入", "松开"));

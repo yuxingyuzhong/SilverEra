@@ -113,6 +113,10 @@ protected:
 	{
 		//关闭引擎日志屏蔽：本套件要验证「未绑定 → 走控制台」的兜底行为
 		engine::日志屏蔽_关闭();
+		//设置日志根目录为整个项目，使本套件的输出流绑定获准
+		engine::logger.root_set("");
+		//清空三张输出许可表，避免用例之间互相影响
+		engine::logger.rule_clear();
 		//清除本文件路径节点自有流
 		engine::logger.stream_clear(log_test_path());
 		//清除本文件目录节点自有流
@@ -131,6 +135,9 @@ protected:
 		engine::logger.stream_clear("");
 		//绑定清除后文件流已释放，此时清理探针文件
 		log_remove_all();
+		//清除日志根目录与三张输出许可表，恢复初始态
+		engine::logger.root_clear();
+		engine::logger.rule_clear();
 		//恢复引擎日志屏蔽：其余套件不应把引擎日志混进 googletest 的输出
 		engine::日志屏蔽_开启();
 	}
@@ -603,4 +610,81 @@ TEST_F(Log_Test, 多线程并发输出不交错)
 	//总行数与完整行数都应等于四百
 	EXPECT_EQ(total, 400u);
 	EXPECT_EQ(intact, 400u);
+}
+
+//根目录门禁：未设置日志根目录时禁止绑定输出流（存在控制台兜底则告警并回落）
+TEST_F(Log_Test, 根目录未设置时绑定被拒绝)
+{
+	//清除夹具设置的日志根目录，回到未设置状态
+	engine::logger.root_clear();
+	//开始捕获控制台输出
+	Console_Capture capture;
+	//未设根目录时绑定应被拒绝
+	EXPECT_FALSE(engine::logger.stream_bind(log_test_path(), "engine_log_probe.txt"));
+	//应打印告警日志
+	EXPECT_NE(capture.text().find("根目录未设置"), std::string::npos);
+}
+
+//根目录作用域：域内调用处正常输出，域外调用处被越界截断
+TEST_F(Log_Test, 根目录之外日志被截断)
+{
+	//日志文件名
+	const std::string file_name = "engine_log_dir_probe.txt";
+	//把日志根目录设为本文件所在目录（本文件恰在其内）
+	engine::logger.root_set(log_test_dir());
+	//绑定本文件目录节点到该文件
+	ASSERT_TRUE(engine::logger.stream_bind(log_test_dir(), file_name));
+	//域内输出一条日志
+	engine::logger.info("域内输出 {}", 21);
+	//域内日志应正常落盘
+	EXPECT_NE(log_read(file_name).find("[INFO]域内输出 21"), std::string::npos);
+
+	//把日志根目录改到一个不含本文件的目录
+	engine::logger.root_set("Engine/EngineCore");
+	//域外再输出一条日志
+	engine::logger.info("域外输出 {}", 22);
+	//域外日志应被越界截断，不落盘
+	EXPECT_EQ(log_read(file_name).find("域外输出 22"), std::string::npos);
+}
+
+//选择性输出：级别被设为不可输出时该级别日志被截断，其余级别不受影响
+TEST_F(Log_Test, 级别不可输出被截断)
+{
+	//日志文件名
+	const std::string file_name = "engine_log_probe.txt";
+	//绑定本文件路径节点到该文件
+	ASSERT_TRUE(engine::logger.stream_bind(log_test_path(), file_name));
+	//把 DEBUG 级别设为不可输出
+	engine::logger.level_rule_set("DEBUG", false);
+	//分别输出一条 DEBUG 与一条 INFO
+	engine::logger.debug("调试丢弃 {}", 31);
+	engine::logger.info("信息保留 {}", 32);
+	//DEBUG 被截断
+	EXPECT_EQ(log_read(file_name).find("调试丢弃 31"), std::string::npos);
+	//INFO 正常保留
+	EXPECT_NE(log_read(file_name).find("[INFO]信息保留 32"), std::string::npos);
+}
+
+//选择性输出：文件许可比目录许可更具体，文件许可优先生效
+TEST_F(Log_Test, 文件与目录许可过滤)
+{
+	//日志文件名
+	const std::string file_name = "engine_log_probe.txt";
+	//绑定本文件路径节点到该文件
+	ASSERT_TRUE(engine::logger.stream_bind(log_test_path(), file_name));
+
+	//目录设为不可输出：本文件日志被截断
+	engine::logger.dir_rule_set(log_test_dir(), false);
+	engine::logger.info("目录拦截 {}", 41);
+	EXPECT_EQ(log_read(file_name).find("目录拦截 41"), std::string::npos);
+
+	//文件设为可输出（比目录更具体）：日志恢复输出
+	engine::logger.file_rule_set(log_test_path(), true);
+	engine::logger.info("文件放行 {}", 42);
+	EXPECT_NE(log_read(file_name).find("[INFO]文件放行 42"), std::string::npos);
+
+	//文件设为不可输出：再次被截断
+	engine::logger.file_rule_set(log_test_path(), false);
+	engine::logger.info("文件拦截 {}", 43);
+	EXPECT_EQ(log_read(file_name).find("文件拦截 43"), std::string::npos);
 }

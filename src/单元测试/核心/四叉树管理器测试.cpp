@@ -233,7 +233,7 @@ TEST_F(Quadtree_Manager_Test, 不稳定查询空管理器返回空结果)
 	//查询结果存储
 	std::shared_ptr<engine::Tree_Chunk_Data<int>> receiver;
 	//只读模式下不创建任何区块
-	manager.seek(make_coord(0, 0), receiver, true);
+	manager.seek(make_coord(0, 0), receiver);
 	//未取得结果
 	EXPECT_EQ(receiver, nullptr);
 	//未建立四叉树
@@ -252,7 +252,7 @@ TEST_F(Quadtree_Manager_Test, 稳定查询自动建树)
 	//查询结果存储
 	std::shared_ptr<engine::Tree_Chunk_Data<int>> receiver;
 	//获取模式下查询未覆盖坐标
-	manager->seek(make_coord(0, 0), receiver, false);
+	manager->get(make_coord(0, 0), receiver);
 	//取得了区块信息
 	ASSERT_NE(receiver, nullptr);
 	//(0,0) 落在最小区块 [0,15]×[0,15]，其中心为 (7.5,7.5)
@@ -272,7 +272,7 @@ TEST_F(Quadtree_Manager_Test, 稳定查询命中已有树)
 	//查询结果存储
 	std::shared_ptr<engine::Tree_Chunk_Data<int>> receiver;
 	//查询落在该树内的坐标
-	manager.seek(make_coord(10, 10), receiver, false);
+	manager.get(make_coord(10, 10), receiver);
 	//取得了区块信息
 	ASSERT_NE(receiver, nullptr);
 	//(10,10) 同样落在 [0,15]×[0,15]
@@ -292,7 +292,7 @@ TEST_F(Quadtree_Manager_Test, 稳定查询不同象限返回不同区块)
 	//查询结果存储
 	std::shared_ptr<engine::Tree_Chunk_Data<int>> receiver;
 	//查询东北侧的坐标
-	manager.seek(make_coord(200, 200), receiver, false);
+	manager.get(make_coord(200, 200), receiver);
 	//取得了区块信息
 	ASSERT_NE(receiver, nullptr);
 	//逐级向东北再折向西南，最终落在 [192,207]×[192,207]
@@ -310,7 +310,7 @@ TEST_F(Quadtree_Manager_Test, 不稳定查询不创建区块)
 	//查询结果存储
 	std::shared_ptr<engine::Tree_Chunk_Data<int>> receiver;
 	//只读模式下查询尚未开辟路径的坐标
-	manager.seek(make_coord(10, 10), receiver, true);
+	manager.seek(make_coord(10, 10), receiver);
 	//未取得结果，因为只读模式不创建区块节点
 	EXPECT_EQ(receiver, nullptr);
 }
@@ -324,11 +324,11 @@ TEST_F(Quadtree_Manager_Test, 稳定查询结果可重复取得)
 	build_one_tree(manager, make_coord(0, 0));
 	//第一次查询
 	std::shared_ptr<engine::Tree_Chunk_Data<int>> first;
-	manager.seek(make_coord(10, 10), first, false);
+	manager.get(make_coord(10, 10), first);
 	ASSERT_NE(first, nullptr);
 	//第二次查询同一坐标
 	std::shared_ptr<engine::Tree_Chunk_Data<int>> second;
-	manager.seek(make_coord(10, 10), second, false);
+	manager.get(make_coord(10, 10), second);
 	ASSERT_NE(second, nullptr);
 	//两次落在同一区块（区块数据指针指向同一叶子）
 	EXPECT_EQ(first->node, second->node);
@@ -356,7 +356,7 @@ TEST_F(Quadtree_Manager_Test, 大坐标可智能建树并查询)
 	//查询结果存储
 	std::shared_ptr<engine::Tree_Chunk_Data<int>> receiver;
 	//获取模式下按大坐标查询
-	manager->seek(engine::Point2l(big, big), receiver, false);
+	manager->get(engine::Point2l(big, big), receiver);
 	//取得了区块信息
 	ASSERT_NE(receiver, nullptr);
 	//区块中心落在目标坐标半个区块边长以内
@@ -378,7 +378,7 @@ TEST_F(Quadtree_Manager_Test, 越界查询改建新树)
 	//查询结果存储
 	std::shared_ptr<engine::Tree_Chunk_Data<int>> receiver;
 	//获取落在现有树之外的坐标
-	manager.seek(make_coord(300, 300), receiver, false);
+	manager.get(make_coord(300, 300), receiver);
 	//取得了区块信息
 	ASSERT_NE(receiver, nullptr);
 	//读取序列
@@ -407,7 +407,7 @@ TEST_F(Quadtree_Manager_Test, 越界查询按基准树校准新树位置)
 	//查询结果存储
 	std::shared_ptr<engine::Tree_Chunk_Data<int>> receiver;
 	//获取落在主树 [0,511]×[0,511] 之外的坐标
-	manager.seek(make_coord(600, 600), receiver, false);
+	manager.get(make_coord(600, 600), receiver);
 	//取得了区块信息
 	ASSERT_NE(receiver, nullptr);
 	//读取序列
@@ -434,7 +434,7 @@ TEST_F(Quadtree_Manager_Test, 范围查询整树返回全部区块)
 	//查询结果存储
 	std::vector<std::shared_ptr<engine::Tree_Chunk_Data<int>>> receiver{};
 	//按整棵树的范围查询
-	manager.seek(make_range(0, 255, 255, 0), receiver, false);
+	manager.get(make_range(0, 255, 255, 0), receiver);
 	//16×16 个最小区块全部命中
 	EXPECT_EQ(receiver.size(), 256u);
 	//所有结果中心都落在树管理范围内
@@ -458,13 +458,13 @@ TEST_F(Quadtree_Manager_Test, 范围查询只读与获取模式创建差异)
 	//只读查询结果存储
 	std::vector<std::shared_ptr<engine::Tree_Chunk_Data<int>>> read_receiver{};
 	//只读模式查询整棵树
-	manager.seek(make_range(0, 255, 255, 0), read_receiver, true);
+	manager.seek(make_range(0, 255, 255, 0), read_receiver);
 	//只读模式不创建区块，结果为空
 	EXPECT_TRUE(read_receiver.empty());
 	//获取模式查询结果存储
 	std::vector<std::shared_ptr<engine::Tree_Chunk_Data<int>>> write_receiver{};
 	//获取模式查询整棵树
-	manager.seek(make_range(0, 255, 255, 0), write_receiver, false);
+	manager.get(make_range(0, 255, 255, 0), write_receiver);
 	//获取模式创建并返回全部区块
 	EXPECT_EQ(write_receiver.size(), 256u);
 	chunk_clean(read_receiver);
@@ -481,7 +481,7 @@ TEST_F(Quadtree_Manager_Test, 范围查询未对齐范围被格式化)
 	//查询结果存储
 	std::vector<std::shared_ptr<engine::Tree_Chunk_Data<int>>> receiver{};
 	//查询 [3,20]×[3,20]，格式化后应扩展到 [0,31]×[0,31]
-	manager.seek(make_range(3, 20, 20, 3), receiver, false);
+	manager.get(make_range(3, 20, 20, 3), receiver);
 	//2×2 个最小区块命中
 	EXPECT_EQ(receiver.size(), 4u);
 	chunk_clean(receiver);
@@ -497,7 +497,7 @@ TEST_F(Quadtree_Manager_Test, 范围查询单区块范围)
 	//查询结果存储
 	std::vector<std::shared_ptr<engine::Tree_Chunk_Data<int>>> receiver{};
 	//查询 [0,15]×[0,15]，恰好一个最小区块
-	manager.seek(make_range(0, 15, 15, 0), receiver, false);
+	manager.get(make_range(0, 15, 15, 0), receiver);
 	ASSERT_EQ(receiver.size(), 1u);
 	//该区块中心为 (7.5,7.5)
 	EXPECT_EQ(receiver[0]->node, (engine::Point2d(7.5, 7.5)));
@@ -513,10 +513,10 @@ TEST_F(Quadtree_Manager_Test, 范围查询结果可重复取得)
 	build_one_tree(manager, make_coord(0, 0));
 	//第一次查询
 	std::vector<std::shared_ptr<engine::Tree_Chunk_Data<int>>> first{};
-	manager.seek(make_range(0, 255, 255, 0), first, false);
+	manager.get(make_range(0, 255, 255, 0), first);
 	//第二次查询同一范围
 	std::vector<std::shared_ptr<engine::Tree_Chunk_Data<int>>> second{};
-	manager.seek(make_range(0, 255, 255, 0), second, false);
+	manager.get(make_range(0, 255, 255, 0), second);
 	//两次结果数量一致
 	EXPECT_EQ(first.size(), second.size());
 	chunk_clean(first);
@@ -678,7 +678,7 @@ TEST_F(Quadtree_Manager_Test, 默认设置下单点查询能够收敛)
 	//查询结果存储
 	std::shared_ptr<engine::Tree_Chunk_Data<int>> receiver;
 	//获取模式下查询单点
-	manager->seek(make_coord(0, 0), receiver, false);
+	manager->get(make_coord(0, 0), receiver);
 	//应取到区块信息
 	ASSERT_NE(receiver, nullptr);
 	//释放区块信息
@@ -709,7 +709,7 @@ TEST_F(Quadtree_Manager_Test, 范围查询空序列返回空结果)
 	//查询结果存储
 	std::vector<std::shared_ptr<engine::Tree_Chunk_Data<int>>> receiver{};
 	//只读模式下对空管理器做范围查询
-	manager.seek(make_range(0, 255, 255, 0), receiver, true);
+	manager.seek(make_range(0, 255, 255, 0), receiver);
 	//应返回空结果
 	EXPECT_TRUE(receiver.empty());
 }
@@ -741,7 +741,7 @@ TEST_F(Quadtree_Manager_Test, 范围查询部分覆盖不越界)
 	//查询结果存储
 	std::vector<std::shared_ptr<engine::Tree_Chunk_Data<int>>> receiver{};
 	//获取模式下查询树内的一小块区域（不覆盖整棵树）
-	manager.seek(make_range(20, 40, 40, 20), receiver, false);
+	manager.get(make_range(20, 40, 40, 20), receiver);
 	//应取到区块信息
 	EXPECT_GT(receiver.size(), 0u);
 	//释放查询结果
@@ -781,7 +781,7 @@ TEST_F(Quadtree_Manager_Test, 缓存条目上限为零时查找不崩溃)
 	//查询结果存储
 	std::shared_ptr<engine::Tree_Chunk_Data<int>> receiver;
 	//获取模式下查询
-	manager.seek(make_coord(10, 10), receiver, false);
+	manager.get(make_coord(10, 10), receiver);
 	//应取到区块信息
 	ASSERT_NE(receiver, nullptr);
 	//释放区块信息
@@ -800,7 +800,7 @@ TEST_F(Quadtree_Manager_Test, 范围查询不稳定模式不崩溃)
 	//查询结果存储
 	std::vector<std::shared_ptr<engine::Tree_Chunk_Data<int>>> receiver{};
 	//只读模式下做范围查询
-	manager.seek(make_range(0, 255, 255, 0), receiver, true);
+	manager.seek(make_range(0, 255, 255, 0), receiver);
 	//只读模式不新建区块，结果应为空
 	EXPECT_TRUE(receiver.empty());
 	//释放查询结果
@@ -834,7 +834,7 @@ TEST_F(Quadtree_Manager_Test, 超大边长上限下区块检索次数正常)
 	//查询结果存储
 	std::shared_ptr<engine::Tree_Chunk_Data<int>> receiver;
 	//在该超大连长四叉树上做获取模式单点查询
-	manager->seek(make_coord(0, 0), receiver, false);
+	manager->get(make_coord(0, 0), receiver);
 	//仍应取到区块信息
 	EXPECT_NE(receiver, nullptr);
 	//释放区块信息
@@ -869,7 +869,7 @@ TEST_F(Quadtree_Manager_Test, 四棵相邻树合并后区块数据迁移)
 		//查询结果存储
 		std::shared_ptr<engine::Tree_Chunk_Data<int>> receiver;
 		//获取模式取到区块
-		manager.seek(corners[write_time], receiver, false);
+		manager.get(corners[write_time], receiver);
 		ASSERT_NE(receiver, nullptr);
 		ASSERT_NE(receiver->data, nullptr);
 		//写入区分值
@@ -895,7 +895,7 @@ TEST_F(Quadtree_Manager_Test, 四棵相邻树合并后区块数据迁移)
 		//查询结果存储
 		std::shared_ptr<engine::Tree_Chunk_Data<int>> receiver;
 		//在新树中原坐标处获取区块
-		manager.seek(corners[check_time], receiver, false);
+		manager.get(corners[check_time], receiver);
 		ASSERT_NE(receiver, nullptr);
 		ASSERT_NE(receiver->data, nullptr);
 		//数据值与合并前一致

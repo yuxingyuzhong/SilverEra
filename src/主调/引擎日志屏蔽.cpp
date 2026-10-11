@@ -53,8 +53,14 @@ namespace engine
         if (!日志流 || !日志流->is_open())
             return;
 
+        //先把日志根目录设为整个项目（空串），使输出流绑定获准
+        std::cout << "[诊断] 开启:A 即将 root_set" << std::endl;
+        logger.root_set("");
+        std::cout << "[诊断] 开启:B root_set 完成" << std::endl;
         //把根节点绑到该外部输出流：全部调用处的日志沿父链继承此流，不再落控制台
-        if (logger.stream_bind("", 日志流))
+        const bool 绑定结果 = logger.stream_bind("", 日志流);
+        std::cout << "[诊断] 开启:C stream_bind 完成=" << 绑定结果 << std::endl;
+        if (绑定结果)
             屏蔽已开启 = true;
     }
 
@@ -63,6 +69,8 @@ namespace engine
     {
         //清除根节点绑定：日志回落到控制台兜底输出目标
         logger.stream_clear("");
+        //清除日志根目录设置，恢复「未设置即禁止绑定」的初始态
+        logger.root_clear();
         //同步状态，使后续 屏蔽_开启() 能重新绑定
         屏蔽已开启 = false;
     }

@@ -73,6 +73,7 @@ int main(int argc, char** argv)
 
     //把引擎日志分流到日志文件：避免与 googletest 的输出交织在同一位置
     engine::日志屏蔽_开启();
+    std::cout << "[诊断] 日志屏蔽_开启 返回" << std::endl;
 
     //—— 第一步：摘出自定义开关，其余参数原样留给 googletest ——
     std::string 选择模式 = "window";
@@ -117,7 +118,8 @@ int main(int argc, char** argv)
     {
         //执行测试并把引擎日志缓冲落盘
         const int 透传结果 = RUN_ALL_TESTS();
-        engine::日志屏蔽_落盘();
+        //【临时诊断】暂时跳过日志落盘
+        //engine::日志屏蔽_落盘();
         return 透传结果;
     }
 
@@ -147,7 +149,8 @@ int main(int argc, char** argv)
     ::testing::GTEST_FLAG(filter) = 过滤串;
     const int 测试结果 = RUN_ALL_TESTS();
     //把引擎日志缓冲落盘
-    engine::日志屏蔽_落盘();
+    //【临时诊断】暂时跳过日志落盘
+    //engine::日志屏蔽_落盘();
 
     //交互运行：测试结束后停住，等用户看完输出再手动关闭窗口
     if (engine::需要等待退出(选择模式, 命令行带过滤, 显式选择器))
