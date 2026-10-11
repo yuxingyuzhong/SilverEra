@@ -332,7 +332,7 @@ TEST_F(Quadtree_Manager_Test, 稳定查询结果可重复取得)
 	ASSERT_NE(second, nullptr);
 	//两次落在同一区块（区块数据指针指向同一叶子）
 	EXPECT_EQ(first->node, second->node);
-	EXPECT_EQ(first->ptr_data, second->ptr_data);
+	EXPECT_EQ(first->data, second->data);
 	//结果对象各自独立，需要各自释放
 	chunk_clean(first);
 	chunk_clean(second);
@@ -871,11 +871,11 @@ TEST_F(Quadtree_Manager_Test, 四棵相邻树合并后区块数据迁移)
 		//获取模式取到区块
 		manager.seek(corners[write_time], receiver, false);
 		ASSERT_NE(receiver, nullptr);
-		ASSERT_NE(receiver->ptr_data, nullptr);
+		ASSERT_NE(receiver->data, nullptr);
 		//写入区分值
-		*receiver->ptr_data = data_value[write_time];
+		*receiver->data = data_value[write_time];
 		//记录区块数据对象地址
-		data_address.push_back(receiver->ptr_data.get());
+		data_address.push_back(receiver->data.get());
 	}
 
 	//放宽边长上限至 512，允许合并出双倍边长的新树
@@ -897,10 +897,10 @@ TEST_F(Quadtree_Manager_Test, 四棵相邻树合并后区块数据迁移)
 		//在新树中原坐标处获取区块
 		manager.seek(corners[check_time], receiver, false);
 		ASSERT_NE(receiver, nullptr);
-		ASSERT_NE(receiver->ptr_data, nullptr);
+		ASSERT_NE(receiver->data, nullptr);
 		//数据值与合并前一致
-		EXPECT_EQ(*receiver->ptr_data, data_value[check_time]);
+		EXPECT_EQ(*receiver->data, data_value[check_time]);
 		//数据对象地址与合并前一致（证明迁移的是共享所有权而非独立拷贝）
-		EXPECT_EQ(receiver->ptr_data.get(), data_address[check_time]);
+		EXPECT_EQ(receiver->data.get(), data_address[check_time]);
 	}
 }
