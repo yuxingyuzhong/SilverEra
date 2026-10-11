@@ -22,6 +22,15 @@ protected:
 	//投递到的配置事件
 	std::vector<std::shared_ptr<engine::Event>> delivered{};
 
+	//条目自定义事件类别（为空表示条目不写该字段）
+	std::string entry_category{};
+	//条目自定义事件标签（为空表示条目不写该字段）
+	std::string entry_tag{};
+	//订阅者订阅的事件类别（缺省为 Config/Load）
+	std::string subscribe_category = "Config";
+	//订阅者订阅的事件标签（缺省为 Config/Load）
+	std::string subscribe_tag = "Load";
+
 	//本次用例根目录名
 	std::string root_name{};
 	//可信根索引目录文本
@@ -89,6 +98,12 @@ protected:
 		nlohmann::json entry;
 		entry["object"] = object_name;
 		entry["config_path"] = config_path;
+		//若配置了自定义事件类别则写入条目（缺省不写，投递时回落到 Config）
+		if (!entry_category.empty())
+			entry["event_category"] = entry_category;
+		//若配置了自定义事件标签则写入条目（缺省不写，投递时回落到 Load）
+		if (!entry_tag.empty())
+			entry["event_tag"] = entry_tag;
 		route_file["config_routes"].push_back(entry);
 
 		//覆盖写回路由文件
@@ -100,21 +115,21 @@ protected:
 	//终端接入中转站
 	void loader_attach(void)
 	{
-		//注册中转站接入入口
-		loader.event_terminal->attach_handler_register(
+		//绑定中转站接入端口
+		loader.event_terminal->bind(engine::Port_ID::Broker_Attacher,
 			[this](const std::string& name, const std::vector<engine::Event>& needed,
 				std::function<void(std::shared_ptr<engine::Event>)> entry)
 			{ broker.attach(name, needed, entry); });
-		//注册事件发送入口（单事件重载）
-		loader.event_terminal->event_sender_register(
+		//绑定单事件发送端口
+		loader.event_terminal->bind(engine::Port_ID::Evt_Sender,
 			[this](std::shared_ptr<engine::Event> evt)
 			{ broker.receive(evt); });
-		//注册事件发送入口（批量重载）
-		loader.event_terminal->event_sender_register(
+		//绑定多事件发送端口
+		loader.event_terminal->bind(engine::Port_ID::Evts_Sender,
 			[this](std::vector<std::shared_ptr<engine::Event>> events)
 			{ broker.receive(events); });
-		//注册中转站交互入口（供接收者存在性检查）
-		loader.event_terminal->event_interactor_register(
+		//绑定单事件中转站呼叫端口（供接收者存在性检查）
+		loader.event_terminal->bind(engine::Port_ID::Evt_Broker_Caller,
 			[this](std::shared_ptr<engine::Event> evt) { return broker.process(evt); });
 		//接入中转站
 		loader.attach();
@@ -124,7 +139,8 @@ protected:
 	void object_attach(void)
 	{
 		//登记订阅对象并留存投递的配置事件
-		broker.attach(object_name, { engine::Event("", "", "Config", "Load") },
+		broker.attach(object_name,
+			{ engine::Event("", "", subscribe_category, subscribe_tag) },
 			[this](std::shared_ptr<engine::Event> evt) { delivered.push_back(evt); });
 	}
 
@@ -286,4 +302,166 @@ TEST_F(Config_Loader_Test, 路由加载仅认对象自身目录对)
 	event_send("Route", "load", route_payload(object_route, object_config));
 	ASSERT_EQ(delivered.size(), baseline_count + 1);
 	EXPECT_EQ(delivered.back()->config["键"].get<std::string>(), "值");
+}
+
+//条目自定义事件名：投递事件按条目 event_category/event_tag 发送
+TEST_F(Config_Loader_Test, 条目自定义事件名生效)
+{
+	//配置条目自定义事件名与对应订阅者
+	entry_category = "Property";
+	entry_tag = "Push";
+	subscribe_category = "Property";
+	subscribe_tag = "Push";
+	//准备测试目录
+	root_make("配置事件名测试_自定义", false);
+	//接入终端与订阅对象
+	loader_attach();
+	object_attach();
+
+	//加载可信根目录（应即时按自定义事件名投递一次）
+	event_send("Believed_Root", "Load", root_payload(root_route, root_config));
+
+	//应投递一次，且事件名与条目一致
+	ASSERT_EQ(delivered.size(), 1u);
+	EXPECT_EQ(delivered[0]->category, "Property");
+	EXPECT_EQ(delivered[0]->tag, "Push");
+}
+
+//条目自定义事件名无订阅者：投递被中转站丢弃
+TEST_F(Config_Loader_Test, 条目自定义事件名无订阅者被丢弃)
+{
+	//配置条目自定义事件名，但订阅者仍只订阅缺省事件名
+	entry_category = "Property";
+	entry_tag = "Push";
+	//准备测试目录
+	root_make("配置事件名测试_无订阅", false);
+	//接入终端与订阅对象
+	loader_attach();
+	object_attach();
+
+	//加载可信根目录（投递事件名为 Property/Push，无订阅者应答）
+	event_send("Believed_Root", "Load", root_payload(root_route, root_config));
+
+	//投递被丢弃，订阅者收不到事件
+	EXPECT_EQ(delivered.size(), 0u);
+}
+
+//条目事件名缺省回落：未写 event_category/event_tag 时回落 Config/Load
+TEST_F(Config_Loader_Test, 条目事件名缺省回落)
+{
+	//不配置条目事件名，订阅者订阅缺省事件名
+	root_make("配置事件名测试_回落", false);
+	//接入终端与订阅对象
+	loader_attach();
+	object_attach();
+
+	//加载可信根目录（应即时按缺省事件名投递一次）
+	event_send("Believed_Root", "Load", root_payload(root_route, root_config));
+
+	//应投递一次，且事件名为缺省值
+	ASSERT_EQ(delivered.size(), 1u);
+	EXPECT_EQ(delivered[0]->category, "Config");
+	EXPECT_EQ(delivered[0]->tag, "Load");
+}
+
+//配置卸载：卸载指定文件后可经路由加载重建
+TEST_F(Config_Loader_Test, 配置卸载后可重建)
+{
+	//准备测试目录
+	root_make("配置卸载测试", false);
+	//接入终端与订阅对象
+	loader_attach();
+	object_attach();
+
+	//加载可信根目录（即时投递一次）
+	event_send("Believed_Root", "Load", root_payload(root_route, root_config));
+	ASSERT_EQ(delivered.size(), 1u);
+
+	//卸载该对象的指定配置文件缓存（条目标记与文件头标记一并被抹除）
+	event_send("Config", "Unload", object_payload());
+	//再次请求对象配置加载：缓存已清且无文件清单可加载，不应投递
+	event_send("Config", "load", object_payload());
+	EXPECT_EQ(delivered.size(), 1u);
+
+	//以同一目录对请求路由加载（登记仍在、标记已抹除 ⇒ 重新扫描并投递）
+	event_send("Route", "load", route_payload(object_route, object_config));
+	ASSERT_EQ(delivered.size(), 2u);
+	EXPECT_EQ(delivered.back()->config["键"].get<std::string>(), "值");
+}
+
+//路由卸载：卸载该目录对后可经路由加载重建
+TEST_F(Config_Loader_Test, 路由卸载后可重建)
+{
+	//准备测试目录
+	root_make("路由卸载测试", false);
+	//接入终端与订阅对象
+	loader_attach();
+	object_attach();
+
+	//加载可信根目录（即时投递一次）
+	event_send("Believed_Root", "Load", root_payload(root_route, root_config));
+	ASSERT_EQ(delivered.size(), 1u);
+
+	//卸载该目录对下该对象的缓存
+	event_send("Route", "Unload", route_payload(object_route, object_config));
+	//对象配置缓存已清，加载不再投递
+	event_send("Config", "load", object_payload());
+	EXPECT_EQ(delivered.size(), 1u);
+
+	//以同一目录对请求路由加载（重新扫描并投递）
+	event_send("Route", "load", route_payload(object_route, object_config));
+	ASSERT_EQ(delivered.size(), 2u);
+	EXPECT_EQ(delivered.back()->config["键"].get<std::string>(), "值");
+}
+
+//配置卸载空载荷：未给 files 时全量卸载该对象
+TEST_F(Config_Loader_Test, 配置卸载空载荷全卸载)
+{
+	//准备测试目录
+	root_make("配置全卸载测试", false);
+	//接入终端与订阅对象
+	loader_attach();
+	object_attach();
+
+	//加载可信根目录（即时投递一次）
+	event_send("Believed_Root", "Load", root_payload(root_route, root_config));
+	ASSERT_EQ(delivered.size(), 1u);
+
+	//构造仅含对象字段的卸载载荷（无 files ⇒ 全量卸载）
+	nlohmann::json payload;
+	payload["object"] = object_name;
+	event_send("Config", "Unload", payload);
+	//对象配置缓存已清，加载不再投递
+	event_send("Config", "load", object_payload());
+	EXPECT_EQ(delivered.size(), 1u);
+
+	//以同一目录对请求路由加载（重新扫描并投递）
+	event_send("Route", "load", route_payload(object_route, object_config));
+	ASSERT_EQ(delivered.size(), 2u);
+}
+
+//非法卸载目标：对象无缓存或目录对未登记时被驳回
+TEST_F(Config_Loader_Test, 非法卸载目标被驳回)
+{
+	//准备测试目录
+	root_make("非法卸载测试", false);
+	//接入终端与订阅对象
+	loader_attach();
+	object_attach();
+
+	//加载可信根目录（即时投递一次）
+	event_send("Believed_Root", "Load", root_payload(root_route, root_config));
+	ASSERT_EQ(delivered.size(), 1u);
+
+	//卸载一个无配置记录的对象（应被驳回）
+	nlohmann::json bad_payload;
+	bad_payload["object"] = "不存在对象";
+	event_send("Config", "Unload", bad_payload);
+	//卸载一个未登记的目录对（应被驳回）
+	event_send("Route", "Unload", route_payload(object_route + "/无此目录", object_config + "/无此目录"));
+	//对象配置缓存未被清除，仍可命中脏标记而不重复投递
+	event_send("Config", "load", object_payload());
+
+	//投递数保持不变
+	EXPECT_EQ(delivered.size(), 1u);
 }
