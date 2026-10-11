@@ -568,7 +568,8 @@ cmake --build Engine/EngineSystem/out/build/x64-Debug
 
 - 源文件由 `GLOB_RECURSE ... CONFIGURE_DEPENDS` 自动收集 `src/entity/`、`src/prop/`、`src/effect/` 下的
   `.cpp` / `.c`，并依次排除：① 构建目录下的文件；② `Tests/` 目录；③ `src/gui/Config_Editor/`（含独立 `main()`）。
-- **增删文件自动重配（本版次）**：`src/entity`、`src/prop`、`src/effect` 三个 GLOB 基点目录均登记进 `CMAKE_CONFIGURE_DEPENDS`；增删文件后**直接构建**即自动重配并重扫，不必手动「重新生成缓存」。
+  扫描结果随后**同步进本层根目录的显式清单 `源文件列表.cmake`**（由共享脚本 `cmake/生成源文件列表.cmake` 的 `byjy_source_list_sync()` 按路径集合差异写回；脚本与 EngineCore 共用同一份），`add_library` 不再传任何源文件，全部由清单的 `target_sources` 提供。清单机制与「在 VS 文件视图里改名 / 迁移」的完整说明见 `Engine/EngineCore/README.md` 第 8.5 节。
+- **增删文件自动重配（本版次）**：`src`（父目录）与 `src/entity`、`src/prop`、`src/effect` 四个目录均登记进 `CMAKE_CONFIGURE_DEPENDS`；新建 `src/新模块/` 或增删文件后**直接构建**即自动重配并重扫，不必手动「重新生成缓存」。⚠ 新增模块目录时须同时把该目录补进 GLOB 模式与登记列表，二者缺一不可。
 - 若收集结果为空，`CMakeLists.txt` 以 `FATAL_ERROR` 报错终止。
 - `EngineSystem` 的 **PUBLIC 面直接取自 `cmake/对外接口.cmake`**（唯一真源），使包含目录/编译定义/链接库
   漏写或写错在构建期立刻暴露。

@@ -4,11 +4,14 @@
 # 位置：白银纪元/Engine/EngineSystem
 # 依赖：EngineCore —— 链接「已经构建好的」EngineCore.lib，方向单向，不反向依赖
 # 产物：EngineSystem.lib（静态库）
-# 用法（本层独立配置与构建）：
-#     cmake -S <本目录> -B <本目录>/out/build/x64-Debug -G Ninja
-#     cmake --build <本目录>/out/build/x64-Debug
+# 用法（本层独立配置与构建；Debug / Release 用两棵独立构建树）：
+#     Debug  ：cmake -S <本目录> -B <本目录>/out/build/x64-Debug   -G Ninja -DCMAKE_BUILD_TYPE=Debug
+#     Release：cmake -S <本目录> -B <本目录>/out/build/x64-Release -G Ninja -DCMAKE_BUILD_TYPE=Release
+#     随后  ：cmake --build <对应构建树目录>
 # 前置条件：先构建 EngineCore。本层链接的是「已经构建好的」下层静态库，
 #           不存在源码回退路径（层级契约统一：层与层之间一律链接静态库）。
+#           下层库同样有 Debug / Release 两份，本层默认取 Debug 树；
+#           要接 Release 版下层库，显式指定覆盖变量（见第 1 节）。
 # 包含路径：项目内部一律写「项目根相对全路径」——
 #           本层头   Engine/EngineSystem/...
 #           下层头   Engine/EngineCore/...
@@ -35,6 +38,31 @@ get_filename_component(PROJECT_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}" ABSOLUTE)
 get_filename_component(BYJY_PROJECT_ROOT "${PROJECT_ROOT_DIR}/../.." ABSOLUTE)
 
 # =============================================================================
+# 0. 构建类型（Debug / Release 双构建树）
+# =============================================================================
+# 与 EngineCore 同一套约定：CMAKE_BUILD_TYPE 决定本层产出的 EngineSystem.lib 是
+# Debug(/MDd) 还是 Release(/MD)，构建树目录也按类型分开（out/build/x64-<类型>）。
+# 省略 -DCMAKE_BUILD_TYPE 时按 Debug 处理；非法取值直接报错，避免静默生成意外的库。
+if(NOT CMAKE_CONFIGURATION_TYPES)
+    if("${CMAKE_BUILD_TYPE}" STREQUAL "")
+        set(CMAKE_BUILD_TYPE Debug CACHE STRING "构建类型（Debug / Release）" FORCE)
+        message(STATUS "未指定 CMAKE_BUILD_TYPE，按 Debug 处理（构建树：${CMAKE_BINARY_DIR}）")
+    endif()
+
+    set(BYJY_VALID_BUILD_TYPES Debug Release RelWithDebInfo MinSizeRel)
+    if(NOT CMAKE_BUILD_TYPE IN_LIST BYJY_VALID_BUILD_TYPES)
+        message(FATAL_ERROR
+            "EngineSystem：不支持的 CMAKE_BUILD_TYPE = \"${CMAKE_BUILD_TYPE}\"\n"
+            "  合法取值：${BYJY_VALID_BUILD_TYPES}\n"
+            "  双构建树示例：\n"
+            "      cmake -S \"${CMAKE_CURRENT_SOURCE_DIR}\" -B \"${CMAKE_CURRENT_SOURCE_DIR}/out/build/x64-Debug\"   -G Ninja -DCMAKE_BUILD_TYPE=Debug\n"
+            "      cmake -S \"${CMAKE_CURRENT_SOURCE_DIR}\" -B \"${CMAKE_CURRENT_SOURCE_DIR}/out/build/x64-Release\" -G Ninja -DCMAKE_BUILD_TYPE=Release")
+    endif()
+
+    message(STATUS "构建类型：${CMAKE_BUILD_TYPE}（构建树：${CMAKE_BINARY_DIR}）")
+endif()
+
+# =============================================================================
 # 1. 依赖：EngineCore —— 链接已构建好的静态库
 # =============================================================================
 # 本层只消费 EngineCore「已经构建好的」EngineCore.lib：下层源码不进入本次构建，
@@ -42,7 +70,9 @@ get_filename_component(BYJY_PROJECT_ROOT "${PROJECT_ROOT_DIR}/../.." ABSOLUTE)
 #
 # 库定位顺序由 cmake/接入下层.cmake 的 byjy_jieru_xiaceng() 统一实现：
 #   ① 覆盖变量 BYJY_ENGINE_CORE_LIB_PATH 非空 → 用它；指向的文件不存在则直接报错
-#   ② 留空 → 自动探测 Engine/EngineCore/out/build/*/lib/EngineCore.lib，取时间戳最新的一份
+#   ② 留空 → 先看 Engine/EngineCore/out/build/x64-Debug/lib/EngineCore.lib；
+#            没有则扫 Engine/EngineCore/out/build/*/lib/EngineCore.lib，取时间戳最新的一份
+#            （双构建树并存时，自动探测固定默认 Debug；要 Release 请用 ①）
 #   ③ 都没有 → FATAL_ERROR，并提示先构建 EngineCore
 #
 # EngineCore 对外面（包含目录 / 编译定义 / 链接库 / 系统库）由
@@ -50,7 +80,7 @@ get_filename_component(BYJY_PROJECT_ROOT "${PROJECT_ROOT_DIR}/../.." ABSOLUTE)
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/接入下层.cmake")
 
 set(BYJY_ENGINE_CORE_LIB_PATH "" CACHE FILEPATH
-    "EngineCore 静态库路径；留空则自动探测 Engine/EngineCore/out/build/*/lib/EngineCore.lib")
+    "EngineCore 静态库路径；留空则自动探测（优先 out/build/x64-Debug/lib/EngineCore.lib，其次 out/build/*/lib 取最新）")
 
 byjy_jieru_xiaceng(
     "${PROJECT_ROOT_DIR}/../EngineCore/cmake/对外接口.cmake"
@@ -86,7 +116,12 @@ file(GLOB_RECURSE SYSTEM_HEADERS CONFIGURE_DEPENDS
 
 # 任务<1>：把被 GLOB 的目录登记为配置依赖 —— 目录内容变化（增删文件）时，
 # 生成系统自动重跑配置并重扫 GLOB，不必手动「重新生成缓存」才刷新目录视图。
+# 说明：本层 GLOB 只覆盖 entity / prop / effect 三个模块目录；此处连同它们的共同父目录
+#       src/ 一并登记 —— 新建 src/新模块/ 或直接在 src/ 下放文件时，父目录 mtime 变化
+#       即触发重配（否则要等下一次构建的 GLOB 内容比对兜底）。
+#       ⚠ 新增模块目录时，须同时把该目录补进上方 GLOB 模式与本登记列表，二者缺一不可。
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    "${PROJECT_ROOT_DIR}/src"
     "${PROJECT_ROOT_DIR}/src/entity"
     "${PROJECT_ROOT_DIR}/src/prop"
     "${PROJECT_ROOT_DIR}/src/effect"
@@ -117,6 +152,23 @@ endif()
 
 message(STATUS "EngineSystem 源文件: ${SYSTEM_SOURCES}")
 
+# 任务<2>：把扫描结果同步进显式清单 源文件列表.cmake（仅在路径集合有差异
+# 时写回），清单随后以 target_sources 提供全部源与头。
+# 动机：GLOB 工程里构建脚本不含任何「具体文件名」，VS 的文件视图改名 / 迁移操作
+#       找不到可改写的引用，于是既不触发 CMake 重新配置，VS 的模型与错误列表也
+#       停在旧版次。清单把扫描结果显式化，为该操作提供可改写的引用。
+# 说明：清单被 include，因此它本身也是配置依赖 —— 被改写即触发重新配置。
+#       脚本与 EngineCore 共用同一份（构建工具，非层间契约），避免多份副本漂移。
+include("${PROJECT_ROOT_DIR}/../EngineCore/cmake/生成源文件列表.cmake")
+byjy_source_list_sync(
+    "${PROJECT_ROOT_DIR}/源文件列表.cmake"
+    "${PROJECT_ROOT_DIR}"
+    EngineSystem
+    SYSTEM_SOURCES
+    SYSTEM_HEADERS
+    "Engine/EngineSystem"
+)
+
 # =============================================================================
 # 3. 创建系统层静态库
 # =============================================================================
@@ -142,7 +194,11 @@ set(BYJY_ENGINE_SYSTEM_INC
     "${BYJY_PROJECT_ROOT}"
 )
 
-add_library(EngineSystem STATIC ${SYSTEM_SOURCES} ${SYSTEM_HEADERS})
+# 此处不传任何源文件：源与头全部由 源文件列表.cmake 的 target_sources 提供。
+# 原因见清单头部说明 —— 只有由 target_sources 直接加入的字面文件名，其 File API
+# backtrace 才落在清单文件上，VS 的改名 / 迁移操作才改写得到引用。
+add_library(EngineSystem STATIC)
+include("${PROJECT_ROOT_DIR}/源文件列表.cmake")
 
 target_include_directories(EngineSystem PUBLIC
     ${BYJY_ENGINE_SYSTEM_INC}
