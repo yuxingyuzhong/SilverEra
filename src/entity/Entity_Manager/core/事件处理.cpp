@@ -8,7 +8,7 @@ namespace engine
     void Entity_Manager::event_broadcast(shared_ptr<Event> evt)
     {
         //向所有实体发送事件
-        for (auto& entity_record : entities.data())
+        for (auto& entity_record : entities)
             entity_record.event_terminal.receive(evt);
     }
 

@@ -6,8 +6,8 @@ namespace engine
     //构造函数
     Prop_Effect::Prop_Effect()
     {
-        //获取权限密钥
-        acl_key = event_terminal.acl_key_gen();
+        //获取权限密钥（key() 一次性生成，重复调用返回空，故兜底为 0）
+        acl_key = event_terminal.key().value_or(0);
     }
 
     //析构函数

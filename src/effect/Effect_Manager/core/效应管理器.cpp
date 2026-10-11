@@ -7,8 +7,8 @@ namespace engine
 	//构造函数
 	Effect_Manager::Effect_Manager()
 	{
-		//获取权限密钥
-		acl_key = event_terminal.acl_key_gen();
+		//获取权限密钥（key() 一次性生成，重复调用返回空，故兜底为 0）
+		acl_key = event_terminal.key().value_or(0);
 	}
 
 	//注册属性槽绑定通道
@@ -38,7 +38,7 @@ namespace engine
 				this->event_process(evt);
 			};
 		//注册事件接收入口
-		event_terminal->event_receiver_register(receive_entry);
+		event_terminal->bind(Port_ID::Evt_Receiver, receive_entry);
 
 		//更新接入信息
 		event_terminal.attach("Effect_Manager", needed_events, acl_key);
@@ -138,7 +138,7 @@ namespace engine
 					this->event_terminal.send(events,acl_key);
 				};
 			//配置事件终端
-			terminal->event_sender_register(event_send_entry);
+			terminal->bind(Port_ID::Evts_Sender, event_send_entry);
 
 			//获取效应分组索引
 			int64_t group_index = effect_group_seek(new_record->inclusion);
@@ -234,7 +234,7 @@ namespace engine
 	void Effect_Manager::effect_act(uint64_t phase)
 	{
 		//执行效应
-		for (auto& effect_record : effect_set.data())
+		for (auto& effect_record : effect_set)
 		{
 			//若记录有效
 			if(effect_record.valid())

@@ -51,7 +51,7 @@ namespace engine
                     event_terminal.receive(events);
                 };
             //设置事件发送入口
-            new_entity->event_terminal->event_sender_register(event_entry);
+            new_entity->event_terminal->bind(Port_ID::Evts_Sender, event_entry);
             //绑定属性槽
             new_entity->prop_slot_bind(&new_prop_slot);
             //加载决策树
@@ -81,7 +81,7 @@ namespace engine
     //实体行动 —— 全量执行
     void Entity_Manager::entity_act(void)
     {
-        for (auto& entity_record : entities.data())
+        for (auto& entity_record : entities)
             entity_record.act();
     }
 }

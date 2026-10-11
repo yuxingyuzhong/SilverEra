@@ -32,9 +32,9 @@ namespace engine
 		//构造密钥传送事件
 		shared_ptr<Event> evt(new(nothrow) Event());
 		//记录事件发送者
-		evt->sender_object = "Entity_Manager";
+		evt->sender = "Entity_Manager";
 		//记录事件接收者
-		evt->target_object = "Prop_Distributor";
+		evt->receiver = "Prop_Distributor";
 		//记录事件大类
 		evt->category = "Key";
 		//记录事件标签
