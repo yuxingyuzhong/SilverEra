@@ -40,12 +40,14 @@ namespace engine
         void quadtree_build_smart(const std::vector<Point2l>& coord_set);
 
         // ---- 查询 ----
-        //单区块信息查询
-        void seek(const Point2l& target, std::shared_ptr<Tree_Chunk_Data<T>>& receiver,
-            bool read_only);
-        //范围区块信息查询
-        void seek(const Rect2l& target_range, std::vector<std::shared_ptr<Tree_Chunk_Data<T>>>& receiver,
-            bool read_only);
+        //单区块信息查找（只读）
+        void seek(const Point2l& target, std::shared_ptr<Tree_Chunk_Data<T>>& receiver);
+        //范围区块信息查找（只读）
+        void seek(const Rect2l& target_range, std::vector<std::shared_ptr<Tree_Chunk_Data<T>>>& receiver);
+        //单区块信息获取（缺失则智能建树）
+        void get(const Point2l& target, std::shared_ptr<Tree_Chunk_Data<T>>& receiver);
+        //范围区块信息获取（缺失则智能建树）
+        void get(const Rect2l& target_range, std::vector<std::shared_ptr<Tree_Chunk_Data<T>>>& receiver);
 
         // ---- 读取 ----
         //四叉树管理器设置获取
@@ -145,5 +147,8 @@ namespace engine
         //查询结果列表元素坐标化
         void excel_element_to_coord(const Rect2l& excel_range, const uint64_t& element_ID,
             Point2l& receiver) const;
+        //区块查询（read_only 决定只读查找或缺失智能建树）
+        void chunk_query(const Rect2l& target_range,
+            std::vector<std::shared_ptr<Tree_Chunk_Data<T>>>& receiver, bool read_only);
     };
 }

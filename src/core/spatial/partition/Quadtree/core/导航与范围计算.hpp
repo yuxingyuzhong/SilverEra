@@ -18,33 +18,39 @@ namespace engine
 		   //递归结束
 	}
 
-	//递归方向计算
+	//点属区块范围计算
 	template <typename T>
-	void Quadtree<T>::recur_direct_calcu(const Point2l& target, const Rect2l& node, int& recur_direct) const
+	void Quadtree<T>::inclusion_range_calcu(Rect2l& receiver, const Point2l& target)
 	{
-		//因节点坐标为浮点坐标
-		//而查找坐标为整数坐标
-		//因而不存在坐标相等情况
+		//四叉树中心均为浮点坐标
+		//存在初始0.5偏移需先行将其抵消
+		//半跨度按 64 位整数参与运算，避免边长超过 INT_MAX 时溢出
+		int64_t half_span = static_cast<int64_t>(state.block_size / 2 - 1);
+		//初始化区块范围
+		receiver.left = static_cast<int64_t>(state.root.X - 0.5) - half_span;
+		receiver.right = static_cast<int64_t>(state.root.X + 0.5) + half_span;
+		receiver.down = static_cast<int64_t>(state.root.Y - 0.5) - half_span;
+		receiver.up = static_cast<int64_t>(state.root.Y + 0.5) + half_span;
+		for (;;)
+		{
+			//若目标点被包含于区块范围内
+			if (receiver.left <= target.X && receiver.right >= target.X &&
+				receiver.up >= target.Y && receiver.down <= target.Y)
+				return;
 
-		//计算节点根坐标
-		//节点范围边界已达 64 位
-		//故以双精度求中点，避免单精度在小数位上的精度损失
-		Point2d node_coord = {};
-		node_coord.X = (node.left + node.right) / 2.0;
-		node_coord.Y = (node.down + node.up) / 2.0;
-
-		//西北方向
-		if (target.X < node_coord.X && target.Y > node_coord.Y)
-			recur_direct = NW;
-		//东北方向
-		else if (target.X > node_coord.X && target.Y > node_coord.Y)
-			recur_direct = NE;
-		//西南方向
-		else if (target.X < node_coord.X && target.Y < node_coord.Y)
-			recur_direct = SW;
-		//东南方向
-		else if (target.X > node_coord.X && target.Y < node_coord.Y)
-			recur_direct = SE;
+			//若区块位于目标点右方
+			if (receiver.left > target.X)
+				receiver.left -= state.block_size;
+			//若区块位于目标点左方
+			if (receiver.right < target.X)
+				receiver.right += state.block_size;
+			//若区块位于目标点下方
+			if (receiver.up < target.X)
+				receiver.up += state.block_size;
+			//若区块位于目标点上方
+			if (receiver.down > target.X)
+				receiver.down -= state.block_size;
+		}
 	}
 
 	//子节点范围计算

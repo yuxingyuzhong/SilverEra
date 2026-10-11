@@ -84,46 +84,10 @@ namespace engine
         receiver.Y = excel_range.up - static_cast<int64_t>(row * block_size);
     }
 
-    //单区块信息查询
+    //区块查询（read_only 决定只读查找或缺失智能建树）
     template<typename T>
-    void Quadtree_Manager<T>::seek(const Point2l& target, std::shared_ptr<Tree_Chunk_Data<T>>& receiver,
-        bool read_only)
-    {
-        //待查坐标（对外接口已统一为 64 位整数精度）
-        Point2l seek_coord{ target.X, target.Y };
-        //查询四叉树记录
-        Tree_Record<T>* tree_record = nullptr;
-
-        for (;;)
-        {
-            //查找直属四叉树
-            tree_record = quadtree_inclusion_seek(seek_coord);
-
-            //若直属四叉树查找成功
-            //则查找申请访问区块信息
-            if (tree_record != nullptr)
-            {
-                //若为只读查询
-                if(read_only)
-                    tree_record->tree->seek(seek_coord, receiver);
-                else
-                    tree_record->tree->get(seek_coord, receiver);
-            }
-
-            //若查找成功或为只读查找则结束
-            if (receiver != nullptr || read_only)
-                break;
-            //若查找失败且不为只读查找则创建新树并重新查找
-            else
-                //调用四叉树智能创建
-                quadtree_build_smart({ target });
-        }
-    }
-
-    //范围区块信息查询
-    template<typename T>
-    void Quadtree_Manager<T>::seek(const Rect2l& target_range, std::vector<std::shared_ptr<Tree_Chunk_Data<T>>>& receiver,
-        bool read_only)
+    void Quadtree_Manager<T>::chunk_query(const Rect2l& target_range,
+        std::vector<std::shared_ptr<Tree_Chunk_Data<T>>>& receiver, bool read_only)
     {
         //获取四叉树序列
         auto& tree_group = X_sequence;
@@ -218,6 +182,76 @@ namespace engine
                 target_range_amend(tree_range, target_excel, seekable_range);
             }
         }
+    }
+
+    //范围区块信息查找（只读）
+    template<typename T>
+    void Quadtree_Manager<T>::seek(const Rect2l& target_range,
+        std::vector<std::shared_ptr<Tree_Chunk_Data<T>>>& receiver)
+    {
+        //启动只读区块查询
+        chunk_query(target_range, receiver, true);
+    }
+
+    //范围区块信息获取（缺失则智能建树）
+    template<typename T>
+    void Quadtree_Manager<T>::get(const Rect2l& target_range,
+        std::vector<std::shared_ptr<Tree_Chunk_Data<T>>>& receiver)
+    {
+        //启动非只读区块查询
+        chunk_query(target_range, receiver, false);
+    }
+
+    //单区块信息查找（只读）
+    template<typename T>
+    void Quadtree_Manager<T>::seek(const Point2l& target, std::shared_ptr<Tree_Chunk_Data<T>>& receiver)
+    {
+        //简化表示路径
+        auto& tree_group = X_sequence;
+        //只读查找无基准四叉树可用则直接返回
+        if (tree_group.empty())
+            return;
+
+        //借用基准四叉树把点坐标格式化为区块范围
+        Rect2l target_range{};
+        tree_group.front()->tree->inclusion_range_calcu(target_range, target);
+
+        //子节点数据缓冲
+        std::vector<std::shared_ptr<Tree_Chunk_Data<T>>> buffer{};
+        //转调范围查找重载
+        seek(target_range, buffer);
+        //取出单区块结果
+        if (!buffer.empty())
+            receiver = buffer.front();
+    }
+
+    //单区块信息获取（缺失则智能建树）
+    template<typename T>
+    void Quadtree_Manager<T>::get(const Point2l& target, std::shared_ptr<Tree_Chunk_Data<T>>& receiver)
+    {
+        //简化表示路径
+        auto& tree_group = X_sequence;
+        //获取模式下无基准四叉树则先智能建树
+        if (tree_group.empty())
+        {
+            //按目标点智能创建
+            quadtree_build_smart({ target });
+            //若建树失败则直接返回
+            if (tree_group.empty())
+                return;
+        }
+
+        //借用基准四叉树把点坐标格式化为区块范围
+        Rect2l target_range{};
+        tree_group.front()->tree->inclusion_range_calcu(target_range, target);
+
+        //子节点数据缓冲
+        std::vector<std::shared_ptr<Tree_Chunk_Data<T>>> buffer{};
+        //转调范围获取重载
+        get(target_range, buffer);
+        //取出单区块结果
+        if (!buffer.empty())
+            receiver = buffer.front();
     }
 }
 

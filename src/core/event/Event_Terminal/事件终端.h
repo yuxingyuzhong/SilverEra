@@ -4,7 +4,7 @@
 //获取预定义事件类型
 #include "../Event/事件.h"
 //获取终端接口
-#include "终端接口.h"
+#include "终端端口.h"
 //获取随机数生成器(用于权限密钥生成)
 #include "Engine/EngineCore/src/tools/Random_Generator/随机数生成器.h"
 
@@ -23,7 +23,7 @@ namespace engine
 		//事件集合
 		std::vector<std::shared_ptr<Event>> event_set{};
 		//终端接口
-		Terminal_Interface terminal_interface;
+		Terminal_Port terminal_port;
 
 	public:
 		//构造函数
@@ -36,13 +36,20 @@ namespace engine
 		Event_Terminal& operator=(Event_Terminal&&) = default;
 
 		//终端接口快捷通道
-		Terminal_Interface* operator->(void)
+		Terminal_Port* operator->(void)
 		{
-			return &terminal_interface;
+			return &terminal_port;
 		}
 
 		//权限密钥生成
-		int64_t acl_key_gen(void);
+		std::optional<int64_t> key(void);
+		//事件构造
+		std::shared_ptr<Event> build(void) const;
+		//事件构造
+		std::shared_ptr<Event> build(const std::string& category, const std::string& tag) const;
+		//事件构造
+		std::shared_ptr<Event> build(const std::string& sender, const std::string& receiver,
+			const std::string& category, const std::string& tag) const;
 
 		//中转站接入
 		bool attach(const std::string& module_name,const std::vector<Event>& needed_events,
@@ -50,16 +57,8 @@ namespace engine
 		//中转站交互 —— 单事件重载
 		bool interact(std::shared_ptr<Event> evt, std::shared_ptr<Event>& receiver, const int64_t& acl_key);
 		//中转站交互 —— 多事件重载
-		bool interact(std::vector<std::shared_ptr<Event>> events, std::vector<std::shared_ptr<Event>> receiver
-			,const int64_t& acl_key);
-
-		//事件构造
-		std::shared_ptr<Event> build(void) const;
-		//事件构造
-		std::shared_ptr<Event> build(const std::string& category, const std::string& tag) const;
-		//事件构造
-		std::shared_ptr<Event> build(const std::string& sender_object, const std::string& target_object,
-			const std::string& category, const std::string& tag) const;
+		bool interact(std::vector<std::shared_ptr<Event>> events, std::vector<std::shared_ptr<Event>> receiver,
+			const int64_t& acl_key);
 
 		//事件发送 —— 单事件重载
 		bool send(std::shared_ptr<Event> evt, const int64_t& acl_key) const;

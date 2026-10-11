@@ -23,6 +23,10 @@ namespace engine
 		Allocate_Order order = Allocate_Order::LIFO;
 		//可分配新数值
 		T next_number = (std::numeric_limits<T>::min)();
+		//已分配数值数量
+		uint64_t allocated_counts = 0;
+		//数值分配黑名单
+		std::unordered_set<T> black_list;
 		//回收数值集合
 		std::deque<T> recycle_numbers;
 		//回收数值映射
@@ -79,6 +83,8 @@ namespace engine
 
 			//清除数值映射
 			mapping.erase(number);
+			//增加数值分配计数
+			allocated_counts++;
 
 			return number;
 		}
@@ -97,6 +103,8 @@ namespace engine
 				recycle_numbers.push_back(recycle_number);
 				//建立映射
 				mapping.insert(recycle_number);
+				//减少数值分配计数
+				allocated_counts--;
 				return true;
 			}
 		}
@@ -107,6 +115,17 @@ namespace engine
 			for (auto number : numbers)
 				recycle(number);
 		}
+		//数值分配计数获取
+		uint64_t counts(void)const
+		{
+			//返回数值分配计数
+			return allocated_counts;
+		}
+		//数值容量获取
+		uint64_t capacity(void)const
+		{
+			return (std::numeric_limits<T>::max)() - (std::numeric_limits<T>::min)() + 1;
+		}
 		//重置分配器
 		void reset(void)
 		{
@@ -114,6 +133,8 @@ namespace engine
 			order = Allocate_Order::LIFO;
 			//重置可分配新数值
 			next_number = (std::numeric_limits<T>::min)();
+			//重置数值分配计数
+			allocated_counts = 0;
 			//重置回收数值集合
 			recycle_numbers.clear();
 			//重置回收数值映射

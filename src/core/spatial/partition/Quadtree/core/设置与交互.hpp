@@ -16,7 +16,6 @@ namespace engine
 	template <typename T>
 	Quadtree<T>::~Quadtree(void)
 	{
-		//子节点由根节点持有的 shared_ptr 链自动递归释放，无需手工回收
 	}
 
 	//最小区块单元大小设置

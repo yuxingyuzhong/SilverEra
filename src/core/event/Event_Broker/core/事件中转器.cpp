@@ -113,8 +113,8 @@ namespace engine
     void Event_Broker::receive(shared_ptr<Event> evt)
     {
         //简化表示路径
-        auto& sender_object = evt->sender_object;
-        auto& target_object = evt->target_object;
+        auto& sender = evt->sender;
+        auto& receiver = evt->receiver;
 
         //若事件标识信息不完整
         if (evt->category.empty() || evt->tag.empty())
@@ -136,10 +136,10 @@ namespace engine
         }
 
         //若为定向发送且目标存在
-        if (!target_object.empty() && mapping_set.count(target_object))
+        if (!receiver.empty() && mapping_set.count(receiver))
         {
             //获取目标ID
-            uint64_t target_ID = mapping_set[target_object];
+            uint64_t target_ID = mapping_set[receiver];
             //定向发送事件
             receivers[target_ID](evt);
             //处理下一事件
@@ -149,7 +149,7 @@ namespace engine
         //事件发起者ID记录
         optional<uint64_t> sender_ID = nullopt;
         //获取事件发送者ID
-        auto it = mapping_set.find(sender_object);
+        auto it = mapping_set.find(sender);
         //若事件发起者映射存在
         if (it != mapping_set.end())
             sender_ID = it->second;
@@ -193,14 +193,14 @@ namespace engine
         auto& config = evt->config;
 
         //若未定义事件发送者则直接返回
-        if (evt->sender_object.empty() || evt->target_object.empty())
+        if (evt->sender.empty() || evt->receiver.empty())
         {
             logger.warn("Event_Broker::事件收发对象定义不完整\n已略过该事件");
             return nullptr;
         }
 
         //若事件发送者不存在则直接返回
-        if (!mapping_set.count(evt->sender_object))
+        if (!mapping_set.count(evt->sender))
         {
             logger.warn("Event_Broker::事件发送者不存在\n已略过该事件");
             return nullptr;
@@ -215,9 +215,9 @@ namespace engine
                 //构造回复事件
                 shared_ptr<Event> response_event(new(nothrow)Event("Subscriber","Response"));
                 //注入查询目标对象名
-                response_event->config["object"] = evt->target_object;
+                response_event->config["object"] = evt->receiver;
                 //查询目标对象
-                auto it = mapping_set.find(evt->target_object);
+                auto it = mapping_set.find(evt->receiver);
                 //若目标对象不存在
                 if (it == mapping_set.end())
                     //设置目标对象不存在

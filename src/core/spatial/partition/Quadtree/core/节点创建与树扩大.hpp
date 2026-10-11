@@ -6,7 +6,8 @@ namespace engine
 {
 	//子节点递归
 	template <typename T>
-	bool Quadtree<T>::child_node_recur(Node*& this_node, const int& direct, const Node_Type& type, bool read_only)
+	bool Quadtree<T>::child_node_recur(Node*& this_node, const int& direct, 
+		const Node_Type& type, bool read_only)
 	{
 		//若当前节点持有区块数据(分支 1)却需要子节点
 		//则先转换为中间节点，原区块数据交由外部持有者释放

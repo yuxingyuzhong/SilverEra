@@ -25,7 +25,7 @@ namespace engine
 		//四叉树大小
 		uint64_t size = 0;
 		//四叉树大小上限
-		uint64_t max_size = 0;//初始化2的63次方
+		uint64_t max_size = 9223372036854775808;//初始化2的63次方
 		//最小区块单元大小
 		uint64_t block_size = 0;
 	};

@@ -52,16 +52,6 @@ namespace engine
 			Get,
 			Unload
 		};
-		//单点查找可行性枚举
-		enum Analysis_Result
-		{
-			//分析已经结束，查找不可行
-			INFEASIBLE = 0,
-			//分析正在进行，查找可能可行
-			IN_PROGRESS = 1,
-			//分析已经结束，查找可行
-			FEASIBLE = 2
-		};
 		//查找区域分布情况枚举
 		enum Range_Relation
 		{
@@ -99,27 +89,23 @@ namespace engine
 	 
 		//区块构建 —— 单区块重载(可直接挂载数据)
 		void build(const Point2l& target,const std::shared_ptr<T>& data = nullptr);
-
 		//区块构建 —— 范围重载(不可直接挂载数据)
 		void build(const Rect2l& target_range);
 
 		//区块查找 —— 单区块重载
 		void seek(const Point2l& target, std::shared_ptr<Tree_Chunk_Data<T>>& receiver) ;
-
 		//区块查找 —— 范围重载
 		void seek(const Rect2l& target_range,
 			std::vector<std::shared_ptr<Tree_Chunk_Data<T>>>& receiver) ;
 
 		//区块获取 —— 单区块重载
 		void get(const Point2l& target, std::shared_ptr<Tree_Chunk_Data<T>>& receiver);
-
 		//区块获取 —— 范围重载
 		void get(const Rect2l& target_range,
 			std::vector<std::shared_ptr<Tree_Chunk_Data<T>>>& receiver);
 
 		//区块卸载 —— 单区块重载
 		void unload(const Point2l& target);
-
 		//区块卸载 —— 范围重载
 		void unload(const Rect2l& target_range);
 
@@ -133,14 +119,14 @@ namespace engine
 	private:
 		//递归级数计算
 		void recur_level_calcu(int& address_series) const;
-
-		//递归方向计算
-		void recur_direct_calcu(const Point2l& target, const Rect2l& node, int& recur_direct) const;
+	public:
+		//点属区块范围计算
+		void inclusion_range_calcu(Rect2l& receiver, const Point2l& target);
 
 		//子节点范围计算
 		void child_node_range_calcu(const int& recur_direct, Rect2l& child_range,
 			const Rect2l& parent_range) const;
-	public:
+
 		//四叉树管理范围计算
 		void manage_range_calcu(Rect2l& receiver,const Point2d& root,const uint64_t tree_size) const;
 
@@ -158,24 +144,22 @@ namespace engine
 		//子节点递归
 		bool child_node_recur(Node*& this_node, const int& direct, const Node_Type& type,bool read_only);
 
-		//叶子收集
-		void leaf_collect(const Rect2l& target_range, const Rect2l& parent_range, Operate_Mode mode,
+		//递归叶子
+		void leaf_recur(const Rect2l& target_range, const Rect2l& parent_range, Operate_Mode mode,
 			int now_level, const int& max_level,Node* parent_node,
 			std::vector<std::shared_ptr<Tree_Chunk_Data<T>>>& receiver);
 
-		//节点操作 —— 单区块重载
-		void node_operate(const Point2l& target,Operate_Mode mode, 
+		//区块操作 —— 单区块重载
+		void chunk_operate(const Point2l& target,Operate_Mode mode, 
 			std::shared_ptr<Tree_Chunk_Data<T>>& receiver,
 			const std::shared_ptr<T>& data = nullptr);
 
-		//节点操作 —— 范围区块重载
-		void node_operate(const Rect2l& target_range, Operate_Mode mode, 
+		//区块操作 —— 范围区块重载
+		void chunk_operate(const Rect2l& target_range, Operate_Mode mode, 
 			std::vector<std::shared_ptr<Tree_Chunk_Data<T>>>& receiver);
 
 		// ———— 查询前置支撑 ————
 	private:
-		//单点查询可行性分析
-		Analysis_Result seekable_analyse(const Point2l& target, bool read_only);
 
 		//范围查询可行性分析
 		void seekable_analyse(const Rect2l& format_range, Rect2l& seekable_range, bool read_only);

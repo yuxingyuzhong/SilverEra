@@ -34,17 +34,17 @@ namespace engine
 	void Collision_Proxy::attach(void)
 	{
 		//若事件中转站接入入口尚未注册（接入入口由事件中转站的持有者注册）
-		if (!event_terminal->interface_check(Interface_ID::ATTACH_HANDLER))
+		if (!event_terminal->check(Port_ID::Broker_Attacher))
 		{
 			logger.error("Collision_Proxy::事件中转站接入入口未注册，接入中止");
 			return;
 		}
 
 		//注册本模块事件接收入口（事件送达后交由事件处理分派）
-		event_terminal->event_receiver_register(
+		event_terminal->bind(Port_ID::Evt_Receiver,
 			[this](shared_ptr<Event> evt) { this->event_process(evt); });
 		//若事件接收入口注册失败
-		if (!event_terminal->interface_check(Interface_ID::EVENT_RECEIVER))
+		if (!event_terminal->check(Port_ID::Evt_Receiver))
 		{
 			logger.error("Collision_Proxy::事件接收入口注册失败，接入中止");
 			return;
@@ -83,7 +83,7 @@ namespace engine
 		if (evt->category == "Config" && evt->tag == "Load")
 		{
 			//非本模块的配置指令一律忽略
-			if (evt->target_object != module_name)
+			if (evt->receiver != module_name)
 				return;
 			//按配置内容构建碰撞空间与碰撞体
 			config_apply(evt->config);

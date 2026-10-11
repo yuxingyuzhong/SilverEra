@@ -38,6 +38,7 @@
 #include <map>          // std::map, std::multimap
 #include <unordered_set>// std::unordered_set, std::unordered_multiset
 #include <unordered_map>// std::unordered_map, std::unordered_multimap
+#include <array> // std::array
 
 // ----- 字符串与 I/O -----
 #include <string>       // std::string
@@ -74,9 +75,6 @@
 
 // ----- C++20 调试信息 -----
 #include <source_location>  // std::source_location
-
-// ----- JSON 解析（外部库）-----
-#include <nlohmann/json.hpp>
 
 //============================================================================
 // 3. 编译器与平台相关（仅 Windows）

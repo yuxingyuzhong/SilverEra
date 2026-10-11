@@ -1,9 +1,11 @@
 #pragma once
-#include "终端接口.h"
+#include "终端端口.h"
 #include "事件终端.h"
 
 // ---------- 基本类型 ---------
 using std::string;
+using std::optional;
+using std::nullopt;
 
 // ---------- 容器 ----------
 using std::vector;

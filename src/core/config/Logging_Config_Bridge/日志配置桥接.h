@@ -8,7 +8,7 @@
 namespace engine
 {
     /*
-    日志配置桥接
+    Logging_Config_Bridge
 
     职责：把「经事件中转站下发」的日志配置，翻译为日志系统（Log）的纯数据设置调用。
     分层：本模块位于 core 层，与 Config_Loader 同级。向下只依赖 Logging 的公开设置接口，
@@ -17,7 +17,7 @@ namespace engine
         公开门面置顶（构造 / 析构 / 接入），其后的私有方法按「被依赖者在依赖者前面」
         与「功能相近者相邻排列」分成三组：
             组1 配置应用 · 组2 配置卸载 · 组3 事件分发
-        实现集中于 core/日志配置桥接.cpp，其中函数顺序与本声明顺序一致。
+        实现集中于 core/Logging_Config_Bridge.cpp，其中函数顺序与本声明顺序一致。
     */
     class Log_Config_Bridge
     {

@@ -1,6 +1,8 @@
 #pragma once
 //预编译头
 #include "Engine/EngineCore/common/前置头文件包含.h"
+//获取 JSON 解析外部库
+#include <nlohmann/json.hpp>
 //获取碰撞库依赖封装
 #include "../../common/core/依赖库封装.h"
 

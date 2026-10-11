@@ -7,7 +7,7 @@ namespace engine
 	Collision_Proxy::Collision_Proxy()
 	{
 		//生成事件发送权限密钥
-		acl_key = event_terminal.acl_key_gen();
+		acl_key = event_terminal.key().value();
 	}
 
 	//碰撞空间构建
