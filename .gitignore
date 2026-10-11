@@ -40,5 +40,11 @@ imgui.ini
 # Cyrene agent
 .cyrene/
 
+# 各层均为独立 git 仓库（目录内含自身 .git），顶层定位为总览线、不收录各层内容；
+# 不忽略时 git 会把它们当作未跟踪目录长期显示为脏改动。
+Application/
+Engine/EngineCore/
+Engine/EngineSystem/
+
 # glfw 预编译静态库是链接必需依赖，放行入库（例外于 *.lib 规则）
 !Engine/EngineCore/external/glfw/glfw3.lib
