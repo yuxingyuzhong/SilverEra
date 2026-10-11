@@ -4,15 +4,21 @@
 # 位置：白银纪元/Engine/EngineCore
 # 依赖：无（拓扑最底层）
 # 产物：EngineCore.lib（静态库）
-# 用法（本层独立配置与构建）：
-#     cmake -S <本目录> -B <本目录>/out/build/x64-Debug -G Ninja
-#     cmake --build <本目录>/out/build/x64-Debug
+# 用法（本层独立配置与构建；Debug / Release 双构建树并存，互不覆盖）：
+#     Debug  ：cmake -S <本目录> -B <本目录>/out/build/x64-Debug   -G Ninja -DCMAKE_BUILD_TYPE=Debug
+#              cmake --build <本目录>/out/build/x64-Debug
+#     Release：cmake -S <本目录> -B <本目录>/out/build/x64-Release -G Ninja -DCMAKE_BUILD_TYPE=Release
+#              cmake --build <本目录>/out/build/x64-Release
+#     两棵树的产物各自落在自己的构建树内：<构建树>/lib/EngineCore.lib、<构建树>/include（头快照）。
+#     省略 -DCMAKE_BUILD_TYPE 时按 Debug 处理并打印提示（见第 1.5 节）。
 # 包含路径：项目内部一律写「项目根相对全路径」——
 #           本层头   Engine/EngineCore/...
 #           编译包含根 = 项目根（本层不消费任何下层头，无需头快照）
 # 层间契约：
 #     cmake/对外接口.cmake   本层对外自描述（前缀 BYJY_ENGINE_CORE）
 #     cmake/导出头快照.cmake 对外头快照导出脚本（上层按与本层库同版次的头编译）
+#     源文件列表.cmake 源文件显式清单（生成物，由 cmake/生成源文件列表.cmake
+#                            自动维护；用途见第 2 节「源文件收集」）
 # 说明：本层不含 cmake/接入下层.cmake —— 无下层可接。
 # =============================================================================
 cmake_minimum_required(VERSION 3.20)
@@ -28,6 +34,36 @@ project(EngineCore LANGUAGES C CXX)
 
 # 导出编译数据库（供 IDE / 语言工具链读取本层的包含路径与宏；Ninja 生成器默认不产出该文件）
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+# =============================================================================
+# 1.5 构建类型（Debug / Release 双构建树）
+# =============================================================================
+# 背景：本层用 Ninja（单配置生成器），一次配置只产一种构建类型；Debug 与 Release
+#       靠两棵独立构建树并存：
+#           out/build/x64-Debug   → Debug   （默认）
+#           out/build/x64-Release → Release （需显式指定 -DCMAKE_BUILD_TYPE=Release）
+# 做法：单配置生成器下校验 CMAKE_BUILD_TYPE —— 缺省取 Debug 并打印提示；
+#       取值非法直接失败。否则会落入「既非 Debug 也非 Release」的裸配置
+#       （MSVC 在构建类型为空时按 /MD 编译，但不开优化、也不定义 NDEBUG）。
+# 说明：多配置生成器（Visual Studio）由 CMAKE_CONFIGURATION_TYPES 管理，
+#       此处不介入，避免与 IDE 的配置下拉互相覆盖。
+# =============================================================================
+if(NOT CMAKE_CONFIGURATION_TYPES)
+    if(NOT CMAKE_BUILD_TYPE)
+        set(CMAKE_BUILD_TYPE Debug CACHE STRING "构建类型（Debug / Release / RelWithDebInfo / MinSizeRel）" FORCE)
+        message(STATUS "未指定 CMAKE_BUILD_TYPE，按 Debug 处理（构建树：${CMAKE_BINARY_DIR}）")
+    endif()
+
+    set(BYJY_VALID_BUILD_TYPES Debug Release RelWithDebInfo MinSizeRel)
+    if(NOT CMAKE_BUILD_TYPE IN_LIST BYJY_VALID_BUILD_TYPES)
+        message(FATAL_ERROR
+            "CMAKE_BUILD_TYPE 取值非法：'${CMAKE_BUILD_TYPE}'\n"
+            "合法取值（区分大小写）：${BYJY_VALID_BUILD_TYPES}\n"
+            "示例：cmake -S <本目录> -B <本目录>/out/build/x64-Release -G Ninja -DCMAKE_BUILD_TYPE=Release")
+    endif()
+
+    message(STATUS "构建类型：${CMAKE_BUILD_TYPE}（构建树：${CMAKE_BINARY_DIR}）")
+endif()
 
 # =============================================================================
 # 归档响应文件 BOM 包装器（MSVC + Ninja 专用）
@@ -118,10 +154,30 @@ endif()
 # 打印源文件数量，方便调试
 message(STATUS "EngineCore 源文件数量: ${ENGINE_SOURCES}")
 
+# 任务<2>：把扫描结果同步进显式清单 源文件列表.cmake（仅在路径集合有差异
+# 时写回），清单随后以 target_sources 提供全部源与头。
+# 动机：GLOB 工程里构建脚本不含任何「具体文件名」，VS 的文件视图改名 / 迁移操作
+#       找不到可改写的引用，于是既不触发 CMake 重新配置，VS 的模型与错误列表也
+#       停在旧版次。清单把扫描结果显式化，为该操作提供可改写的引用。
+# 说明：清单被 include，因此它本身也是配置依赖 —— 被改写即触发重新配置。
+include("${PROJECT_ROOT_DIR}/cmake/生成源文件列表.cmake")
+byjy_source_list_sync(
+    "${PROJECT_ROOT_DIR}/源文件列表.cmake"
+    "${PROJECT_ROOT_DIR}"
+    EngineCore
+    ENGINE_SOURCES
+    ENGINE_HEADERS
+    "Engine/EngineCore"
+)
+
 # =============================================================================
 # 3. 创建引擎静态库（核心）
 # =============================================================================
-add_library(EngineCore STATIC ${ENGINE_SOURCES} ${ENGINE_HEADERS})
+# 此处不传任何源文件：源与头全部由 源文件列表.cmake 的 target_sources 提供。
+# 原因见清单头部说明 —— 只有由 target_sources 直接加入的字面文件名，其 File API
+# backtrace 才落在清单文件上，VS 的改名 / 迁移操作才改写得到引用。
+add_library(EngineCore STATIC)
+include("${PROJECT_ROOT_DIR}/源文件列表.cmake")
 
 # =============================================================================
 # 4. 头文件搜索路径设置

@@ -224,8 +224,8 @@ Engine/EngineCore/
 - **订阅**：模块在 `attach()` 中声明自己关心的事件清单（`vector<Event>`，只有 `category` 与 `tag` 参与匹配），事件中转器为其分配订阅者编号并登记。
 - **发布**：模块用 `build()` 构造事件，用 `send()` 投出；`send()` 需要携带自己的 ACL 密钥。
 - **投递**：中转器在 `process()` 中遍历订阅表，把事件逐个送入订阅方注册的 `std::function<void(std::shared_ptr<Event>)>` 入口；订阅方通常在入口里再按 `tag` 分派到各 `event_process` 私有方法。
-- **权限**：`Event_Terminal::attach()` 会校验终端接口中「事件发送入口」是否注册；只有持有合法密钥的终端才能发送，未分配的密钥会被拒绝。密钥由 `acl_key_gen()` 基于 PCG32 随机数生成器产生。
-- **定向与广播**：事件的 `target_object` 为空表示广播，非空表示定向；接收方（如 `Collision_Proxy`）在 `event_process()` 开头用 `evt->target_object != module_name` 过滤掉不属于自己的定向事件。
+- **权限**：`Event_Terminal::attach()` 会校验终端接口中「事件发送入口」是否注册；只有持有合法密钥的终端才能发送，未分配的密钥会被拒绝。密钥由 `key()` 基于 PCG32 随机数生成器产生。
+- **定向与广播**：事件的 `receiver` 为空表示广播，非空表示定向；接收方（如 `Collision_Proxy`）在 `event_process()` 开头用 `evt->receiver != module_name` 过滤掉不属于自己的定向事件。
 
 ### 5.2 层内模块依赖关系
 
@@ -267,10 +267,10 @@ Engine/EngineCore/
 ```
 1. Config_Loader::act()
      └ 扫描 assets/config/route/ 下路由文件，读取目标配置
-        └ 发事件 Config/Load（target_object = 目标模块名，config = 配置 JSON）
+        └ 发事件 Config/Load（receiver = 目标模块名，config = 配置 JSON）
 2. Event_Broker 命中 Collision_Proxy 的订阅（Config/Load）
 3. Collision_Proxy::event_process()
-     └ 过滤 target_object → config_apply(config)
+     └ 过滤 receiver → config_apply(config)
         ├ 读边界配置 → region_build / region_boundary_set
         └ 读碰撞体配置 → collider_build + collider_config_apply
                             └ 形状构建（六种形状之一）挂入 Collision_Region 的子弹世界
@@ -323,17 +323,17 @@ namespace engine
     //事件
     struct Event
     {
-        std::string sender_object;   //发起事件的对象名
-        std::string target_object;   //事件的目标对象名（为空表示广播）
+        std::string sender;   //发起事件的对象名
+        std::string receiver;   //事件的目标对象名（为空表示广播）
         std::string category;        //事件大类（英文，如 Config / Collision）
         std::string tag;             //事件标签（英文，如 Load / RegionBuild）
         nlohmann::json config;       //事件载荷
 
         Event() = default;                                                  //默认构造
         Event(const std::string& category, const std::string& tag);         //构造大类与标签
-        Event(const std::string& sender_object, const std::string& target_object,
+        Event(const std::string& sender, const std::string& receiver,
               const std::string& category, const std::string& tag);         //对象标签构造
-        Event(const std::string& sender_object, const std::string& target_object,
+        Event(const std::string& sender, const std::string& receiver,
               const std::string& category, const std::string& tag,
               const nlohmann::json& config);                                //全量构造
 
@@ -345,15 +345,15 @@ namespace engine
 **内部实现要点**：
 
 - 三类含参构造逐级补全信息：只给大类与标签 → 再给发送者与目标 → 再给 `config` 载荷，便于订阅清单写得简洁（订阅清单里通常写 `Event("", "", "Collision", "RegionBuild")`）。
-- `operator==` 比较 `category`、`tag`、`target_object`、`config` 四项，**不比较 `sender_object`**——这样同一个事件无论由谁发出都可被同一订阅规则命中。
-- 文件内提供 `std::hash<engine::Event>` 特化：对 `category`、`tag`、`target_object` 做 `hash_combine`，再叠加 `config.dump()` 的哈希，使事件可作为 `unordered_*` 的键。
+- `operator==` 比较 `category`、`tag`、`receiver`、`config` 四项，**不比较 `sender`**——这样同一个事件无论由谁发出都可被同一订阅规则命中。
+- 文件内提供 `std::hash<engine::Event>` 特化：对 `category`、`tag`、`receiver` 做 `hash_combine`，再叠加 `config.dump()` 的哈希，使事件可作为 `unordered_*` 的键。
 - `namespace detail` 中的 `hash_combine` 为内部工具，供上述特化使用。
 
-#### 6.1.2 事件终端 `Event_Terminal` 与终端接口 `Terminal_Interface`
+#### 6.1.2 事件终端 `Event_Terminal` 与终端接口 `Terminal_Port`
 
 **涉及文件**：`src/core/Event/Event_Terminal/事件终端.h`（68 行）、`终端接口.h`（80 行）、`core/事件终端.cpp`（239 行）、`core/终端接口.cpp`（88 行）、`局部命名空间使用.h`
 
-**功能**：`Event_Terminal` 是模块持有的事件收发把手，负责密钥管理、事件构造、发送、接收与查阅；`Terminal_Interface` 是终端的「入口注册表」，把各类回调以 `std::function` 形式登记在案，供 `Event_Terminal` 转发调用。
+**功能**：`Event_Terminal` 是模块持有的事件收发把手，负责密钥管理、事件构造、发送、接收与查阅；`Terminal_Port` 是终端的「入口注册表」，把各类回调以 `std::function` 形式登记在案，供 `Event_Terminal` 转发调用。
 
 **对外接口（`Event_Terminal`）**：
 
@@ -369,9 +369,9 @@ namespace engine
         Event_Terminal(Event_Terminal&&) = default;
         Event_Terminal& operator=(Event_Terminal&&) = default;
 
-        Terminal_Interface* operator->(void);                                     //终端接口快捷通道
+        Terminal_Port* operator->(void);                                     //终端接口快捷通道
 
-        int64_t acl_key_gen(void);                                                //权限密钥生成
+        int64_t key(void);                                                //权限密钥生成
 
         bool attach(const std::string& module_name,
                     const std::vector<Event>& needed_events,
@@ -383,8 +383,8 @@ namespace engine
         std::shared_ptr<Event> build(void);                                       //事件构造（空）
         std::shared_ptr<Event> build(const std::string& category,
                                      const std::string& tag);                     //事件构造（大类标签）
-        std::shared_ptr<Event> build(const std::string& sender_object,
-                                     const std::string& target_object,
+        std::shared_ptr<Event> build(const std::string& sender,
+                                     const std::string& receiver,
                                      const std::string& category,
                                      const std::string& tag);                     //事件构造（全量）
 
@@ -399,20 +399,20 @@ namespace engine
 }
 ```
 
-**对外接口（`Terminal_Interface`）**：
+**对外接口（`Terminal_Port`）**：
 
 ```cpp
 namespace engine
 {
     //终端接口列表
-    enum class Interface_ID
+    enum class Port_ID
     {
         NONE, ATTACH_HANDLER, EVENT_INTERACTOR, EVENTS_INTERACTOR,
         EVENT_SENDOR, EVENTS_SENDOR, EVENT_RECEIVER, EVENTS_RECEIVER
     };
 
     //终端接口
-    class Terminal_Interface
+    class Terminal_Port
     {
         //（私有）类型别名
         using Needed_Events  = const std::vector<Event>&;
@@ -432,17 +432,17 @@ namespace engine
         bool event_receiver_register(Event_Handler callback);           //事件接收入口注册（单事件）
         bool event_receiver_register(Events_Handler callback);          //事件接收入口注册（多事件）
 
-        bool interface_check(const Interface_ID& ID);                   //入口是否已注册
+        bool check(const Port_ID& ID);                   //入口是否已注册
     };
 }
 ```
 
 **内部实现要点**：
 
-- `Event_Terminal` 私有成员：`std::optional<int64_t> acl_key`（本终端密钥）、`Random_Generator key_generator`（密钥生成器）、`std::vector<std::shared_ptr<Event>> event_set`（待发 / 已收事件集合）、`Terminal_Interface terminal_interface`（接口表）。
-- `operator->()` 返回 `Terminal_Interface*`，于是模块可以写 `event_terminal->event_receiver_register(...)`，把注册工作直接穿透到接口表，而不必先取 `terminal_interface` 成员。
-- `Terminal_Interface` 用 `std::vector<Interface_ID> map` 记录各入口的注册顺序，配以 7 个 `std::unique_ptr<std::function<...>>` 成员（`attach_handler`、`event_interactor`、`events_interactor`、`event_sender`、`events_sender`、`event_receiver`、`events_receiver`）保存回调；公开的注册入口是 5 个名字、共 7 个重载（发送与接收各有单事件 / 多事件两个重载）。`interface_check(ID)` 供调用方在转发前确认入口已就位（`Collision_Proxy::attach()` 就是先检查 `ATTACH_HANDLER` 再注册接收入口）。
-- `memory_malloc` / `function_register` 是 `Terminal_Interface` 的内部模板工具，负责在 `new(nothrow)` 失败时安全退出。
+- `Event_Terminal` 私有成员：`std::optional<int64_t> acl_key`（本终端密钥）、`Random_Generator key_generator`（密钥生成器）、`std::vector<std::shared_ptr<Event>> event_set`（待发 / 已收事件集合）、`Terminal_Port terminal_port`（接口表）。
+- `operator->()` 返回 `Terminal_Port*`，于是模块可以写 `event_terminal->event_receiver_register(...)`，把注册工作直接穿透到接口表，而不必先取 `terminal_port` 成员。
+- `Terminal_Port` 用 `std::vector<Port_ID> map` 记录各入口的注册顺序，配以 7 个 `std::unique_ptr<std::function<...>>` 成员（`attach_handler`、`event_interactor`、`events_interactor`、`event_sender`、`events_sender`、`event_receiver`、`events_receiver`）保存回调；公开的注册入口是 5 个名字、共 7 个重载（发送与接收各有单事件 / 多事件两个重载）。`check(ID)` 供调用方在转发前确认入口已就位（`Collision_Proxy::attach()` 就是先检查 `ATTACH_HANDLER` 再注册接收入口）。
+- `memory_malloc` / `function_register` 是 `Terminal_Port` 的内部模板工具，负责在 `new(nothrow)` 失败时安全退出。
 - **持有者责任**：`attach()` 用的「中转站接入入口」由事件中转站的持有者（宿主组合根）注册；终端本身只负责调用。
 
 #### 6.1.3 事件中转器 `Event_Broker`
@@ -736,7 +736,7 @@ namespace engine
     struct Tree_Chunk_Data
     {
         Point2d node;      //区块中心坐标
-        T*      ptr_data;  //区块叶子数据指针
+        T*      data;  //区块叶子数据指针
     };
 }
 ```
@@ -1027,7 +1027,7 @@ namespace engine
 
 | category | tag | 含义 |
 | --- | --- | --- |
-| `Config` | `Load` | 配置加载（定向：`target_object == "Collision_Proxy"`） |
+| `Config` | `Load` | 配置加载（定向：`receiver == "Collision_Proxy"`） |
 | `Collision` | `RegionBuild` | 构建碰撞空间 |
 | `Collision` | `RegionUnload` | 卸载碰撞空间 |
 | `Collision` | `RegionState` | 设置空间活跃性 |
@@ -1043,14 +1043,14 @@ namespace engine
 
 **内部实现要点**：
 
-- `inline static const std::string module_name = "Collision_Proxy"`：既是事件中转站的登记名，也是事件 `sender_object` 标识、以及 `Config/Load` 定向过滤的比对基准。
+- `inline static const std::string module_name = "Collision_Proxy"`：既是事件中转站的登记名，也是事件 `sender` 标识、以及 `Config/Load` 定向过滤的比对基准。
 - 私有成员：`std::unordered_map<std::string, std::unique_ptr<Collision_Region>> regions`（空间集合）、`std::unordered_multimap<uint64_t, std::string> collider_mapping`（碰撞体编号 → 归属空间名，**多重映射**）、`std::unordered_map<uint64_t, nlohmann::json> displacement_events`（位移事件保存，同编号新事件覆盖旧事件）、`std::unordered_map<uint64_t, nlohmann::json> collision_responses`（碰撞响应回复信箱）、`int64_t acl_key`（事件发送密钥）。
 - **多重映射的必要性**：编号由各空间自行分配，同一编号可能被不同空间分别持有，故用 `unordered_multimap`；`collider_set_dispatch()` 会把一次参数设置分发到所有持有该编号的空间。
 - **位移与事件通道**：位移向量只由 `Collision/ColliderDisplacement` 事件提供，代理器把事件 `config` 存入 `displacement_events`，并向每个新建空间注入读取回调（`位移管理.cpp`），碰撞空间在更新位置时按编号重读，位移因此**持续生效直至被新事件覆盖**；通用设置指令 `Collision/ColliderSet` 不再承担位移字段。
 - **碰撞响应时序**（`碰撞响应.cpp`）：检测得出碰撞对后逐个发布碰撞事件，立即回查事件终端是否已收到 `Collision/ColliderCollisionResponse` 回复；未收到则先搁置该碰撞体继续处理其余碰撞体，其余处理完后再查一次，仍未收到则重发一次碰撞事件再查，最终仍无回复即日志报错并搁置。响应三选一——`stop`（位移作废，自下一帧起不再推进）、`keep`（位移保持）、`change`（改用回复给出的新位移）。
 - **跨越通知**：`region_detect` 在碰撞响应流程之后、发布 `DetectResult` 之前，取走空间的 `cross_notices_take()` 并逐个发布 `Collision/RegionCrossNotice`，供外界据以把碰撞体迁移到其余碰撞空间；该事件是代理器**自身的出站事件**，不登记订阅（订阅会导致自收自处理）。
 - **转移与镜像**：转移把碰撞体从一个空间移交给另一个空间（同时改动归属映射，并抹除源空间的跨越状态记录）；镜像在同一空间内按位位移向量生成对称的碰撞体，用于「成对出现」的几何体。
-- `attach()` 的顺序是：先 `interface_check(ATTACH_HANDLER)` 确认接入入口已注册 → `event_receiver_register()` 注册接收入口 → 组装 `needed_events` → `event_terminal.attach(module_name, needed_events, acl_key)`。
+- `attach()` 的顺序是：先 `check(ATTACH_HANDLER)` 确认接入入口已注册 → `event_receiver_register()` 注册接收入口 → 组装 `needed_events` → `event_terminal.attach(module_name, needed_events, acl_key)`。
 - 发布侧统一走 `event_publish(tag, payload)`，内部用 `build(module_name, "", "Collision", tag)` 构造带有发送者标识的广播事件。
 
 ---
@@ -1075,13 +1075,13 @@ namespace engine
 **要点摘录**：
 
 - `Detail`（校验部分）：命名空间自由函数 `template <typename T> inline bool engine::detail::field_check(const nlohmann::json&, const std::string&)` 检查字段是否存在且类型匹配；`inline bool engine::detail::path_check(path/string)` 两个重载校验路径有效性；`inline void engine::detail::hash_combine(size_t&, size_t)` 做哈希混合。这是历史文档中「配置检查器」的现名（类 `Data_Validator` 已改为命名空间自由函数）。
-- `Config_Loader`：私有成员 `std::u8string scan_content = u8"assets/config/route/"` 与 `allowed_root = u8"assets/config/"`，即**它只扫描路由目录，并限制在配置根目录之内**（防止越权跳转，内部有 `skip_safety_inspect` 恶意跳转检查）；读取成功后构造事件，填写 `category = "Config"`、`tag = "Load"`，并设置 `target_object` 为路由里声明的目标模块名；`act()` 是入口。
+- `Config_Loader`：私有成员 `std::u8string scan_content = u8"assets/config/route/"` 与 `allowed_root = u8"assets/config/"`，即**它只扫描路由目录，并限制在配置根目录之内**（防止越权跳转，内部有 `skip_safety_inspect` 恶意跳转检查）；读取成功后构造事件，填写 `category = "Config"`、`tag = "Load"`，并设置 `receiver` 为路由里声明的目标模块名；`act()` 是入口。
 - `Logging`：`Log` 类提供静态模板 `info / warn / error / debug`，签名接受 `std::format_string<Args...>` 支持 `{}` 占位格式化；`stream_set()` 可切换输出流（用于重定向到文件）；标准库缺失的格式化器集中于 `Detail/标准库format特化.h`（`error_code`／`error_condition`／`filesystem::path`），由 `Log/日志系统.h` 包含；项目自定义类型的格式化器放在各自类型所在的头文件（如 `Config_Content` 在 `配置加载器.h`）。
 - `Mesh_Loader`：`struct Mesh_Data { std::vector<float> vertices; std::vector<uint32_t> indices; }`；`static bool load_obj(const std::string&, Mesh_Data&)` 解析 OBJ；带两个硬上限——`max_file_size = 64MiB`（文件大小）与 `max_vertex_count = 1000000`（顶点数量）；面索引支持四种常见写法，非三角面用扇形三角化，末尾做完整性终检；路径采取双源回退。
 - `Detail`（算法部分）：`binary_search(first, last, target, comp, proj)` 返回相对 `first` 的全局下标，未命中返回 `std::nullopt`（返回类型 `std::optional<uint64_t>`），另有容器重载；`range_binary_search` 返回闭区间 `std::optional<std::pair<uint64_t, uint64_t>>`，未命中返回 `std::nullopt`。`path_to_string()` / `string_to_path()` 经 `std::filesystem::path::u8string()` 往返，用于处理包含中文的文件路径。
 - `Engine_Env`：`exe_path_get()`、`exe_dir_get()`、`absolute_path_get(path/string)`；可执行路径的获取按平台分派（Windows `GetModuleFileNameW` / Linux `/proc/self/exe` / macOS `_NSGetExecutablePath`），失败时回退到当前工作目录。
 - `Timer`：`using Clock = std::chrono::steady_clock`，`task_build()` 建任务、`elapsed(task, restart = false)` 读耗时，静态 `units()` / `Milli_units()` / `Micro_units()` / `Nano_units()` 提供单位换算。
-- `Random_Generator`：模板类 `template <typename T> requires std::is_integral_v<T> class Random_Generator`；内核是结构 `Pcg32 { uint64_t state, inc; }`，`operator()()` 生成 `T` 的全范围无偏随机数，`operator()(min, max)` 生成 `[min, max]` 无偏区间随机数；构造函数可传种子；`acl_key_gen()` 就是它的使用者。
+- `Random_Generator`：模板类 `template <typename T> requires std::is_integral_v<T> class Random_Generator`；内核是结构 `Pcg32 { uint64_t state, inc; }`，`operator()()` 生成 `T` 的全范围无偏随机数，`operator()(min, max)` 生成 `[min, max]` 无偏区间随机数；构造函数可传种子；`key()` 就是它的使用者。
 - `Number_Allocator`：`set(min)` 设下限、`get()` 取号、`recycle(单/多)` 回收、`reset()` 复位；回收时用二分查找查重，重复回收会打 `logger.warn("Number_Pool::待回收数值已被回收!!!")`。
 
 ---
@@ -1157,7 +1157,7 @@ cmake --build out/build/x64-Debug
 ### 8.3 产物与关键构建行为
 
 - **产物**：`out/build/x64-Debug/lib/EngineCore.lib`（静态库；输出目录由 `ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"` 指定）。该库的外部符号约 16342 条。
-- **源文件收集**：`file(GLOB_RECURSE ENGINE_SOURCES CONFIGURE_DEPENDS src/*.cpp common/*.cpp external/*.cpp)`；构建目录内的文件会被正则过滤掉，防止误编译临时产物；若过滤后无源文件则 `FATAL_ERROR` 终止。
+- **源文件收集**：先 `file(GLOB_RECURSE ENGINE_SOURCES CONFIGURE_DEPENDS src/*.cpp common/*.cpp external/*.cpp)` 扫描，构建目录内的文件会被正则过滤掉，防止误编译临时产物；若过滤后无源文件则 `FATAL_ERROR` 终止。扫描结果随后**同步进本层根目录的显式清单 `源文件列表.cmake`**（由共享脚本 `cmake/生成源文件列表.cmake` 的 `byjy_source_list_sync()` 在每轮配置时按路径集合差异写回），`add_library` 本身不再传任何源文件，全部由该清单的 `target_sources` 提供。清单机制的目的见第 8.5 节。
 - **增删文件自动重配（本版次）**：GLOB 之后另把 `src`、`common`、`external` 三个源根目录登记进 `set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ...)`；增删文件后**直接构建**即自动重跑配置并重扫 GLOB（ninja 会打印 `Re-checking globbed directories...`），不必手动「重新生成缓存」，VS 目录视图随之刷新。
 - **包含路径**：`target_include_directories(EngineCore PRIVATE "${BYJY_PROJECT_ROOT}")` —— 私有包含根为**项目根**，本层源码以 `Engine/EngineCore/...` 形式互相包含，与对外面同一套写法；第三方路径（Json / glfw / bullet3）同样为 `PRIVATE`。
 - **链接**：`find_package(OpenGL REQUIRED)`；链接 `external/glfw/glfw3.lib` 与 `OpenGL::GL`；`target_compile_definitions(EngineCore PUBLIC GLFW_STATIC)`；MSVC 追加 `opengl32.lib user32.lib gdi32.lib shell32.lib`。
@@ -1172,13 +1172,49 @@ cmake --build out/build/x64-Debug
 - 其他层要使用本层，只需在自己的 `CMakeLists.txt` 中 `include` 三份相同的 `cmake/接入下层.cmake`，调用 `byjy_jieru_xiaceng(...)` 指向本层的 `cmake/对外接口.cmake`，即可获得 `EngineCore` 目标（或通过 `BYJY_ENGINE_LIB_PATH` 显式指定库路径）。
 - 本层构建产物不在版本控制中，`out/` 目录应被忽略。
 
+### 8.5 源文件清单机制与「在 VS 文件视图里改名 / 迁移」
+
+#### 8.5.1 机制
+
+本层（及 EngineSystem / Test / Game / Renderer 各层）的源文件不再由 `add_library` 直接接收，而是：
+
+```
+file(GLOB_RECURSE ...)  ──▶  byjy_source_list_sync()  ──▶  层根/源文件列表.cmake（target_sources 字面量）
+                                                              │
+                                              CMakeLists：add_library(EngineCore STATIC) → include(源文件列表.cmake)
+```
+
+原因：Visual Studio 的**文件视图**改名 / 迁移操作，靠 CMake File API `codemodel` 的 backtrace 去找「可改写的引用」，而 backtrace **只落在把源文件直接加入 target 的那条命令上**。GLOB 工程的构建脚本里没有任何「具体文件名」，VS 便报「引用了文件……但无法修改引用」，既不重配也不刷新工程模型。把字面文件名交给 `target_sources`、且该调用位于一个被 `include` 的 `.cmake` 中后，backtrace 就落在该 `.cmake` 的对应行上——VS 改写它即触发重新配置。
+
+关键约束（改脚本前务必先读 `cmake/生成源文件列表.cmake` 头部）：
+
+1. **清单必须放在「本层根目录」**（与调用它的 `CMakeLists.txt` 同级），路径一律写成「相对本层根、正斜杠」。因为 CMake 解析 `target_sources` 相对路径的基准是「被 `include` 的 `CMakeLists` 所在目录」＝本层根，而 VS 改写引用的基准是「被编辑的 `.cmake` 文件自身所在目录」——只有清单落在本层根时两个基准才重合。若清单留在 `cmake/` 子目录，VS 会写出 `../src/…` 这类 CMake 解析不到的路径，配置直接失败（`Cannot find source file` / `No SOURCES given to target`），VS 随即**取消生成并回滚改名**。
+2. **清单是这些文件的「唯一」加入点**：同一文件若既在 `add_library` 参数里又在清单里，backtrace 归先加入者，VS 仍无法改写。
+3. **清单只在路径集合有差异时写回**（按集合而非逐字节判定），避免时间戳被反复刷新、与「清单是配置依赖」咬合成「每次构建都重新配置」。
+
+#### 8.5.2 在 VS 里的正确姿势
+
+- **在文件视图里改名 / 迁移**：VS 改写清单 → 清单是配置依赖 → 自动重新配置、工程模型与错误列表随之刷新。**不要**在资源管理器里改完就以为 VS 会同步——那样要等下一轮构建（`GLOB` ＋ 目录登记会兜底重配，ninja 打印 `Re-checking globbed directories...`）。
+- **改名后若错误列表仍报「找不到文件」**：那是 VS 的工程模型还停在旧版次（模型来自上一次配置的 File API 应答）；执行一次「项目 → 配置缓存」即可刷新。
+- **`E1696` / `C1083`（找不到 include）是真实断裂**：改名会让所有 `#include 旧名` 的翻译单元失效，必须改代码，不是缓存问题。
+- **改了头文件却看不到新符号**：上层按**头快照**编译（见 8.2），要让新头生效须先重建被改的那一层。
+
+#### 8.5.3 跨层盲区（在别的层工作区操作时注意）
+
+| 层 / 工作区 | 情况 |
+| --- | --- |
+| `Engine/EngineCore`、`Engine/EngineSystem`、`Application/Test`、`Application/Game` | 均已有 `源文件列表*.cmake`（层根）＋ GLOB 兜底，视图改名可自动同步 |
+| `Engine/`（聚合层） | **无源码、无 GLOB**，只链预编译库。若在它的工作区视图里改子层文件，**100% 静默**（不改任何脚本、也不重配）；请在子层自己的工作区操作 |
+| `Engine/EngineSystem` 的 GLOB 基点 | 只覆盖 `src/entity`、`src/prop`、`src/effect`；`src` 父目录已在 `CMAKE_CONFIGURE_DEPENDS` 中登记，新建 `src/新模块/` 会触发重配，但**新增模块目录须同时补进 GLOB 模式与登记列表** |
+| `Application/Renderer` 的 `cmake/SDL3源文件列表.cmake` | 手写清单、经变量传入 `target_sources`，仍属「无字面引用的 target_sources」形态；在视图里改 SDL3 文件路径**无法被 VS 改写**（SDL3 换版次时重新生成该文件即可，实践中不依赖视图改名） |
+
 ---
 
 ## 九、实现状态与已知问题
 
 ### 9.1 已完成
 
-- 事件系统：`Event`、`Event_Terminal`、`Terminal_Interface`、`Event_Broker` 全部落地，含 ACL 权限密钥模型与订阅 / 发布投递。
+- 事件系统：`Event`、`Event_Terminal`、`Terminal_Port`、`Event_Broker` 全部落地，含 ACL 权限密钥模型与订阅 / 发布投递。
 - 对象系统：`Object` 基类与 `Object_Pool<T, Key>`（双模式内存布局、编号分配回收）。
 - 空间系统：`Point2` / `Rect2` 坐标基元（含 ULP 容差）、四叉树与四叉树管理器（含 64 位尺寸层、原地扩大、智能建树、相邻查找、合并、缓存）。
 - 碰撞系统：`Collider`（六种形状、几何体集合 + 相对变换 + 复合形状）、`Collision_Region`（后端四件套 + 两阶段检测 + 跨越三态跟踪）、`Collision_Proxy`（多空间门面 + 事件订阅发布 + 编号多重映射 + 位移事件通道 + 碰撞响应时序 + 跨越通知发布）。
@@ -1233,7 +1269,7 @@ cmake --build out/build/x64-Debug
 - **`CMAKE_CXX_CREATE_STATIC_LIBRARY` 的赋值位置**：必须在 `project()` 之后、且仅在 Ninja 生成器下改写，否则会被平台模块默认值覆盖。
 - **`Collider` 的成员声明顺序**：`mesh` 必须先于 `shape`，破坏此顺序会导致形状先于网格释放的顺序错乱。
 - **模板实例化**：新增模板类型若要进入 `EngineCore`，需在对应 `xxx实例化.cpp` 中补 `template class ...;`。
-- **事件 `target_object` 过滤**：定向事件（非空 `target_object`）必须由接收方自行过滤，中转器不会代劳。
+- **事件 `receiver` 过滤**：定向事件（非空 `receiver`）必须由接收方自行过滤，中转器不会代劳。
 - **`Event_Broker` 的匹配粒度**：订阅匹配看 `category` + `tag`，`config` 不参与匹配；因此同一 `category` + `tag` 只能有一条投递规则。
 - **`Number_Allocator` 重复回收**：会打印告警而非崩溃，排查编号错乱时可据此定位。
 - **路径扫描越权防护**：`Config_Loader` 只扫描 `assets/config/route/` 且限制在 `assets/config/` 之内，新增路由目录不在此范围会被跳过。
