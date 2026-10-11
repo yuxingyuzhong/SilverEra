@@ -32,7 +32,9 @@
 # 库定位顺序（任何情况下都不回退编译下层源码）
 #     ① 覆盖变量非空 → 按元素下标与 OUT_LIB 逐项对应，元素个数须与 OUT_LIB 等长；
 #        指向的文件不存在 → FATAL_ERROR，不静默降级
-#     ② 覆盖变量为空 → 扫 <该库所在层目录>/out/build/*/lib/<库名>.lib，取时间戳最新的一份
+#     ② 覆盖变量为空 → 先看 <该库所在层目录>/out/build/x64-Debug/lib/<库名>.lib；
+#        没有则扫 <该库所在层目录>/out/build/*/lib/<库名>.lib，取时间戳最新的一份
+#        （Debug / Release 双构建树并存时，自动探测固定默认 Debug）
 #     ③ 仍没有 → FATAL_ERROR，并给出构建产出该库的下层命令
 #
 # 行为
@@ -137,24 +139,34 @@ function(byjy_jieru_xiaceng interface_file prefix override_var)
             endif()
         endif()
 
-        # ② 自动探测最新的一份
+        # ② 自动探测：固定优先 Debug 树，其次回退「任意构建树取时间戳最新」
+        #    先看 x64-Debug，是为了让「留空 = 用 Debug」成为稳定默认：两棵树并存后
+        #    若只按时间戳取最新，结果会在 Debug / Release 之间摇摆，而 Debug(/MDd)
+        #    与 Release(/MD) 的运行库不一致，混链会出 LNK4098 甚至堆损坏。
+        #    需要 Release 版库时请显式指定覆盖变量，不要依赖自动探测。
         if("${_lib_file}" STREQUAL "")
-            file(GLOB _candidates "${_lib_dir}/out/build/*/lib/${_lib_name}.lib")
-            set(_newest_stamp "0")
-            foreach(_candidate IN LISTS _candidates)
-                file(TIMESTAMP "${_candidate}" _candidate_stamp "%Y%m%d%H%M%S")
-                if(_candidate_stamp GREATER _newest_stamp)
-                    set(_newest_stamp "${_candidate_stamp}")
-                    set(_lib_file "${_candidate}")
-                endif()
-            endforeach()
+            set(_debug_candidate "${_lib_dir}/out/build/x64-Debug/lib/${_lib_name}.lib")
+            if(EXISTS "${_debug_candidate}")
+                set(_lib_file "${_debug_candidate}")
+            else()
+                file(GLOB _candidates "${_lib_dir}/out/build/*/lib/${_lib_name}.lib")
+                set(_newest_stamp "0")
+                foreach(_candidate IN LISTS _candidates)
+                    file(TIMESTAMP "${_candidate}" _candidate_stamp "%Y%m%d%H%M%S")
+                    if(_candidate_stamp GREATER _newest_stamp)
+                        set(_newest_stamp "${_candidate_stamp}")
+                        set(_lib_file "${_candidate}")
+                    endif()
+                endforeach()
+            endif()
         endif()
 
         # ③ 都没有：硬失败，不回退编源码
         if("${_lib_file}" STREQUAL "")
             message(FATAL_ERROR
                 "接入下层：找不到 ${_lib_name} 的静态库 ${_lib_name}.lib\n"
-                "  查找位置：${_lib_dir}/out/build/<配置>/lib/\n"
+                "  查找位置：${_lib_dir}/out/build/x64-Debug/lib/（首选）\n"
+                "            ${_lib_dir}/out/build/<配置>/lib/（回退：取时间戳最新）\n"
                 "  本函数不会退回编译下层源码，请先构建产出该库的下层：\n"
                 "      cmake -S \"${_lib_dir}\" -B \"${_lib_dir}/out/build/x64-Debug\" -G Ninja\n"
                 "      cmake --build \"${_lib_dir}/out/build/x64-Debug\"\n"
