@@ -6,9 +6,10 @@
 #       合并成「一个 Engine 面」（见 cmake/对外接口.cmake），让 Application 各层只接一层。
 # 依赖：EngineSystem（其对外面已并入 EngineCore）—— 一律链接「已经构建好的」静态库
 # 产物：无（不产出 Engine.lib；EngineSystem.lib 与 EngineCore.lib 由两个子层各自产出）
-# 用法（本层独立配置，作为聚合面的自检）：
-#     cmake -S <本目录> -B <本目录>/out/build/x64-Debug -G Ninja
-#     cmake --build <本目录>/out/build/x64-Debug
+# 用法（本层独立配置，作为聚合面的自检；Debug / Release 用两棵独立构建树）：
+#     Debug  ：cmake -S <本目录> -B <本目录>/out/build/x64-Debug   -G Ninja -DCMAKE_BUILD_TYPE=Debug
+#     Release：cmake -S <本目录> -B <本目录>/out/build/x64-Release -G Ninja -DCMAKE_BUILD_TYPE=Release
+#     随后  ：cmake --build <对应构建树目录>
 # 前置条件：先依次构建 Engine/EngineCore 与 Engine/EngineSystem。
 # 说明：本层不导出头快照 —— 两个子层各自导出自己的头快照，Application 各层分别改指。
 # =============================================================================
@@ -37,7 +38,7 @@ get_filename_component(PROJECT_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}" ABSOLUTE)
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/接入下层.cmake")
 
 set(BYJY_ENGINE_LIB_PATH "" CACHE STRING
-    "聚合层静态库路径（分号列表，顺序同 EngineSystem;EngineCore）；留空则自动探测")
+    "聚合层静态库路径（分号列表，顺序同 EngineSystem;EngineCore）；留空则自动探测（各库优先 out/build/x64-Debug/lib，其次 out/build/*/lib 取最新）")
 
 byjy_jieru_xiaceng(
     "${PROJECT_ROOT_DIR}/cmake/对外接口.cmake"
