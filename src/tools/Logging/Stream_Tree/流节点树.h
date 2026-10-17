@@ -352,9 +352,23 @@ namespace engine
         //输出放行判定（持节点锁就地读取路径键后交由规则判定，避免每行键拷贝带来的内存分配）
         bool output_pass_check(Stream_Node& node, const std::string& level, const Log_Rules& rules)
         {
-            //持节点锁读取路径键并完成判定
-            std::lock_guard<std::mutex> lock(node.node_mtx);
-            return rules.output_pass(node.key, level);
+            //沿父链自当前节点向上收集路径段（每级仅持该节点锁，取到即放，不做嵌套加锁）
+            std::string full_key{};
+            for (Stream_Node* cursor = &node; cursor != nullptr; )
+            {
+                //持当前节点锁读取本段键与父指针
+                Stream_Node* parent = nullptr;
+                {
+                    std::lock_guard<std::mutex> lock(cursor->node_mtx);
+                    //父在前、子在后，拼接即为完整规范化路径键
+                    full_key.insert(0, cursor->key);
+                    parent = cursor->parent;
+                }
+                //上升一层
+                cursor = parent;
+            }
+            //按完整路径键完成判定
+            return rules.output_pass(full_key, level);
         }
         //当前树版本号
         uint64_t epoch_current() const

@@ -131,7 +131,8 @@ namespace engine
 	template <typename T>
 	void Quadtree<T>::leaf_recur(const Rect2l& target_range, const Rect2l& parent_range, Operate_Mode mode,
 		int now_level, const int& max_level, Node* parent_node,
-		std::vector<std::shared_ptr<Tree_Chunk_Data<T>>>& receiver)
+		std::vector<std::shared_ptr<Tree_Chunk_Data<T>>>& receiver,
+		const std::shared_ptr<T>& data)
 	{
 		//默认非只读操作
 		bool read_only = false;
@@ -171,7 +172,7 @@ namespace engine
 					child_node = parent_node;
 					//递归子节点
 					//若递归失败则查找下一节点
-					if (!child_node_recur(child_node, recur_direct, Node_Type::LEAF, read_only))
+					if (!child_node_recur(child_node, recur_direct, Node_Type::LEAF, read_only, data))
 						continue;
 
 					//若为区块查找/获取模式
@@ -214,7 +215,7 @@ namespace engine
 					//若子节点递归成功则进入下一级递归函数
 					else
 						leaf_recur(target_range, child_range, mode,
-							now_level + 1, max_level, child_node, receiver);
+							now_level + 1, max_level, child_node, receiver, data);
 				}
 			}
 		}
@@ -232,15 +233,16 @@ namespace engine
 		//子节点数据缓冲
 		std::vector<std::shared_ptr<Tree_Chunk_Data<T>>> buffer{};
 		//调用范围区块操作重载
-		chunk_operate(target_range,mode,buffer);
+		chunk_operate(target_range,mode,buffer,data);
 		//接收数据
-		receiver = buffer.front();
+		receiver = buffer.empty() ? nullptr : buffer.front();
 	}
 
 	//区块操作 —— 范围区块重载
 	template <typename T>
 	void Quadtree<T>::chunk_operate(const Rect2l& target_range, Operate_Mode mode,
-		std::vector<std::shared_ptr<Tree_Chunk_Data<T>>>& receiver)
+		std::vector<std::shared_ptr<Tree_Chunk_Data<T>>>& receiver,
+		const std::shared_ptr<T>& data)
 	{
 		//默认非只读操作
 		bool read_only = false;
@@ -270,6 +272,6 @@ namespace engine
 
 		//递归收集叶子节点
 		leaf_recur(seekable_range,parent_range,mode,
-			1, recur_level_max,parent_node,receiver);
+			1, recur_level_max,parent_node,receiver,data);
 	}
 }

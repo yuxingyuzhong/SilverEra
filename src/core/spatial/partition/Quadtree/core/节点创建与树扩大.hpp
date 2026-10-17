@@ -7,7 +7,7 @@ namespace engine
 	//子节点递归
 	template <typename T>
 	bool Quadtree<T>::child_node_recur(Node*& this_node, const int& direct, 
-		const Node_Type& type, bool read_only)
+		const Node_Type& type, bool read_only, const std::shared_ptr<T>& external_data)
 	{
 		//若当前节点持有区块数据(分支 1)却需要子节点
 		//则先转换为中间节点，原区块数据交由外部持有者释放
@@ -19,7 +19,7 @@ namespace engine
 		//若当前子节点为空且为稳定查询模式
 		//则为子节点分配内存(由 shared_ptr 持有)
 		if (child_list[direct] == nullptr && !read_only)
-			child_list[direct].reset(new(std::nothrow) Node(type));
+			child_list[direct].reset(new(std::nothrow) Node(type, external_data));
 
 		//递归推进至子节点(裸指针仅作观察，所有权仍在父节点)
 		this_node = child_list[direct].get();

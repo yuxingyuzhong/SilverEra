@@ -17,7 +17,7 @@ namespace engine
 		} g_pcg32;
 
 		//随机数生成种子
-		uint64_t seed = 0;
+		uint64_t random_seed = 0;
 
 		//底层原始 32 位随机数生成（PCG32 核心）
 		uint32_t pcg32_random_raw()
@@ -71,19 +71,21 @@ namespace engine
 		Random_Generator()
 		{
 			//使用默认种子初始化
-			pcg32_seed_init();
+			init();
 		}
 
 		//使用指定种子构造
 		explicit Random_Generator(uint64_t seed_out)
 		{
 			//使用指定种子初始化
-			pcg32_seed_init(seed_out);
+			init(seed_out);
 		}
 
 		//使用指定种子初始化 PCG32
-		void pcg32_seed_init(uint64_t seed_out)
+		void init(uint64_t seed_out)
 		{
+			//保存种子
+			random_seed = seed_out;
 			//重置状态
 			g_pcg32.state = 0;
 			//设置增量
@@ -93,7 +95,7 @@ namespace engine
 		}
 
 		//使用默认种子初始化 PCG32
-		void pcg32_seed_init()
+		void init()
 		{
 			//静态计数器
 			static uint64_t counter = 0;
@@ -102,13 +104,19 @@ namespace engine
 			//转换为纳秒
 			auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count();
 			//组合种子
-			uint64_t seed = static_cast<uint64_t>(ns) ^ static_cast<uint64_t>(std::time(nullptr)) ^ (++counter);
+			random_seed = static_cast<uint64_t>(ns) ^ static_cast<uint64_t>(std::time(nullptr)) ^ (++counter);
 			//重置状态
 			g_pcg32.state = 0;
 			//设置增量
-			g_pcg32.inc = (seed << 1u) | 1u;
+			g_pcg32.inc = (random_seed << 1u) | 1u;
 			//预热一次
 			(void)pcg32_random_raw();
+		}
+
+		//获取当前随机数种子
+		uint64_t seed(void)
+		{
+			return random_seed;
 		}
 
 		//生成 T 全范围随机数

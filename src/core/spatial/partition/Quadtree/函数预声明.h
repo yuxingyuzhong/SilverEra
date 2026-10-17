@@ -142,12 +142,13 @@ namespace engine
 		// ———— 结构维护 ————
 	private:
 		//子节点递归
-		bool child_node_recur(Node*& this_node, const int& direct, const Node_Type& type,bool read_only);
+		bool child_node_recur(Node*& this_node, const int& direct, const Node_Type& type,bool read_only, const std::shared_ptr<T>& external_data = nullptr);
 
 		//递归叶子
 		void leaf_recur(const Rect2l& target_range, const Rect2l& parent_range, Operate_Mode mode,
 			int now_level, const int& max_level,Node* parent_node,
-			std::vector<std::shared_ptr<Tree_Chunk_Data<T>>>& receiver);
+			std::vector<std::shared_ptr<Tree_Chunk_Data<T>>>& receiver,
+			const std::shared_ptr<T>& data = nullptr);
 
 		//区块操作 —— 单区块重载
 		void chunk_operate(const Point2l& target,Operate_Mode mode, 
@@ -156,7 +157,8 @@ namespace engine
 
 		//区块操作 —— 范围区块重载
 		void chunk_operate(const Rect2l& target_range, Operate_Mode mode, 
-			std::vector<std::shared_ptr<Tree_Chunk_Data<T>>>& receiver);
+			std::vector<std::shared_ptr<Tree_Chunk_Data<T>>>& receiver,
+			const std::shared_ptr<T>& data = nullptr);
 
 		// ———— 查询前置支撑 ————
 	private:
