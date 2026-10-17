@@ -5,12 +5,12 @@
 #include "Engine/EngineCore/src/core/event/Event/事件.h"
 
 //构造测试事件
-static engine::Event make_event(const std::string& sender_object,
-	const std::string& target_object, const std::string& category,
+static engine::Event make_event(const std::string& sender,
+	const std::string& receiver, const std::string& category,
 	const std::string& tag, const nlohmann::json& config)
 {
 	//按含参构造生成事件
-	return engine::Event(sender_object, target_object, category, tag, config);
+	return engine::Event(sender, receiver, category, tag, config);
 }
 
 //事件测试夹具
@@ -24,9 +24,9 @@ TEST_F(Event_Test, 默认构造各字段为空)
 	//默认构造的事件
 	engine::Event evt;
 	//发起者为空
-	EXPECT_TRUE(evt.sender_object.empty());
+	EXPECT_TRUE(evt.sender.empty());
 	//目标为空
-	EXPECT_TRUE(evt.target_object.empty());
+	EXPECT_TRUE(evt.receiver.empty());
 	//分类为空
 	EXPECT_TRUE(evt.category.empty());
 	//标签为空
@@ -42,9 +42,9 @@ TEST_F(Event_Test, 含参构造按序赋值)
 	const engine::Event evt = make_event("发送者", "接收者", "输入", "按键",
 		nlohmann::json::object({ {"键码", 65} }));
 	//发起者被赋值
-	EXPECT_EQ(evt.sender_object, "发送者");
+	EXPECT_EQ(evt.sender, "发送者");
 	//目标被赋值
-	EXPECT_EQ(evt.target_object, "接收者");
+	EXPECT_EQ(evt.receiver, "接收者");
 	//分类被赋值
 	EXPECT_EQ(evt.category, "输入");
 	//标签被赋值
@@ -199,9 +199,9 @@ TEST_F(Event_Test, 两参构造仅写入分类与标签)
 	//标签被赋值
 	EXPECT_EQ(evt.tag, "按键");
 	//发起者保持为空
-	EXPECT_TRUE(evt.sender_object.empty());
+	EXPECT_TRUE(evt.sender.empty());
 	//目标保持为空
-	EXPECT_TRUE(evt.target_object.empty());
+	EXPECT_TRUE(evt.receiver.empty());
 	//配置包保持为 null
 	EXPECT_TRUE(evt.config.is_null());
 }
@@ -212,9 +212,9 @@ TEST_F(Event_Test, 四参构造可传空源与空目标)
 	//空源与空目标的构造
 	const engine::Event evt("", "", "输入", "按键");
 	//发起者为空
-	EXPECT_TRUE(evt.sender_object.empty());
+	EXPECT_TRUE(evt.sender.empty());
 	//目标为空
-	EXPECT_TRUE(evt.target_object.empty());
+	EXPECT_TRUE(evt.receiver.empty());
 	//分类被赋值
 	EXPECT_EQ(evt.category, "输入");
 	//标签被赋值
@@ -231,9 +231,9 @@ TEST_F(Event_Test, 五元构造各字段写入一致)
 	//五元构造事件
 	const engine::Event evt("发送者", "接收者", "输入", "按键", config);
 	//发起者一致
-	EXPECT_EQ(evt.sender_object, "发送者");
+	EXPECT_EQ(evt.sender, "发送者");
 	//目标一致
-	EXPECT_EQ(evt.target_object, "接收者");
+	EXPECT_EQ(evt.receiver, "接收者");
 	//分类一致
 	EXPECT_EQ(evt.category, "输入");
 	//标签一致
@@ -322,9 +322,9 @@ TEST_F(Event_Test, 拷贝构造后字段一致)
 	//拷贝构造副本
 	engine::Event copy = origin;
 	//发起者一致
-	EXPECT_EQ(copy.sender_object, origin.sender_object);
+	EXPECT_EQ(copy.sender, origin.sender);
 	//目标一致
-	EXPECT_EQ(copy.target_object, origin.target_object);
+	EXPECT_EQ(copy.receiver, origin.receiver);
 	//分类一致
 	EXPECT_EQ(copy.category, origin.category);
 	//标签一致

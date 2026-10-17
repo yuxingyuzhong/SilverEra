@@ -31,7 +31,7 @@ public:
 
 // ———— 构造与状态 ————
 
-//默认构造：边长与根坐标取构造缺省值，区块单元与上限保持结构体缺省(0，须外部设置)
+//默认构造：边长与根坐标取构造缺省值，区块单元缺省为 0、边长上限缺省为 2^63，二者须外部设置
 TEST_F(Quadtree_Test, 默认构造的初始状态)
 {
 	//默认构造的四叉树
@@ -42,8 +42,8 @@ TEST_F(Quadtree_Test, 默认构造的初始状态)
 	EXPECT_EQ(state.size, 256u);
 	//区块单元缺省为 0，须由外部显式设置
 	EXPECT_EQ(state.block_size, 0u);
-	//边长上限缺省为 0，须由外部显式设置
-	EXPECT_EQ(state.max_size, 0u);
+	//边长上限缺省为 2^63（引擎结构体缺省值），须由外部显式设置
+	EXPECT_EQ(state.max_size, 9223372036854775808ull);
 	//根坐标取默认的小数偏移
 	EXPECT_EQ(state.root, (engine::Point2d(0.5, 0.5)));
 }

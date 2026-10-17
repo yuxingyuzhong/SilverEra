@@ -54,13 +54,9 @@ namespace engine
             return;
 
         //先把日志根目录设为整个项目（空串），使输出流绑定获准
-        std::cout << "[诊断] 开启:A 即将 root_set" << std::endl;
         logger.root_set("");
-        std::cout << "[诊断] 开启:B root_set 完成" << std::endl;
         //把根节点绑到该外部输出流：全部调用处的日志沿父链继承此流，不再落控制台
-        const bool 绑定结果 = logger.stream_bind("", 日志流);
-        std::cout << "[诊断] 开启:C stream_bind 完成=" << 绑定结果 << std::endl;
-        if (绑定结果)
+        if (logger.stream_bind("", 日志流))
             屏蔽已开启 = true;
     }
 

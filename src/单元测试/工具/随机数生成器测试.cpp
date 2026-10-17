@@ -47,7 +47,7 @@ TEST_F(Random_Generator_Test, 重设种子后复现序列)
 	for (int i = 0; i < 20; ++i)
 		first_round.push_back(generator());
 	//重设同一组种子
-	generator.pcg32_seed_init(777);
+	generator.init(777);
 	//第二批取值应与首批完全一致
 	for (int i = 0; i < 20; ++i)
 		EXPECT_EQ(generator(), first_round[i]);
@@ -201,7 +201,7 @@ TEST_F(Random_Generator_Test, 同种子重置多次序列一致)
 	for (int round = 0; round < 3; ++round)
 	{
 		//以同一种子重置
-		generator.pcg32_seed_init(12345);
+		generator.init(12345);
 		//逐位比对基准序列
 		for (int i = 0; i < 30; ++i)
 			EXPECT_EQ(generator(), baseline[i]);
@@ -313,11 +313,11 @@ TEST_F(Random_Generator_Test, 种子切换后原种子重现)
 	for (int i = 0; i < 20; ++i)
 		origin_values.push_back(generator());
 	//切换到其它种子并丢弃若干取值
-	generator.pcg32_seed_init(6060);
+	generator.init(6060);
 	for (int i = 0; i < 20; ++i)
 		(void)generator();
 	//切回原种子
-	generator.pcg32_seed_init(8080);
+	generator.init(8080);
 	//序列应与原种子首批完全一致
 	for (int i = 0; i < 20; ++i)
 		EXPECT_EQ(generator(), origin_values[i]);

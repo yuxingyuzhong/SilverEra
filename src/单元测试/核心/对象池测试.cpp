@@ -89,7 +89,7 @@ TEST_F(Object_Pool_Test, 多次新建ID互不相同)
 	EXPECT_NE(second, third);
 	EXPECT_NE(first, third);
 	//容器规模应为三
-	EXPECT_EQ(pool.data().size(), 3u);
+	EXPECT_EQ(pool.size(), 3u);
 }
 
 //对象查找：不存在的ID返回超尾迭代器
@@ -130,11 +130,12 @@ TEST_F(Object_Pool_Test, 卸载后记录保留但ID清零)
 	//卸载该对象
 	pool.unload(ID);
 	//容器规模不变
-	ASSERT_EQ(pool.data().size(), 1u);
+	ASSERT_EQ(pool.capacity(), 1u);
+	//新 Object_Pool 不对外暴露无效槽位，故改为按有效区语义断言
 	//ID 已被回收清零
-	EXPECT_EQ(pool.data()[0].ID(), 0u);
+	EXPECT_EQ(pool.find(ID), pool.end());
 	//有效标记已被清除
-	EXPECT_FALSE(pool.data()[0].valid());
+	EXPECT_EQ(pool.size(), 0u);
 }
 
 //对象卸载：卸载不存在的ID只告警不抛异常
@@ -147,7 +148,7 @@ TEST_F(Object_Pool_Test, 卸载不存在ID不抛异常)
 	//卸载一个未分配过的ID
 	EXPECT_NO_THROW(pool.unload(8888));
 	//原有对象不受影响
-	EXPECT_EQ(pool.data().size(), 1u);
+	EXPECT_EQ(pool.size(), 1u);
 }
 
 //对象卸载：多对象重载逐个卸载
@@ -237,9 +238,9 @@ TEST_F(Object_Pool_Test, 排序模式按投影字段查找)
 	const uint64_t second = pool.build();
 	const uint64_t third = pool.build();
 	//直接写入互不相同的投影值
-	pool.data()[0].payload = 30;
-	pool.data()[1].payload = 10;
-	pool.data()[2].payload = 20;
+	(pool.begin() + 0)->payload = 30;
+	(pool.begin() + 1)->payload = 10;
+	(pool.begin() + 2)->payload = 20;
 	//以投影字段升序排列
 	pool.order_set(std::ranges::less{});
 	//按投影值查找
@@ -336,7 +337,7 @@ TEST_F(Object_Pool_Test, 空池设置排序方式)
 	//设置排序方式
 	pool.order_set(std::ranges::less{});
 	//记录数量应保持不变
-	EXPECT_TRUE(pool.data().empty());
+	EXPECT_TRUE(pool.size() == 0);
 }
 
 //对象清除：两个模式下的分支各归其位
@@ -353,7 +354,7 @@ TEST_F(Object_Pool_Test, 稳定模式清空对象池)
 	//清空对象池
 	pool.clear();
 	//容器应为空
-	EXPECT_TRUE(pool.data().empty());
+	EXPECT_TRUE(pool.size() == 0);
 }
 
 //对象清除：排序模式下清空
@@ -369,7 +370,7 @@ TEST_F(Object_Pool_Test, 排序模式清空对象池)
 	//清空对象池
 	pool.clear();
 	//容器应为空
-	EXPECT_TRUE(pool.data().empty());
+	EXPECT_TRUE(pool.size() == 0);
 }
 
 //空池卸载：对空池卸载任意ID只告警，不崩溃
@@ -380,7 +381,7 @@ TEST_F(Object_Pool_Test, 空池卸载不崩溃)
 	//卸载一个从未分配过的ID应不抛异常
 	EXPECT_NO_THROW(pool.unload(1));
 	//池内仍应无任何记录
-	EXPECT_TRUE(pool.data().empty());
+	EXPECT_TRUE(pool.size() == 0);
 	//查询该ID应返回超尾
 	EXPECT_EQ(pool.find(1), pool.end());
 }
@@ -417,12 +418,12 @@ TEST_F(Object_Pool_Test, 大批量装载卸载后计数正确)
 	for (int i = 0; i < count; i++)
 		IDs.push_back(pool.build());
 	//记录数量应与新建次数一致
-	EXPECT_EQ(pool.data().size(), static_cast<size_t>(count));
+	EXPECT_EQ(pool.size(), static_cast<size_t>(count));
 	//卸载序号为偶数的对象
 	for (int i = 0; i < count; i += 2)
 		pool.unload(IDs[i]);
 	//卸载只清有效标记，容器规模应保持不变
-	EXPECT_EQ(pool.data().size(), static_cast<size_t>(count));
+	EXPECT_EQ(pool.capacity(), static_cast<size_t>(count));
 	//逐一核对存活与已卸载对象
 	for (int i = 0; i < count; i++)
 	{
@@ -503,7 +504,7 @@ TEST_F(Object_Pool_Test, 边界ID查询与卸载不崩溃)
 	//卸载极大值ID不应抛异常
 	EXPECT_NO_THROW(pool.unload(UINT64_MAX));
 	//原有对象应不受影响
-	EXPECT_EQ(pool.data().size(), 1u);
+	EXPECT_EQ(pool.size(), 1u);
 }
 
 //容量上限附近：大批量新建后首中尾对象均可见
@@ -519,7 +520,7 @@ TEST_F(Object_Pool_Test, 容量上限附近批量装载均可见)
 	for (int i = 0; i < count; i++)
 		IDs.push_back(pool.build());
 	//容器规模应与新建次数一致
-	EXPECT_EQ(pool.data().size(), static_cast<size_t>(count));
+	EXPECT_EQ(pool.size(), static_cast<size_t>(count));
 	//抽查首、中、尾三段对象是否均可查到
 	EXPECT_NE(pool.find(IDs.front()), pool.end());
 	EXPECT_NE(pool.find(IDs[count / 2]), pool.end());
@@ -559,7 +560,7 @@ TEST_F(Object_Pool_Test, 装满对象后析构不崩溃)
 		for (int i = 0; i < 256; i++)
 			pool.build();
 		//池内应有对应数量的记录
-		EXPECT_EQ(pool.data().size(), 256u);
+		EXPECT_EQ(pool.size(), 256u);
 	}
 	//能执行到此说明析构过程未崩溃
 	SUCCEED();
@@ -574,8 +575,8 @@ TEST_F(Object_Pool_Test, 字符串定位字段可用)
 	pool.build();
 	pool.build();
 	//直接写入互不相同的定位字段
-	pool.data()[0].tag = "alpha";
-	pool.data()[1].tag = "beta";
+	(pool.begin() + 0)->tag = "alpha";
+	(pool.begin() + 1)->tag = "beta";
 	//切换为排序模式后按定位字段检索
 	pool.order_set(std::ranges::less{});
 	//按定位字段查找
@@ -602,7 +603,7 @@ TEST_F(Object_Pool_Test, 清空后ID起点恢复)
 	const uint64_t ID = pool.build();
 	EXPECT_EQ(ID, 1u);
 	//容器中只应保留新建的一个对象
-	EXPECT_EQ(pool.data().size(), 1u);
+	EXPECT_EQ(pool.size(), 1u);
 }
 
 //排列方式重置：稳定模式下调用的无副作用
@@ -641,5 +642,5 @@ TEST_F(Object_Pool_Test, 排序模式卸载后新建可查找)
 	EXPECT_NE(pool.find(first), pool.end());
 	EXPECT_NE(pool.find(third), pool.end());
 	//卸载只清有效标记，新建复用被回收下标，容器规模不变
-	EXPECT_EQ(pool.data().size(), 3u);
+	EXPECT_EQ(pool.capacity(), 3u);
 }
