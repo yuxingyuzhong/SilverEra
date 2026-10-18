@@ -1,4 +1,4 @@
-#include "../局部命名空间使用.h"
+#include "src/prop/Prop_Distributor/局部命名空间使用.h"
 #include "Engine/EngineCore/src/tools/Logging/日志系统运行包.h"
 
 namespace engine
@@ -24,8 +24,8 @@ namespace engine
 			};
 		//注册事件接收入口
 		event_terminal->bind(Port_ID::Evt_Receiver, event_receive_entry);
-		//更新接入信息
-		event_terminal.attach("Prop_Distributor", {}, acl_key);
+		//接入事件中转站（仅登记订阅者身份与接收入口）
+		event_terminal.attach("Prop_Distributor", acl_key);
 	}
 
 	//属性槽集合绑定

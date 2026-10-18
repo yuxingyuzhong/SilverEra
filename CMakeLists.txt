@@ -204,6 +204,9 @@ target_include_directories(EngineSystem PUBLIC
     ${BYJY_ENGINE_SYSTEM_INC}
     ${BYJY_ENGINE_SYSTEM_OUT_INC}
 )
+# 层内实现文件（.cpp）跨目录包含写「本层根相对」src/...；头文件仍写项目根全路径。
+# 仅本层可见、不向外传播（否则消费者用 src/... 可能命中本层源码）。
+target_include_directories(EngineSystem PRIVATE "${PROJECT_ROOT_DIR}")
 
 if(BYJY_ENGINE_SYSTEM_OUT_DEF)
     target_compile_definitions(EngineSystem PUBLIC ${BYJY_ENGINE_SYSTEM_OUT_DEF})
