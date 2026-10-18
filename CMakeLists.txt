@@ -71,11 +71,13 @@ byjy_jieru_xiaceng(
 byjy_tou_kuaizhao_gen(BYJY_CORE_SNAPSHOT   EngineCore)
 byjy_tou_kuaizhao_gen(BYJY_SYSTEM_SNAPSHOT EngineSystem)
 
-# 本层各目标的包含根：下层快照在前、项目根在后（供 Application/Game/... 全路径）。
+# 本层各目标的包含根：下层快照在前、项目根在后（供「头文件」写 Application/Game/... 全路径）。
+# 末位补本层根：本层实现文件（.cpp）的跨目录包含写「本层根相对」src/...，无需背项目根前缀。
 set(BYJY_APP_INC
     "${BYJY_CORE_SNAPSHOT}"
     "${BYJY_SYSTEM_SNAPSHOT}"
     "${BYJY_PROJECT_ROOT}"
+    "${PROJECT_ROOT_DIR}"
 )
 
 # =============================================================================
