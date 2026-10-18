@@ -52,13 +52,7 @@ namespace engine
 			const std::string& category, const std::string& tag) const;
 
 		//中转站接入
-		bool attach(const std::string& module_name,const std::vector<Event>& needed_events,
-			const int64_t& acl_key);
-		//中转站交互 —— 单事件重载
-		bool interact(std::shared_ptr<Event> evt, std::shared_ptr<Event>& receiver, const int64_t& acl_key);
-		//中转站交互 —— 多事件重载
-		bool interact(std::vector<std::shared_ptr<Event>> events, std::vector<std::shared_ptr<Event>> receiver,
-			const int64_t& acl_key);
+		bool attach(const std::string& subscriber,const int64_t& acl_key);
 
 		//事件发送 —— 单事件重载
 		bool send(std::shared_ptr<Event> evt, const int64_t& acl_key) const;

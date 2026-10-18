@@ -21,12 +21,12 @@ namespace engine
 	private:
 		//数值分配方式
 		Allocate_Order order = Allocate_Order::LIFO;
+		//最新分配数值
+		T min_number = (std::numeric_limits<T>::min)();
 		//可分配新数值
 		T next_number = (std::numeric_limits<T>::min)();
 		//已分配数值数量
 		uint64_t allocated_counts = 0;
-		//数值分配黑名单
-		std::unordered_set<T> black_list;
 		//回收数值集合
 		std::deque<T> recycle_numbers;
 		//回收数值映射
@@ -36,7 +36,15 @@ namespace engine
 		//设置分配起点
 		void set(T min_allocate_number)
 		{
-			next_number = min_allocate_number;
+			min_number = min_allocate_number;
+			//若待分配新数值大于分配起点
+			if(min_number < next_number)
+			{
+				logger.info("Number_Allocator::分配起点小于当前待分配新数值");
+				logger.info("Number_Allocator::待分配数值保持当前大小");
+			}
+			else
+				next_number = min_number;
 		}
 		//设置分配机制
 		void set(Allocate_Order order)
@@ -124,7 +132,13 @@ namespace engine
 		//数值容量获取
 		uint64_t capacity(void)const
 		{
-			return (std::numeric_limits<T>::max)() - (std::numeric_limits<T>::min)() + 1;
+			//若表达式溢出
+			if ((std::numeric_limits<T>::max)() - min_number + 1 == 0)
+			{
+				logger.info("Numer_Allocator::容量为uint64_t最大值加1");
+				logger.info("Numer_Allocator::表达式已溢出");
+			}
+			return (std::numeric_limits<T>::max)() - min_number + 1;
 		}
 		//重置分配器
 		void reset(void)

@@ -1,5 +1,5 @@
-#include "../局部命名空间使用.h"
-#include "Engine/EngineCore/src/tools/Logging/日志系统运行包.h"
+#include "src/core/spatial/collision/Collision_Proxy/局部命名空间使用.h"
+#include "src/tools/Logging/日志系统运行包.h"
 
 namespace engine
 {

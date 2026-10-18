@@ -30,6 +30,14 @@ namespace engine
             //登记映射
             cache_map[file_name] = node;
         }
+        //缓存清空（路径键空间变更时调用，使后续查找按新键空间重建）
+        void cache_clear()
+        {
+            //持缓存锁清空
+            std::lock_guard<std::mutex> lock(cache_mtx);
+            //清空映射
+            cache_map.clear();
+        }
     private:
         //缓存表（调用处文件指针 → 节点指针）
         std::unordered_map<const char*, Node*> cache_map{};

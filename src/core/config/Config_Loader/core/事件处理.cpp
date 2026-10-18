@@ -1,5 +1,5 @@
-#include "../局部命名空间使用.h"
-#include "Engine/EngineCore/src/tools/Logging/日志系统运行包.h"
+#include "src/core/config/Config_Loader/局部命名空间使用.h"
+#include "src/tools/Logging/日志系统运行包.h"
 
 //引擎命名空间
 namespace engine
@@ -17,46 +17,78 @@ namespace engine
             return;
         }
 
-        //待订阅事件清单
-        vector<Event> needed_events{
-            Event("", "", "Believed_Root", "Load"),
-            Event("", "", "Believed_Root", "Unload"),
-            Event("", "", "Route", "load"),
-            Event("", "", "Route", "Unload"),
-            Event("", "", "Config", "load"),
-            Event("", "", "Config", "Unload"),
-        };
-
-        //接入事件中转站
-        if (!event_terminal.attach("Config_Loader", needed_events, acl_key))
+        //接入事件中转站（仅登记订阅者身份与接收入口）
+        if (!event_terminal.attach("Config_Loader", acl_key))
+        {
             logger.error("Config_Loader::事件中转站接入失败");
+            return;
+        }
+
+        //构造订阅事件清单（由预定义事件标识表生成，使订阅清单与保留判定同源）
+        json subscribed_events = json::array();
+        //逐条写入预定义事件标识
+        for (const auto& reserved : reserved_events_get())
+        {
+            //单条订阅事件标识
+            json subscribed_event;
+            subscribed_event["category"] = reserved.first;
+            subscribed_event["tag"] = reserved.second;
+            subscribed_events.push_back(subscribed_event);
+        }
+
+        //构造订阅事件（目标对象名与权限密钥经载荷传递）
+        auto attach_evt = event_terminal.build("", "", "Subscribed_Events", "Add");
+        //若事件构造失败
+        if (attach_evt == nullptr)
+        {
+            logger.error("Config_Loader::订阅事件构造失败");
+            return;
+        }
+        //写入目标对象名、权限密钥与订阅清单
+        attach_evt->config["object"] = "Config_Loader";
+        attach_evt->config["acl_key"] = static_cast<uint64_t>(acl_key);
+        attach_evt->config["subscribed_events"] = subscribed_events;
+        //发送订阅事件（登记模块订阅清单）
+        if (!event_terminal.send(attach_evt, acl_key))
+            logger.error("Config_Loader::订阅事件发送失败");
+    }
+
+    //配置加载器预定义事件标识表（订阅清单与保留判定共用，避免两处漂移）
+    const vector<std::pair<string, string>>& Config_Loader::reserved_events_get(void)
+    {
+        //预定义事件标识（本模块订阅的全部事件）
+        static const vector<std::pair<string, string>> reserved_events{
+            { "Believed_Root", "Load" },
+            { "Believed_Root", "Unload" },
+            { "Route", "Load" },
+            { "Route", "Unload" },
+            { "Config", "Load" },
+            { "Config", "Unload" },
+        };
+        //返回预定义事件标识表
+        return reserved_events;
+    }
+
+    //事件标识保留判定（该 {category, tag} 是否为预定义事件；含中转站保留标签）
+    bool Config_Loader::event_identifier_reserved(const string& category, const string& tag)
+    {
+        //中转站保留标签（该标签下的事件会被中转站直接丢弃）
+        if (tag == "All")
+            return true;
+        //匹配预定义事件标识
+        for (const auto& reserved : reserved_events_get())
+        {
+            //若事件类别与标签均一致则命中保留标识
+            if (reserved.first == category && reserved.second == tag)
+                return true;
+        }
+        //未命中任何保留标识
+        return false;
     }
 
     //事件处理
     void Config_Loader::event_process(std::shared_ptr<Event> evt)
     {
-        //接收者答复（存在性检查的答复）
-        if (evt->category == "Subscriber" && evt->tag == "Call")
-        {
-            //获取目标对象迭代器
-            auto it = waited_objects.find(evt->sender);
-            //若事件发送者为配置待发送对象
-            if(it != waited_objects.end())
-            {
-                if (config_routes[evt->sender].empty())
-                {
-                    logger.warn("Config_Loader::配置请求对象不存在配置缓存\n");
-                    logger.warn("Config_Loader::配置加载请求已驳回\n");
-                }
-                //逐份加载路由目录
-                for (const auto& cotent : config_routes[evt->sender])
-                    route_load(cotent,true,evt->sender);
-                //清除该配置待发送对象信息
-                waited_objects.erase(it);
-            }
-            return;
-        }
-
         //可信根目录修改
         if (evt->category == "Believed_Root")
         {
@@ -112,7 +144,7 @@ namespace engine
         }
 
         //配置路由加载
-        if (evt->category == "Route" && evt->tag == "load")
+        if (evt->category == "Route" && evt->tag == "Load")
         {
             //若配置路由加载对象未定义
             if (!detail::field_check<string>(evt->config, "object"))
@@ -196,7 +228,7 @@ namespace engine
         }
 
         //对象配置加载
-        if (evt->category == "Config" && evt->tag == "load")
+        if (evt->category == "Config" && evt->tag == "Load")
         {
             //若载荷缺少对象字段
             if (!detail::field_check<string>(evt->config,"object"))

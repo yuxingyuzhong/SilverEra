@@ -1,5 +1,5 @@
-#include "../局部命名空间使用.h"
-#include "Engine/EngineCore/src/tools/Logging/日志系统运行包.h"
+#include "src/core/spatial/collision/Collision_Proxy/局部命名空间使用.h"
+#include "src/tools/Logging/日志系统运行包.h"
 
 namespace engine
 {
@@ -67,9 +67,40 @@ namespace engine
 			Event("", "", "Collision", "ColliderCollisionResponse")
 		};
 
-		//接入事件中转站
-		if (!event_terminal.attach(module_name, needed_events, acl_key))
+		//接入事件中转站（仅登记订阅者身份与接收入口）
+		if (!event_terminal.attach(module_name, acl_key))
+		{
 			logger.error("Collision_Proxy::事件中转站接入失败");
+			return;
+		}
+
+		//构造订阅事件清单
+		json subscribed_events = json::array();
+		//逐条写入订阅事件标识
+		for (const auto& needed_event : needed_events)
+		{
+			//单条订阅事件标识
+			json subscribed_event;
+			subscribed_event["category"] = needed_event.category;
+			subscribed_event["tag"] = needed_event.tag;
+			subscribed_events.push_back(subscribed_event);
+		}
+
+		//构造订阅事件（目标对象名与权限密钥经载荷传递）
+		auto attach_evt = event_terminal.build("", "", "Subscribed_Events", "Add");
+		//若事件构造失败
+		if (attach_evt == nullptr)
+		{
+			logger.error("Collision_Proxy::订阅事件构造失败");
+			return;
+		}
+		//写入目标对象名、权限密钥与订阅清单
+		attach_evt->config["object"] = module_name;
+		attach_evt->config["acl_key"] = static_cast<uint64_t>(acl_key);
+		attach_evt->config["subscribed_events"] = subscribed_events;
+		//发送订阅事件（登记模块订阅清单）
+		if (!event_terminal.send(attach_evt, acl_key))
+			logger.error("Collision_Proxy::订阅事件发送失败");
 	}
 
 	//事件处理

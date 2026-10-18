@@ -1159,7 +1159,10 @@ cmake --build out/build/x64-Debug
 - **产物**：`out/build/x64-Debug/lib/EngineCore.lib`（静态库；输出目录由 `ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"` 指定）。该库的外部符号约 16342 条。
 - **源文件收集**：先 `file(GLOB_RECURSE ENGINE_SOURCES CONFIGURE_DEPENDS src/*.cpp common/*.cpp external/*.cpp)` 扫描，构建目录内的文件会被正则过滤掉，防止误编译临时产物；若过滤后无源文件则 `FATAL_ERROR` 终止。扫描结果随后**同步进本层根目录的显式清单 `源文件列表.cmake`**（由共享脚本 `cmake/生成源文件列表.cmake` 的 `byjy_source_list_sync()` 在每轮配置时按路径集合差异写回），`add_library` 本身不再传任何源文件，全部由该清单的 `target_sources` 提供。清单机制的目的见第 8.5 节。
 - **增删文件自动重配（本版次）**：GLOB 之后另把 `src`、`common`、`external` 三个源根目录登记进 `set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ...)`；增删文件后**直接构建**即自动重跑配置并重扫 GLOB（ninja 会打印 `Re-checking globbed directories...`），不必手动「重新生成缓存」，VS 目录视图随之刷新。
-- **包含路径**：`target_include_directories(EngineCore PRIVATE "${BYJY_PROJECT_ROOT}")` —— 私有包含根为**项目根**，本层源码以 `Engine/EngineCore/...` 形式互相包含，与对外面同一套写法；第三方路径（Json / glfw / bullet3）同样为 `PRIVATE`。
+- **包含路径（本版次调整）**：`target_include_directories(EngineCore PRIVATE "${BYJY_PROJECT_ROOT}" "${PROJECT_ROOT_DIR}")` —— 两个私有包含根各司其职：
+  - **项目根**（`Engine/EngineCore/...` 前缀）：**头文件**里的跨目录包含一律写项目根相对全路径。对外头快照把本层头镜像到 `<快照根>/Engine/EngineCore/...`，上层以「快照根」替换「项目根」来解析，故头内包含必须以项目根为基准，否则上层消费快照时会解析到错误位置。
+  - **本层根**（`src/...` 前缀）：**实现文件（.cpp）**里的跨目录包含写层根相对。.cpp 不进对外头快照、不被别层消费，无需背项目根前缀；而层根相对又不像 `../` 那样「相对当前文件所在目录」、层级一错就断。
+  - 头与 .cpp 分属两种基准、互不干扰；第三方路径（Json / glfw / bullet3）同样为 `PRIVATE`。
 - **链接**：`find_package(OpenGL REQUIRED)`；链接 `external/glfw/glfw3.lib` 与 `OpenGL::GL`；`target_compile_definitions(EngineCore PUBLIC GLFW_STATIC)`；MSVC 追加 `opengl32.lib user32.lib gdi32.lib shell32.lib`。
 - **编译选项（MSVC）**：`/MP`（多核）、`/utf-8`（源文件 UTF-8）、`/WX-`（不将警告视为错误，全局设置）、`_CRT_SECURE_NO_WARNINGS`。
 - **编译选项（GCC / Clang）**：`-Wall -Wextra -pedantic`，并定义 `_GNU_SOURCE`。

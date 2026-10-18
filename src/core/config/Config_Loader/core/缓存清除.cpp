@@ -1,12 +1,34 @@
-#include "../局部命名空间使用.h"
-#include "Engine/EngineCore/src/tools/Logging/日志系统运行包.h"
+#include "src/core/config/Config_Loader/局部命名空间使用.h"
+#include "src/tools/Logging/日志系统运行包.h"
 
 //引擎命名空间
 namespace engine
 {
-    //可信根目录缓存清除（按目录前缀清除该根下的对象缓存）
+    //可信根目录缓存清除（按目录前缀清除该根下的对象缓存，并落盘抹除对应条目标记）
     void Config_Loader::root_cache_clear(const Config_Content& root)
     {
+        //收集待卸载的「对象 × 目录对」命中集合
+        //须在清除登记前收集：登记一旦清除，定位路由文件所需信息即丢失
+        vector<std::pair<string, Config_Content>> hits{};
+        //遍历对象配置目录记录
+        for (const auto& cache : config_routes)
+        {
+            //遍历该对象已登记的配置目录
+            for (const auto& content : cache.second)
+            {
+                //若路由目录与配置目录均以可信根对应目录为前缀
+                if (path_prefix_check(root.route, content.route) &&
+                    path_prefix_check(root.config, content.config))
+                    //记录该「对象 × 目录对」命中
+                    hits.push_back({ cache.first, content });
+            }
+        }
+
+        //逐份命中目录对落盘抹除该对象的条目标记
+        //与 Route/Unload 同径，使同一可信根在进程内卸载后可重新加载重建
+        for (const auto& hit : hits)
+            route_unload(hit.second, hit.first);
+
         //清除对象配置目录缓存
         for (auto it = config_routes.begin(); it != config_routes.end();)
         {

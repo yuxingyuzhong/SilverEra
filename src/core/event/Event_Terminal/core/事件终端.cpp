@@ -1,6 +1,6 @@
-#include "../局部命名空间使用.h"
+#include "src/core/event/Event_Terminal/局部命名空间使用.h"
 //获取日志系统
-#include "Engine/EngineCore/src/tools/Logging/日志系统运行包.h"
+#include "src/tools/Logging/日志系统运行包.h"
 
 namespace engine
 {
@@ -36,8 +36,7 @@ namespace engine
 	}
 
 	//中转站接入
-	bool Event_Terminal::attach(const string& subscriber, const vector<Event>& needed_events,
-		const int64_t& acl_key)
+	bool Event_Terminal::attach(const std::string& subscriber, const int64_t& acl_key)
 	{
 		//若当前尚未生成密钥
 		if (!this->acl_key.has_value())
@@ -47,118 +46,37 @@ namespace engine
 		}
 		//若密钥权限未匹配
 		if (this->acl_key != acl_key)
+		{
+			logger.warn("Event_Terminal::密钥匹配失败");
 			return false;
+		}
 
 		//简化表示路径
 		auto& Tinterface = terminal_port;
+		//若未注册中转站接入端口
+		if (!Tinterface.check(Port_ID::Broker_Attacher))
+		{
+			logger.error("Event_Terminal::事件中转站接入端口未绑定");
+			logger.error("Event_Terminal::接入失败");
+			return false;
+		}
 
-		//若未注册单事件接收入口
+		//若未注册单事件接收端口
 		if(!Tinterface.check(Port_ID::Evt_Receiver))
 		{
-			//包装单事件接收入口
+			//包装单事件接收端口
 			auto it = [this](shared_ptr<Event> evt) -> void
 				{
 					this->receive(evt);
 				};
 			//接入中转站
-			(*Tinterface.broker_attacher)(subscriber, needed_events, it);
+			(*Tinterface.broker_attacher)(subscriber, this->acl_key.value(), it);
 		}
 		else
 		    //接入中转站
-		    (*Tinterface.broker_attacher)(subscriber, needed_events, *Tinterface.evt_receiver);
+		    (*Tinterface.broker_attacher)(subscriber, this->acl_key.value(), *Tinterface.evt_receiver);
 		//返回接入成功
 		return true;
-	}
-
-	//中转站呼叫 —— 单事件重载
-	bool Event_Terminal::interact(std::shared_ptr<Event> evt,std::shared_ptr<Event>& receiver,
-		const int64_t& acl_key)
-	{
-		//若当前尚未生成密钥
-		if (!this->acl_key.has_value())
-		{
-			logger.warn("Event_Terminal::密钥未生成\n功能已锁定");
-			return false;
-		}
-
-		//若权限密钥匹配
-		if (this->acl_key == acl_key)
-		{
-			//若注册单事件中转站呼叫入口
-			if (terminal_port.check(Port_ID::Evt_Broker_Caller))
-			{
-				receiver = (*terminal_port.evt_broker_caller)(evt);
-				return true;
-			}
-			//若注册多事件中转站呼叫入口
-			else if (terminal_port.check(Port_ID::Evts_Broker_Caller))
-			{
-				//降级使用多事件呼叫接口
-				receiver = (*terminal_port.evts_broker_caller)({ evt }).front();
-				//日志警告
-				logger.warn("Event_Terminal::未注册单事件呼叫入口");
-				logger.warn("Event_Terminal::现临时使用多事件呼叫入口接管逻辑");
-				return true;
-			}
-			//若无可用接口则报错
-			else
-			{
-				logger.error("Event_Terminal::未注册有效入口");
-				return false;
-			}
-		}
-		//若密钥不匹配则报错
-		else
-		{
-			logger.error("Event_Terminal::密钥不匹配");
-			return false;
-		}
-	}
-
-	//中转站呼叫 —— 多事件重载
-	bool Event_Terminal::interact(std::vector<std::shared_ptr<Event>> events,
-		std::vector<std::shared_ptr<Event>> receiver, const int64_t& acl_key)
-	{
-		//若当前尚未生成密钥
-		if (!this->acl_key.has_value())
-		{
-			logger.warn("Event_Terminal::密钥未生成\n功能已锁定");
-			return false;
-		}
-
-		//若权限密钥匹配
-		if (this->acl_key == acl_key)
-		{
-			//若已注册多事件呼叫接口
-			if (terminal_port.check(Port_ID::Evts_Broker_Caller))
-			{
-				receiver = (*terminal_port.evts_broker_caller)(events);
-				return true;
-			}
-			//若已注册单事件呼叫接口则返回
-			else if (terminal_port.check(Port_ID::Evt_Broker_Caller))
-			{
-				//分多次发送事件
-				for (auto& evt : events)
-					receiver.push_back((*terminal_port.evt_broker_caller)(evt));
-				//日志警告
-				logger.warn("Event_Terminal::未注册多事件呼叫入口");
-				logger.warn("Event_Terminal::现临时使用单事件呼叫入口接管逻辑");
-				return true;
-			}
-			//若无可用接口则报错
-			else
-			{
-				logger.error("Event_Terminal::未注册有效入口");
-				return false;
-			}
-		}
-		//若密钥不匹配则报错
-		else
-		{
-			logger.error("Event_Terminal::密钥不匹配");
-			return false;
-		}
 	}
 
 	//事件发送 —— 单事件重载

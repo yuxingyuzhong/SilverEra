@@ -49,12 +49,15 @@ namespace engine
         static constexpr size_t file_flush_size = 4096;
     public:
         //输出流绑定（路径节点绑定文件输出流，目录节点绑定后其后代共享该流）
-        bool stream_bind(const std::string& path, const std::string& file_name)
+        bool stream_bind(const std::string& path, const std::string& file_name, const Log_Rules& rules)
         {
             //整树结构锁（建节点）
             std::lock_guard<std::mutex> lock(tree_mtx);
+            //按规则生成路径键（域内与否不影响绑定目标节点）
+            std::string key;
+            rules.key_make(path, key);
             //定位或创建路径节点
-            Stream_Node& node = node_ensure(path_normalize(path));
+            Stream_Node& node = node_ensure(key);
             //若文件名为空则改为绑定控制台输出流
             if (file_name.empty())
             {
@@ -92,7 +95,7 @@ namespace engine
             return group_append(node, sink);
         }
         //输出流绑定（路径节点绑定外部输出流）
-        bool stream_bind(const std::string& path, const Log_Stream& stream)
+        bool stream_bind(const std::string& path, const Log_Stream& stream, const Log_Rules& rules)
         {
             //若输出流为空则绑定失败
             if (!stream)
@@ -104,16 +107,22 @@ namespace engine
             //若输出目标分配失败
             if (!sink)
                 return false;
+            //按规则生成路径键
+            std::string key;
+            rules.key_make(path, key);
             //定位或创建路径节点并追加输出目标
-            return group_append(node_ensure(path_normalize(path)), sink);
+            return group_append(node_ensure(key), sink);
         }
         //输出流清空（清除路径节点自有输出流，使该节点及其后代回落共享父节点输出流）
-        bool stream_clear(const std::string& path)
+        bool stream_clear(const std::string& path, const Log_Rules& rules)
         {
             //整树结构锁
             std::lock_guard<std::mutex> lock(tree_mtx);
-            //按规范化键查找节点（不新建）
-            Stream_Node* node = node_find(path_normalize(path));
+            //按规则生成路径键
+            std::string key;
+            rules.key_make(path, key);
+            //按键查找节点（不新建）
+            Stream_Node* node = node_find(key);
             //若节点不存在则清空失败
             if (!node)
                 return false;
@@ -137,6 +146,12 @@ namespace engine
         {
             //控制台输出目标非空即视为可用
             return sink_console() != nullptr;
+        }
+        //调用点缓存清空（根目录变更导致路径键空间变化时调用）
+        void cache_clear()
+        {
+            //转交节点缓存清空
+            node_cache.cache_clear();
         }
         //输出流落盘（把整棵树内所有输出目标的缓冲内容写出并刷新）
         void stream_flush()
@@ -164,13 +179,16 @@ namespace engine
         void stream_output(const char* file_name, const std::string& level, const std::string& msg,
             const Log_Rules& rules)
         {
-            //定位调用处节点（缓存命中则不做任何路径规范化）
-            Stream_Node* node = node_locate(file_name);
-            //越界截断与选择性输出一体判定：未放行则直接丢弃该条日志
-            if (node && !output_pass_check(*node, level, rules))
+            //定位调用处节点（缓存命中则不作键生成；域外调用处返回空指针）
+            Stream_Node* node = node_locate(file_name, rules);
+            //域外调用处越界截断：直接丢弃该条日志
+            if (!node)
+                return;
+            //选择性输出判定：未放行则直接丢弃该条日志
+            if (!output_pass_check(*node, level, rules))
                 return;
             //解析生效输出目标容器（锁内完成，取到容器后即已解锁）
-            Sink_Group group = node ? group_resolve(*node) : group_console();
+            Sink_Group group = group_resolve(*node);
             //若容器不可用则直接写控制台
             if (!group || group->empty())
             {
@@ -188,14 +206,6 @@ namespace engine
             }
         }
     private:
-        //调用路径规范化（复用通用路径规范化工具，剥离到项目根相对路径并补尾部分隔符）
-        std::string path_normalize(const std::string& raw) const
-        {
-            //项目根目录名锚点（以其为界把绝对调用处路径剥离为项目内相对路径）
-            static const std::string anchor = "白银纪元/";
-            //交给通用路径操作工具完成词法规范化与路径键编排
-            return detail::path_key_normalize(raw, anchor);
-        }
         //路径段对齐的公共前缀长度（公共部分不足一个路径段时回退到最近的 '/' 边界）
         size_t prefix_common(const std::string& left, const std::string& right)
         {
@@ -329,18 +339,21 @@ namespace engine
                 node = match;
             }
         }
-        //调用点节点定位（命中调用点缓存则直接返回，未命中才规范化路径、建节点并登记）
-        Stream_Node* node_locate(const char* file_name)
+        //调用点节点定位（命中调用点缓存则直接返回；未命中才按规则生成键、建节点并登记）
+        Stream_Node* node_locate(const char* file_name, const Log_Rules& rules)
         {
             //先查调用点缓存
             Stream_Node* cached = node_cache.cache_fetch(file_name);
             //命中则直接返回（节点地址稳定，缓存长期有效）
             if (cached)
                 return cached;
-            //未命中：持结构锁规范化路径并定位或创建节点（规范化仅此一次）
+            //未命中：持结构锁按规则生成键并定位或创建节点（生成仅此一次）
             std::lock_guard<std::mutex> lock(tree_mtx);
-            //规范化调用处路径键
-            const std::string key = path_normalize(file_name);
+            //按规则生成调用处路径键，并判定是否位于根目录作用域内
+            std::string key;
+            //域外调用处：越界截断，不建节点
+            if (!rules.key_make(file_name, key))
+                return nullptr;
             //定位或创建节点
             Stream_Node* node = &node_ensure(key);
             //结构可能新增节点，递增树版本号使既有共享缓存失效

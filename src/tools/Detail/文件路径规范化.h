@@ -31,8 +31,8 @@ namespace engine
             return result;
         }
 
-        //路径键规范化（在路径规范化基础上剥离到项目根相对路径，统一 '/' 分隔符并末尾补 '/'，供路径前缀比较与哈希使用）
-        //root_anchor：项目根目录名（以 '/' 结尾），用于把绝对路径裁剪为项目内相对路径
+        //路径键规范化（在路径规范化基础上剥离到锚点相对路径，统一 '/' 分隔符并末尾补 '/'，供路径前缀比较与哈希使用）
+        //root_anchor：锚点目录（以 '/' 结尾）；为空则不做剥离，仅做基础规范化（统一分隔符、剥前导、补尾）
         inline std::string path_key_normalize(const std::string& raw, const std::string& root_anchor)
         {
             //复用通用路径规范化（统一分隔符并消解"."与".."）后转回 UTF-8 文本
@@ -44,11 +44,18 @@ namespace engine
                 if (ch == '\\')
                     ch = '/';
             }
-            //取项目根锚点最后一次出现的位置
-            const size_t anchor_pos = path.rfind(root_anchor);
-            //若锚点存在则剥离锚点及其之前的部分
-            if (anchor_pos != std::string::npos)
-                path.erase(0, anchor_pos + root_anchor.size());
+            //末尾先补 '/'，使「路径本身即锚点」时锚点（含尾 '/'）也能命中
+            if (!path.empty() && path.back() != '/')
+                path.push_back('/');
+            //若锚点非空则在路径中定位其最后一次出现并剥离（锚点为空＝只做基础规范化）
+            if (!root_anchor.empty())
+            {
+                //取锚点最后一次出现的位置
+                const size_t anchor_pos = path.rfind(root_anchor);
+                //若锚点存在则剥离锚点及其之前的部分
+                if (anchor_pos != std::string::npos)
+                    path.erase(0, anchor_pos + root_anchor.size());
+            }
             //剥离开头的前导分隔符与 './' 片段
             for (;;)
             {
@@ -66,9 +73,6 @@ namespace engine
                 }
                 break;
             }
-            //末尾补 '/'，使目录节点与文件节点共用同一套路径段前缀比较
-            if (!path.empty() && path.back() != '/')
-                path.push_back('/');
             //返回规范化路径键
             return path;
         }

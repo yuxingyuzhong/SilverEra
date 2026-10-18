@@ -15,8 +15,6 @@ namespace engine
 	{
 		None,
 		Broker_Attacher,
-		Evt_Broker_Caller,
-		Evts_Broker_Caller,
 		Evt_Sender,
 		Evts_Sender,
 		Evt_Receiver,
@@ -30,37 +28,29 @@ namespace engine
 	class Terminal_Port
 	{
 	private:
-		//订阅事件类型别名
-		using Needed_Events = const std::vector<Event>&;
 		//事件入口类型别名 —— 单事件重载
-		template <typename T = void>
-		using Event_Handler = std::function<T(std::shared_ptr<Event>)>;
+		using Event_Handler = std::function<void(std::shared_ptr<Event>)>;
 		//事件入口类型别名 —— 多事件重载
-		template <typename T = void>
-		using Events_Handler = std::function<T(std::vector<std::shared_ptr<Event>>)>;
+		using Events_Handler = std::function<void(std::vector<std::shared_ptr<Event>>)>;
 		//接口入口类型别名
-		using Broker_Attacher = std::function<void(const std::string& name,Needed_Events events,
-			Event_Handler<void> receiver)>;
+		using Broker_Attacher = std::function<void(const std::string& name,const uint64_t& acl_key,
+			Event_Handler receiver)>;
 
 		//接口注册表
 		std::vector<Port_ID> binding_table{};
 
 		//中转站接入入口
 		std::unique_ptr<Broker_Attacher> broker_attacher;
-		//中转站呼叫入口 —— 单事件重载
-		std::unique_ptr<Event_Handler<std::shared_ptr<Event>>> evt_broker_caller;
-		//中转站呼叫入口 —— 单事件重载
-		std::unique_ptr<Events_Handler<std::vector<std::shared_ptr<Event>>>> evts_broker_caller;
 
 		//事件发送入口 —— 单事件重载
-		std::unique_ptr<Event_Handler<void>> evt_sender;
+		std::unique_ptr<Event_Handler> evt_sender;
 		//事件发送入口 —— 多事件重载
-		std::unique_ptr<Events_Handler<void>> evts_sender;
+		std::unique_ptr<Events_Handler> evts_sender;
 
 		//事件接收入口 —— 单事件重载
-		std::unique_ptr<Event_Handler<void>> evt_receiver;
+		std::unique_ptr<Event_Handler> evt_receiver;
 		//事件接收入口 —— 多事件重载
-		std::unique_ptr<Events_Handler<void>> evts_receiver;
+		std::unique_ptr<Events_Handler> evts_receiver;
 
 		//函数包装器内存分配
 		template <typename Ret,typename... Args>
@@ -101,10 +91,11 @@ namespace engine
         Terminal_Port& bind(const Port_ID& ID, T callback)
         {
             //若回调可绑定中转站接入端口
-            if constexpr (std::is_invocable_v<T, const std::string&, const std::vector<Event>&, Event_Handler<void>>)
+            if constexpr (std::is_invocable_v<T, const std::string&, const uint64_t&, Event_Handler>)
             {
                 //若回调返回类型为void
-                if constexpr (std::is_same_v<std::invoke_result_t<T, const std::string&, const std::vector<Event>&, Event_Handler<void>>, void>)
+                if constexpr (std::is_same_v<std::invoke_result_t<T, const std::string&, const uint64_t&,
+                    Event_Handler>, void>)
                 {
                     //若接口ID不匹配
                     if (ID != Port_ID::Broker_Attacher)
@@ -117,71 +108,38 @@ namespace engine
                     function_register(Port_ID::Broker_Attacher, broker_attacher, Broker_Attacher(callback));
                 }
             }
-            //若回调可绑定单事件中转站呼叫端口
+            //若回调可绑定单事件重载端口
             else if constexpr (std::is_invocable_v<T, std::shared_ptr<Event>>)
             {
-                //若回调返回类型为std::shared_ptr<Event>
-                if constexpr (std::is_same_v<std::invoke_result_t<T, std::shared_ptr<Event>>, std::shared_ptr<Event>>)
-                {
-                    //若接口ID不匹配
-                    if (ID != Port_ID::Evt_Broker_Caller)
-                    {
-                        //记录ID匹配失败日志
-                        logger.error("Event_Terminal::ID匹配失败\n已驳回单事件中转站呼叫端口绑定请求");
-                        return *this;
-                    }
-                    //绑定单事件中转站呼叫端口
-                    function_register(Port_ID::Evt_Broker_Caller, evt_broker_caller, Event_Handler<std::shared_ptr<Event>>(callback));
-                }
-                //若回调返回类型为void
-                else if constexpr (std::is_same_v<std::invoke_result_t<T, std::shared_ptr<Event>>, void>)
-                {
-                    //若接口ID为单事件发送端口
-                    if (ID == Port_ID::Evt_Sender)
-                        //绑定单事件发送端口
-                        function_register(Port_ID::Evt_Sender, evt_sender, Event_Handler<void>(callback));
-                    //若接口ID为单事件接收端口
-                    else if (ID == Port_ID::Evt_Receiver)
-                        //绑定单事件接收端口
-                        function_register(Port_ID::Evt_Receiver, evt_receiver, Event_Handler<void>(callback));
-                    //若接口ID不属于单事件发送/接收端口
-                    else
-                        //记录ID匹配失败日志
-                        logger.error("Event_Terminal::ID匹配失败\n已驳回单事件发送/接收端口绑定请求");
-                }
+                //若接口ID为单事件发送端口
+                if (ID == Port_ID::Evt_Sender)
+                    //绑定单事件发送端口
+                    function_register(Port_ID::Evt_Sender, evt_sender, Event_Handler(callback));
+                //若接口ID为单事件接收端口
+                else if (ID == Port_ID::Evt_Receiver)
+                    //绑定单事件接收端口
+                    function_register(Port_ID::Evt_Receiver, evt_receiver, Event_Handler(callback));
+                //若接口ID不属于单事件发送/接收端口
+                else
+                    //记录ID匹配失败日志
+                    logger.error("Event_Terminal::ID匹配失败\n已驳回单事件发送/接收端口绑定请求");
             }
-            //若回调可绑定多事件中转站呼叫端口
+            //若回调可绑定多事件重载端口
             else if constexpr (std::is_invocable_v<T, std::vector<std::shared_ptr<Event>>>)
             {
-                //若回调返回类型为std::vector<std::shared_ptr<Event>>
-                if constexpr (std::is_same_v<std::invoke_result_t<T, std::vector<std::shared_ptr<Event>>>, std::vector<std::shared_ptr<Event>>>)
-                {
-                    //若接口ID不匹配
-                    if (ID != Port_ID::Evts_Broker_Caller)
-                    {
-                        //记录ID匹配失败日志
-                        logger.error("Event_Terminal::ID匹配失败\n已驳回多事件中转站呼叫端口绑定请求");
-                        return *this;
-                    }
-                    //绑定多事件中转站呼叫端口
-                    function_register(Port_ID::Evts_Broker_Caller, evts_broker_caller, Events_Handler<std::vector<std::shared_ptr<Event>>>(callback));
-                }
-                //若回调返回类型为void
-                else if constexpr (std::is_same_v<std::invoke_result_t<T, std::vector<std::shared_ptr<Event>>>, void>)
-                {
-                    //若接口ID为多事件发送端口
-                    if (ID == Port_ID::Evts_Sender)
-                        //绑定多事件发送端口
-                        function_register(Port_ID::Evts_Sender, evts_sender, Events_Handler<void>(callback));
-                    //若接口ID为多事件接收端口
-                    else if (ID == Port_ID::Evts_Receiver)
-                        //绑定多事件接收端口
-                        function_register(Port_ID::Evts_Receiver, evts_receiver, Events_Handler<void>(callback));
-                    //若接口ID不属于多事件发送/接收端口
-                    else
-                        //记录ID匹配失败日志
-                        logger.error("Event_Terminal::ID匹配失败\n已驳回多事件发送/接收端口绑定请求");
-                }
+               //若接口ID为多事件发送端口
+                if (ID == Port_ID::Evts_Sender)
+                    //绑定多事件发送端口
+                    function_register(Port_ID::Evts_Sender, evts_sender, Events_Handler(callback));
+                //若接口ID为多事件接收端口
+                else if (ID == Port_ID::Evts_Receiver)
+                    //绑定多事件接收端口
+                    function_register(Port_ID::Evts_Receiver, evts_receiver, Events_Handler(callback));
+                //若接口ID不属于多事件发送/接收端口
+                else
+                    //记录ID匹配失败日志
+                    logger.error("Event_Terminal::ID匹配失败\n已驳回多事件发送/接收端口绑定请求");
+                
             }
             //若传入回调类型不受支持
             else

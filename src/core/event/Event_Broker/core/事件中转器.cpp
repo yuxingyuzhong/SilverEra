@@ -1,112 +1,51 @@
-#include "../局部命名空间使用.h"
-#include "Engine/EngineCore/src/tools/Logging/日志系统运行包.h"
+#include "src/core/event/Event_Broker/局部命名空间使用.h"
+#include "src/tools/Logging/日志系统运行包.h"
 
 //引擎命名空间
 namespace engine
 {
+    //构造函数
+    Event_Broker::Event_Broker(void)
+    {
+        //生成自身权限密钥
+        uint64_t acl_key = static_cast<uint64_t>(std::hash<std::string>{}("Event_Broker"));
+        //封装事件处理入口
+        auto evt_process = [this](std::shared_ptr<Event> evt)
+            {
+                this->process(evt);
+            };
+        //自身接入事件系统
+        attach("Event_Broker", acl_key, evt_process);
+
+        //中转站保留事件标识（自身处理契约的入口标识）
+        vector<Event_Identity> reserved_identities{
+            Event_Identity("Subscriber", "Check"),
+            Event_Identity("Subscriber", "Detach"),
+            Event_Identity("Subscribed_Events", "Add"),
+            Event_Identity("Subscribed_Events", "Remove")
+        };
+        //逐条登记自身订阅权限（否则这些事件会被事件接收直接丢弃）
+        for (const auto& identity : reserved_identities)
+            acl_set[identity].push_back(acl_key);
+    }
+
     //订阅者登记注册
     void Event_Broker::attach
-    (const string& subscriber, const vector<Event>& needed_events,
-        function<void(shared_ptr<Event> evt)> receiver)
+    (const std::string& subscriber, const uint64_t& acl_key,
+        std::function<void(std::shared_ptr<Event>)> receiver)
     {
-        //若接入者信息为空
-        if (subscriber.empty())
+        //若接入者为空或事件接收器不存在
+        if (subscriber.empty() || !receiver)
         {
-            logger.warn("Event_Broker::订阅者不可为空\n接入失败");
+            logger.warn("Event_Broker::订阅者为空或未包含有效事件接收器");
+            logger.info("接入失败");
             return;
         }
 
-        //订阅者ID记录
-        int32_t subscriber_ID = -1;
-
-        //若本次为二次注册
-        if (mapping_set.count(subscriber))
-        {
-            //获取订阅者ID
-            subscriber_ID = mapping_set[subscriber];
-            //若订阅事件集为空且接收者不存在
-            if (needed_events.empty() && !receiver)
-            {
-                //取消订阅者编号映射
-                mapping_set.erase(subscriber);
-                //卸载订阅者接收入口
-                receivers.erase(subscriber_ID);
-                //清除订阅者接收权限
-                for (auto& acl:acl_set)
-                {
-                    //简化表示路径
-                    auto& subscribers = acl.second;
-                    for (uint64_t index = 0;index < subscribers.size();index++)
-                    {
-                        //若ID匹配则清除该权限
-                        if (subscribers[index] == subscriber_ID)
-                        {
-                            subscribers.erase(subscribers.begin() + index);
-                            break;
-                        }
-                    }
-                }
-                
-                logger.info("Event_Broker::检测到二次接入未包含有效接入信息");
-                logger.info("已满足接入卸载条件");
-                logger.info("事件中转站接入已下线");
-
-                return;
-            }
-            else
-                //重新注册接收入口
-                receivers[subscriber_ID] = receiver;
-        }
-        //若本次为首次注册
-        else
-        {
-            //若订阅事件集为空且接收者不存在
-            if (needed_events.empty() && !receiver)
-            {
-                logger.info("Event_Broker::检测到接入未包含有效接入信息");
-                logger.info("接入失败");
-                return;
-            }
-            //获取当前映射数目作为新订阅者编号
-            subscriber_ID = mapping_set.size();
-            //注册订阅者内部ID
-            mapping_set.insert({ subscriber, subscriber_ID });
-            //注册事件入口
-            receivers.insert({ subscriber_ID ,receiver });
-        }
-
-        //注册需要事件
-        for (int register_time = 0; register_time < needed_events.size(); register_time++)
-        {
-            //简化表示路径
-            auto& evt = needed_events[register_time];
-
-            //若事件标识信息不完整
-            if (evt.category.empty() || evt.tag.empty())
-            {
-                logger.warn("Event_Broker::订阅事件标识信息不完整\n已略过该事件");
-                continue;
-            }
-
-            //获取授权ID集合
-            auto& acl_IDs = acl_set[{evt.category, evt.tag}];
-            //已授权标记
-            bool is_added = false;
-            //匹配权限是否已存在
-            for (auto& acl_ID:acl_IDs)
-            {
-                //若已授权
-                if (acl_ID == subscriber_ID)
-                {
-                    is_added = true;
-                    break;
-                }
-            }
-
-            //若事件尚未授权
-            if (!is_added)
-                acl_IDs.push_back(subscriber_ID);
-        }
+        //注册订阅者权限密钥
+        mapping.insert_or_assign(subscriber, acl_key);
+        //注册事件接收器
+        receivers.insert_or_assign(acl_key, receiver);
     }
 
     //事件接收 —— 单事件重载
@@ -136,39 +75,37 @@ namespace engine
         }
 
         //若为定向发送且目标存在
-        if (!receiver.empty() && mapping_set.count(receiver))
+        if (!receiver.empty() && mapping.count(receiver))
         {
-            //获取目标ID
-            uint64_t target_ID = mapping_set[receiver];
-            //定向发送事件
-            receivers[target_ID](evt);
+            //获取目标权限密钥
+            uint64_t target_key = mapping[receiver];
+            //使用密钥映射事件接收端口定向发送事件
+            receivers[target_key](evt);
             //处理下一事件
             return;
         }
 
-        //事件发起者ID记录
-        optional<uint64_t> sender_ID = nullopt;
-        //获取事件发送者ID
-        auto it = mapping_set.find(sender);
-        //若事件发起者映射存在
-        if (it != mapping_set.end())
-            sender_ID = it->second;
+        //事件发起者权限密钥记录
+        std::optional<uint64_t> sender_key = nullopt;
+        //查找事件发起者
+        auto it = mapping.find(sender);
+        //若事件发起者存在
+        if (it != mapping.end())
+            sender_key = it->second;
 
         //获取该事件标识订阅者列表
-        vector<uint64_t> acl_IDs = acl_set[{ evt->category, evt->tag }];
+        vector<uint64_t> acl_keys = acl_set[{ evt->category, evt->tag }];
+        //获取该事件分类满订阅者列表
+        acl_keys.insert(acl_keys.end(),
+            acl_set[{ evt->category, "All" }].begin(), acl_set[{ evt->category, "All" }].end());
+
         //发送事件
-        for (int send_time = 0; send_time < acl_IDs.size(); send_time++)
+        for (int send_time = 0; send_time < acl_keys.size(); send_time++)
         {
-            //若非事件发起者
-            if (acl_IDs[send_time] != sender_ID)
-                receivers[acl_IDs[send_time]](evt);
+            //若启用事件发起者屏蔽
+            if (!sender_key.has_value() || acl_keys[send_time] != sender_key)
+                receivers[acl_keys[send_time]](evt);
         }
-       
-        //获取该事件分类满订订阅者
-        acl_IDs = acl_set[{ evt->category, "All" }];
-        //发送事件
-        for (int send_time = 0; send_time < acl_IDs.size(); send_time++)
-                receivers[acl_IDs[send_time]](evt);
     }
 
     //事件接收 —— 多事件重载
@@ -179,79 +116,231 @@ namespace engine
             receive(event_set[process_time]);
     }
 
-    //事件处理 —— 单事件重载
-    shared_ptr<Event> Event_Broker::process(shared_ptr<Event> evt)
+    //事件处理
+    void Event_Broker::process(shared_ptr<Event> evt)
     {
         //若事件为空
-        if (evt == nullptr)
-        {
+        if (!evt)
             logger.warn("Event_Broker::当前事件未分配内存\n已略过该事件");
-            return nullptr;
-        }
 
         //简化表示路径
         auto& config = evt->config;
 
-        //若未定义事件发送者则直接返回
-        if (evt->sender.empty() || evt->receiver.empty())
+        //若目标对象字段无效
+        if (!detail::field_check<string>(config, "object"))
         {
-            logger.warn("Event_Broker::事件收发对象定义不完整\n已略过该事件");
-            return nullptr;
+            logger.warn("Event_Broker::目标对象字段无效\n已略过该事件");
+            return;
         }
 
-        //若事件发送者不存在则直接返回
-        if (!mapping_set.count(evt->sender))
-        {
-            logger.warn("Event_Broker::事件发送者不存在\n已略过该事件");
-            return nullptr;
-        }
-
-        //若事件大类可处理
+        //若为订阅者分支
         if (evt->category == "Subscriber")
         {
-            //若事件标签可处理
-            if (evt->tag == "Check" || evt->tag == "Call")
+            //若为订阅者查看分支
+            if(evt->tag == "Check")
             {
-                //构造回复事件
-                shared_ptr<Event> response_event(new(nothrow)Event("Subscriber","Response"));
-                //注入查询目标对象名
-                response_event->config["object"] = evt->receiver;
+                //获取待查询对象名
+                string obejct = config["object"];
                 //查询目标对象
-                auto it = mapping_set.find(evt->receiver);
+                auto it = mapping.find(obejct);
                 //若目标对象不存在
-                if (it == mapping_set.end())
+                if (it == mapping.end())
                     //设置目标对象不存在
-                    response_event->config["existence"] = false;
+                    config["subscribed"] = false;
+                else
+                    //设置目标对象存在
+                    config["subscribed"] = true;
+            }
+            //若为订阅者退出分支
+            else if (evt->tag == "Detach")
+            {
+                //获取待退出订阅者名称
+                string object = config["object"];
+                //待退出订阅者权限密钥记录
+                uint64_t suscriber_key;
+                //查找待退出订阅者
+                auto it = mapping.find(object);
+                //若待退出订阅者存在
+                if (it != mapping.end())
+                    suscriber_key = it->second;
+                //若待退出订阅者不存在
                 else
                 {
-                    //设置目标对象存在
-                    response_event->config["existence"] = true;
-                    //若为目标呼叫事件
-                    if (evt->tag == "Call")
-                        //将呼叫事件转发给目标对象
-                        receivers[it->second](evt);
+                    logger.warn("Event_Broker::目标订阅者不存在");
+                    logger.warn("Event_Broker::无法卸载其订阅记录");
+                    return;
                 }
+                
+                //若目标对象权限密钥字段无效
+                if (!detail::field_check<uint64_t>(config, "acl_key"))
+                {
+                    logger.warn("Event_Broker::目标对象权限密钥字段无效\n已略过该事件");
+                    return;
+                }
+                //检查密钥是否匹配
+                if (suscriber_key == config["acl_key"])
+                {
+                    //取消订阅者编号映射
+                    mapping.erase(object);
+                    //卸载订阅者接收入口
+                    receivers.erase(suscriber_key);
+                    //清除订阅者接收权限
+                    for (auto& acl : acl_set)
+                    {
+                        //简化表示路径
+                        auto& subscribers = acl.second;
+                        for (uint64_t index = 0; index < subscribers.size(); index++)
+                        {
+                            //若ID匹配则清除该权限
+                            if (subscribers[index] == suscriber_key)
+                            {
+                                subscribers.erase(subscribers.begin() + index);
+                                break;
+                            }
+                        }
+                    }
 
-                //返回答复事件
-                return response_event;
+                    logger.info("事件中转站接入已下线");
+                }
+                else
+                {
+                    logger.error("Event_Broker::权限密钥不匹配");
+                    logger.error("Event_Broker::已驳回该违规操作");
+                } 
             }
-            
         }
+        //若为订阅事件分支
+        if (evt->category == "Subscribed_Events")
+        {
+            //获取目标订阅者名称
+            string object = config["object"];
+            //目标订阅者权限密钥记录
+            uint64_t suscriber_key;
+            //查找目标订阅者
+            auto it = mapping.find(object);
+            //若目标订阅者存在
+            if (it != mapping.end())
+                suscriber_key = it->second;
+            //若目标订阅者不存在
+            else
+            {
+                logger.warn("Event_Broker::目标订阅者不存在");
+                logger.warn("Event_Broker::无法更新其订阅记录");
+                return;
+            }
 
-        //返回空事件（无可处理分类）
-        return nullptr;
+            //若目标对象权限密钥字段无效
+            if (!detail::field_check<uint64_t>(config, "acl_key"))
+            {
+                logger.warn("Event_Broker::目标对象权限密钥字段无效\n已略过该事件");
+                return;
+            }
+            //检查密钥是否匹配
+            if (suscriber_key == config["acl_key"])
+            {
+                //若为订阅事件添加分支
+                if (evt->tag == "Add")
+                {
+                    //若订阅事件清单缺失或非数组
+                    if (!detail::field_check<nlohmann::json>(config, "subscribed_events") ||
+                        !config["subscribed_events"].is_array())
+                    {
+                        logger.warn("Event_Broker::订阅事件清单缺失或非数组\n已略过该事件");
+                        return;
+                    }
+
+                    //逐条登记订阅事件
+                    for (const auto& subscribed_event : config["subscribed_events"])
+                    {
+                        //若订阅事件标识信息不完整
+                        if (!detail::field_check<string>(subscribed_event, "category") ||
+                            !detail::field_check<string>(subscribed_event, "tag"))
+                        {
+                            logger.warn("Event_Broker::订阅事件标识信息不完整\n已略过该事件");
+                            continue;
+                        }
+
+                        //获取订阅事件标识
+                        Event_Identity identity(subscribed_event["category"], subscribed_event["tag"]);
+                        //获取该事件标识订阅者列表
+                        auto& acl_keys = acl_set[identity];
+                        //已授权标记
+                        bool is_added = false;
+                        //匹配订阅者是否已授权
+                        for (uint64_t index = 0; index < acl_keys.size(); index++)
+                        {
+                            //若订阅者已授权
+                            if (acl_keys[index] == suscriber_key)
+                            {
+                                is_added = true;
+                                break;
+                            }
+                        }
+                        //若订阅者尚未授权
+                        if (!is_added)
+                            //登记订阅者权限密钥
+                            acl_keys.push_back(suscriber_key);
+                    }
+
+                    logger.info("事件中转站订阅事件已登记");
+                }
+                //若为订阅事件移除分支
+                else if (evt->tag == "Remove")
+                {
+                    //若订阅事件清单缺失或非数组
+                    if (!detail::field_check<nlohmann::json>(config, "subscribed_events") ||
+                        !config["subscribed_events"].is_array())
+                    {
+                        logger.warn("Event_Broker::订阅事件清单缺失或非数组\n已略过该事件");
+                        return;
+                    }
+
+                    //逐条移除订阅事件
+                    for (const auto& subscribed_event : config["subscribed_events"])
+                    {
+                        //若订阅事件标识信息不完整
+                        if (!detail::field_check<string>(subscribed_event, "category") ||
+                            !detail::field_check<string>(subscribed_event, "tag"))
+                        {
+                            logger.warn("Event_Broker::订阅事件标识信息不完整\n已略过该事件");
+                            continue;
+                        }
+
+                        //获取订阅事件标识
+                        Event_Identity identity(subscribed_event["category"], subscribed_event["tag"]);
+                        //查找该事件标识订阅者列表
+                        auto acl_it = acl_set.find(identity);
+                        //若该事件标识未登记任何订阅者
+                        if (acl_it == acl_set.end())
+                        {
+                            logger.warn("Event_Broker::订阅事件标识未登记\n已略过该事件");
+                            continue;
+                        }
+                        //获取订阅者列表
+                        auto& acl_keys = acl_it->second;
+                        //逐项匹配待移除订阅者
+                        for (uint64_t index = 0; index < acl_keys.size(); index++)
+                        {
+                            //若订阅者已授权
+                            if (acl_keys[index] == suscriber_key)
+                            {
+                                //移除订阅者权限密钥
+                                acl_keys.erase(acl_keys.begin() + index);
+                                break;
+                            }
+                        }
+                    }
+
+                    logger.info("事件中转站订阅事件已注销");
+                }
+            }
+            else
+            {
+                logger.error("Event_Broker::权限密钥不匹配");
+                logger.error("Event_Broker::已驳回该违规操作");
+            }
+        }
     }
 
-    //事件处理 —— 多事件重载
-    vector<shared_ptr<Event>> Event_Broker::process(vector<shared_ptr<Event>> event_set)
-    {
-        //回复事件缓冲
-        vector<shared_ptr<Event>> buffer{};
-        //处理事件
-        for (auto& evt:event_set)
-            buffer.push_back(process(evt));
-        //返回回复事件集合
-        return buffer;
-    }
 }
 

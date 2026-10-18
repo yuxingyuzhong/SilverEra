@@ -105,8 +105,6 @@ namespace engine
     private:
         //权限密钥
         int64_t acl_key = 0;
-        //配置待发送对象
-        std::unordered_set<std::string> waited_objects{};
 
     public:
         //构造函数
@@ -165,7 +163,7 @@ namespace engine
 
         //接收者存在性检查（向中转站询问目标对象是否接入）
         bool receiver_check(const std::string& object);
-        //对象配置投递（读配置 → 发 Config/Load → 写条目标记）
+        //对象配置投递（读配置 → 按条目事件名投递 → 写条目标记）
         bool object_config_deliver(const std::string& object, const std::string& config_path,
             uint64_t mark, nlohmann::json& entry);
         //单份配置文件处理
@@ -193,7 +191,7 @@ namespace engine
 
         // ---------- 组7 缓存清除 ----------
 
-        //可信根目录缓存清除（按目录前缀清除该根下的对象缓存）
+        //可信根目录缓存清除（按目录前缀清除该根下的对象缓存，并落盘抹除对应条目标记）
         void root_cache_clear(const Config_Content& root);
         //配置路由卸载（事件指定配置目录）
         void route_unload(const Config_Content& content, const std::string& object);
@@ -201,6 +199,11 @@ namespace engine
         void config_unload(const std::string object, const nlohmann::json& request);
 
         // ---------- 组8 事件分发 ----------
+
+        //配置加载器预定义事件标识表（订阅清单与保留判定共用，避免两处漂移）
+        static const std::vector<std::pair<std::string, std::string>>& reserved_events_get(void);
+        //事件标识保留判定（该 {category, tag} 是否为预定义事件，含中转站保留标签）
+        static bool event_identifier_reserved(const std::string& category, const std::string& tag);
 
         //事件处理
         void event_process(std::shared_ptr<Event> evt);

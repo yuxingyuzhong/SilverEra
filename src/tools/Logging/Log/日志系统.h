@@ -60,18 +60,22 @@ namespace engine
             //格式化正文并合成消息行交由链表树路由输出
             output(fmt.site.file_name(), "DEBUG", std::format(fmt.pattern, std::forward<Args>(args)...));
         }
-        //日志根目录设置（调用处路径作用域；空串表示整个项目；未设置则禁止绑定输出流）
+        //日志根目录设置（调用处路径作用域兼路径键锚点；空串表示整个项目；未设置则禁止绑定输出流）
         bool root_set(const std::string& dir)
         {
             //登记根目录键
-            rules.root_set(dir);
-            return true;
+            const bool registered = rules.root_set(dir);
+            //根目录变更即改变路径键空间，清空调用点缓存以待重算
+            stream_tree.cache_clear();
+            return registered;
         }
         //日志根目录清除（回到未设置状态，此后禁止绑定输出流）
         void root_clear(void)
         {
             //清除根目录键
             rules.root_clear();
+            //根目录变更即改变路径键空间，清空调用点缓存以待重算
+            stream_tree.cache_clear();
         }
         //日志根目录查询（未设置返回空串）
         std::string root_get(void) const
@@ -79,26 +83,23 @@ namespace engine
             //读取根目录键
             return rules.root_get();
         }
-        //文件输出许可设置（file → 是否允许输出）
+        //文件输出许可设置（file → 是否允许输出；同键同值＝重复设置返回 false）
         bool file_rule_set(const std::string& file, bool allowed)
         {
-            //登记文件许可
-            rules.file_allowed_set(file, allowed);
-            return true;
+            //登记文件许可并回传结果
+            return rules.file_allowed_set(file, allowed);
         }
-        //目录输出许可设置（dir → 是否允许输出；作用于其后代调用处）
+        //目录输出许可设置（dir → 是否允许输出；同键同值＝重复设置返回 false）
         bool dir_rule_set(const std::string& dir, bool allowed)
         {
-            //登记目录许可
-            rules.dir_allowed_set(dir, allowed);
-            return true;
+            //登记目录许可并回传结果
+            return rules.dir_allowed_set(dir, allowed);
         }
-        //级别输出许可设置（level → 是否允许输出）
+        //级别输出许可设置（level → 是否允许输出；同键同值＝重复设置返回 false）
         bool level_rule_set(const std::string& level, bool allowed)
         {
-            //登记级别许可
-            rules.level_allowed_set(level, allowed);
-            return true;
+            //登记级别许可并回传结果
+            return rules.level_allowed_set(level, allowed);
         }
         //输出许可表清空（保留根目录设置）
         void rule_clear(void)
@@ -112,8 +113,8 @@ namespace engine
             //根目录未设置则拒绝绑定并走后备通道
             if (!bind_gate())
                 return false;
-            //转发给流节点链表树
-            return stream_tree.stream_bind(path, file_name);
+            //转发给流节点链表树（携带规则以按其锚点生成路径键）
+            return stream_tree.stream_bind(path, file_name, rules);
         }
         //输出流绑定（路径节点绑定外部输出流）
         bool stream_bind(const std::string& path, const Stream& stream)
@@ -121,14 +122,14 @@ namespace engine
             //根目录未设置则拒绝绑定并走后备通道
             if (!bind_gate())
                 return false;
-            //转发给流节点链表树
-            return stream_tree.stream_bind(path, stream);
+            //转发给流节点链表树（携带规则以按其锚点生成路径键）
+            return stream_tree.stream_bind(path, stream, rules);
         }
         //输出流清空（清除路径节点自有输出流，使该节点及其后代回落共享父节点输出流）
         bool stream_clear(const std::string& path)
         {
-            //转发给流节点链表树
-            return stream_tree.stream_clear(path);
+            //转发给流节点链表树（携带规则以按其锚点生成路径键）
+            return stream_tree.stream_clear(path, rules);
         }
         //输出流落盘（把整棵树内所有输出目标的缓冲内容写出并刷新）
         void stream_flush()

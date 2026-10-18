@@ -1,5 +1,5 @@
-#include "../局部命名空间使用.h"
-#include "Engine/EngineCore/src/tools/Logging/日志系统运行包.h"
+#include "src/core/config/Config_Loader/局部命名空间使用.h"
+#include "src/tools/Logging/日志系统运行包.h"
 
 //引擎命名空间
 namespace engine
@@ -7,34 +7,22 @@ namespace engine
     //接收者存在性检查（向中转站询问目标对象是否接入）
     bool Config_Loader::receiver_check(const std::string& object)
     {
-        //构造查看事件
-        auto evt = event_terminal.build("Config_Loader", object, "Subscriber", "Check");
+        //构造查看事件（目标对象名经载荷传递，事件目标留空以命中中转站自身处理契约）
+        auto evt = event_terminal.build("", "", "Subscriber", "Check");
         //若事件构造失败
         if (evt == nullptr)
-        {
-            //记录该配置待发送对象
-            waited_objects.insert(object);
             return false;
-        }
+        //写入待查询对象名
+        evt->config["object"] = object;
+        //发送查看事件（中转站同步处理并就地写入答复字段）
+        if (!event_terminal.send(evt, acl_key))
+            return false;
 
-        //构造中转站答复接收事件
-        std::shared_ptr<Event> response;
-        //查询目标对象是否存在并获取答复
-        if (!event_terminal.interact(evt, response, acl_key) || response == nullptr)
-        {
-            //记录该配置待发送对象
-            waited_objects.insert(object);
+        //若答复字段无效或目标尚未接入
+        if (!detail::field_check<bool>(evt->config, "subscribed") ||
+            !evt->config["subscribed"].get<bool>())
             return false;
-        }
-
-        //若答复对象存在性字段无效或目标不存在
-        if (!detail::field_check<bool>(response->config, "existence") ||
-            !response->config["existence"].get<bool>())
-        {
-            //记录为配置待发送对象
-            waited_objects.insert(object);
-            return false;
-        }
+        //若目标对象存在
         else
             return true;
     }
@@ -62,13 +50,23 @@ namespace engine
         if (config_data.is_object())
             config_data.erase("dirty_mark");
 
-        //取条目自定义配置事件类别（缺省回落 Config）
-        const string event_category = detail::field_check<string>(entry, "event_category")
-            ? entry["event_category"].get<string>() : "Config";
-        //取条目自定义配置事件标签（缺省回落 Load）
-        const string event_tag = detail::field_check<string>(entry, "event_tag")
-            ? entry["event_tag"].get<string>() : "Load";
-        //构造配置事件（事件名由路由条目决定，支持按 category/tag 个性化投递）
+        //若条目事件标识无效
+        if (!detail::field_check<string>(entry, "event_category") ||
+            !detail::field_check<string>(entry, "event_tag"))
+        {
+            logger.error("Config_Loader::条目事件标识无效，配置投递中止");
+            return false;
+        }
+        //取条目事件类别与标签（事件名完全由路由条目决定，不提供缺省回落）
+        const string event_category = entry["event_category"];
+        const string event_tag = entry["event_tag"];
+        //若条目事件标识命中配置加载器预定义事件
+        if (event_identifier_reserved(event_category, event_tag))
+        {
+            logger.error("Config_Loader::条目事件标识命中预定义事件，配置投递中止");
+            return false;
+        }
+        //构造配置事件
         auto evt = event_terminal.build("Config_Loader", object, event_category, event_tag);
         //若配置事件构造失败
         if (evt == nullptr)

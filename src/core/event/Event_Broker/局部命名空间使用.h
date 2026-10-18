@@ -3,6 +3,7 @@
 
 // ---------- 基础类型 ----------
 using std::string;
+using std::hash;
 
 // ---------- 容器 ----------
 using std::unordered_map;
