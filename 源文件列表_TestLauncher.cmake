@@ -27,9 +27,13 @@ target_sources(TestLauncher PRIVATE
 # 头文件不参与编译，只为让 IDE 建立文件索引；同样经 target_sources 列出，
 # 使头文件改名 / 迁移时 VS 也能改写引用
 target_sources(TestLauncher PRIVATE
-    "src/主调/图形选择窗口.h"
+    "src/主调/gtest输出镜像.h"
+    "src/主调/图形操作界面.h"
     "src/主调/引擎日志屏蔽.h"
     "src/主调/控制台选择菜单.h"
+    "src/主调/测试界面.h"
+    "src/主调/测试运行器.h"
+    "src/主调/测试运行记录.h"
     "src/主调/测试选择模型.h"
     "src/主调/退出等待判定.h"
 )

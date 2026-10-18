@@ -9,7 +9,7 @@
 //获取路径字符串转换工具
 #include "Engine/EngineCore/src/tools/Detail/路径字符串转换.h"
 //获取引擎日志屏蔽（用例期间需临时关闭）
-#include "Application/Test/src/主调/引擎日志屏蔽.h"
+#include "src/主调/引擎日志屏蔽.h"
 
 //本测试文件路径（current() 位于本文件，故返回本文件路径，与日志调用处路径一致）
 static std::string log_test_path()

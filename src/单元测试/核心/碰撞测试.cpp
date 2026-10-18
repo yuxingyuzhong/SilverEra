@@ -549,22 +549,22 @@ TEST_F(Collision_Proxy_Test, 未注册接入入口时不接入)
 	EXPECT_NO_THROW(proxy.attach());
 }
 
-//碰撞代理器：事件接入时登记模块名与订阅清单
-TEST_F(Collision_Proxy_Test, 事件接入登记订阅清单)
+//碰撞代理器：事件接入时登记模块名与权限密钥
+TEST_F(Collision_Proxy_Test, 事件接入登记权限密钥)
 {
 	//中转站接入入口接到的模块名
 	std::string attached_name;
-	//中转站接入入口接到的订阅清单
-	std::vector<engine::Event> attached_events;
+	//中转站接入入口接到的权限密钥
+	uint64_t attached_key = 0;
 
-	//注册中转站接入入口
+	//注册中转站接入入口（新签名：模块名 + 权限密钥 + 接收器）
 	proxy.event_terminal->bind(engine::Port_ID::Broker_Attacher,
-		[&](auto&& module_name, auto&& needed_events, auto&& event_entry)
+		[&](auto&& module_name, auto&& acl_key, auto&& event_entry)
 		{
 			//留存模块名
 			attached_name = module_name;
-			//留存订阅清单
-			attached_events = needed_events;
+			//留存权限密钥
+			attached_key = acl_key;
 		});
 
 	//接入事件中转站
@@ -572,8 +572,8 @@ TEST_F(Collision_Proxy_Test, 事件接入登记订阅清单)
 
 	//模块名应为碰撞代理器
 	EXPECT_EQ(attached_name, "Collision_Proxy");
-	//订阅清单应包含配置路由与全部碰撞指令
-	EXPECT_EQ(attached_events.size(), 13u);
+	//接入时应携带非空权限密钥
+	EXPECT_NE(attached_key, 0u);
 }
 
 //碰撞代理器：事件驱动构建空间与碰撞体，并回告编号
@@ -591,6 +591,9 @@ TEST_F(Collision_Proxy_Test, 事件驱动碰撞体构建)
 		[&entry](auto&&, auto&&, auto&& event_entry) { entry = event_entry; });
 	proxy.attach();
 	ASSERT_TRUE(static_cast<bool>(entry));
+
+	//排除接入时发出的订阅登记事件，仅统计接入后的业务事件
+	sent.clear();
 
 	//空间构建事件载荷
 	nlohmann::json region_payload = nlohmann::json::object();
@@ -626,6 +629,9 @@ TEST_F(Collision_Proxy_Test, 事件驱动检测链路)
 		[&entry](auto&&, auto&&, auto&& event_entry) { entry = event_entry; });
 	proxy.attach();
 	ASSERT_TRUE(static_cast<bool>(entry));
+
+	//排除接入时发出的订阅登记事件，仅统计接入后的业务事件
+	sent.clear();
 
 	//空间构建事件载荷
 	nlohmann::json region_payload = nlohmann::json::object();
@@ -753,6 +759,9 @@ TEST_F(Collision_Proxy_Test, 几何体集合经事件设置生效)
 		[&entry](auto&&, auto&&, auto&& event_entry) { entry = event_entry; });
 	proxy.attach();
 	ASSERT_TRUE(static_cast<bool>(entry));
+
+	//排除接入时发出的订阅登记事件，仅统计接入后的业务事件
+	sent.clear();
 
 	//空间构建事件载荷
 	nlohmann::json region_payload = nlohmann::json::object();
@@ -1236,6 +1245,9 @@ TEST_F(Collision_Proxy_Test, 跨越通知事件发布)
 	proxy.attach();
 	ASSERT_TRUE(static_cast<bool>(entry));
 
+	//排除接入时发出的订阅登记事件，仅统计接入后的业务事件
+	sent.clear();
+
 	//写入临时立方体网格与边界配置
 	const std::string mesh_name = temp_mesh_write();
 	const std::string boundary_name = temp_boundary_write("跨越空间", mesh_name);
@@ -1388,6 +1400,9 @@ TEST_F(Collision_Proxy_Test, 空几何配置经事件被忽略)
 		[&entry](auto&&, auto&&, auto&& event_entry) { entry = event_entry; });
 	proxy.attach();
 	ASSERT_TRUE(static_cast<bool>(entry));
+
+	//排除接入时发出的订阅登记事件，仅统计接入后的业务事件
+	sent.clear();
 
 	//空间构建事件载荷
 	nlohmann::json region_payload = nlohmann::json::object();

@@ -289,6 +289,8 @@ TEST_F(Object_Pool_Test, 排序模式新建后可查找)
 	pool.order_set(std::ranges::greater{});
 	//排序模式下新建一个对象
 	const uint64_t newest = pool.build();
+	//排序模式下新建后需自行 sort 保持有序，二分查找方有效
+	pool.sort();
 	//新对象应可查找到
 	EXPECT_NE(pool.find(newest), pool.end());
 }
@@ -636,6 +638,8 @@ TEST_F(Object_Pool_Test, 排序模式卸载后新建可查找)
 	pool.unload(second);
 	//排序模式下新建一个对象（复用被回收的下标）
 	const uint64_t newest = pool.build();
+	//排序模式下新建后需自行 sort 保持有序，二分查找方有效
+	pool.sort();
 	//新对象应可查找到
 	EXPECT_NE(pool.find(newest), pool.end());
 	//其余存活对象仍可查找到

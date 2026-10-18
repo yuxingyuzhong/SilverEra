@@ -2,7 +2,7 @@
 #include <gtest/gtest.h>
 
 //获取被测的退出等待判定
-#include "Application/Test/src/主调/退出等待判定.h"
+#include "src/主调/退出等待判定.h"
 
 #include <string>
 

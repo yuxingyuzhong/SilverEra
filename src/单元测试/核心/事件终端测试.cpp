@@ -203,7 +203,7 @@ TEST_F(Event_Terminal_Test, 错误密钥接入失败)
 	//生成权限密钥
 	const int64_t key = terminal.key().value();
 	//以错误密钥接入
-	EXPECT_FALSE(terminal.attach("模块", {}, key + 1));
+	EXPECT_FALSE(terminal.attach("模块", key + 1));
 }
 
 //接入中转站：接入信息被完整传递给接入入口
@@ -213,8 +213,8 @@ TEST_F(Event_Terminal_Test, 接入信息被传递给接入入口)
 	const int64_t key = terminal.key().value();
 	//接入入口收到的模块名
 	std::string received_name;
-	//接入入口收到的订阅事件数
-	size_t received_count = 0;
+	//接入入口收到的权限密钥
+	uint64_t received_key = 0;
 	//接入入口接到的接收通道
 	std::function<void(std::shared_ptr<engine::Event>)> received_entry;
 
@@ -223,25 +223,22 @@ TEST_F(Event_Terminal_Test, 接入信息被传递给接入入口)
 		[](std::shared_ptr<engine::Event>) {});
 	//注册中转站接入入口
 	terminal->bind(engine::Port_ID::Broker_Attacher,
-		[&](auto&& module_name, auto&& needed_events, auto&& entry)
+		[&](auto&& module_name, auto&& acl_key, auto&& entry)
 		{
 			//留存模块名
 			received_name = module_name;
-			//留存订阅事件数
-			received_count = needed_events.size();
+			//留存权限密钥
+			received_key = acl_key;
 			//留存接收通道
 			received_entry = entry;
 		});
 
-	//待订阅事件清单
-	std::vector<engine::Event> needed{ engine::Event("", "", "输入", "按键",
-		nlohmann::json::object()) };
 	//接入中转站
-	EXPECT_TRUE(terminal.attach("模块", needed, key));
+	EXPECT_TRUE(terminal.attach("模块", key));
 	//模块名应被传递
 	EXPECT_EQ(received_name, "模块");
-	//订阅事件数应为一条
-	EXPECT_EQ(received_count, 1u);
+	//权限密钥应被传递
+	EXPECT_EQ(received_key, static_cast<uint64_t>(key));
 	//接收通道应可用
 	EXPECT_TRUE(static_cast<bool>(received_entry));
 }
@@ -264,7 +261,7 @@ TEST_F(Event_Terminal_Test, 接入后经通道送入事件)
 		[&received_entry](auto&&, auto&&, auto&& entry) { received_entry = entry; });
 
 	//接入中转站
-	EXPECT_TRUE(terminal.attach("模块", {}, key));
+	EXPECT_TRUE(terminal.attach("模块", key));
 	//经接入通道送入一条事件
 	received_entry(make_event("输入", "按键"));
 	//事件应被转交给已注册的接收通道
@@ -274,7 +271,7 @@ TEST_F(Event_Terminal_Test, 接入后经通道送入事件)
 }
 
 //密钥未生成：所有对外接口一律锁定，不再默认开放
-//修复后语义：acl_key 改为 std::optional，未生成时 attach / interact / send / query / clear
+//修复后语义：acl_key 改为 std::optional，未生成时 attach / send / query / clear
 //          全部拒绝并告警，query 返回空指针。
 TEST_F(Event_Terminal_Test, 密钥未生成时接口全部锁定)
 {
@@ -285,10 +282,7 @@ TEST_F(Event_Terminal_Test, 密钥未生成时接口全部锁定)
 	//未生成密钥时清空被拒绝
 	EXPECT_FALSE(terminal.clear(0));
 	//未生成密钥时接入被拒绝
-	EXPECT_FALSE(terminal.attach("模块", {}, 0));
-	//未生成密钥时交互被拒绝
-	std::shared_ptr<engine::Event> response;
-	EXPECT_FALSE(terminal.interact(make_event("输入", "按键"), response, 0));
+	EXPECT_FALSE(terminal.attach("模块", 0));
 	//未生成密钥时查阅返回空指针
 	EXPECT_EQ(terminal.query(0), nullptr);
 }
@@ -319,7 +313,7 @@ TEST_F(Event_Terminal_Test, 零密钥访问被拒绝)
 	//以零密钥清空被拒绝
 	EXPECT_FALSE(terminal.clear(0));
 	//以零密钥接入被拒绝
-	EXPECT_FALSE(terminal.attach("模块", {}, 0));
+	EXPECT_FALSE(terminal.attach("模块", 0));
 	//以零密钥查阅返回空指针
 	EXPECT_EQ(terminal.query(0), nullptr);
 }
@@ -397,7 +391,7 @@ TEST_F(Event_Terminal_Test, 接入后多次发送累计)
 	//注册发送通道
 	terminal->bind(engine::Port_ID::Evt_Sender, [&sent](std::shared_ptr<engine::Event>) { ++sent; });
 	//接入中转站
-	EXPECT_TRUE(terminal.attach("模块", {}, key));
+	EXPECT_TRUE(terminal.attach("模块", key));
 	//连续发送三条事件
 	EXPECT_TRUE(terminal.send(make_event("输入", "按键"), key));
 	EXPECT_TRUE(terminal.send(make_event("输入", "松开"), key));
@@ -419,7 +413,7 @@ TEST_F(Event_Terminal_Test, 错误密钥接入信息不落地)
 	terminal->bind(engine::Port_ID::Broker_Attacher,
 		[&received_name](auto&& name, auto&&, auto&&) { received_name = name; });
 	//以错误密钥接入
-	EXPECT_FALSE(terminal.attach("模块", {}, key + 1));
+	EXPECT_FALSE(terminal.attach("模块", key + 1));
 	//接入信息不应被传递
 	EXPECT_TRUE(received_name.empty());
 }

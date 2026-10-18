@@ -47,6 +47,12 @@ target_sources(EngineTestObjects PRIVATE
     "src/单元测试/核心/碰撞体测试.cpp"
     "src/单元测试/核心/碰撞测试.cpp"
     "src/单元测试/核心/配置加载器测试.cpp"
+    "src/单元测试/渲染/渲染初始化测试.cpp"
+    "src/单元测试/渲染/渲染可见窗口测试.cpp"
+    "src/单元测试/渲染/渲染帧测试.cpp"
+    "src/单元测试/渲染/渲染相机测试.cpp"
+    "src/单元测试/渲染/渲染着色器校验测试.cpp"
+    "src/单元测试/渲染/渲染网格纹理测试.cpp"
 )
 
 # 头文件不参与编译，只为让 IDE 建立文件索引；同样经 target_sources 列出，

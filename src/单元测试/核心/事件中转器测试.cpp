@@ -22,6 +22,53 @@ static std::vector<engine::Event> make_needed(const std::string& category,
 	return { engine::Event("", "", category, tag, nlohmann::json::object()) };
 }
 
+//测试辅助：接入中转站并登记订阅清单（等价封装旧 attach(subscriber, needed_events, receiver) 语义）
+static void attach_and_subscribe(engine::Event_Broker& broker, const std::string& subscriber,
+	const std::vector<engine::Event>& needed_events,
+	std::function<void(std::shared_ptr<engine::Event>)> receiver)
+{
+	//派生该订阅者权限密钥（同名订阅者密钥恒定）
+	const uint64_t acl_key = static_cast<uint64_t>(std::hash<std::string>{}(subscriber));
+
+	//若订阅清单与接收入口双空（等价旧语义的「注销」）
+	if (needed_events.empty() && !receiver)
+	{
+		//构造订阅者退出事件载荷
+		nlohmann::json payload;
+		payload["object"] = subscriber;
+		payload["acl_key"] = acl_key;
+		//投递退出事件（由中转站自身注销该订阅者）
+		broker.receive(std::make_shared<engine::Event>("", "", "Subscriber", "Detach", payload));
+		return;
+	}
+
+	//接入中转站（仅登记订阅者身份与接收入口）
+	broker.attach(subscriber, acl_key, receiver);
+	//若订阅清单为空则无需登记订阅
+	if (needed_events.empty())
+		return;
+
+	//构造订阅事件清单
+	nlohmann::json subscribed_events = nlohmann::json::array();
+	//逐条写入订阅事件标识
+	for (const auto& needed_event : needed_events)
+	{
+		//单条订阅事件标识
+		nlohmann::json subscribed_event;
+		subscribed_event["category"] = needed_event.category;
+		subscribed_event["tag"] = needed_event.tag;
+		subscribed_events.push_back(subscribed_event);
+	}
+
+	//构造订阅事件载荷
+	nlohmann::json payload;
+	payload["object"] = subscriber;
+	payload["acl_key"] = acl_key;
+	payload["subscribed_events"] = subscribed_events;
+	//投递订阅事件（由中转站自身登记订阅清单）
+	broker.receive(std::make_shared<engine::Event>("", "", "Subscribed_Events", "Add", payload));
+}
+
 //事件中转器测试夹具
 class Event_Broker_Test : public ::testing::Test
 {
@@ -38,7 +85,7 @@ TEST_F(Event_Broker_Test, 注册后状态确认)
 	//收到次数
 	int received = 0;
 	//登记一个订阅者
-	broker.attach("订阅者", make_needed("输入", "按键"),
+	attach_and_subscribe(broker, "订阅者", make_needed("输入", "按键"),
 		[&received](std::shared_ptr<engine::Event>) { ++received; });
 	//投递一条匹配事件
 	broker.receive(make_event("", "", "输入", "按键"));
@@ -61,7 +108,7 @@ TEST_F(Event_Broker_Test, 标签匹配则投递)
 	//收到次数
 	int received = 0;
 	//登记订阅者
-	broker.attach("订阅者", make_needed("输入", "按键"),
+	attach_and_subscribe(broker, "订阅者", make_needed("输入", "按键"),
 		[&received](std::shared_ptr<engine::Event>) { ++received; });
 	//投递一条匹配事件
 	broker.receive(make_event("", "", "输入", "按键"));
@@ -75,7 +122,7 @@ TEST_F(Event_Broker_Test, 标签不匹配则不投递)
 	//收到次数
 	int received = 0;
 	//登记订阅者
-	broker.attach("订阅者", make_needed("输入", "按键"),
+	attach_and_subscribe(broker, "订阅者", make_needed("输入", "按键"),
 		[&received](std::shared_ptr<engine::Event>) { ++received; });
 	//投递一条同分类不同标签的事件
 	broker.receive(make_event("", "", "输入", "松开"));
@@ -89,7 +136,7 @@ TEST_F(Event_Broker_Test, 未注册分类的事件被丢弃)
 	//收到次数
 	int received = 0;
 	//登记订阅者（只订阅输入分类）
-	broker.attach("订阅者", make_needed("输入", "按键"),
+	attach_and_subscribe(broker, "订阅者", make_needed("输入", "按键"),
 		[&received](std::shared_ptr<engine::Event>) { ++received; });
 	//投递其他分类的事件
 	broker.receive(make_event("", "", "物理", "按键"));
@@ -103,7 +150,7 @@ TEST_F(Event_Broker_Test, 空分类事件被丢弃)
 	//收到次数
 	int received = 0;
 	//登记订阅者
-	broker.attach("订阅者", make_needed("输入", "按键"),
+	attach_and_subscribe(broker, "订阅者", make_needed("输入", "按键"),
 		[&received](std::shared_ptr<engine::Event>) { ++received; });
 	//投递一条无分类事件
 	broker.receive(make_event("", "", "", "按键"));
@@ -117,7 +164,7 @@ TEST_F(Event_Broker_Test, 空标签事件被丢弃)
 	//收到次数
 	int received = 0;
 	//登记订阅者
-	broker.attach("订阅者", make_needed("输入", "按键"),
+	attach_and_subscribe(broker, "订阅者", make_needed("输入", "按键"),
 		[&received](std::shared_ptr<engine::Event>) { ++received; });
 	//投递一条无标签事件
 	broker.receive(make_event("", "", "输入", ""));
@@ -133,9 +180,9 @@ TEST_F(Event_Broker_Test, 定向投递只送目标)
 	//旁观者收到次数
 	int bystander_received = 0;
 	//登记目标与旁观者（订阅同一标签）
-	broker.attach("目标", make_needed("输入", "按键"),
+	attach_and_subscribe(broker, "目标", make_needed("输入", "按键"),
 		[&target_received](std::shared_ptr<engine::Event>) { ++target_received; });
-	broker.attach("旁观者", make_needed("输入", "按键"),
+	attach_and_subscribe(broker, "旁观者", make_needed("输入", "按键"),
 		[&bystander_received](std::shared_ptr<engine::Event>) { ++bystander_received; });
 	//投递一条定向事件
 	broker.receive(make_event("", "目标", "输入", "按键"));
@@ -151,7 +198,7 @@ TEST_F(Event_Broker_Test, 定向目标未登记则广播)
 	//收到次数
 	int received = 0;
 	//登记订阅者
-	broker.attach("订阅者", make_needed("输入", "按键"),
+	attach_and_subscribe(broker, "订阅者", make_needed("输入", "按键"),
 		[&received](std::shared_ptr<engine::Event>) { ++received; });
 	//投递一条目标不存在的定向事件
 	broker.receive(make_event("", "不存在的对象", "输入", "按键"));
@@ -167,10 +214,10 @@ TEST_F(Event_Broker_Test, 定向投递需标识已登记)
 	//旁观者收到次数
 	int bystander_received = 0;
 	//登记旁观者（订阅本次要投递的标签）
-	broker.attach("旁观者", make_needed("输入", "摇杆"),
+	attach_and_subscribe(broker, "旁观者", make_needed("输入", "摇杆"),
 		[&bystander_received](std::shared_ptr<engine::Event>) { ++bystander_received; });
 	//登记目标（订阅另一标签）
-	broker.attach("目标", make_needed("输入", "按键"),
+	attach_and_subscribe(broker, "目标", make_needed("输入", "按键"),
 		[&target_received](std::shared_ptr<engine::Event>) { ++target_received; });
 	//投递一条标签未被目标订阅的定向事件（该标识已由旁观者登记）
 	broker.receive(make_event("", "目标", "输入", "摇杆"));
@@ -185,7 +232,7 @@ TEST_F(Event_Broker_Test, 发起者不收到自己的事件)
 	//收到次数
 	int received = 0;
 	//登记订阅者
-	broker.attach("发送者", make_needed("输入", "按键"),
+	attach_and_subscribe(broker, "发送者", make_needed("输入", "按键"),
 		[&received](std::shared_ptr<engine::Event>) { ++received; });
 	//以该名称作为发起者投递
 	broker.receive(make_event("发送者", "", "输入", "按键"));
@@ -199,7 +246,7 @@ TEST_F(Event_Broker_Test, 未登记发起者不排除订阅者)
 	//收到次数
 	int received = 0;
 	//登记订阅者
-	broker.attach("订阅者", make_needed("输入", "按键"),
+	attach_and_subscribe(broker, "订阅者", make_needed("输入", "按键"),
 		[&received](std::shared_ptr<engine::Event>) { ++received; });
 	//以未登记名称作为发起者投递
 	broker.receive(make_event("路人", "", "输入", "按键"));
@@ -215,10 +262,10 @@ TEST_F(Event_Broker_Test, 重复注册替换入口)
 	//新入口调用次数
 	int new_calls = 0;
 	//首次登记
-	broker.attach("订阅者", make_needed("输入", "按键"),
+	attach_and_subscribe(broker, "订阅者", make_needed("输入", "按键"),
 		[&old_calls](std::shared_ptr<engine::Event>) { ++old_calls; });
 	//二次登记同名订阅者
-	broker.attach("订阅者", make_needed("输入", "按键"),
+	attach_and_subscribe(broker, "订阅者", make_needed("输入", "按键"),
 		[&new_calls](std::shared_ptr<engine::Event>) { ++new_calls; });
 	//投递一条匹配事件
 	broker.receive(make_event("", "", "输入", "按键"));
@@ -234,9 +281,9 @@ TEST_F(Event_Broker_Test, 重复注册不产生重复投递)
 	//收到次数
 	int received = 0;
 	//连续两次登记同一订阅者与同一标签
-	broker.attach("订阅者", make_needed("输入", "按键"),
+	attach_and_subscribe(broker, "订阅者", make_needed("输入", "按键"),
 		[&received](std::shared_ptr<engine::Event>) { ++received; });
-	broker.attach("订阅者", make_needed("输入", "按键"),
+	attach_and_subscribe(broker, "订阅者", make_needed("输入", "按键"),
 		[&received](std::shared_ptr<engine::Event>) { ++received; });
 	//投递一条匹配事件
 	broker.receive(make_event("", "", "输入", "按键"));
@@ -252,9 +299,9 @@ TEST_F(Event_Broker_Test, 同标签多订阅者都被送达)
 	//第二个订阅者收到次数
 	int second_received = 0;
 	//登记两个订阅者
-	broker.attach("甲", make_needed("输入", "按键"),
+	attach_and_subscribe(broker, "甲", make_needed("输入", "按键"),
 		[&first_received](std::shared_ptr<engine::Event>) { ++first_received; });
-	broker.attach("乙", make_needed("输入", "按键"),
+	attach_and_subscribe(broker, "乙", make_needed("输入", "按键"),
 		[&second_received](std::shared_ptr<engine::Event>) { ++second_received; });
 	//投递一条匹配事件
 	broker.receive(make_event("", "", "输入", "按键"));
@@ -271,9 +318,9 @@ TEST_F(Event_Broker_Test, 不同分类互不串扰)
 	//输出分类订阅者收到次数
 	int output_received = 0;
 	//登记两个分类的订阅者
-	broker.attach("输入订阅者", make_needed("输入", "按键"),
+	attach_and_subscribe(broker, "输入订阅者", make_needed("输入", "按键"),
 		[&input_received](std::shared_ptr<engine::Event>) { ++input_received; });
-	broker.attach("输出订阅者", make_needed("输出", "按键"),
+	attach_and_subscribe(broker, "输出订阅者", make_needed("输出", "按键"),
 		[&output_received](std::shared_ptr<engine::Event>) { ++output_received; });
 	//只投递输入分类事件
 	broker.receive(make_event("", "", "输入", "按键"));
@@ -291,10 +338,10 @@ TEST_F(Event_Broker_Test, All标签登记订阅全分类)
 	//全订阅者收到次数
 	int all_received = 0;
 	//登记精确标签订阅者
-	broker.attach("精确订阅者", make_needed("输入", "按键"),
+	attach_and_subscribe(broker, "精确订阅者", make_needed("输入", "按键"),
 		[&exact_received](std::shared_ptr<engine::Event>) { ++exact_received; });
 	//以 "All" 标签登记全订阅者
-	broker.attach("全订阅者", make_needed("输入", "All"),
+	attach_and_subscribe(broker, "全订阅者", make_needed("输入", "All"),
 		[&all_received](std::shared_ptr<engine::Event>) { ++all_received; });
 	//投递该分类下已登记的标签
 	broker.receive(make_event("", "", "输入", "按键"));
@@ -309,7 +356,7 @@ TEST_F(Event_Broker_Test, 空分类登记被跳过)
 	//收到次数
 	int received = 0;
 	//以空分类登记
-	broker.attach("订阅者", make_needed("", "按键"),
+	attach_and_subscribe(broker, "订阅者", make_needed("", "按键"),
 		[&received](std::shared_ptr<engine::Event>) { ++received; });
 	//订阅者映射的登记状态不再可查（target_object_check 已移除），
 	//此处只保留可验证的行为：空分类登记不会带来任何送达
@@ -324,7 +371,7 @@ TEST_F(Event_Broker_Test, 批量投递逐条分发)
 	//收到次数
 	int received = 0;
 	//登记订阅者
-	broker.attach("订阅者", make_needed("输入", "按键"),
+	attach_and_subscribe(broker, "订阅者", make_needed("输入", "按键"),
 		[&received](std::shared_ptr<engine::Event>) { ++received; });
 	//批量投递三条匹配事件
 	std::vector<std::shared_ptr<engine::Event>> events{
@@ -343,7 +390,7 @@ TEST_F(Event_Broker_Test, 批量投递跳过未匹配事件)
 	//收到次数
 	int received = 0;
 	//登记订阅者
-	broker.attach("订阅者", make_needed("输入", "按键"),
+	attach_and_subscribe(broker, "订阅者", make_needed("输入", "按键"),
 		[&received](std::shared_ptr<engine::Event>) { ++received; });
 	//批量投递匹配与未匹配混合的事件
 	std::vector<std::shared_ptr<engine::Event>> events{
@@ -362,7 +409,7 @@ TEST_F(Event_Broker_Test, 事件内容原样透传)
 	//接收者留存的配置包
 	nlohmann::json captured;
 	//登记订阅者并留存配置包
-	broker.attach("订阅者", make_needed("输入", "按键"),
+	attach_and_subscribe(broker, "订阅者", make_needed("输入", "按键"),
 		[&captured](std::shared_ptr<engine::Event> evt) { captured = evt->config; });
 	//投递带配置包的定向事件
 	broker.receive(std::make_shared<engine::Event>("", "", "输入", "按键",
@@ -379,7 +426,7 @@ TEST_F(Event_Broker_Test, 未订阅时发布不缓存)
 	//先发布一条无人订阅的事件
 	EXPECT_NO_THROW(broker.receive(make_event("", "", "输入", "按键")));
 	//再登记订阅者
-	broker.attach("订阅者", make_needed("输入", "按键"),
+	attach_and_subscribe(broker, "订阅者", make_needed("输入", "按键"),
 		[&received](std::shared_ptr<engine::Event>) { ++received; });
 	//先前的事件不应被补发
 	EXPECT_EQ(received, 0);
@@ -395,7 +442,7 @@ TEST_F(Event_Broker_Test, 订阅后每次发布都送达)
 	//收到次数
 	int received = 0;
 	//登记订阅者
-	broker.attach("订阅者", make_needed("输入", "按键"),
+	attach_and_subscribe(broker, "订阅者", make_needed("输入", "按键"),
 		[&received](std::shared_ptr<engine::Event>) { ++received; });
 	//连续发布两条匹配事件
 	broker.receive(make_event("", "", "输入", "按键"));
@@ -413,8 +460,8 @@ TEST_F(Event_Broker_Test, 重复订阅同一处理器只送达一次)
 	std::function<void(std::shared_ptr<engine::Event>)> handler =
 		[&received](std::shared_ptr<engine::Event>) { ++received; };
 	//两次登记同一订阅者与同一处理器
-	broker.attach("订阅者", make_needed("输入", "按键"), handler);
-	broker.attach("订阅者", make_needed("输入", "按键"), handler);
+	attach_and_subscribe(broker, "订阅者", make_needed("输入", "按键"), handler);
+	attach_and_subscribe(broker, "订阅者", make_needed("输入", "按键"), handler);
 	//发布一条匹配事件
 	broker.receive(make_event("", "", "输入", "按键"));
 	//只应送达一次
@@ -427,10 +474,10 @@ TEST_F(Event_Broker_Test, 取消订阅后不再分发)
 	//收到次数
 	int received = 0;
 	//登记订阅者
-	broker.attach("订阅者", make_needed("输入", "按键"),
+	attach_and_subscribe(broker, "订阅者", make_needed("输入", "按键"),
 		[&received](std::shared_ptr<engine::Event>) { ++received; });
 	//以空订阅集与空处理器登记以取消订阅
-	broker.attach("订阅者", {}, nullptr);
+	attach_and_subscribe(broker, "订阅者", {}, nullptr);
 	//发布一条原本匹配的事件
 	EXPECT_NO_THROW(broker.receive(make_event("", "", "输入", "按键")));
 	//取消订阅后不应再送达
@@ -445,11 +492,11 @@ TEST_F(Event_Broker_Test, 三处理器全部收到)
 	int second_received = 0;
 	int third_received = 0;
 	//登记三个订阅者
-	broker.attach("甲", make_needed("输入", "按键"),
+	attach_and_subscribe(broker, "甲", make_needed("输入", "按键"),
 		[&first_received](std::shared_ptr<engine::Event>) { ++first_received; });
-	broker.attach("乙", make_needed("输入", "按键"),
+	attach_and_subscribe(broker, "乙", make_needed("输入", "按键"),
 		[&second_received](std::shared_ptr<engine::Event>) { ++second_received; });
-	broker.attach("丙", make_needed("输入", "按键"),
+	attach_and_subscribe(broker, "丙", make_needed("输入", "按键"),
 		[&third_received](std::shared_ptr<engine::Event>) { ++third_received; });
 	//发布一条匹配事件
 	broker.receive(make_event("", "", "输入", "按键"));
@@ -467,9 +514,9 @@ TEST_F(Event_Broker_Test, 同分类按标签过滤)
 	//松开标签订阅者收到次数
 	int release_received = 0;
 	//两个订阅者订阅同一分类下的不同标签
-	broker.attach("按键订阅者", make_needed("输入", "按键"),
+	attach_and_subscribe(broker, "按键订阅者", make_needed("输入", "按键"),
 		[&press_received](std::shared_ptr<engine::Event>) { ++press_received; });
-	broker.attach("松开订阅者", make_needed("输入", "松开"),
+	attach_and_subscribe(broker, "松开订阅者", make_needed("输入", "松开"),
 		[&release_received](std::shared_ptr<engine::Event>) { ++release_received; });
 	//只发布按键标签事件
 	broker.receive(make_event("", "", "输入", "按键"));
@@ -485,7 +532,7 @@ TEST_F(Event_Broker_Test, 空标签登记不生效)
 	//收到次数
 	int received = 0;
 	//以空标签登记订阅者
-	broker.attach("订阅者", make_needed("输入", ""),
+	attach_and_subscribe(broker, "订阅者", make_needed("输入", ""),
 		[&received](std::shared_ptr<engine::Event>) { ++received; });
 	//发布一条有标签的事件
 	broker.receive(make_event("", "", "输入", "按键"));
@@ -512,19 +559,19 @@ TEST_F(Event_Broker_Test, 清空订阅后发布不分发)
 	//收到次数
 	int received = 0;
 	//登记两个订阅者
-	broker.attach("甲", make_needed("输入", "按键"),
+	attach_and_subscribe(broker, "甲", make_needed("输入", "按键"),
 		[&received](std::shared_ptr<engine::Event>) { ++received; });
-	broker.attach("乙", make_needed("输入", "按键"),
+	attach_and_subscribe(broker, "乙", make_needed("输入", "按键"),
 		[&received](std::shared_ptr<engine::Event>) { ++received; });
 	//将两个订阅者全部下线
-	broker.attach("甲", {}, nullptr);
-	broker.attach("乙", {}, nullptr);
+	attach_and_subscribe(broker, "甲", {}, nullptr);
+	attach_and_subscribe(broker, "乙", {}, nullptr);
 	//发布一条事件
 	broker.receive(make_event("", "", "输入", "按键"));
 	//全部下线后不应送达
 	EXPECT_EQ(received, 0);
 	//重新登记一个订阅者
-	broker.attach("甲", make_needed("输入", "按键"),
+	attach_and_subscribe(broker, "甲", make_needed("输入", "按键"),
 		[&received](std::shared_ptr<engine::Event>) { ++received; });
 	//再次发布
 	broker.receive(make_event("", "", "输入", "按键"));
@@ -538,7 +585,7 @@ TEST_F(Event_Broker_Test, 事件载荷透传)
 	//接收者留存的事件对象
 	std::shared_ptr<engine::Event> captured;
 	//登记订阅者并留存事件
-	broker.attach("订阅者", make_needed("输入", "按键"),
+	attach_and_subscribe(broker, "订阅者", make_needed("输入", "按键"),
 		[&captured](std::shared_ptr<engine::Event> evt) { captured = evt; });
 	//构造带嵌套配置的事件
 	auto sent = std::make_shared<engine::Event>("", "", "输入", "按键",
@@ -557,7 +604,7 @@ TEST_F(Event_Broker_Test, 订阅多个标签都送达)
 	//收到次数
 	int received = 0;
 	//登记订阅者并订阅两个标签
-	broker.attach("订阅者",
+	attach_and_subscribe(broker, "订阅者",
 		{ engine::Event("", "", "输入", "按键", nlohmann::json::object()),
 		  engine::Event("", "", "输入", "松开", nlohmann::json::object()) },
 		[&received](std::shared_ptr<engine::Event>) { ++received; });
@@ -572,7 +619,7 @@ TEST_F(Event_Broker_Test, 订阅多个标签都送达)
 TEST_F(Event_Broker_Test, 取消不存在的订阅不崩溃)
 {
 	//下线一个从未登记的名称
-	EXPECT_NO_THROW(broker.attach("未登记者", {}, nullptr));
+	EXPECT_NO_THROW(attach_and_subscribe(broker, "未登记者", {}, nullptr));
 	//随后发布事件仍应正常结束
 	EXPECT_NO_THROW(broker.receive(make_event("", "", "输入", "按键")));
 }

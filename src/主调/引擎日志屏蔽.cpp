@@ -1,5 +1,5 @@
 //引擎日志屏蔽 —— 实现（声明见 src/主调/引擎日志屏蔽.h）
-#include "Application/Test/src/主调/引擎日志屏蔽.h"
+#include "src/主调/引擎日志屏蔽.h"
 
 //获取日志系统（含全局 logger 单例）
 #include "Engine/EngineCore/src/tools/Logging/日志系统运行包.h"

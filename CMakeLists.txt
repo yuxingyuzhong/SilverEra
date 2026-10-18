@@ -65,6 +65,22 @@ byjy_jieru_xiaceng(
 )
 
 # =============================================================================
+# 1.2 接入渲染层 —— 链接已构建好的 RendererCore.lib
+# =============================================================================
+# 渲染层与 Test / Game 平级，且只接 EngineCore 单层（不走 Engine 聚合面）；
+# 其对外面内含 EngineCore 对外面，故接入即取得引擎侧公共路径与 Vulkan 链接库。
+# 渲染层公共头不暴露 SDL / Vulkan / VMA 类型，本层按公共面（渲染器.h、网格数据.h）
+# 编写用例即可，无需、也不应引入 Vulkan 头。
+set(BYJY_RENDERER_LIB_PATH "" CACHE STRING
+    "渲染层静态库路径（分号列表，单库 RendererCore）；留空则自动探测（Application/Renderer/out/build/x64-Debug/lib 优先）")
+
+byjy_jieru_xiaceng(
+    "${PROJECT_ROOT_DIR}/../Renderer/cmake/对外接口.cmake"
+    "BYJY_RENDERER"
+    "BYJY_RENDERER_LIB_PATH"
+)
+
+# =============================================================================
 # 1.5 下层头快照接入（本层专用）
 # =============================================================================
 # 本层按「与下层静态库同版次」的头文件编译：把两个子层的头快照根作为「本层自身的
@@ -72,15 +88,36 @@ byjy_jieru_xiaceng(
 # 之前，因此 Engine/... 必然先命中快照，不会落到源码树上的同名头。
 # 快照根由各库的 IMPORTED_LOCATION 反推，缺失即硬失败（不静默退回源码树）。
 # =============================================================================
-byjy_tou_kuaizhao_gen(BYJY_CORE_SNAPSHOT   EngineCore)
-byjy_tou_kuaizhao_gen(BYJY_SYSTEM_SNAPSHOT EngineSystem)
+byjy_tou_kuaizhao_gen(BYJY_CORE_SNAPSHOT     EngineCore)
+byjy_tou_kuaizhao_gen(BYJY_SYSTEM_SNAPSHOT   EngineSystem)
+byjy_tou_kuaizhao_gen(BYJY_RENDERER_SNAPSHOT RendererCore)
 
-# 本层各目标的包含根：下层快照在前、项目根在后（供 Application/Test/... 全路径）。
+# 本层各目标的包含根：下层快照在前、项目根在后（供「头文件」写 Application/Test/... 全路径）。
+# 渲染层快照排在项目根之前，使 Application/Renderer/... 先命中快照、不落到源码树。
+# 末位补本层根：本层实现文件（.cpp）的跨目录包含写「本层根相对」src/...，无需背项目根前缀。
 set(BYJY_APP_INC
     "${BYJY_CORE_SNAPSHOT}"
     "${BYJY_SYSTEM_SNAPSHOT}"
+    "${BYJY_RENDERER_SNAPSHOT}"
     "${BYJY_PROJECT_ROOT}"
+    "${PROJECT_ROOT_DIR}"
 )
+
+# =============================================================================
+# 1.6 渲染层着色器拷贝
+# =============================================================================
+# 渲染层以 SPIR-V 在运行期加载着色器：Renderer_Config::shader_dir 为空时按
+# 「相对可执行文件目录的 shaders」解析。着色器与 RendererCore.lib 同版次，
+# 故从其 IMPORTED_LOCATION 同源推导着色器目录，配置期拷到本层根目录 shaders/。
+get_target_property(_BYJY_RENDERER_LIB_FILE RendererCore IMPORTED_LOCATION)
+get_filename_component(_BYJY_RENDERER_BUILD_DIR "${_BYJY_RENDERER_LIB_FILE}/../.." ABSOLUTE)
+set(BYJY_RENDERER_SHADERS "${_BYJY_RENDERER_BUILD_DIR}/shaders")
+if(IS_DIRECTORY "${BYJY_RENDERER_SHADERS}")
+    file(COPY "${BYJY_RENDERER_SHADERS}" DESTINATION "${PROJECT_ROOT_DIR}")
+    message(STATUS "渲染层着色器已拷贝：${BYJY_RENDERER_SHADERS} → ${PROJECT_ROOT_DIR}/shaders")
+else()
+    message(WARNING "未找到渲染层着色器目录：${BYJY_RENDERER_SHADERS}（渲染层用例需要它，请先构建渲染层）")
+endif()
 
 # =============================================================================
 # 2. 源文件收集
@@ -173,7 +210,7 @@ if(TEST_SOURCES)
     target_include_directories(TestCore PUBLIC ${BYJY_APP_INC})
 
     # 链接下层静态库：包含路径 / 编译定义 / 第三方库由导入目标传递过来
-    target_link_libraries(TestCore PUBLIC EngineCore EngineSystem)
+    target_link_libraries(TestCore PUBLIC EngineCore EngineSystem RendererCore)
 
     # 编译选项与下层保持一致
     if(MSVC)
@@ -192,36 +229,35 @@ if(TEST_SOURCES)
 endif()
 
 # =============================================================================
-# 3.5 GUI 第三方接入（Dear ImGui + glad）
+# 3.5 GUI 第三方接入（Dear ImGui；平台后端 SDL3 + 渲染后端 Vulkan）
 # =============================================================================
 # 供主调的图形选择窗口使用。与 external/googletest 同构：第三方源码以副本形式
 # 放在本层 external/ 下，由本层自行编译，不改动下层的构建与对外接口。
 # 说明：
 #   - 不编 imgui_demo.cpp（示例窗口，本层用不到）
-#   - opengl3 后端默认使用自带的 loader，另编 glad 供窗口自身的 GL 调用使用
-#   - GLFW 头文件 / GLFW_STATIC / glfw3.lib 与系统库由 EngineCore 的对外面传递
+#   - 选择窗口改为经渲染层 UI 通道绘制：平台后端用 imgui_impl_sdl3.cpp、渲染后端用
+#     imgui_impl_vulkan.cpp，不再使用 glfw / opengl3 后端与 glad
+#   - Vulkan SDK 与 SDL3 的公共包含根、vulkan-1.lib 与 SDL3 系统库由 RendererCore 的对外面传递
 if(EXISTS "${PROJECT_ROOT_DIR}/external/Dear_ImGui/imgui/imgui.cpp"
-   AND EXISTS "${PROJECT_ROOT_DIR}/external/glad/src/gl.c")
+   AND EXISTS "${PROJECT_ROOT_DIR}/external/Dear_ImGui/backends/imgui_impl_sdl3.cpp"
+   AND EXISTS "${PROJECT_ROOT_DIR}/external/Dear_ImGui/backends/imgui_impl_vulkan.cpp")
     set(BYJY_IMGUI_DIR "${PROJECT_ROOT_DIR}/external/Dear_ImGui")
-    set(BYJY_GLAD_DIR "${PROJECT_ROOT_DIR}/external/glad")
 
     add_library(TestGui STATIC
         "${BYJY_IMGUI_DIR}/imgui/imgui.cpp"
         "${BYJY_IMGUI_DIR}/imgui/imgui_draw.cpp"
         "${BYJY_IMGUI_DIR}/imgui/imgui_tables.cpp"
         "${BYJY_IMGUI_DIR}/imgui/imgui_widgets.cpp"
-        "${BYJY_IMGUI_DIR}/backends/imgui_impl_glfw.cpp"
-        "${BYJY_IMGUI_DIR}/backends/imgui_impl_opengl3.cpp"
-        "${BYJY_GLAD_DIR}/src/gl.c"
+        "${BYJY_IMGUI_DIR}/backends/imgui_impl_sdl3.cpp"
+        "${BYJY_IMGUI_DIR}/backends/imgui_impl_vulkan.cpp"
     )
 
-    # 包含目录：imgui 核心 / 后端 / glad；EngineCore 提供 GLFW 头与链接库
+    # 包含目录：imgui 核心与后端；SDL3 / Vulkan 头与链接库随 RendererCore 的对外面传递
     target_include_directories(TestGui PUBLIC
         "${BYJY_IMGUI_DIR}/imgui"
         "${BYJY_IMGUI_DIR}/backends"
-        "${BYJY_GLAD_DIR}/include"
     )
-    target_link_libraries(TestGui PUBLIC EngineCore)
+    target_link_libraries(TestGui PUBLIC EngineCore RendererCore)
 
     if(MSVC)
         target_compile_options(TestGui PRIVATE /MP /utf-8)
@@ -293,8 +329,9 @@ else()
         "${PROJECT_ROOT_DIR}/src/主调/控制台选择菜单.cpp"
     )
     include("${PROJECT_ROOT_DIR}/源文件列表_TestLauncher.cmake")
-    # 主调仅引用本层自身头（Application/Test/src/主调/...），故只需项目根
-    target_include_directories(TestLauncher PUBLIC "${BYJY_PROJECT_ROOT}")
+    # 主调实现文件以本层根相对（src/主调/...）包含本层头，故包含根 = 项目根 + 本层根
+    #（与 EngineCore 本轮确立的「头写项目根相对、.cpp 写本层根相对」双基准约定一致）
+    target_include_directories(TestLauncher PUBLIC "${BYJY_PROJECT_ROOT}" "${PROJECT_ROOT_DIR}")
     target_link_libraries(TestLauncher PUBLIC GTest::gtest)
     if(MSVC)
         target_compile_options(TestLauncher PRIVATE /MP /utf-8)
@@ -323,7 +360,7 @@ else()
     target_include_directories(EngineTestObjects PUBLIC ${BYJY_APP_INC})
 
     #链接下层静态库以取得对外的包含路径；从 gtest 取得框架头文件路径；并由 TestLauncher 取得本层自身根
-    target_link_libraries(EngineTestObjects PUBLIC EngineCore EngineSystem GTest::gtest TestLauncher)
+    target_link_libraries(EngineTestObjects PUBLIC EngineCore EngineSystem RendererCore GTest::gtest TestLauncher)
 
     #编译选项与下层保持一致
     if(MSVC)
@@ -354,13 +391,16 @@ else()
     add_executable(EngineTests
         $<TARGET_OBJECTS:EngineTestObjects>
         "${PROJECT_ROOT_DIR}/src/主调/主程序.cpp"
-        "${PROJECT_ROOT_DIR}/src/主调/图形选择窗口.cpp"
+        "${PROJECT_ROOT_DIR}/src/主调/图形操作界面.cpp"
+        "${PROJECT_ROOT_DIR}/src/主调/测试界面.cpp"
+        "${PROJECT_ROOT_DIR}/src/主调/测试运行器.cpp"
+        "${PROJECT_ROOT_DIR}/src/主调/gtest输出镜像.cpp"
         "${PROJECT_ROOT_DIR}/src/主调/引擎日志屏蔽.cpp"
     )
     include("${PROJECT_ROOT_DIR}/源文件列表_EngineTests.cmake")
     target_include_directories(EngineTests PRIVATE ${BYJY_APP_INC})
     target_link_libraries(EngineTests PRIVATE
-        EngineTestObjects EngineCore EngineSystem
+        EngineTestObjects EngineCore EngineSystem RendererCore
         GTest::gtest TestLauncher TestGui
     )
     set_target_properties(EngineTests PROPERTIES

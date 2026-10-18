@@ -6,18 +6,19 @@
 //   ① 未显式指定 --selector 且带 --gtest_* 参数 → 透传给 googletest（自动化 / ctest 用）
 //   ② --selector=off             → 不开窗，直接全跑
 //   ③ --selector=console         → 控制台编号菜单
-//   ④ 默认（或 --selector=window）→ 打开 ImGui 选择窗口；窗口创建失败退控制台菜单
-// 选择完成后销毁窗口与 ImGui 上下文、恢复控制台输出，再执行测试。
+//   ④ 默认（或 --selector=window）→ 打开图形操作界面（常驻，界面驱动多轮测试）；
+//                                 界面不可用时退控制台菜单
+// console 与界面均会跑测试；界面会话结束即返回，不再二次执行测试。
 // 测试结束后：交互运行（② 之外的窗口 / 控制台菜单）停住等待按键，
 // 避免控制台窗口一闪而过、看不到结果；① 与 ② 属自动化调用，跑完立即结束。
 //============================================================================
 #include <gtest/gtest.h>
 
-#include "Application/Test/src/主调/测试选择模型.h"
-#include "Application/Test/src/主调/图形选择窗口.h"
-#include "Application/Test/src/主调/控制台选择菜单.h"
-#include "Application/Test/src/主调/退出等待判定.h"
-#include "Application/Test/src/主调/引擎日志屏蔽.h"
+#include "src/主调/测试选择模型.h"
+#include "src/主调/图形操作界面.h"
+#include "src/主调/控制台选择菜单.h"
+#include "src/主调/退出等待判定.h"
+#include "src/主调/引擎日志屏蔽.h"
 
 #include <conio.h>
 #include <cstring>
@@ -122,36 +123,48 @@ int main(int argc, char** argv)
         return 透传结果;
     }
 
-    //—— 第四步：建立选择模型，按模式取得过滤串 ——
+    //—— 第四步：建立选择模型 ——
     engine::Test_Selection_Model 模型;
     模型.suite_tree_build();
 
-    std::string 过滤串;
+    //console 模式：控制台菜单 → 跑一轮 → 等待 → 返回
     if (选择模式 == "console")
     {
-        //控制台菜单
+        std::string 过滤串;
         engine::控制台选择菜单_运行(模型, 过滤串);
+        std::cout << "[测试选择] 过滤串：" << 过滤串 << std::endl;
+        std::cout << "[测试选择] 可用 --gtest_filter=" << 过滤串 << " 复跑同一批用例。" << std::endl;
+        ::testing::GTEST_FLAG(filter) = 过滤串;
+        const int 测试结果 = RUN_ALL_TESTS();
+        //把引擎日志缓冲落盘
+        engine::日志屏蔽_落盘();
+
+        //交互运行：测试结束后停住，等用户看完输出再手动关闭窗口
+        if (engine::需要等待退出(选择模式, 命令行带过滤, 显式选择器))
+            等待用户关闭窗口();
+        return 测试结果;
     }
-    else
+
+    //其余（默认 window）：图形操作界面 —— 常驻界面，由界面驱动多轮测试
+    if (!engine::图形操作界面_运行(模型))
     {
-        //默认走图形窗口；创建失败（无图形环境）退控制台菜单
-        if (!engine::图形选择窗口_运行(模型, 过滤串))
-        {
-            std::cout << "[测试选择] 图形窗口不可用，改用控制台菜单。" << std::endl;
-            engine::控制台选择菜单_运行(模型, 过滤串);
-        }
+        //图形不可用（无图形环境）：退控制台菜单，跑一轮后结束
+        std::cout << "[测试选择] 图形窗口不可用，改用控制台菜单。" << std::endl;
+        std::string 过滤串;
+        engine::控制台选择菜单_运行(模型, 过滤串);
+        std::cout << "[测试选择] 过滤串：" << 过滤串 << std::endl;
+        ::testing::GTEST_FLAG(filter) = 过滤串;
+        const int 测试结果 = RUN_ALL_TESTS();
+        //把引擎日志缓冲落盘
+        engine::日志屏蔽_落盘();
+
+        //交互运行：测试结束后停住，等用户看完输出再手动关闭窗口
+        if (engine::需要等待退出(选择模式, 命令行带过滤, 显式选择器))
+            等待用户关闭窗口();
+        return 测试结果;
     }
 
-    //—— 第五步：恢复控制台输出并执行测试 ——
-    std::cout << "[测试选择] 过滤串：" << 过滤串 << std::endl;
-    std::cout << "[测试选择] 可用 --gtest_filter=" << 过滤串 << " 复跑同一批用例。" << std::endl;
-    ::testing::GTEST_FLAG(filter) = 过滤串;
-    const int 测试结果 = RUN_ALL_TESTS();
-    //把引擎日志缓冲落盘
+    //界面会话结束（界面内已跑过多轮测试）：落盘引擎日志后直接结束
     engine::日志屏蔽_落盘();
-
-    //交互运行：测试结束后停住，等用户看完输出再手动关闭窗口
-    if (engine::需要等待退出(选择模式, 命令行带过滤, 显式选择器))
-        等待用户关闭窗口();
-    return 测试结果;
+    return 0;
 }
