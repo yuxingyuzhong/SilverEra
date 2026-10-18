@@ -192,7 +192,7 @@ TEST_F(Object_Pool_Test, 卸载后新建复用索引)
 //定位字段：定位键改为构造时传入的投影字段，定位映射以投影字段为键
 //投影字段可为任意可比较类型，非整数键已可用（见文末字符串定位字段用例）
 
-//排序模式：排列方式由 order_set 设置，投影字段在构造时固定
+//排序模式：排列方式由 mode_set(Object_Order::Sorted, 比较器) 设置，投影字段在构造时固定
 //不再需要随排序方式重复传入投影
 
 //排序模式：设置排序方式后仍可按ID查找
@@ -205,7 +205,7 @@ TEST_F(Object_Pool_Test, 排序模式按ID查找)
 	const uint64_t second = pool.build();
 	pool.build();
 	//以ID为投影字段升序排列
-	pool.order_set(std::ranges::less{});
+	pool.mode_set(engine::Object_Order::Sorted, std::ranges::less{});
 	//目标对象应可查找到
 	const auto it = pool.find(second);
 	ASSERT_NE(it, pool.end());
@@ -223,7 +223,7 @@ TEST_F(Object_Pool_Test, 排序模式降序查找)
 	const uint64_t second = pool.build();
 	pool.build();
 	//以ID为投影字段降序排列
-	pool.order_set(std::ranges::greater{});
+	pool.mode_set(engine::Object_Order::Sorted, std::ranges::greater{});
 	//目标对象应可查找到
 	EXPECT_NE(pool.find(second), pool.end());
 }
@@ -242,7 +242,7 @@ TEST_F(Object_Pool_Test, 排序模式按投影字段查找)
 	(pool.begin() + 1)->payload = 10;
 	(pool.begin() + 2)->payload = 20;
 	//以投影字段升序排列
-	pool.order_set(std::ranges::less{});
+	pool.mode_set(engine::Object_Order::Sorted, std::ranges::less{});
 	//按投影值查找
 	const auto it = pool.find(10);
 	//应命中且落在预期对象上
@@ -268,7 +268,7 @@ TEST_F(Object_Pool_Test, 排序模式卸载后不可查找)
 	const uint64_t second = pool.build();
 	const uint64_t third = pool.build();
 	//以ID为投影字段升序排列
-	pool.order_set(std::ranges::less{});
+	pool.mode_set(engine::Object_Order::Sorted, std::ranges::less{});
 	//卸载中间对象
 	pool.unload(second);
 	//已卸载对象应查不到
@@ -286,7 +286,7 @@ TEST_F(Object_Pool_Test, 排序模式新建后可查找)
 	pool.build();
 	pool.build();
 	//以ID为投影字段降序排列
-	pool.order_set(std::ranges::greater{});
+	pool.mode_set(engine::Object_Order::Sorted, std::ranges::greater{});
 	//排序模式下新建一个对象
 	const uint64_t newest = pool.build();
 	//排序模式下新建后需自行 sort 保持有序，二分查找方有效
@@ -304,16 +304,16 @@ TEST_F(Object_Pool_Test, 排序重置后原对象可查找)
 	const uint64_t first = pool.build();
 	const uint64_t second = pool.build();
 	//以ID为投影字段升序排列
-	pool.order_set(std::ranges::less{});
+	pool.mode_set(engine::Object_Order::Sorted, std::ranges::less{});
 	//重置排列方式
-	pool.order_reset();
+	pool.mode_set(engine::Object_Order::Unorder);
 	//两个对象都应可查找到
 	EXPECT_NE(pool.find(first), pool.end());
 	EXPECT_NE(pool.find(second), pool.end());
 }
 
 //排列方式重置：已卸载对象不会再被写回定位映射
-//order_reset 重建映射时以 valid() 判定记录有效，仅清有效标记的已卸载记录不会被误收录。
+//mode_set(Object_Order::Unorder) 重建映射时以 valid() 判定记录有效，仅清有效标记的已卸载记录不会被误收录。
 TEST_F(Object_Pool_Test, 重置排序后已卸载对象查不到)
 {
 	//默认构造的对象池
@@ -322,11 +322,11 @@ TEST_F(Object_Pool_Test, 重置排序后已卸载对象查不到)
 	const uint64_t first = pool.build();
 	pool.build();
 	//以ID为投影字段升序排列
-	pool.order_set(std::ranges::less{});
+	pool.mode_set(engine::Object_Order::Sorted, std::ranges::less{});
 	//卸载首个对象
 	pool.unload(first);
 	//重置排列方式
-	pool.order_reset();
+	pool.mode_set(engine::Object_Order::Unorder);
 	//期望：已卸载对象查不到
 	EXPECT_EQ(pool.find(first), pool.end());
 }
@@ -337,7 +337,7 @@ TEST_F(Object_Pool_Test, 空池设置排序方式)
 	//默认构造的对象池（不含任何对象）
 	engine::Object_Pool<Test_Object> pool;
 	//设置排序方式
-	pool.order_set(std::ranges::less{});
+	pool.mode_set(engine::Object_Order::Sorted, std::ranges::less{});
 	//记录数量应保持不变
 	EXPECT_TRUE(pool.size() == 0);
 }
@@ -368,7 +368,7 @@ TEST_F(Object_Pool_Test, 排序模式清空对象池)
 	pool.build();
 	pool.build();
 	//以ID为投影字段升序排列
-	pool.order_set(std::ranges::less{});
+	pool.mode_set(engine::Object_Order::Sorted, std::ranges::less{});
 	//清空对象池
 	pool.clear();
 	//容器应为空
@@ -580,7 +580,7 @@ TEST_F(Object_Pool_Test, 字符串定位字段可用)
 	(pool.begin() + 0)->tag = "alpha";
 	(pool.begin() + 1)->tag = "beta";
 	//切换为排序模式后按定位字段检索
-	pool.order_set(std::ranges::less{});
+	pool.mode_set(engine::Object_Order::Sorted, std::ranges::less{});
 	//按定位字段查找
 	const auto it = pool.find(std::string("beta"));
 	//应命中且落在预期对象上
@@ -617,7 +617,7 @@ TEST_F(Object_Pool_Test, 稳定模式重置排列方式无副作用)
 	const uint64_t first = pool.build();
 	const uint64_t second = pool.build();
 	//稳定模式下重置排列方式
-	pool.order_reset();
+	pool.mode_set(engine::Object_Order::Unorder);
 	//两个对象仍可按ID查找到
 	EXPECT_NE(pool.find(first), pool.end());
 	EXPECT_NE(pool.find(second), pool.end());
@@ -633,7 +633,7 @@ TEST_F(Object_Pool_Test, 排序模式卸载后新建可查找)
 	const uint64_t second = pool.build();
 	const uint64_t third = pool.build();
 	//以ID为投影字段升序排列
-	pool.order_set(std::ranges::less{});
+	pool.mode_set(engine::Object_Order::Sorted, std::ranges::less{});
 	//卸载中间对象
 	pool.unload(second);
 	//排序模式下新建一个对象（复用被回收的下标）
