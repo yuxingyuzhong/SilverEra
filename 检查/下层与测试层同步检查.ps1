@@ -40,6 +40,14 @@ $rc1 = $LASTEXITCODE
 "---- [2/4] 构建下层 EngineCore ----" | Out-File -Encoding utf8 -Append $log
 & $cmake --build "$xiaceng\out\build\x64-Debug" 2>&1 | Out-File -Encoding utf8 -Append $log
 $rc2 = $LASTEXITCODE
+# 产出校验：构建返回 0 也可能**没有产物**（2026-10-19 实测遇到 lib 目录为空）；库缺失即判不同步，不进入测试层构建
+$xiaceng_lib = "$xiaceng\out\build\x64-Debug\lib\EngineCore.lib"
+if (-not (Test-Path $xiaceng_lib))
+{
+    "结论：不同步（下层 Debug 静态库缺失：$xiaceng_lib）" | Out-File -Encoding utf8 -Append $log
+    "结论：不同步 —— 下层 Debug 静态库缺失，请检查下层构建：$xiaceng_lib"
+    exit 1
+}
 
 # ② 重配并构建测试层：能否编译通过即为「同步」判据
 "---- [3/4] 配置测试层（本步会读取下层头快照） ----" | Out-File -Encoding utf8 -Append $log
