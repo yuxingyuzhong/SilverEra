@@ -53,11 +53,13 @@ target_sources(EngineTestObjects PRIVATE
     "src/单元测试/渲染/渲染多管线测试.cpp"
     "src/单元测试/渲染/渲染实例化测试.cpp"
     "src/单元测试/渲染/渲染帧测试.cpp"
+    "src/单元测试/渲染/渲染文字测试.cpp"
     "src/单元测试/渲染/渲染混合测试.cpp"
     "src/单元测试/渲染/渲染相机测试.cpp"
     "src/单元测试/渲染/渲染着色器校验测试.cpp"
     "src/单元测试/渲染/渲染离屏目标测试.cpp"
     "src/单元测试/渲染/渲染网格纹理测试.cpp"
+    "src/单元测试/渲染/渲染采样器各向异性测试.cpp"
     "src/单元测试/渲染/纹理Mipmap测试.cpp"
     "src/单元测试/渲染/纹理解码测试.cpp"
 )
