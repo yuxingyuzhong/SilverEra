@@ -192,8 +192,8 @@ TEST_F(Event_Broker_Test, 定向投递只送目标)
 	EXPECT_EQ(bystander_received, 0);
 }
 
-//定向投递：目标未登记时回落到标签广播
-TEST_F(Event_Broker_Test, 定向目标未登记则广播)
+//定向投递：目标未登记时不再回落标签广播（2026-10-19 引擎层行为变更：查找失败即丢弃）
+TEST_F(Event_Broker_Test, 定向目标未登记不广播)
 {
 	//收到次数
 	int received = 0;
@@ -202,8 +202,8 @@ TEST_F(Event_Broker_Test, 定向目标未登记则广播)
 		[&received](std::shared_ptr<engine::Event>) { ++received; });
 	//投递一条目标不存在的定向事件
 	broker.receive(make_event("", "不存在的对象", "输入", "按键"));
-	//应回落到广播并送达
-	EXPECT_EQ(received, 1);
+	//目标查找失败即丢弃，不回落为标签广播
+	EXPECT_EQ(received, 0);
 }
 
 //定向投递：整条事件仍须标识已登记；标识登记后只直达目标，不向标签订阅者广播
