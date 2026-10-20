@@ -20,6 +20,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -123,6 +124,30 @@ namespace
 				maximum = delta;
 		}
 		return maximum;
+	}
+
+	//按 Rec.709 求像素亮度
+	float luma_of(const std::array<uint8_t, 4>& value)
+	{
+		return 0.2126f * static_cast<float>(value[0]) + 0.7152f * static_cast<float>(value[1])
+			+ 0.0722f * static_cast<float>(value[2]);
+	}
+
+	//统计「本帧比参考帧暗至少 threshold」的像素数（用于验证描边压暗）
+	uint32_t darkened_count(const std::vector<uint8_t>& tested, const std::vector<uint8_t>& reference, float threshold)
+	{
+		uint32_t count = 0;
+		for (uint32_t y = 0; y < WINDOW_HEIGHT; ++y)
+		{
+			for (uint32_t x = 0; x < WINDOW_WIDTH; ++x)
+			{
+				//两帧亮度差
+				float difference = luma_of(pixel_get(reference, x, y)) - luma_of(pixel_get(tested, x, y));
+				if (difference >= threshold)
+					++count;
+			}
+		}
+		return count;
 	}
 }
 
@@ -434,5 +459,163 @@ TEST_F(Renderer_Post_Chain_Test, 链计数与级序可读)
 	EXPECT_EQ(renderer.post_chain_get(compressed, 4), 0u);
 	renderer.pipeline_unload(invert);
 	renderer.pipeline_unload(invert_again);
+}
+
+/*
+后处理预设 · 灰度：三通道趋同（去色），白四边形与清屏色均被去色
+*/
+TEST_F(Renderer_Post_Chain_Test, 灰度预设去色生效)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	uint64_t scene_target = 0;
+	ASSERT_TRUE(renderer.render_target_create(scene_target, renderer.extent_width(), renderer.extent_height()));
+	uint64_t gray = post_pipeline_register(renderer, "灰度.frag.spv");
+	ASSERT_NE(gray, 0u);
+	ASSERT_TRUE(renderer.post_chain_set(&gray, 1));
+	engine::Mesh_Handle handle = 0;
+	scene_register(renderer, handle);
+	renderer.render_target_present_set(scene_target);
+	std::vector<uint8_t> pixels(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(pixels.data(), static_cast<uint32_t>(pixels.size())));
+
+	//中心（白四边形）与角落（清屏色）都应三通道趋同
+	std::array<uint8_t, 4> center = pixel_get(pixels, WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2);
+	std::array<uint8_t, 4> corner = pixel_get(pixels, 1, 1);
+	EXPECT_LE(std::abs(static_cast<int>(center[0]) - static_cast<int>(center[1])), 2) << "中心 r/g 未趋同：" << pixel_text(center);
+	EXPECT_LE(std::abs(static_cast<int>(center[1]) - static_cast<int>(center[2])), 2) << "中心 g/b 未趋同：" << pixel_text(center);
+	EXPECT_LE(std::abs(static_cast<int>(corner[0]) - static_cast<int>(corner[1])), 2) << "角落 r/g 未趋同：" << pixel_text(corner);
+	EXPECT_LE(std::abs(static_cast<int>(corner[1]) - static_cast<int>(corner[2])), 2) << "角落 g/b 未趋同：" << pixel_text(corner);
+	//白四边形去色后仍应亮
+	EXPECT_GE(center[0], 200) << "去色后中心过暗：" << pixel_text(center);
+	EXPECT_GT(corner[0], 4) << "角落去色后被压成纯黑（应保留清屏色亮度）：" << pixel_text(corner);
+
+	renderer.mesh_unload(handle);
+	renderer.pipeline_unload(gray);
+	renderer.render_target_destroy(scene_target);
+}
+
+/*
+后处理预设 · 描边：与灰度帧对比，边界处出现明显压暗（内部差异）
+口径：以「同一场景、同一目标的灰度帧」为参考，统计「比参考暗至少 40」的像素数 > 0，
+      且中心（无边缘区域）不被大幅压暗 —— 避免依赖具体边界坐标。
+*/
+TEST_F(Renderer_Post_Chain_Test, 描边预设压暗边界)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	uint64_t scene_target = 0;
+	ASSERT_TRUE(renderer.render_target_create(scene_target, renderer.extent_width(), renderer.extent_height()));
+	uint64_t gray = post_pipeline_register(renderer, "灰度.frag.spv");
+	uint64_t edge = post_pipeline_register(renderer, "描边.frag.spv");
+	ASSERT_NE(gray, 0u);
+	ASSERT_NE(edge, 0u);
+	engine::Mesh_Handle handle = 0;
+	engine::Mesh_Handle scene_mesh = 0;
+	scene_register(renderer, scene_mesh);
+	handle = scene_mesh;
+	renderer.render_target_present_set(scene_target);
+
+	//第一帧：灰度（作为参考）
+	ASSERT_TRUE(renderer.post_chain_set(&gray, 1));
+	std::vector<uint8_t> gray_pixels(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(gray_pixels.data(), static_cast<uint32_t>(gray_pixels.size())));
+
+	//第二帧：描边（同一场景重登记绘制项）
+	ASSERT_TRUE(renderer.mesh_draw(handle, nullptr));
+	ASSERT_TRUE(renderer.post_chain_set(&edge, 1));
+	std::vector<uint8_t> edge_pixels(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(edge_pixels.data(), static_cast<uint32_t>(edge_pixels.size())));
+
+	//边界处应出现明显压暗像素
+	uint32_t darkened = darkened_count(edge_pixels, gray_pixels, 40.0f);
+	RecordProperty("edge_darkened_pixels", darkened);
+	EXPECT_GT(darkened, 0u) << "描边未压暗任何像素（与灰度帧完全一致）";
+	//中心（远离四边形边界）不应被明显压暗
+	std::array<uint8_t, 4> gray_center = pixel_get(gray_pixels, WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2);
+	std::array<uint8_t, 4> edge_center = pixel_get(edge_pixels, WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2);
+	EXPECT_LE(luma_of(gray_center) - luma_of(edge_center), 20.0f)
+		<< "中心被过度压暗（描边泄漏到内部）：灰 " << pixel_text(gray_center) << " / 边 " << pixel_text(edge_center);
+
+	renderer.mesh_unload(scene_mesh);
+	renderer.pipeline_unload(gray);
+	renderer.pipeline_unload(edge);
+	renderer.render_target_destroy(scene_target);
+}
+
+/*
+后处理预设 · 色调映射：高光被压缩（白 255 → 约 230），不再顶到最大亮度
+*/
+TEST_F(Renderer_Post_Chain_Test, 色调映射压缩高亮)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	uint64_t scene_target = 0;
+	ASSERT_TRUE(renderer.render_target_create(scene_target, renderer.extent_width(), renderer.extent_height()));
+	uint64_t tone = post_pipeline_register(renderer, "色调映射.frag.spv");
+	ASSERT_NE(tone, 0u);
+	ASSERT_TRUE(renderer.post_chain_set(&tone, 1));
+	engine::Mesh_Handle handle = 0;
+	scene_register(renderer, handle);
+	renderer.render_target_present_set(scene_target);
+	std::vector<uint8_t> pixels(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(pixels.data(), static_cast<uint32_t>(pixels.size())));
+
+	//白四边形（输入线性 1.0）经简化 ACES 后约 0.80 → sRGB 编码约 232
+	std::array<uint8_t, 4> center = pixel_get(pixels, WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2);
+	RecordProperty("tone_mapped_center", static_cast<int>(center[0]));
+	EXPECT_GE(center[0], 200) << "高光被压缩过头：" << pixel_text(center);
+	EXPECT_LE(center[0], 246) << "高光未被压缩（仍接近 255）：" << pixel_text(center);
+	EXPECT_LE(std::abs(static_cast<int>(center[0]) - static_cast<int>(center[1])), 2);
+
+	renderer.mesh_unload(handle);
+	renderer.pipeline_unload(tone);
+	renderer.render_target_destroy(scene_target);
+}
+
+/*
+后处理预设可串联：灰度 → 描边 两级链可正常出帧，且中心仍为去色后的亮色
+*/
+TEST_F(Renderer_Post_Chain_Test, 预设可串联)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	uint64_t scene_target = 0;
+	uint64_t second_target = 0;
+	ASSERT_TRUE(renderer.render_target_create(scene_target, renderer.extent_width(), renderer.extent_height()));
+	ASSERT_TRUE(renderer.render_target_create(second_target, renderer.extent_width(), renderer.extent_height()));
+	uint64_t gray = post_pipeline_register(renderer, "灰度.frag.spv");
+	uint64_t edge = post_pipeline_register(renderer, "描边.frag.spv");
+	ASSERT_NE(gray, 0u);
+	ASSERT_NE(edge, 0u);
+	uint64_t chain[2] = { gray, edge };
+	ASSERT_TRUE(renderer.post_chain_set(chain, 2));
+	engine::Mesh_Handle handle = 0;
+	scene_register(renderer, handle);
+	renderer.render_target_present_set(scene_target);
+	renderer.render_target_present_secondary_set(second_target);
+	std::vector<uint8_t> pixels(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(pixels.data(), static_cast<uint32_t>(pixels.size())));
+	EXPECT_EQ(renderer.frame_count(), 1u);
+
+	//中心仍应为去色后的亮色（两级链未破坏内部）
+	std::array<uint8_t, 4> center = pixel_get(pixels, WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2);
+	EXPECT_GE(luma_of(center), 180.0f) << "两级链后中心过暗：" << pixel_text(center);
+	EXPECT_LE(std::abs(static_cast<int>(center[0]) - static_cast<int>(center[2])), 4)
+		<< "两级链后中心未保持去色：" << pixel_text(center);
+
+	renderer.mesh_unload(handle);
+	renderer.pipeline_unload(gray);
+	renderer.pipeline_unload(edge);
+	renderer.render_target_destroy(second_target);
+	renderer.render_target_destroy(scene_target);
 }
 

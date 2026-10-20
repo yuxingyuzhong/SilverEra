@@ -135,6 +135,41 @@ namespace
 			}
 		}
 	}
+
+	//指定纵向区间内的墨迹水平范围（用于分行测量）
+	void band_horizontal_extent(const std::vector<uint8_t>& pixels, uint32_t y0, uint32_t y1,
+		uint32_t& min_x_out, uint32_t& max_x_out)
+	{
+		min_x_out = 0;
+		max_x_out = 0;
+		bool found = false;
+		for (uint32_t y = y0; y < y1 && y < WINDOW_HEIGHT; ++y)
+		{
+			for (uint32_t x = 0; x < WINDOW_WIDTH; ++x)
+			{
+				if (pixel_is_clear(pixel_get(pixels, x, y)))
+					continue;
+				if (!found)
+				{
+					min_x_out = x;
+					found = true;
+				}
+				max_x_out = x;
+			}
+		}
+	}
+
+	//第一行（首个行高区间）的墨迹水平范围
+	void first_line_extent(const std::vector<uint8_t>& pixels, uint32_t& min_x_out, uint32_t& max_x_out)
+	{
+		band_horizontal_extent(pixels, 0, FONT_PIXEL_HEIGHT, min_x_out, max_x_out);
+	}
+
+	//第二行（第二个行高区间）的墨迹水平范围
+	void second_line_extent(const std::vector<uint8_t>& pixels, uint32_t& min_x_out, uint32_t& max_x_out)
+	{
+		band_horizontal_extent(pixels, FONT_PIXEL_HEIGHT, 2 * FONT_PIXEL_HEIGHT, min_x_out, max_x_out);
+	}
 }
 
 //文字布局测试夹具
@@ -313,5 +348,88 @@ TEST_F(Renderer_Text_Layout_Test, 右对齐使墨迹靠右)
 	EXPECT_GT(left_max, left_min);
 	EXPECT_LE(left_min, 20u) << "左对齐墨迹未回到左侧（可能命中旧网格缓存）";
 	EXPECT_GT(ink_total(left_pixels), 0u);
+	renderer.font_unload(font);
+}
+
+//字距（tracking）计入行宽：同一文本的字距增大后墨迹右端明显右移
+TEST_F(Renderer_Text_Layout_Test, 字距增大使墨迹右移)
+{
+	if (!font_available())
+		GTEST_SKIP() << "本机无 " << FONT_PATH;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	uint64_t font = 0;
+	ASSERT_TRUE(renderer.font_load_file(font, FONT_PATH, FONT_PIXEL_HEIGHT));
+
+	//无字距
+	engine::Text_Layout plain{};
+	ASSERT_TRUE(renderer.text_draw_layout(font, "III", 4.0f, 0.0f, plain));
+	std::vector<uint8_t> plain_pixels(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(plain_pixels.data(), static_cast<uint32_t>(plain_pixels.size())));
+	uint32_t plain_min = 0;
+	uint32_t plain_max = 0;
+	ink_horizontal_extent(plain_pixels, plain_min, plain_max);
+
+	//加宽字距（每个字形后额外 6 像素）
+	engine::Text_Layout spaced{};
+	spaced.tracking = 6.0f;
+	ASSERT_TRUE(renderer.text_draw_layout(font, "III", 4.0f, 0.0f, spaced));
+	std::vector<uint8_t> spaced_pixels(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(spaced_pixels.data(), static_cast<uint32_t>(spaced_pixels.size())));
+	uint32_t spaced_min = 0;
+	uint32_t spaced_max = 0;
+	ink_horizontal_extent(spaced_pixels, spaced_min, spaced_max);
+
+	//三字两个间隙 → 右端至少右移 8 像素（取保守阈值）
+	EXPECT_GT(spaced_max, plain_max + 8u)
+		<< "字距未生效（无字距右端 " << plain_max << " / 有字距右端 " << spaced_max << "）";
+	EXPECT_EQ(spaced_min, plain_min) << "字距不应改变起始笔位";
+	renderer.font_unload(font);
+}
+
+//首行缩进只作用于第一行：首行墨迹右移、第二行不受影响
+TEST_F(Renderer_Text_Layout_Test, 首行缩进只影响首行)
+{
+	if (!font_available())
+		GTEST_SKIP() << "本机无 " << FONT_PATH;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	uint64_t font = 0;
+	ASSERT_TRUE(renderer.font_load_file(font, FONT_PATH, FONT_PIXEL_HEIGHT));
+
+	//无缩进：两行同一起点
+	engine::Text_Layout plain{};
+	ASSERT_TRUE(renderer.text_draw_layout(font, "I\nI", 0.0f, 0.0f, plain));
+	std::vector<uint8_t> plain_pixels(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(plain_pixels.data(), static_cast<std::uint32_t>(plain_pixels.size())));
+	uint32_t plain_first_min = 0;
+	uint32_t plain_first_max = 0;
+	first_line_extent(plain_pixels, plain_first_min, plain_first_max);
+
+	//首行缩进 30 像素
+	engine::Text_Layout indented{};
+	indented.first_line_indent = 30.0f;
+	ASSERT_TRUE(renderer.text_draw_layout(font, "I\nI", 0.0f, 0.0f, indented));
+	std::vector<uint8_t> indented_pixels(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(indented_pixels.data(), static_cast<std::uint32_t>(indented_pixels.size())));
+	uint32_t indented_first_min = 0;
+	uint32_t indented_first_max = 0;
+	first_line_extent(indented_pixels, indented_first_min, indented_first_max);
+	uint32_t indented_second_min = 0;
+	uint32_t indented_second_max = 0;
+	second_line_extent(indented_pixels, indented_second_min, indented_second_max);
+	uint32_t plain_second_min = 0;
+	uint32_t plain_second_max = 0;
+	second_line_extent(plain_pixels, plain_second_min, plain_second_max);
+
+	//首行右移约 30 像素（容差 ±4）
+	EXPECT_GE(indented_first_min, plain_first_min + 26u) << "首行缩进未生效";
+	EXPECT_LE(indented_first_min, plain_first_min + 34u) << "首行缩进量不符（应为 30 像素）";
+	//第二行不受缩进影响
+	EXPECT_EQ(indented_second_min, plain_second_min) << "缩进不应影响第二行";
 	renderer.font_unload(font);
 }
