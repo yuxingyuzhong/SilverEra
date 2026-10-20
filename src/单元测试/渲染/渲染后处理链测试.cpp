@@ -10,6 +10,11 @@
   3. 「反色 → 亮度阈值」的终点饱和到 0 / 255，与被采样附件的编码无关，故可作确定性像素级验收。
   4. Debug 构建下渲染器默认开启校验层，本路径较新，若屏障 / 描述符集有误会由校验层报出，
      用例随渲染流程一并实跑判定。
+  5. **换机复核点（处置 TEST-70）**：①容差 CHAIN_TOLERANCE = 4 —— 每级各经历一次「附件编码 → 采样解码」
+     取整（sRGB / UNORM 附件下均如此），两级累积；本机实测最大通道差 3，若换机 / 换驱动后该值增大，
+     按失败信息上调而非放宽断言语义（只执行一级时差达 200 以上，容差仍有决定性）。②「目标尺寸 = 交换链尺寸」
+     是硬前提 —— 后处理按帧缓冲坐标 1:1 取源（texelFetch + gl_FragCoord），尺寸不等会采样错位并被
+     帧模块范围校验拒绝，故各用例一律以 extent_width / extent_height 建目标。
 */
 #include <gtest/gtest.h>
 
@@ -369,5 +374,65 @@ TEST_F(Renderer_Post_Chain_Test, 目标范围不一致时回落)
 	renderer.mesh_unload(handle);
 	renderer.pipeline_unload(invert);
 	renderer.render_target_destroy(narrow_target);
+}
+
+/*
+链状态只读诊断入口（post_chain_count / post_chain_get）
+断言「计数与级序可读」「卸载中间级后级序压缩」「容量截断与空指针」三件事；
+纯只读接口，不改变渲染行为。
+*/
+TEST_F(Renderer_Post_Chain_Test, 链计数与级序可读)
+{
+	engine::Renderer renderer;
+	//未初始化时一律 0
+	EXPECT_EQ(renderer.post_chain_count(), 0u);
+	uint64_t probe[4] = { 0, 0, 0, 0 };
+	EXPECT_EQ(renderer.post_chain_get(probe, 4), 0u);
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	//初始化后仍未设链
+	EXPECT_EQ(renderer.post_chain_count(), 0u);
+
+	//登记三条后处理管线
+	uint64_t invert = post_pipeline_register(renderer, "反色.frag.spv");
+	uint64_t threshold = post_pipeline_register(renderer, "亮度阈值.frag.spv");
+	uint64_t invert_again = post_pipeline_register(renderer, "反色.frag.spv");
+	ASSERT_NE(invert, 0u);
+	ASSERT_NE(threshold, 0u);
+	ASSERT_NE(invert_again, 0u);
+	ASSERT_NE(invert, threshold);
+	ASSERT_NE(threshold, invert_again);
+
+	//设三级链
+	uint64_t chain[3] = { invert, threshold, invert_again };
+	ASSERT_TRUE(renderer.post_chain_set(chain, 3));
+	EXPECT_EQ(renderer.post_chain_count(), 3u);
+	//逐级读回须与设置顺序一致
+	uint64_t read_back[4] = { 0, 0, 0, 0 };
+	ASSERT_EQ(renderer.post_chain_get(read_back, 4), 3u);
+	EXPECT_EQ(read_back[0], invert);
+	EXPECT_EQ(read_back[1], threshold);
+	EXPECT_EQ(read_back[2], invert_again);
+
+	//容量不足：按容量截断，且返回实际写入数
+	uint64_t single[2] = { 0, 0 };
+	ASSERT_EQ(renderer.post_chain_get(single, 1), 1u);
+	EXPECT_EQ(single[0], invert);
+	//出参为空：返回 0
+	EXPECT_EQ(renderer.post_chain_get(nullptr, 4), 0u);
+
+	//卸载中间一级 → 该句柄被摘除、后续级序前移（计数 3 → 2）
+	renderer.pipeline_unload(threshold);
+	EXPECT_EQ(renderer.post_chain_count(), 2u);
+	uint64_t compressed[4] = { 0, 0, 0, 0 };
+	ASSERT_EQ(renderer.post_chain_get(compressed, 4), 2u);
+	EXPECT_EQ(compressed[0], invert);
+	EXPECT_EQ(compressed[1], invert_again);
+
+	//清空链 → 计数归 0
+	ASSERT_TRUE(renderer.post_chain_set(nullptr, 0));
+	EXPECT_EQ(renderer.post_chain_count(), 0u);
+	EXPECT_EQ(renderer.post_chain_get(compressed, 4), 0u);
+	renderer.pipeline_unload(invert);
+	renderer.pipeline_unload(invert_again);
 }
 

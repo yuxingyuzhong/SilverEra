@@ -250,3 +250,65 @@ TEST_F(Renderer_Text_Test, 空文本与无效句柄行为)
 	EXPECT_TRUE(renderer.frame_render(pixels.data(), static_cast<uint32_t>(pixels.size())));
 	renderer.font_unload(font);
 }
+
+/*
+纯 ASCII 绘制不产生「跳过码点」计数（处置 R-TEXT-01 的基线口径）
+未初始化 / 无效句柄一律返回 0，加载后计数从 0 起。
+*/
+TEST_F(Renderer_Text_Test, 纯ASCII不产生跳过计数)
+{
+	engine::Renderer renderer;
+	//未初始化时任何句柄都返回 0
+	EXPECT_EQ(renderer.font_skipped_codepoints(1u), 0u);
+	if (!font_available())
+		GTEST_SKIP() << "本机无 " << FONT_PATH;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	uint64_t font = 0;
+	ASSERT_TRUE(renderer.font_load_file(font, FONT_PATH, FONT_PIXEL_HEIGHT));
+	//加载后计数为 0（ASCII 已全部烘焙）
+	EXPECT_EQ(renderer.font_skipped_codepoints(font), 0u) << "加载阶段不应产生跳过计数";
+	//画纯 ASCII 字符串（含空白字符，空白不应被计为跳过）
+	ASSERT_TRUE(renderer.text_draw(font, "AB C1", 4.0f, 4.0f));
+	EXPECT_EQ(renderer.font_skipped_codepoints(font), 0u) << "纯 ASCII 与空白字符不应计入跳过数";
+	//重复绘制同样不增
+	ASSERT_TRUE(renderer.text_draw(font, "AB C1", 4.0f, 4.0f));
+	EXPECT_EQ(renderer.font_skipped_codepoints(font), 0u);
+	//无效句柄仍为 0
+	EXPECT_EQ(renderer.font_skipped_codepoints(99999u), 0u);
+	renderer.font_unload(font);
+}
+
+/*
+字体不含的码点计入「跳过码点」计数（每码点至多计一次）
+文本混合 ASCII 与一个私有区码点（U+E000，consola 等常规字体不含），
+故计数 +1；同一码点重复绘制不再增加（补烘只做一次）。
+*/
+TEST_F(Renderer_Text_Test, 不支持码点计入跳过计数)
+{
+	if (!font_available())
+		GTEST_SKIP() << "本机无 " << FONT_PATH;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	uint64_t font = 0;
+	ASSERT_TRUE(renderer.font_load_file(font, FONT_PATH, FONT_PIXEL_HEIGHT));
+	ASSERT_EQ(renderer.font_skipped_codepoints(font), 0u);
+
+	//「A ＋ U+E000 ＋ B」：私有区码点不在字体覆盖范围
+	std::string unsupported = "A";
+	unsupported += "\xEE\x80\x80";
+	unsupported += "B";
+	//ASCII 部分仍产生墨迹，故绘制整体返回真
+	ASSERT_TRUE(renderer.text_draw(font, unsupported, 4.0f, 4.0f));
+	EXPECT_EQ(renderer.font_skipped_codepoints(font), 1u)
+		<< "字体不含的码点应计入跳过数（实际 "
+		<< renderer.font_skipped_codepoints(font) << "）";
+	//重复绘制同一文本：该码点已登记（含 0 推进的空度量），不再重复计数
+	ASSERT_TRUE(renderer.text_draw(font, unsupported, 4.0f, 4.0f));
+	EXPECT_EQ(renderer.font_skipped_codepoints(font), 1u) << "同一码点不应重复计数";
+	//另一串纯 ASCII 不改变计数
+	ASSERT_TRUE(renderer.text_draw(font, "AB", 4.0f, 4.0f));
+	EXPECT_EQ(renderer.font_skipped_codepoints(font), 1u);
+	//卸载后句柄失效，读取归 0
+	renderer.font_unload(font);
+	EXPECT_EQ(renderer.font_skipped_codepoints(font), 0u);
+}
