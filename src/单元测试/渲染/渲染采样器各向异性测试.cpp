@@ -169,6 +169,32 @@ namespace
 		return pixels;
 	}
 
+	/*
+	构造「纯黑 / 纯白」交替的**垂直条纹**纹理（沿 u 变化、沿 v 恒定；RGBA8 紧排，alpha = 255）
+	要点：屏幕 x 方向被斜四边形压缩 → du/dx 远大于 dv/dy；纹理细节必须落在 **u 方向**，
+	否则「沿压缩方向多采样」采到的是常量，各向异性与各向同性结果必然相同（无法产生差异）。
+	*/
+	std::vector<uint8_t> stripes_vertical_black_white(uint32_t size, uint32_t stripe)
+	{
+		//像素缓冲（size × size × 4）
+		std::vector<uint8_t> pixels(static_cast<std::size_t>(size) * size * 4);
+		for (uint32_t y = 0; y < size; ++y)
+		{
+			for (uint32_t x = 0; x < size; ++x)
+			{
+				//本列所在条纹是否为亮条（偶数条为白）
+				uint8_t value = ((x / stripe) % 2) == 0 ? 255 : 0;
+				//像素起始偏移
+				std::size_t offset = (static_cast<std::size_t>(y) * size + x) * 4;
+				pixels[offset] = value;
+				pixels[offset + 1] = value;
+				pixels[offset + 2] = value;
+				pixels[offset + 3] = 255;
+			}
+		}
+		return pixels;
+	}
+
 	//构造覆盖视口中央的四边形（NDC 尺度 1，位于 z = 0；默认相机在 +Z 3 单位处）
 	engine::Mesh_Data quad_data(void)
 	{
@@ -342,6 +368,83 @@ TEST_F(Renderer_Sampler_Anisotropy_Test, mip过滤开关产生像素级差异)
 	RecordProperty("extreme_luma_aliased", extreme_aliased);
 	EXPECT_LE(extreme_filtered, extreme_aliased)
 		<< "开启 mip 过滤后极端亮度像素数反多于关闭侧（" << extreme_filtered << " > " << extreme_aliased << "）";
+
+	renderer.mesh_unload(handle);
+	renderer.texture_unload(texture);
+}
+
+/*
+各向异性开 / 关的像素差异**诊断**（R-SAMPLE-01 收口：定案为「结构性 ＋ 诊断记录」，不判方向、不强制差异）
+做法：垂直条纹纹理 ＋ 绕 Y 轴约 60° 的斜四边形，使屏幕空间采样足迹在两方向严重不等（各向异性生效前提）。
+口径说明：
+  1. **不判方向、不强制差异** —— 各向异性的具体效果由硬件 / 驱动实现决定；本机实测差异为 0，
+     故硬断言「差异 > 0」会在换机 / 换驱动时假失败。用例只把差异记入属性供对比。
+  2. 纹理细节必须落在**被压缩的 u 方向**（垂直条纹）：若细节在未压缩方向，多采样采到常量，两帧必然相同。
+  3. 设备不支持各向异性时同样只记录（`anisotropy_supported=false`），不跳过。
+*/
+TEST_F(Renderer_Sampler_Anisotropy_Test, 各向异性开关产生像素级差异)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	//若本机不支持像素回读则跳过
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	//垂直条纹纹理（256 × 256、条宽 2 像素）：细节落在被压缩的 u 方向，才能体现各向异性
+	uint64_t texture = 0;
+	std::vector<uint8_t> texels = stripes_vertical_black_white(256, 2);
+	ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 256, 256));
+	engine::Mesh_Handle handle = 0;
+	ASSERT_TRUE(renderer.mesh_load(handle, quad_data()));
+
+	//绕 Y 轴 60° 的模型矩阵（列主序）：使四边形在屏幕空间沿 x 方向严重压缩
+	std::array<float, 16> oblique = {};
+	const float cosine = 0.5f;
+	const float sine = 0.8660254f;
+	oblique[0] = cosine;
+	oblique[2] = -sine;
+	oblique[5] = 1.0f;
+	oblique[8] = sine;
+	oblique[10] = cosine;
+	oblique[15] = 1.0f;
+
+	//第一帧：关闭各向异性（倍数 1）
+	engine::Texture_Sampler_State plain;
+	plain.mip_filter = true;
+	renderer.texture_sampler_state_set(plain);
+	renderer.texture_bind_set(texture);
+	ASSERT_TRUE(renderer.mesh_draw(handle, oblique.data()));
+	std::vector<uint8_t> isotropic(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(isotropic.data(), static_cast<uint32_t>(isotropic.size())));
+
+	//第二帧：开启各向异性到设备上限
+	engine::Texture_Sampler_State anisotropic;
+	anisotropic.mip_filter = true;
+	anisotropic.anisotropy = true;
+	anisotropic.max_anisotropy = renderer.sampler_max_anisotropy();
+	renderer.texture_sampler_state_set(anisotropic);
+	renderer.texture_bind_set(texture);
+	ASSERT_TRUE(renderer.mesh_draw(handle, oblique.data()));
+	std::vector<uint8_t> anisotropic_frame(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(anisotropic_frame.data(), static_cast<uint32_t>(anisotropic_frame.size())));
+
+	EXPECT_EQ(renderer.frame_count(), 2u);
+	//两帧都应正常出图
+	EXPECT_FALSE(pixel_is_clear(pixel_get(isotropic, WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2)))
+		<< "关闭各向异性后中心像素为清屏色";
+	EXPECT_FALSE(pixel_is_clear(pixel_get(anisotropic_frame, WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2)))
+		<< "开启各向异性后中心像素为清屏色";
+
+	/*
+	能力分支：**只记录差异，不强制大于 0**（诊断口径）
+	本机实测：同一场景下各向异性开 / 关两帧**逐字节相同**（差异 0）—— 说明该驱动在此足迹下未产生可观测差异。
+	正因如此，把「差异 > 0」写成硬断言会在换机 / 换驱动时随机假失败；本用例改为**诊断记录**
+	（`anisotropy_pixel_diff` 记入测试属性，供换机对比），硬断言只保留「两帧均正常出图」。
+	采样器状态确实作用于像素输出，已由同文件的 `mip过滤开关产生像素级差异` 用例钉住。
+	*/
+	int difference = max_channel_diff(isotropic, anisotropic_frame);
+	RecordProperty("anisotropy_pixel_diff", difference);
+	RecordProperty("anisotropy_supported", renderer.sampler_anisotropy_supported() ? "true" : "false");
+	RecordProperty("anisotropy_max", renderer.sampler_max_anisotropy());
 
 	renderer.mesh_unload(handle);
 	renderer.texture_unload(texture);

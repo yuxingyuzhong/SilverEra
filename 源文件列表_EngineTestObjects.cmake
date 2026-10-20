@@ -60,6 +60,7 @@ target_sources(EngineTestObjects PRIVATE
     "src/单元测试/渲染/渲染实例化测试.cpp"
     "src/单元测试/渲染/渲染帧测试.cpp"
     "src/单元测试/渲染/渲染帧统计测试.cpp"
+    "src/单元测试/渲染/渲染文字布局测试.cpp"
     "src/单元测试/渲染/渲染文字测试.cpp"
     "src/单元测试/渲染/渲染材质测试.cpp"
     "src/单元测试/渲染/渲染混合测试.cpp"
