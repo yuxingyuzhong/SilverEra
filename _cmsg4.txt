@@ -1,0 +1,5 @@
+工作站：EXT-01 变更 —— 渲染层已接入私有远程仓库
+
+- 新建 yuxingyuzhong/SilverEra-Renderer（private，空仓库）
+- 本地 Application/Renderer 加远程 origin，推送 main（6c122c2），建立跟踪
+- 外部问题汇总 EXT-01 记录裁定变更；旧「Renderer 只落本地」口径作废
