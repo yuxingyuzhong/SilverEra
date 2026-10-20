@@ -160,3 +160,45 @@ TEST_F(Renderer_Stats_Test, GPU样本数与帧数关系符合口径)
 		EXPECT_EQ(stats.gpu_frame_ms, 0.0);
 	}
 }
+
+/*
+实际绘制量与登记量在合法输入下应一致（第十一轮口径）
+空帧 + 正常绘制项各若干帧：登记项全部完整，故 drawn_items 应等于 draw_items、drawn_instances 等于 instances。
+多级后处理链的后处理项同样计入两侧（各 1 项 / 1 实例），故链路径下也应相等。
+*/
+TEST_F(Renderer_Stats_Test, 实际绘制量等于登记量)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, triangle_data()));
+	//三帧：分别登记 1 / 2 / 0 个绘制项
+	for (uint32_t index = 0; index < 2; ++index)
+		ASSERT_TRUE(renderer.mesh_draw(mesh, nullptr));
+	ASSERT_TRUE(renderer.frame_render());
+	ASSERT_TRUE(renderer.mesh_draw(mesh, nullptr));
+	ASSERT_TRUE(renderer.frame_render());
+	ASSERT_TRUE(renderer.frame_render());
+	engine::Frame_Stats stats = renderer.frame_stats_get();
+	EXPECT_EQ(stats.frames, 3u);
+	EXPECT_EQ(stats.draw_items, 3u);
+	EXPECT_EQ(stats.instances, 3u);
+	//所有登记项均完整 → 实际绘制量与登记量相等
+	EXPECT_EQ(stats.drawn_items, stats.draw_items);
+	EXPECT_EQ(stats.drawn_instances, stats.instances);
+	renderer.mesh_unload(mesh);
+}
+
+//不使用材质 / 纹理的纯空帧：实际绘制量恒为 0（清屏不产生绘制项）
+TEST_F(Renderer_Stats_Test, 空帧实际绘制量为零)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	for (uint32_t index = 0; index < 3; ++index)
+		ASSERT_TRUE(renderer.frame_render());
+	engine::Frame_Stats stats = renderer.frame_stats_get();
+	EXPECT_EQ(stats.draw_items, 0u);
+	EXPECT_EQ(stats.instances, 0u);
+	EXPECT_EQ(stats.drawn_items, 0u);
+	EXPECT_EQ(stats.drawn_instances, 0u);
+}
