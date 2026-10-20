@@ -1,7 +1,9 @@
 /*
 渲染场景数据测试（L2 隐藏窗口 + 像素回读）
 覆盖：未初始化应用场景无副作用；scene_apply 的「相机 ＋ 清屏色」同时生效（相机背对四边形后中心应显示清屏色）；
-      clear_color_set 切换清屏色生效。
+      clear_color_set 切换清屏色生效；
+      **参数校验**（处置 R-FACADE-10）：非法场景描述整次拒绝、清屏色分量越界被钳制；
+      **默认单一来源**（处置 R-SCENE-07）：应用默认 Scene_Data 与原默认状态画面完全一致。
 断言一律「格式无关」：绿通道恒为字节下标 1（RGBA 与 BGRA 下均然），故绿 / 非绿判定只看第 1 字节；
       红 / 蓝等外色只看「外通道取较大者是否饱和」，不假定具体通道序。
 */
@@ -193,4 +195,92 @@ TEST_F(Renderer_Scene_Test, 切换清屏色生效)
 	EXPECT_GE(outer_max(red_center), 200) << "红色清屏色未生效（外通道未饱和）：" << pixel_text(red_center);
 	//两次清屏色不同 → 画面应可区分
 	EXPECT_NE(green_pixels, red_pixels);
+}
+
+//非法场景描述整次拒绝：不改变既有相机与清屏色
+TEST_F(Renderer_Scene_Test, 非法场景描述整次拒绝)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	//若本机不支持像素回读则跳过
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	//第一帧：应用合法场景（清屏色绿、相机背对四边形）→ 中心为纯绿
+	engine::Scene_Data valid{};
+	valid.clear_color[0] = 0.0f;
+	valid.clear_color[1] = 1.0f;
+	valid.clear_color[2] = 0.0f;
+	valid.clear_color[3] = 1.0f;
+	renderer.scene_apply(valid);
+	std::vector<uint8_t> green_pixels(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(green_pixels.data(), static_cast<uint32_t>(green_pixels.size())));
+	std::array<uint8_t, 4> green_center = pixel_get(green_pixels, WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2);
+	EXPECT_GE(green_center[1], 200) << "合法场景未生效：" << pixel_text(green_center);
+
+	//第二帧：应用非法场景（视场角为零、清屏色红）→ 应被整次拒绝
+	engine::Scene_Data invalid{};
+	invalid.fov = 0.0f;
+	invalid.clear_color[0] = 1.0f;
+	invalid.clear_color[1] = 0.0f;
+	invalid.clear_color[2] = 0.0f;
+	invalid.clear_color[3] = 1.0f;
+	renderer.scene_apply(invalid);
+	std::vector<uint8_t> rejected_pixels(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(rejected_pixels.data(), static_cast<uint32_t>(rejected_pixels.size())));
+	std::array<uint8_t, 4> rejected_center = pixel_get(rejected_pixels, WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2);
+	//清屏色仍为绿（非法描述里的红未被采用）
+	EXPECT_GE(rejected_center[1], 200) << "非法场景描述被部分采用（清屏色已变）：" << pixel_text(rejected_center);
+	EXPECT_LT(rejected_center[0], 60) << "非法场景描述被部分采用（外通道偏高）：" << pixel_text(rejected_center);
+	//画面与拒绝前完全一致
+	EXPECT_EQ(green_pixels, rejected_pixels) << "非法场景描述改变了画面，整次拒绝未生效";
+}
+
+//清屏色分量越界被钳制到 [0,1]
+TEST_F(Renderer_Scene_Test, 清屏色越界分量被钳制)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	//若本机不支持像素回读则跳过
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	//越界分量：外通道 2.0（应钳到 1）、绿 -1.0（应钳到 0）
+	const float out_of_range[4] = { 2.0f, -1.0f, 0.5f, 1.0f };
+	renderer.clear_color_set(out_of_range);
+	std::vector<uint8_t> pixels(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(pixels.data(), static_cast<uint32_t>(pixels.size())));
+	std::array<uint8_t, 4> center = pixel_get(pixels, WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2);
+	//外通道钳到 1 → 饱和；绿钳到 0 → 低
+	EXPECT_GE(outer_max(center), 200) << "越界外通道未被钳到 1：" << pixel_text(center);
+	EXPECT_LT(center[1], 60) << "负绿通道未被钳到 0：" << pixel_text(center);
+}
+
+//应用默认场景描述与原默认状态画面完全一致（默认值单一来源）
+TEST_F(Renderer_Scene_Test, 默认场景描述与原默认画面一致)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	//若本机不支持像素回读则跳过
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	//纯红纹理 ＋ 铺满全屏四边形（画面随相机与清屏色变化，故对默认值敏感）
+	uint64_t texture = 0;
+	std::vector<uint8_t> texels = solid_red();
+	ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 2, 2));
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, quad_data()));
+	renderer.texture_bind_set(texture);
+	//第一帧：不调用 scene_apply（使用本层既有默认）
+	ASSERT_TRUE(renderer.mesh_draw(mesh, full_screen_matrix().data()));
+	std::vector<uint8_t> baseline(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(baseline.data(), static_cast<std::uint32_t>(baseline.size())));
+	//第二帧：应用默认构造的 Scene_Data（其默认值应与本层既有默认一致）
+	engine::Scene_Data defaults{};
+	renderer.scene_apply(defaults);
+	ASSERT_TRUE(renderer.mesh_draw(mesh, full_screen_matrix().data()));
+	std::vector<uint8_t> applied(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(applied.data(), static_cast<std::uint32_t>(applied.size())));
+	//两帧画面应完全一致（默认值已收敛为单一来源）
+	EXPECT_EQ(baseline, applied) << "应用默认 Scene_Data 后画面改变，默认值未收敛为单一来源";
+	renderer.mesh_unload(mesh);
+	renderer.texture_unload(texture);
 }
