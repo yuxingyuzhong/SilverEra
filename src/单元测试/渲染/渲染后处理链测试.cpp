@@ -288,3 +288,86 @@ TEST_F(Renderer_Post_Chain_Test, 两级反色与阈值叠加)
 	renderer.render_target_destroy(scene_target);
 	renderer.render_target_destroy(second_target);
 }
+
+/*
+链长 1 与既有单级默认路径逐字节等价（收口后 `render_to_target_present` 为 `render_chain_present` 的薄封装）
+参考帧走「不设链」的既有单级默认路径（内置 后处理.vert / 后处理.frag）；
+对照帧走「链长 1 ＋ 经 pipeline_load 登记同一条 后处理 片元着色器」。
+两条路径现共用同一套录制实现，故两帧画面应**逐字节相同**（除取整外无任何差异）。
+*/
+TEST_F(Renderer_Post_Chain_Test, 单级链与既有单级路径等价)
+{
+	//参考帧：既有单级默认路径（不设链）
+	std::vector<uint8_t> reference(pixel_bytes());
+	{
+		engine::Renderer renderer;
+		ASSERT_TRUE(renderer.init(hidden_config()));
+		if (!renderer.readback_supported())
+			GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+		uint64_t scene_target = 0;
+		ASSERT_TRUE(renderer.render_target_create(scene_target, renderer.extent_width(), renderer.extent_height()));
+		engine::Mesh_Handle handle = 0;
+		scene_register(renderer, handle);
+		renderer.render_target_present_set(scene_target);
+		ASSERT_TRUE(renderer.frame_render(reference.data(), static_cast<uint32_t>(reference.size())));
+		renderer.mesh_unload(handle);
+		renderer.render_target_destroy(scene_target);
+	}
+	//对照帧：链长 1（同一片元着色器，经 pipeline_load 登记）
+	std::vector<uint8_t> chained(pixel_bytes());
+	{
+		engine::Renderer renderer;
+		ASSERT_TRUE(renderer.init(hidden_config()));
+		if (!renderer.readback_supported())
+			GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+		uint64_t scene_target = 0;
+		ASSERT_TRUE(renderer.render_target_create(scene_target, renderer.extent_width(), renderer.extent_height()));
+		uint64_t stage = post_pipeline_register(renderer, "后处理.frag.spv");
+		ASSERT_NE(stage, 0u);
+		ASSERT_TRUE(renderer.post_chain_set(&stage, 1));
+		engine::Mesh_Handle handle = 0;
+		scene_register(renderer, handle);
+		renderer.render_target_present_set(scene_target);
+		ASSERT_TRUE(renderer.frame_render(chained.data(), static_cast<uint32_t>(chained.size())));
+		renderer.mesh_unload(handle);
+		renderer.pipeline_unload(stage);
+		renderer.render_target_destroy(scene_target);
+	}
+	//两条路径共用同一录制实现 → 画面应逐字节相同
+	int difference = max_channel_diff(reference, chained);
+	EXPECT_EQ(difference, 0) << "链长 1 与既有单级默认路径画面不一致（最大通道差 " << difference << "）";
+}
+
+/*
+目标范围与交换链不一致时回落原路径（处置 R-FACADE-08 / R-FRAME-09）
+用比交换链窄的目标作为「同帧后处理呈现」目标：门面预检应告警并回落，本帧正常出帧且画面为**未后处理**的场景。
+*/
+TEST_F(Renderer_Post_Chain_Test, 目标范围不一致时回落)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	//比交换链窄的目标（触发范围不一致）
+	uint64_t narrow_target = 0;
+	ASSERT_TRUE(renderer.render_target_create(narrow_target, renderer.extent_width() - 8, renderer.extent_height()));
+	//链长 1 的反色链（若误走后处理路径则中心会被反色成黑）
+	uint64_t invert = post_pipeline_register(renderer, "反色.frag.spv");
+	ASSERT_NE(invert, 0u);
+	ASSERT_TRUE(renderer.post_chain_set(&invert, 1));
+	engine::Mesh_Handle handle = 0;
+	scene_register(renderer, handle);
+	renderer.render_target_present_set(narrow_target);
+	std::vector<uint8_t> pixels(pixel_bytes());
+	//本帧应回落原路径并正常出帧（不作为硬错误）
+	ASSERT_TRUE(renderer.frame_render(pixels.data(), static_cast<uint32_t>(pixels.size())));
+	EXPECT_EQ(renderer.frame_count(), 1u);
+	//回落即未经后处理：中心仍为四边形的亮色（而非反色后的黑）
+	std::array<uint8_t, 4> center = pixel_get(pixels, WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2);
+	EXPECT_GE(*std::min_element(center.begin(), center.begin() + 3), 200)
+		<< "目标范围不一致时未回落（画面被后处理过）：" << pixel_text(center);
+	renderer.mesh_unload(handle);
+	renderer.pipeline_unload(invert);
+	renderer.render_target_destroy(narrow_target);
+}
+
