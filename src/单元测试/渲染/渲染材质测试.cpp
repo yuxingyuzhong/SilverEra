@@ -254,3 +254,38 @@ TEST_F(Renderer_Material_Test, 同一网格不同材质像素可区分)
 	renderer.texture_unload(red_texture);
 	renderer.texture_unload(blue_texture);
 }
+
+/*
+同一混合档的多个材质共享该档的具名管线
+具名管线所有权归门面（随关闭统一释放），故卸载其一不应影响另一：
+本例在卸载 first 后仍以 second 绑定并绘制成功。
+*/
+TEST_F(Renderer_Material_Test, 同混合档材质共享管线)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	//纯绿纹理与四边形
+	uint64_t texture = 0;
+	std::vector<uint8_t> texels = solid_color(0, 255, 0);
+	ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 4, 4));
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, quad_data()));
+	//两条同一（Alpha）混合档的材质
+	engine::Material_Data data{};
+	data.texture = texture;
+	data.blend = engine::Blend_Mode::Alpha;
+	engine::Material_Handle first = 0;
+	engine::Material_Handle second = 0;
+	ASSERT_TRUE(renderer.material_load(first, data));
+	ASSERT_TRUE(renderer.material_load(second, data));
+	EXPECT_NE(first, second);
+	//卸载其一
+	renderer.material_unload(first);
+	//另一仍可绑定并绘制一帧（共享的具名管线未随卸载释放）
+	renderer.material_bind_set(second);
+	ASSERT_TRUE(renderer.mesh_draw(mesh, full_screen_matrix().data()));
+	ASSERT_TRUE(renderer.frame_render());
+	renderer.material_unload(second);
+	renderer.mesh_unload(mesh);
+	renderer.texture_unload(texture);
+}
