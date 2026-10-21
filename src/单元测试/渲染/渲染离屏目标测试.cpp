@@ -322,6 +322,72 @@ TEST_F(Renderer_Offscreen_Test, 读回离屏目标内容)
 }
 
 /*
+离屏目标子区域读回（第二十七轮）：分块读回拼接应与整幅读回逐字节一致
+口径：绿场景 → 渲染进 64×36 目标 → 整幅读回一次；再按「左上 / 右上 / 左下 / 右下」四块读回并拼接；
+      逐字节比较两者；越界区域应整次拒绝（返回假、尺寸出参保持 0）。
+*/
+TEST_F(Renderer_Offscreen_Test, 子区域读回与整幅一致)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	uint64_t target = 0;
+	ASSERT_TRUE(renderer.render_target_create(target, WINDOW_WIDTH, WINDOW_HEIGHT));
+	uint64_t texture = 0;
+	std::vector<uint8_t> texels = solid_green(2, 2);
+	ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 2, 2));
+	engine::Mesh_Handle handle = 0;
+	ASSERT_TRUE(renderer.mesh_load(handle, quad_data()));
+	std::array<float, 16> full = full_screen_matrix();
+	renderer.render_target_set(target);
+	renderer.texture_bind_set(texture);
+	ASSERT_TRUE(renderer.mesh_draw(handle, full.data()));
+	ASSERT_TRUE(renderer.frame_render());
+
+	//整幅读回（基准）
+	std::vector<uint8_t> whole(pixel_bytes());
+	ASSERT_TRUE(renderer.render_target_readback(target, whole.data(), static_cast<uint32_t>(whole.size()), nullptr, nullptr));
+
+	//四块读回并拼接
+	const uint32_t half_width = WINDOW_WIDTH / 2;
+	const uint32_t half_height = WINDOW_HEIGHT / 2;
+	std::vector<uint8_t> stitched(pixel_bytes(), 0);
+	const uint32_t origins[4][2] = { { 0, 0 }, { half_width, 0 }, { 0, half_height }, { half_width, half_height } };
+	for (const auto& origin : origins)
+	{
+		std::vector<uint8_t> block(static_cast<std::size_t>(half_width) * half_height * 4);
+		uint32_t block_width = 0;
+		uint32_t block_height = 0;
+		ASSERT_TRUE(renderer.render_target_readback_region(target, origin[0], origin[1],
+			half_width, half_height, block.data(), static_cast<uint32_t>(block.size()),
+			&block_width, &block_height));
+		EXPECT_EQ(block_width, half_width);
+		EXPECT_EQ(block_height, half_height);
+		//逐行拷入拼接缓冲
+		for (uint32_t row = 0; row < half_height; ++row)
+		{
+			std::size_t dst = (static_cast<std::size_t>(origin[1] + row) * WINDOW_WIDTH + origin[0]) * 4;
+			std::size_t src = static_cast<std::size_t>(row) * half_width * 4;
+			for (uint32_t byte = 0; byte < half_width * 4; ++byte)
+				stitched[dst + byte] = block[src + byte];
+		}
+	}
+	EXPECT_EQ(whole, stitched) << "分块读回拼接与整幅读回不一致";
+
+	//越界区域整次拒绝
+	std::vector<uint8_t> probe(static_cast<std::size_t>(half_width) * half_height * 4);
+	uint32_t width = 77;
+	uint32_t height = 88;
+	EXPECT_FALSE(renderer.render_target_readback_region(target, half_width + 1, 0,
+		half_width, half_height, probe.data(), static_cast<uint32_t>(probe.size()), &width, &height));
+	EXPECT_EQ(width, 0u);
+	EXPECT_EQ(height, 0u);
+
+	renderer.mesh_unload(handle);
+	renderer.texture_unload(texture);
+	renderer.render_target_destroy(target);
+}
+
+/*
 离屏目标读回的参数校验（第二十六轮）：未初始化 / 句柄无效 / 容量不足均返回假
 */
 TEST_F(Renderer_Offscreen_Test, 读回参数校验)

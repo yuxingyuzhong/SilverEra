@@ -7,6 +7,10 @@
 */
 #include <gtest/gtest.h>
 
+#include <cstddef>
+#include <cstdint>
+#include <vector>
+
 //获取渲染器门面与网格数据
 #include "Application/Renderer/src/render/Renderer/渲染器.h"
 
@@ -188,14 +192,53 @@ TEST_F(Renderer_Texture_Test, 卸载后重绑定跑帧)
 //多纹理创建后逐条卸载，随后推进一帧不崩
 TEST_F(Renderer_Texture_Test, 多纹理创建后逐条卸载)
 {
-	engine::Renderer renderer;
-	ASSERT_TRUE(renderer.init(hidden_config()));
-	//四条独立纹理
-	uint64_t handles[4] = {};
-	for (uint32_t index = 0; index < 4; ++index)
-		ASSERT_TRUE(renderer.texture_load_checkerboard(handles[index], 16, 16, 4));
-	//逐条卸载（销毁顺序无关）
-	for (uint32_t index = 0; index < 4; ++index)
-		renderer.texture_unload(handles[index]);
-	EXPECT_TRUE(renderer.frame_render());
+        engine::Renderer renderer;
+        ASSERT_TRUE(renderer.init(hidden_config()));
+        //四条独立纹理
+        uint64_t handles[4] = {};
+        for (uint32_t index = 0; index < 4; ++index)
+                ASSERT_TRUE(renderer.texture_load_checkerboard(handles[index], 16, 16, 4));
+        //逐条卸载（销毁顺序无关）
+        for (uint32_t index = 0; index < 4; ++index)
+                renderer.texture_unload(handles[index]);
+        EXPECT_TRUE(renderer.frame_render());
+}
+
+/*
+纹理读回（第二十七轮）：texture_readback 读回第 0 级像素与输入逐字节一致
+纹理为 RGBA8，读回走原样拷贝，故四个像素的字节应与输入完全相同；
+同时覆盖无效句柄与容量不足两条拒绝路径。
+*/
+TEST_F(Renderer_Texture_Test, 纹理读回与输入一致)
+{
+        engine::Renderer renderer;
+        ASSERT_TRUE(renderer.init(hidden_config()));
+        //2×2 四色像素（RGBA8 紧排）
+        const unsigned char texels[16] = {
+                255, 0, 0, 255,
+                0, 255, 0, 255,
+                0, 0, 255, 255,
+                255, 255, 0, 255,
+        };
+        uint64_t texture = 0;
+        ASSERT_TRUE(renderer.texture_load(texture, texels, 2, 2));
+        //读回第 0 级
+        std::vector<uint8_t> pixels(16);
+        uint32_t width = 0;
+        uint32_t height = 0;
+        ASSERT_TRUE(renderer.texture_readback(texture, pixels.data(), 16, &width, &height));
+        EXPECT_EQ(width, 2u);
+        EXPECT_EQ(height, 2u);
+        for (std::size_t index = 0; index < 16; ++index)
+                EXPECT_EQ(pixels[index], texels[index]) << "第 " << index << " 字节不一致";
+        //容量不足 / 无效句柄 / 未初始化语义：均返回假且尺寸为 0
+        uint32_t small_width = 9;
+        uint32_t small_height = 9;
+        EXPECT_FALSE(renderer.texture_readback(texture, pixels.data(), 15, &small_width, &small_height));
+        EXPECT_EQ(small_width, 0u);
+        EXPECT_EQ(small_height, 0u);
+        EXPECT_FALSE(renderer.texture_readback(9999u, pixels.data(), 16, nullptr, nullptr));
+        renderer.texture_unload(texture);
+        //卸载后句柄失效
+        EXPECT_FALSE(renderer.texture_readback(texture, pixels.data(), 16, nullptr, nullptr));
 }
