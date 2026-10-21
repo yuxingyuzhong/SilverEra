@@ -149,6 +149,22 @@ namespace
 		}
 		return count;
 	}
+	//统计「本帧比参考帧亮至少 threshold」的像素数（用于验证泛光扩散范围）
+	uint32_t brightened_count(const std::vector<uint8_t>& tested, const std::vector<uint8_t>& reference, float threshold)
+	{
+		uint32_t count = 0;
+		for (uint32_t y = 0; y < WINDOW_HEIGHT; ++y)
+		{
+			for (uint32_t x = 0; x < WINDOW_WIDTH; ++x)
+			{
+				//两帧亮度差
+				float difference = luma_of(pixel_get(tested, x, y)) - luma_of(pixel_get(reference, x, y));
+				if (difference >= threshold)
+					++count;
+			}
+		}
+		return count;
+	}
 }
 
 //后处理链测试夹具
@@ -925,6 +941,158 @@ TEST_F(Renderer_Post_Chain_Test, 半尺寸目标链可用)
 	renderer.pipeline_unload(blur);
 	renderer.render_target_destroy(half_target);
 	renderer.render_target_destroy(scene_target);
+}
+
+/*
+降采样泛光链（第十八轮）：半尺寸双级模糊的扩散范围大于单级
+口径：同一 222 灰纹理场景，分别跑「亮部提取 → 模糊 → 叠加」（单级模糊）与
+     「亮部提取 → 模糊 → 模糊 → 叠加」（半尺寸双级模糊）；与无泛光参考帧相比，
+     统计「亮度提升 ≥ 5」的像素数，双级必须**严格更多**（相对断言，不固定半径）。
+*/
+TEST_F(Renderer_Post_Chain_Test, 降采样泛光扩散更广)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	std::vector<uint8_t> gray_pixels(16 * 16 * 4, 222);
+	uint64_t gray_texture = 0;
+	ASSERT_TRUE(renderer.texture_load(gray_texture, gray_pixels.data(), 16, 16));
+	//四个目标：t0 全尺寸、t1/t2 半尺寸、t3 全尺寸
+	uint64_t target0 = 0;
+	uint64_t target1 = 0;
+	uint64_t target2 = 0;
+	uint64_t target3 = 0;
+	ASSERT_TRUE(renderer.render_target_create(target0, renderer.extent_width(), renderer.extent_height()));
+	ASSERT_TRUE(renderer.render_target_create(target1, renderer.extent_width() / 2, renderer.extent_height() / 2));
+	ASSERT_TRUE(renderer.render_target_create(target2, renderer.extent_width() / 2, renderer.extent_height() / 2));
+	ASSERT_TRUE(renderer.render_target_create(target3, renderer.extent_width(), renderer.extent_height()));
+	uint64_t pass = post_pipeline_register(renderer, "后处理.frag.spv");
+	uint64_t bright = post_pipeline_register(renderer, "亮部提取.frag.spv");
+	uint64_t blur = post_pipeline_register(renderer, "模糊.frag.spv");
+	uint64_t overlay = post_pipeline_register(renderer, "泛光叠加.frag.spv");
+	ASSERT_NE(pass, 0u);
+	ASSERT_NE(bright, 0u);
+	ASSERT_NE(blur, 0u);
+	ASSERT_NE(overlay, 0u);
+	engine::Mesh_Handle handle = 0;
+	ASSERT_TRUE(renderer.mesh_load(handle, quad_data()));
+	renderer.texture_bind_set(gray_texture);
+
+	//参考帧：无泛光（直通）
+	ASSERT_TRUE(renderer.post_chain_set(&pass, 1));
+	uint64_t ref_targets[1] = { target0 };
+	ASSERT_TRUE(renderer.render_target_present_chain_set(ref_targets, 1));
+	ASSERT_TRUE(renderer.mesh_draw(handle, nullptr));
+	std::vector<uint8_t> reference(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(reference.data(), static_cast<uint32_t>(reference.size())));
+
+	//单级模糊：t0 → t1（半）→ t3（全）→ 叠加
+	uint64_t single_chain[3] = { bright, blur, overlay };
+	ASSERT_TRUE(renderer.post_chain_set(single_chain, 3));
+	uint64_t single_targets[3] = { target0, target1, target3 };
+	ASSERT_TRUE(renderer.render_target_present_chain_set(single_targets, 3));
+	ASSERT_TRUE(renderer.mesh_draw(handle, nullptr));
+	std::vector<uint8_t> single_pixels(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(single_pixels.data(), static_cast<uint32_t>(single_pixels.size())));
+
+	//双级模糊：t0 → t1（半）→ t2（半）→ t3（全）→ 叠加
+	uint64_t double_chain[4] = { bright, blur, blur, overlay };
+	ASSERT_TRUE(renderer.post_chain_set(double_chain, 4));
+	uint64_t double_targets[4] = { target0, target1, target2, target3 };
+	ASSERT_TRUE(renderer.render_target_present_chain_set(double_targets, 4));
+	ASSERT_TRUE(renderer.mesh_draw(handle, nullptr));
+	std::vector<uint8_t> double_pixels(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(double_pixels.data(), static_cast<uint32_t>(double_pixels.size())));
+
+	//扩散范围：双级严格大于单级
+	uint32_t single_count = brightened_count(single_pixels, reference, 5.0f);
+	uint32_t double_count = brightened_count(double_pixels, reference, 5.0f);
+	RecordProperty("bloom_single_pixels", single_count);
+	RecordProperty("bloom_double_pixels", double_count);
+	EXPECT_GT(single_count, 0u) << "单级泛光未提亮任何像素（用例前提不成立）";
+	EXPECT_GT(double_count, single_count) << "双级模糊的扩散范围未超过单级（半尺寸链可能未生效）";
+	//远离四边形的角落应保持场景原色（两链均如此）
+	for (const std::vector<uint8_t>* frame : { &single_pixels, &double_pixels })
+	{
+		std::array<uint8_t, 4> corner = pixel_get(*frame, 1, 1);
+		std::array<uint8_t, 4> ref_corner = pixel_get(reference, 1, 1);
+		for (std::size_t index = 0; index < 3; ++index)
+			EXPECT_LE(std::abs(static_cast<int>(corner[index]) - static_cast<int>(ref_corner[index])), CHAIN_TOLERANCE)
+				<< "角落被泛光污染：" << pixel_text(corner) << " / 参考 " << pixel_text(ref_corner);
+	}
+
+	renderer.mesh_unload(handle);
+	renderer.pipeline_unload(pass);
+	renderer.pipeline_unload(bright);
+	renderer.pipeline_unload(blur);
+	renderer.pipeline_unload(overlay);
+	renderer.render_target_destroy(target3);
+	renderer.render_target_destroy(target2);
+	renderer.render_target_destroy(target1);
+	renderer.render_target_destroy(target0);
+	renderer.texture_unload(gray_texture);
+}
+
+/*
+升采样片元（第十八轮）：半尺寸模糊层经双线性升采样后叠加
+链：亮部提取（t0 → 半尺寸 t1）→ 模糊（t1 → t2）→ 升采样（t2 → 全尺寸 t3）→ 泛光叠加（t3 ＋ 场景 → 交换链）
+断言：中心被提亮（≥ 245）、角落保持场景原色（≤ 容差）。
+*/
+TEST_F(Renderer_Post_Chain_Test, 升采样链可用)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	std::vector<uint8_t> gray_pixels(16 * 16 * 4, 222);
+	uint64_t gray_texture = 0;
+	ASSERT_TRUE(renderer.texture_load(gray_texture, gray_pixels.data(), 16, 16));
+	uint64_t target0 = 0;
+	uint64_t target1 = 0;
+	uint64_t target2 = 0;
+	uint64_t target3 = 0;
+	ASSERT_TRUE(renderer.render_target_create(target0, renderer.extent_width(), renderer.extent_height()));
+	ASSERT_TRUE(renderer.render_target_create(target1, renderer.extent_width() / 2, renderer.extent_height() / 2));
+	ASSERT_TRUE(renderer.render_target_create(target2, renderer.extent_width() / 2, renderer.extent_height() / 2));
+	ASSERT_TRUE(renderer.render_target_create(target3, renderer.extent_width(), renderer.extent_height()));
+	uint64_t bright = post_pipeline_register(renderer, "亮部提取.frag.spv");
+	uint64_t blur = post_pipeline_register(renderer, "模糊.frag.spv");
+	uint64_t upsample = post_pipeline_register(renderer, "升采样.frag.spv");
+	uint64_t overlay = post_pipeline_register(renderer, "泛光叠加.frag.spv");
+	ASSERT_NE(bright, 0u);
+	ASSERT_NE(blur, 0u);
+	ASSERT_NE(upsample, 0u);
+	ASSERT_NE(overlay, 0u);
+	uint64_t chain[4] = { bright, blur, upsample, overlay };
+	ASSERT_TRUE(renderer.post_chain_set(chain, 4));
+	uint64_t chain_targets[4] = { target0, target1, target2, target3 };
+	ASSERT_TRUE(renderer.render_target_present_chain_set(chain_targets, 4));
+	engine::Mesh_Handle handle = 0;
+	ASSERT_TRUE(renderer.mesh_load(handle, quad_data()));
+	ASSERT_TRUE(renderer.mesh_draw(handle, nullptr));
+	renderer.texture_bind_set(gray_texture);
+	std::vector<uint8_t> pixels(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(pixels.data(), static_cast<uint32_t>(pixels.size())));
+
+	//中心被提亮、角落接近清屏色（泛光为 0，叠加结果即场景原色）
+	std::array<uint8_t, 4> center = pixel_get(pixels, WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2);
+	EXPECT_GE(*std::min_element(center.begin(), center.begin() + 3), 245)
+		<< "升采样链后中心未被提亮：" << pixel_text(center);
+	std::array<uint8_t, 4> corner = pixel_get(pixels, 1, 1);
+	EXPECT_LE(*std::max_element(corner.begin(), corner.begin() + 3), 120)
+		<< "升采样链后角落异常发亮：" << pixel_text(corner);
+
+	renderer.mesh_unload(handle);
+	renderer.pipeline_unload(bright);
+	renderer.pipeline_unload(blur);
+	renderer.pipeline_unload(upsample);
+	renderer.pipeline_unload(overlay);
+	renderer.render_target_destroy(target3);
+	renderer.render_target_destroy(target2);
+	renderer.render_target_destroy(target1);
+	renderer.render_target_destroy(target0);
+	renderer.texture_unload(gray_texture);
 }
 
 /*
