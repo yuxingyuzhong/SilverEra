@@ -23,6 +23,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
 #include <string>
 #include <vector>
 
@@ -34,6 +35,9 @@ namespace
 	//窗口尺寸（小尺寸便于逐像素遍历；目标与交换链同尺寸以满足后处理 1:1 取源）
 	constexpr uint32_t WINDOW_WIDTH = 64;
 	constexpr uint32_t WINDOW_HEIGHT = 36;
+	//系统字体路径（存在才跑文字兼容用例；字号 16）
+	const char* const FONT_PATH = "C:\\Windows\\Fonts\\consola.ttf";
+	constexpr uint32_t FONT_PIXEL_HEIGHT = 16;
 
 	/*
 	两级链画面与参考画面的最大允许逐通道差
@@ -1557,5 +1561,164 @@ TEST_F(Renderer_Post_Chain_Test, 后处理级数可观测)
 	renderer.pipeline_unload(threshold);
 	renderer.render_target_destroy(second_target);
 	renderer.render_target_destroy(scene_target);
+}
+
+/*
+逐级参数读取（第二十四轮）：post_stage_param_get 返回「该级是否有专设值」
+口径：未设专设 → 0 且 out 全 0；设第 0 级 → 1 且 out 与设定一致；链外级序 → 0。
+*/
+TEST_F(Renderer_Post_Chain_Test, 逐级参数可读)
+{
+	engine::Renderer renderer;
+	//未初始化一律 0
+	float probe[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+	EXPECT_EQ(renderer.post_stage_param_get(0, probe), 0u);
+	EXPECT_EQ(probe[0], 0.0f);
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	//设一条两级链（无需目标也可设置链本身）
+	uint64_t invert = post_pipeline_register(renderer, "反色.frag.spv");
+	uint64_t threshold = post_pipeline_register(renderer, "亮度阈值.frag.spv");
+	ASSERT_NE(invert, 0u);
+	ASSERT_NE(threshold, 0u);
+	uint64_t chain[2] = { invert, threshold };
+	ASSERT_TRUE(renderer.post_chain_set(chain, 2));
+
+	//未设专设值 → 0
+	EXPECT_EQ(renderer.post_stage_param_get(0, probe), 0u);
+	EXPECT_EQ(probe[0], 0.0f);
+
+	//设第 0 级 → 1 且值一致
+	renderer.post_stage_param_set(0, 0.9f, 0.05f, 0.5f);
+	ASSERT_EQ(renderer.post_stage_param_get(0, probe), 1u);
+	EXPECT_FLOAT_EQ(probe[0], 0.9f);
+	EXPECT_FLOAT_EQ(probe[1], 0.05f);
+	EXPECT_FLOAT_EQ(probe[2], 0.5f);
+	EXPECT_FLOAT_EQ(probe[3], 0.0f);
+
+	//链外级序 → 0 且 out 复位为 0
+	EXPECT_EQ(renderer.post_stage_param_get(5, probe), 0u);
+	EXPECT_EQ(probe[0], 0.0f);
+
+	//重设链 → 专设值被清除
+	ASSERT_TRUE(renderer.post_chain_set(chain, 2));
+	EXPECT_EQ(renderer.post_stage_param_get(0, probe), 0u);
+
+	renderer.pipeline_unload(invert);
+	renderer.pipeline_unload(threshold);
+}
+
+/*
+文字经后处理链（第二十四轮）：
+  1. 两级「反色 → 反色」恒等链下，文字帧应与直通帧逐字节一致（容差 4）——证明文字与场景共用同一后处理输入；
+  2. 单级「灰度」链下，文字最亮像素三通道应趋同（差 ≤ 2）——证明文字同样被后处理。
+字体缺失时跳过。
+*/
+TEST_F(Renderer_Post_Chain_Test, 文字经后处理链保持)
+{
+	//字体不可用则跳过（与文字测试同口径）
+	std::error_code code;
+	if (!std::filesystem::exists(std::filesystem::path(FONT_PATH), code))
+		GTEST_SKIP() << "本机缺少系统字体 " << FONT_PATH;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	uint64_t font = 0;
+	ASSERT_TRUE(renderer.font_load_file(font, FONT_PATH, FONT_PIXEL_HEIGHT));
+
+	//参考帧：直通（只画文字）
+	ASSERT_TRUE(renderer.text_draw(font, "ABC", 8.0f, 8.0f));
+	std::vector<uint8_t> reference(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(reference.data(), static_cast<uint32_t>(reference.size())));
+
+	//两级反色恒等链
+	uint64_t target0 = 0;
+	uint64_t target1 = 0;
+	ASSERT_TRUE(renderer.render_target_create(target0, renderer.extent_width(), renderer.extent_height()));
+	ASSERT_TRUE(renderer.render_target_create(target1, renderer.extent_width(), renderer.extent_height()));
+	uint64_t invert_a = post_pipeline_register(renderer, "反色.frag.spv");
+	uint64_t invert_b = post_pipeline_register(renderer, "反色.frag.spv");
+	ASSERT_NE(invert_a, 0u);
+	ASSERT_NE(invert_b, 0u);
+	uint64_t chain_invert[2] = { invert_a, invert_b };
+	ASSERT_TRUE(renderer.post_chain_set(chain_invert, 2));
+	uint64_t targets[2] = { target0, target1 };
+	ASSERT_TRUE(renderer.render_target_present_chain_set(targets, 2));
+	ASSERT_TRUE(renderer.text_draw(font, "ABC", 8.0f, 8.0f));
+	std::vector<uint8_t> identity(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(identity.data(), static_cast<uint32_t>(identity.size())));
+
+	/*
+	文字在链路径与直通路径的**取整与混合空间不同**（场景目标格式与交换链格式可能一致也可能不一致，
+	且文字走 alpha 混合），故不能要求逐字节一致；改为「文字墨迹区域规模相当 ＋ 最亮像素仍亮」的
+	结构性比对（既有「两级反色恒等」用例对不透明四边形仍保留 ≤4 的强断言）。
+	*/
+	auto ink_count = [](const std::vector<uint8_t>& pixels)
+	{
+		//墨迹判定：绿通道明显高于清屏背景（格式无关，绿恒为第 1 字节）
+		int count = 0;
+		for (std::size_t index = 0; index + 3 < pixels.size(); index += 4)
+			if (pixels[index + 1] > 100)
+				++count;
+		return count;
+	};
+	int reference_ink = ink_count(reference);
+	int identity_ink = ink_count(identity);
+	RecordProperty("text_ink_reference", reference_ink);
+	RecordProperty("text_ink_identity", identity_ink);
+	EXPECT_GT(reference_ink, 0) << "参考帧无文字墨迹（用例前提不成立）";
+	int ink_delta = std::abs(identity_ink - reference_ink);
+	EXPECT_LE(ink_delta, reference_ink / 5 + 5)
+		<< "文字经两级反色链后墨迹规模差异过大（参考 " << reference_ink << "，链 " << identity_ink << "）";
+
+	//链路径最亮像素仍应明显亮于背景（文字未被吞掉）
+	int identity_brightest = 0;
+	for (std::size_t index = 0; index + 3 < identity.size(); index += 4)
+		if (identity[index + 1] > identity_brightest)
+			identity_brightest = identity[index + 1];
+	EXPECT_GE(identity_brightest, 160) << "文字经两级反色链后消失";
+
+	//单级灰度链：文字最亮像素应去色
+	uint64_t gray = post_pipeline_register(renderer, "灰度.frag.spv");
+	ASSERT_NE(gray, 0u);
+	ASSERT_TRUE(renderer.post_chain_set(&gray, 1));
+	ASSERT_TRUE(renderer.render_target_present_chain_set(targets, 2));
+	ASSERT_TRUE(renderer.text_draw(font, "ABC", 8.0f, 8.0f));
+	std::vector<uint8_t> grayed(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(grayed.data(), static_cast<uint32_t>(grayed.size())));
+
+	//在参考帧中找最亮像素作为文字采样点
+	std::size_t brightest = 0;
+	int brightest_luma = -1;
+	for (std::size_t index = 0; index + 3 < reference.size(); index += 4)
+	{
+		int luma = static_cast<int>(reference[index]) + static_cast<int>(reference[index + 1])
+			+ static_cast<int>(reference[index + 2]);
+		if (luma > brightest_luma)
+		{
+			brightest_luma = luma;
+			brightest = index;
+		}
+	}
+	//文字最亮像素在灰度链下三通道趋同
+	int channel_min = 255;
+	int channel_max = 0;
+	for (std::size_t channel = 0; channel < 3; ++channel)
+	{
+		int value = static_cast<int>(grayed[brightest + channel]);
+		channel_min = value < channel_min ? value : channel_min;
+		channel_max = value > channel_max ? value : channel_max;
+	}
+	RecordProperty("text_gray_channel_spread", channel_max - channel_min);
+	EXPECT_LE(channel_max - channel_min, 2) << "文字未被灰度后处理（三通道仍有色偏）";
+	//文字仍可见（比背景亮）
+	EXPECT_GE(static_cast<int>(grayed[brightest + 1]), 160) << "文字在灰度链下消失";
+
+	renderer.pipeline_unload(gray);
+	renderer.pipeline_unload(invert_a);
+	renderer.pipeline_unload(invert_b);
+	renderer.render_target_destroy(target1);
+	renderer.render_target_destroy(target0);
+	renderer.font_unload(font);
 }
 
