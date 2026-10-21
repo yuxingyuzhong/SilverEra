@@ -1096,6 +1096,95 @@ TEST_F(Renderer_Post_Chain_Test, 升采样链可用)
 }
 
 /*
+多级降采样（第十九轮）：全 → 半 → 四分之一 → 半 → 全 的 4 级链
+口径：t0 全（场景）、t1 半、t2 四分之一、t3 半；链「亮部 → 模糊 → 模糊 → 叠加」：
+     第 0 级 t0 → t1（半）、第 1 级 t1 → t2（四分之一）、第 2 级 t2 → t3（升采样到半）、
+     第 3 级（末级）t3 ＋ 场景 → 交换链（升采样到全）。
+     断言：正常出帧；与「单级半尺寸模糊」链相比，提亮像素数**严格更多**（多级扩散更广）；
+     角落不被污染（泛光为 0 处等于场景原色）。
+*/
+TEST_F(Renderer_Post_Chain_Test, 多级降采样链扩散更广)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	std::vector<uint8_t> gray_pixels(16 * 16 * 4, 222);
+	uint64_t gray_texture = 0;
+	ASSERT_TRUE(renderer.texture_load(gray_texture, gray_pixels.data(), 16, 16));
+	//四个目标：全 / 半 / 四分之一 / 半
+	uint64_t target0 = 0;
+	uint64_t target1 = 0;
+	uint64_t target2 = 0;
+	uint64_t target3 = 0;
+	ASSERT_TRUE(renderer.render_target_create(target0, renderer.extent_width(), renderer.extent_height()));
+	ASSERT_TRUE(renderer.render_target_create(target1, renderer.extent_width() / 2, renderer.extent_height() / 2));
+	ASSERT_TRUE(renderer.render_target_create(target2, renderer.extent_width() / 4, renderer.extent_height() / 4));
+	ASSERT_TRUE(renderer.render_target_create(target3, renderer.extent_width() / 2, renderer.extent_height() / 2));
+	uint64_t pass = post_pipeline_register(renderer, "后处理.frag.spv");
+	uint64_t bright = post_pipeline_register(renderer, "亮部提取.frag.spv");
+	uint64_t blur = post_pipeline_register(renderer, "模糊.frag.spv");
+	uint64_t overlay = post_pipeline_register(renderer, "泛光叠加.frag.spv");
+	ASSERT_NE(pass, 0u);
+	ASSERT_NE(bright, 0u);
+	ASSERT_NE(blur, 0u);
+	ASSERT_NE(overlay, 0u);
+	engine::Mesh_Handle handle = 0;
+	ASSERT_TRUE(renderer.mesh_load(handle, quad_data()));
+	renderer.texture_bind_set(gray_texture);
+
+	//参考帧：无泛光
+	ASSERT_TRUE(renderer.post_chain_set(&pass, 1));
+	uint64_t ref_targets[1] = { target0 };
+	ASSERT_TRUE(renderer.render_target_present_chain_set(ref_targets, 1));
+	ASSERT_TRUE(renderer.mesh_draw(handle, nullptr));
+	std::vector<uint8_t> reference(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(reference.data(), static_cast<uint32_t>(reference.size())));
+
+	//单级半尺寸模糊（同第 18 轮：t0 → t1（半）→ t3（半）→ 叠加）
+	uint64_t single_chain[3] = { bright, blur, overlay };
+	ASSERT_TRUE(renderer.post_chain_set(single_chain, 3));
+	uint64_t single_targets[3] = { target0, target1, target3 };
+	ASSERT_TRUE(renderer.render_target_present_chain_set(single_targets, 3));
+	ASSERT_TRUE(renderer.mesh_draw(handle, nullptr));
+	std::vector<uint8_t> single_pixels(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(single_pixels.data(), static_cast<uint32_t>(single_pixels.size())));
+
+	//多级：t0 → t1（半）→ t2（四分之一）→ t3（半）→ 交换链
+	uint64_t multi_chain[4] = { bright, blur, blur, overlay };
+	ASSERT_TRUE(renderer.post_chain_set(multi_chain, 4));
+	uint64_t multi_targets[4] = { target0, target1, target2, target3 };
+	ASSERT_TRUE(renderer.render_target_present_chain_set(multi_targets, 4));
+	ASSERT_TRUE(renderer.mesh_draw(handle, nullptr));
+	std::vector<uint8_t> multi_pixels(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(multi_pixels.data(), static_cast<uint32_t>(multi_pixels.size())));
+
+	uint32_t single_count = brightened_count(single_pixels, reference, 5.0f);
+	uint32_t multi_count = brightened_count(multi_pixels, reference, 5.0f);
+	RecordProperty("multi_single_pixels", single_count);
+	RecordProperty("multi_level_pixels", multi_count);
+	EXPECT_GT(multi_count, single_count) << "多级降采样的扩散范围未超过单级";
+
+	//角落不被污染
+	std::array<uint8_t, 4> corner = pixel_get(multi_pixels, 1, 1);
+	std::array<uint8_t, 4> ref_corner = pixel_get(reference, 1, 1);
+	for (std::size_t index = 0; index < 3; ++index)
+		EXPECT_LE(std::abs(static_cast<int>(corner[index]) - static_cast<int>(ref_corner[index])), CHAIN_TOLERANCE)
+			<< "角落被泛光污染：" << pixel_text(corner) << " / 参考 " << pixel_text(ref_corner);
+
+	renderer.mesh_unload(handle);
+	renderer.pipeline_unload(pass);
+	renderer.pipeline_unload(bright);
+	renderer.pipeline_unload(blur);
+	renderer.pipeline_unload(overlay);
+	renderer.render_target_destroy(target3);
+	renderer.render_target_destroy(target2);
+	renderer.render_target_destroy(target1);
+	renderer.render_target_destroy(target0);
+	renderer.texture_unload(gray_texture);
+}
+
+/*
 后处理预设 · 对比度：暗部被压得更暗、亮部保持饱和（端点方向断言）
 参考帧走默认交换链路径；对照帧走单级「对比度」链。
 刻意只断言方向（角落明显变暗、中心仍饱和），不依赖具体曲线数值。
