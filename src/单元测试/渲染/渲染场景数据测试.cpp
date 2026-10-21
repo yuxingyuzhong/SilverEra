@@ -1202,3 +1202,99 @@ TEST_F(Renderer_Scene_Test, 场景描述聚光灯非法参数被跳过)
 	renderer.mesh_unload(mesh);
 	renderer.texture_unload(texture);
 }
+
+/*
+平方反比衰减模式可切换（第三十六轮）
+口径：中灰纹理 ＋ 法线 (0,0,1) 四边形，方向光关闭，点光源 (0,0,2.9)、半径 3：
+      线性模式衰减约 0.03（很暗）；切到平方反比（1/(1+(d/r)²) ≈ 0.52）明显变亮；切回线性恢复原亮度。
+*/
+TEST_F(Renderer_Scene_Test, 平方反比衰减模式可切换)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	uint64_t texture = 0;
+	std::vector<uint8_t> texels = solid_gray();
+	ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 2, 2));
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, quad_data_with_normal(0.0f, 0.0f, 1.0f)));
+	renderer.texture_bind_set(texture);
+	//关闭方向光，只观察点光源
+	const float forward[3] = { 0.0f, 0.0f, -1.0f };
+	const float white_light[3] = { 1.0f, 1.0f, 1.0f };
+	renderer.light_set(forward, white_light, 0.0f, 0.0f);
+	const float position[3] = { 0.0f, 0.0f, 2.9f };
+	ASSERT_TRUE(renderer.light_add_point(position, white_light, 3.0f, 1.0f, 0.0f));
+
+	//渲染一帧并返回中心亮度（lambda 内用 EXPECT：ASSERT 不允许出现在有返回值的函数中）
+	auto render_brightness = [&]()
+	{
+		EXPECT_TRUE(renderer.mesh_draw(mesh, nullptr));
+		std::vector<uint8_t> pixels(pixel_bytes());
+		EXPECT_TRUE(renderer.frame_render(pixels.data(), static_cast<std::uint32_t>(pixels.size())));
+		return center_brightness(pixels);
+	};
+
+	//默认线性模式
+	EXPECT_EQ(renderer.light_attenuation_get(), 0u);
+	uint32_t linear = render_brightness();
+	//切到平方反比
+	EXPECT_TRUE(renderer.light_attenuation_set(1));
+	EXPECT_EQ(renderer.light_attenuation_get(), 1u);
+	uint32_t inverse = render_brightness();
+	//切回线性
+	EXPECT_TRUE(renderer.light_attenuation_set(0));
+	uint32_t restored = render_brightness();
+	RecordProperty("atten_linear", linear);
+	RecordProperty("atten_inverse", inverse);
+	RecordProperty("atten_restored", restored);
+	EXPECT_GE(inverse, linear + 40u) << "平方反比模式未显著改变衰减（" << linear << " → " << inverse << "）";
+	//恢复后与首次线性亮度基本一致（通道取整允许 ±2）
+	uint32_t gap = restored > linear ? restored - linear : linear - restored;
+	EXPECT_LE(gap, 2u) << "切回线性后亮度未恢复（" << linear << " vs " << restored << "）";
+
+	renderer.mesh_unload(mesh);
+	renderer.texture_unload(texture);
+}
+
+/*
+非法衰减模式被拒（第三十六轮）
+口径：非法模式返回假且模式记录不变；画面与拒绝前逐字节一致。
+*/
+TEST_F(Renderer_Scene_Test, 非法衰减模式被拒)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	uint64_t texture = 0;
+	std::vector<uint8_t> texels = solid_gray();
+	ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 2, 2));
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, quad_data_with_normal(0.0f, 0.0f, 1.0f)));
+	renderer.texture_bind_set(texture);
+	const float forward[3] = { 0.0f, 0.0f, -1.0f };
+	const float white_light[3] = { 1.0f, 1.0f, 1.0f };
+	renderer.light_set(forward, white_light, 0.0f, 0.0f);
+	const float position[3] = { 0.0f, 0.0f, 1.0f };
+	ASSERT_TRUE(renderer.light_add_point(position, white_light, 3.0f, 1.0f, 0.0f));
+
+	//渲染一帧并返回像素（lambda 内用 EXPECT：ASSERT 不允许出现在有返回值的函数中）
+	auto render_frame = [&]()
+	{
+		EXPECT_TRUE(renderer.mesh_draw(mesh, nullptr));
+		std::vector<uint8_t> pixels(pixel_bytes());
+		EXPECT_TRUE(renderer.frame_render(pixels.data(), static_cast<std::uint32_t>(pixels.size())));
+		return pixels;
+	};
+
+	std::vector<uint8_t> baseline = render_frame();
+	//非法模式（2）返回假且模式保持 0
+	EXPECT_FALSE(renderer.light_attenuation_set(2));
+	EXPECT_EQ(renderer.light_attenuation_get(), 0u);
+	EXPECT_EQ(render_frame(), baseline) << "非法衰减模式改变了画面";
+
+	renderer.mesh_unload(mesh);
+	renderer.texture_unload(texture);
+}
