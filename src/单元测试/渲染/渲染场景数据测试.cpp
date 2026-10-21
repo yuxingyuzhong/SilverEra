@@ -1298,3 +1298,92 @@ TEST_F(Renderer_Scene_Test, 非法衰减模式被拒)
 	renderer.mesh_unload(mesh);
 	renderer.texture_unload(texture);
 }
+
+/*
+场景描述携带衰减模式（第三十七轮）
+口径：中灰纹理 ＋ 法线 (0,0,1) 四边形，方向光关闭，点光源 (0,0,2.9)、半径 3：
+      同一 Scene_Data 的 attenuation_mode 由 0（线性）改为 1（平方反比）后中心亮度显著提升。
+*/
+TEST_F(Renderer_Scene_Test, 场景描述携带衰减模式)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	uint64_t texture = 0;
+	std::vector<uint8_t> texels = solid_gray();
+	ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 2, 2));
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, quad_data_with_normal(0.0f, 0.0f, 1.0f)));
+	renderer.texture_bind_set(texture);
+
+	//渲染一帧并返回中心亮度（lambda 内用 EXPECT：ASSERT 不允许出现在有返回值的函数中）
+	auto render_brightness = [&]()
+	{
+		EXPECT_TRUE(renderer.mesh_draw(mesh, nullptr));
+		std::vector<uint8_t> pixels(pixel_bytes());
+		EXPECT_TRUE(renderer.frame_render(pixels.data(), static_cast<std::uint32_t>(pixels.size())));
+		return center_brightness(pixels);
+	};
+
+	//场景：方向光关闭 ＋ 一盏远距点光源（距离 2.9、半径 3）
+	engine::Scene_Data scene{};
+	scene.light_intensity = 0.0f;
+	scene.light_count = 1;
+	scene.point_light_position[0][2] = 2.9f;
+	scene.point_light_radius[0] = 3.0f;
+	scene.point_light_intensity[0] = 1.0f;
+	scene.attenuation_mode = 0;
+	renderer.scene_apply(scene);
+	uint32_t linear = render_brightness();
+	//同一场景切平方反比
+	scene.attenuation_mode = 1;
+	renderer.scene_apply(scene);
+	uint32_t inverse = render_brightness();
+	RecordProperty("scene_atten_linear", linear);
+	RecordProperty("scene_atten_inverse", inverse);
+	EXPECT_GE(inverse, linear + 40u) << "场景描述中的衰减模式未生效（" << linear << " → " << inverse << "）";
+
+	renderer.mesh_unload(mesh);
+	renderer.texture_unload(texture);
+}
+
+/*
+场景描述中的非法衰减模式被忽略（第三十七轮）
+口径：默认场景回读基线；把 attenuation_mode 写为 3 再应用：门面保持线性模式，画面逐字节一致。
+*/
+TEST_F(Renderer_Scene_Test, 场景描述非法衰减模式被忽略)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	uint64_t texture = 0;
+	std::vector<uint8_t> texels = solid_gray();
+	ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 2, 2));
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, quad_data_with_normal(0.0f, 0.0f, 1.0f)));
+	renderer.texture_bind_set(texture);
+
+	//渲染一帧并返回像素（lambda 内用 EXPECT：ASSERT 不允许出现在有返回值的函数中）
+	auto render_frame = [&]()
+	{
+		EXPECT_TRUE(renderer.mesh_draw(mesh, nullptr));
+		std::vector<uint8_t> pixels(pixel_bytes());
+		EXPECT_TRUE(renderer.frame_render(pixels.data(), static_cast<std::uint32_t>(pixels.size())));
+		return pixels;
+	};
+
+	engine::Scene_Data baseline{};
+	renderer.scene_apply(baseline);
+	std::vector<uint8_t> plain = render_frame();
+	//非法模式（3）应被忽略，模式保持 0
+	engine::Scene_Data invalid = baseline;
+	invalid.attenuation_mode = 3;
+	renderer.scene_apply(invalid);
+	EXPECT_EQ(renderer.light_attenuation_get(), 0u);
+	EXPECT_EQ(render_frame(), plain) << "场景描述中的非法衰减模式改变了画面";
+
+	renderer.mesh_unload(mesh);
+	renderer.texture_unload(texture);
+}
