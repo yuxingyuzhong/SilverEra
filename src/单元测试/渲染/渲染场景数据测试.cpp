@@ -99,6 +99,20 @@ namespace
 		return std::vector<uint8_t>(2 * 2 * 4, 255);
 	}
 
+	//构造中灰纹理（RGBA8：rgb = 128，alpha = 255；用于观察高光叠加而不被满照饱和）
+	std::vector<uint8_t> solid_gray(void)
+	{
+		std::vector<uint8_t> pixels(2 * 2 * 4);
+		for (std::size_t index = 0; index < pixels.size(); index += 4)
+		{
+			pixels[index] = 128;
+			pixels[index + 1] = 128;
+			pixels[index + 2] = 128;
+			pixels[index + 3] = 255;
+		}
+		return pixels;
+	}
+
 	/*
 	构造带法线的四边形（第二十九轮）
 	nx / ny / nz 为四个顶点共用的法线；默认相机在 +Z，故 (0,0,1) 即正面朝向相机。
@@ -695,6 +709,98 @@ TEST_F(Renderer_Scene_Test, 环境光抬升背光面)
 	EXPECT_LE(without_ambient, 40u) << "背光面未全黑（亮度 " << without_ambient << "）";
 	EXPECT_GE(with_ambient, 90u) << "环境光未抬亮背光面（亮度 " << with_ambient << "）";
 	EXPECT_LE(with_ambient, 210u) << "环境光亮度超出预期（亮度 " << with_ambient << "）";
+
+	renderer.mesh_unload(mesh);
+	renderer.texture_unload(texture);
+}
+/*
+点光源距离衰减（第三十一轮）
+口径：法线 (0,0,1) 的全屏四边形，点光源放在 +Z 轴上不同距离、半径 3：
+      距离 1 → 衰减 0.67（亮），距离 2.9 → 衰减 0.03（暗）。
+*/
+TEST_F(Renderer_Scene_Test, 点光源近远亮度不同)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	uint64_t texture = 0;
+	std::vector<uint8_t> texels = solid_white();
+	ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 2, 2));
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, quad_data_with_normal(0.0f, 0.0f, 1.0f)));
+	renderer.texture_bind_set(texture);
+	const float white_light[3] = { 1.0f, 1.0f, 1.0f };
+
+	//渲染一帧并返回中心亮度（lambda 内用 EXPECT：ASSERT 不允许出现在有返回值的函数中）
+	auto render_brightness = [&]()
+	{
+		EXPECT_TRUE(renderer.mesh_draw(mesh, nullptr));
+		std::vector<uint8_t> pixels(pixel_bytes());
+		EXPECT_TRUE(renderer.frame_render(pixels.data(), static_cast<std::uint32_t>(pixels.size())));
+		return center_brightness(pixels);
+	};
+
+	//近距点光源（距离 1，半径 3）
+	const float near_position[3] = { 0.0f, 0.0f, 1.0f };
+	renderer.light_point_set(near_position, white_light, 3.0f, 1.0f, 0.0f);
+	uint32_t near_brightness = render_brightness();
+	//远距点光源（距离 2.9，半径 3 → 衰减约 0.03）
+	const float far_position[3] = { 0.0f, 0.0f, 2.9f };
+	renderer.light_point_set(far_position, white_light, 3.0f, 1.0f, 0.0f);
+	uint32_t far_brightness = render_brightness();
+	RecordProperty("point_near", near_brightness);
+	RecordProperty("point_far", far_brightness);
+	EXPECT_GE(near_brightness, 170u) << "近距点光源未照亮（亮度 " << near_brightness << "）";
+	EXPECT_LE(far_brightness, 80u) << "远距点光源未衰减（亮度 " << far_brightness << "）";
+	EXPECT_GT(static_cast<int>(near_brightness), static_cast<int>(far_brightness) + 80) << "距离衰减未生效";
+
+	renderer.mesh_unload(mesh);
+	renderer.texture_unload(texture);
+}
+
+/*
+镜面高光提升亮度，非法高光参数整次忽略（第三十一轮）
+口径：中灰纹理 ＋ 法线 (0,0,1) 全屏四边形；光沿 -Z、相机在 +Z，故 H = N，高光强度直接叠加到照度上。
+      高光 0 时亮度约 188（线性 0.5 的 sRGB 编码）；高光 0.6 时被钳制到 1.0（约 255）。
+*/
+TEST_F(Renderer_Scene_Test, 镜面高光提升亮度)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	uint64_t texture = 0;
+	std::vector<uint8_t> texels = solid_gray();
+	ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 2, 2));
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, quad_data_with_normal(0.0f, 0.0f, 1.0f)));
+	renderer.texture_bind_set(texture);
+
+	//渲染一帧并返回中心亮度（lambda 内用 EXPECT：ASSERT 不允许出现在有返回值的函数中）
+	auto render_brightness = [&]()
+	{
+		EXPECT_TRUE(renderer.mesh_draw(mesh, nullptr));
+		std::vector<uint8_t> pixels(pixel_bytes());
+		EXPECT_TRUE(renderer.frame_render(pixels.data(), static_cast<std::uint32_t>(pixels.size())));
+		return center_brightness(pixels);
+	};
+
+	//高光关闭（默认）
+	uint32_t plain = render_brightness();
+	//高光 0.6、光泽度 16（H = N → pow(1, 16) = 1）
+	renderer.specular_set(0.6f, 16.0f);
+	uint32_t highlighted = render_brightness();
+	RecordProperty("spec_plain", plain);
+	RecordProperty("spec_highlight", highlighted);
+	EXPECT_GE(highlighted, 230u) << "高光未提升亮度（" << plain << " → " << highlighted << "）";
+	EXPECT_GT(static_cast<int>(highlighted), static_cast<int>(plain) + 30) << "高光增量不足";
+	//非法高光参数（负强度 / 光泽度小于 1）整次忽略 → 画面与上一帧逐字节一致
+	renderer.specular_set(-1.0f, 0.0f);
+	EXPECT_TRUE(renderer.mesh_draw(mesh, nullptr));
+	std::vector<uint8_t> after(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(after.data(), static_cast<std::uint32_t>(after.size())));
+	EXPECT_EQ(center_brightness(after), highlighted) << "非法高光参数改变了画面";
 
 	renderer.mesh_unload(mesh);
 	renderer.texture_unload(texture);
