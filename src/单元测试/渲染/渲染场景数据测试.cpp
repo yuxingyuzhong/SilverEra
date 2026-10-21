@@ -893,3 +893,103 @@ TEST_F(Renderer_Scene_Test, 点光源上限与清空)
 	renderer.mesh_unload(mesh);
 	renderer.texture_unload(texture);
 }
+/*
+场景描述携带点光源（第三十三轮）
+口径：中灰纹理 ＋ 法线 (0,0,1) 四边形；同一 Scene_Data 两次应用（0 盏 vs 2 盏点光源），
+      其余参数（方向光强度 0、环境光 0）相同 → 仅点光源造成亮度差。
+*/
+TEST_F(Renderer_Scene_Test, 场景描述携带点光源更亮)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	uint64_t texture = 0;
+	std::vector<uint8_t> texels = solid_gray();
+	ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 2, 2));
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, quad_data_with_normal(0.0f, 0.0f, 1.0f)));
+	renderer.texture_bind_set(texture);
+
+	//渲染一帧并返回中心亮度（lambda 内用 EXPECT：ASSERT 不允许出现在有返回值的函数中）
+	auto render_brightness = [&]()
+	{
+		EXPECT_TRUE(renderer.mesh_draw(mesh, nullptr));
+		std::vector<uint8_t> pixels(pixel_bytes());
+		EXPECT_TRUE(renderer.frame_render(pixels.data(), static_cast<std::uint32_t>(pixels.size())));
+		return center_brightness(pixels);
+	};
+
+	//仅方向光（强度 0 → 全黑）
+	engine::Scene_Data scene{};
+	scene.light_intensity = 0.0f;
+	renderer.scene_apply(scene);
+	uint32_t without_points = render_brightness();
+	//追加两盏点光源（左右各一，半径 3）
+	scene.light_count = 2;
+	scene.point_light_position[0][0] = -0.5f;
+	scene.point_light_position[0][1] = 0.0f;
+	scene.point_light_position[0][2] = 1.0f;
+	scene.point_light_position[1][0] = 0.5f;
+	scene.point_light_position[1][1] = 0.0f;
+	scene.point_light_position[1][2] = 1.0f;
+	scene.point_light_radius[0] = 3.0f;
+	scene.point_light_radius[1] = 3.0f;
+	renderer.scene_apply(scene);
+	uint32_t with_points = render_brightness();
+	RecordProperty("scene_no_points", without_points);
+	RecordProperty("scene_two_points", with_points);
+	EXPECT_LE(without_points, 40u) << "方向光关闭时画面未变暗（亮度 " << without_points << "）";
+	EXPECT_GE(with_points, 120u) << "场景描述中的点光源未生效（亮度 " << with_points << "）";
+
+	renderer.mesh_unload(mesh);
+	renderer.texture_unload(texture);
+}
+
+/*
+光照场景上的文字仍可见（第三十三轮）
+口径：纯白纹理立方体 ＋ 方向光渲染；再叠一行文字；断言文字区域存在明显亮像素
+      （文字走独立着色器，不受场景光照影响；字体缺失时跳过）。
+*/
+TEST_F(Renderer_Scene_Test, 光照场景上的文字仍可见)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	//系统等宽字体缺失则跳过
+	uint64_t font = 0;
+	if (!renderer.font_load_file(font, "C:\\Windows\\Fonts\\consola.ttf", 16))
+		GTEST_SKIP() << "系统中缺少 consola.ttf";
+	uint64_t texture = 0;
+	std::vector<uint8_t> texels = solid_white();
+	ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 2, 2));
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, cube_data(0.5f)));
+	renderer.texture_bind_set(texture);
+
+	//场景：方向光（默认）+ 白色文字叠在画面上
+	engine::Scene_Data scene{};
+	renderer.scene_apply(scene);
+	const float white_text[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+	renderer.text_color_set(white_text);
+	ASSERT_TRUE(renderer.mesh_draw(mesh, nullptr));
+	ASSERT_TRUE(renderer.text_draw(font, "LIGHT", 4.0f, 4.0f));
+	std::vector<uint8_t> pixels(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(pixels.data(), static_cast<std::uint32_t>(pixels.size())));
+
+	//文字所在区域（左上角）统计接近纯白的像素数
+	uint32_t bright_count = 0;
+	for (uint32_t y = 0; y < WINDOW_HEIGHT / 3; ++y)
+		for (uint32_t x = 0; x < WINDOW_WIDTH / 3; ++x)
+		{
+			std::array<uint8_t, 4> value = pixel_get(pixels, x, y);
+			if (value[0] >= 200 && value[1] >= 200 && value[2] >= 200)
+				++bright_count;
+		}
+	RecordProperty("text_bright_pixels", bright_count);
+	EXPECT_GT(bright_count, 10u) << "光照场景上的文字不可见（亮像素 " << bright_count << "）";
+
+	renderer.mesh_unload(mesh);
+	renderer.texture_unload(texture);
+}
