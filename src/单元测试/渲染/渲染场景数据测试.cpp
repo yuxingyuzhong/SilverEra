@@ -10,6 +10,7 @@
 #include <gtest/gtest.h>
 
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -90,6 +91,36 @@ namespace
 			pixels[index + 3] = 255;
 		}
 		return pixels;
+	}
+
+	//构造纯白纹理（RGBA8：rgb = 255，alpha = 255）
+	std::vector<uint8_t> solid_white(void)
+	{
+		return std::vector<uint8_t>(2 * 2 * 4, 255);
+	}
+
+	/*
+	构造带法线的四边形（第二十九轮）
+	nx / ny / nz 为四个顶点共用的法线；默认相机在 +Z，故 (0,0,1) 即正面朝向相机。
+	*/
+	engine::Mesh_Data quad_data_with_normal(float nx, float ny, float nz)
+	{
+		engine::Mesh_Data data;
+		data.vertices = {
+			{ { -1.0f, -1.0f, 0.0f }, { 0.0f, 1.0f }, { nx, ny, nz } },
+			{ { 1.0f, -1.0f, 0.0f }, { 1.0f, 1.0f }, { nx, ny, nz } },
+			{ { 1.0f, 1.0f, 0.0f }, { 1.0f, 0.0f }, { nx, ny, nz } },
+			{ { -1.0f, 1.0f, 0.0f }, { 0.0f, 0.0f }, { nx, ny, nz } },
+		};
+		data.indices = { 0, 1, 2, 0, 2, 3 };
+		return data;
+	}
+
+	//中心像素的 RGB 均值（亮度粗量；通道序无关）
+	uint32_t center_brightness(const std::vector<uint8_t>& pixels)
+	{
+		std::array<uint8_t, 4> center = pixel_get(pixels, WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2);
+		return (static_cast<uint32_t>(center[0]) + center[1] + center[2]) / 3;
 	}
 
 	//构造「铺满全屏」模型矩阵（列主序；放大 4 倍越过 NDC 边界被裁剪）
@@ -281,6 +312,118 @@ TEST_F(Renderer_Scene_Test, 默认场景描述与原默认画面一致)
 	ASSERT_TRUE(renderer.frame_render(applied.data(), static_cast<std::uint32_t>(applied.size())));
 	//两帧画面应完全一致（默认值已收敛为单一来源）
 	EXPECT_EQ(baseline, applied) << "应用默认 Scene_Data 后画面改变，默认值未收敛为单一来源";
+	renderer.mesh_unload(mesh);
+	renderer.texture_unload(texture);
+}
+
+/*
+方向光（第二十九轮）：面法线朝向光源的四边形应明显亮于背光四边形
+口径：纯白纹理 ＋ 覆盖视口中央的四边形（单位矩阵）；同一光照参数下改用法线 (0,0,-1) 的网格，
+      默认光沿 -Z 传播，故 (0,0,1) 满照、(0,0,-1) 照度为 0；只比较中心像素 RGB 均值。
+*/
+TEST_F(Renderer_Scene_Test, 朝向光源更亮)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	uint64_t texture = 0;
+	std::vector<uint8_t> texels = solid_white();
+	ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 2, 2));
+	renderer.texture_bind_set(texture);
+	//正面朝相机（受光）与背面（背光）两种网格
+	engine::Mesh_Handle lit_mesh = 0;
+	engine::Mesh_Handle dark_mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(lit_mesh, quad_data_with_normal(0.0f, 0.0f, 1.0f)));
+	ASSERT_TRUE(renderer.mesh_load(dark_mesh, quad_data_with_normal(0.0f, 0.0f, -1.0f)));
+
+	//渲染一帧并返回中心亮度（lambda 内用 EXPECT：ASSERT 不允许出现在有返回值的函数中）
+	auto render_brightness = [&](engine::Mesh_Handle mesh)
+	{
+		EXPECT_TRUE(renderer.mesh_draw(mesh, nullptr));
+		std::vector<uint8_t> pixels(pixel_bytes());
+		EXPECT_TRUE(renderer.frame_render(pixels.data(), static_cast<std::uint32_t>(pixels.size())));
+		return center_brightness(pixels);
+	};
+
+	//受光帧：默认光照（方向 -Z、白、强度 1、环境光 0）→ 照度 1
+	uint32_t lit = render_brightness(lit_mesh);
+	//背光帧：同一光照，法线与光传播方向同向 → 照度 0
+	uint32_t dark = render_brightness(dark_mesh);
+	RecordProperty("light_lit", lit);
+	RecordProperty("light_dark", dark);
+	EXPECT_GE(lit, 200u) << "受光面未达到满照（中心亮度 " << lit << "）";
+	EXPECT_LE(dark, 40u) << "背光面未被压暗（中心亮度 " << dark << "）";
+	EXPECT_GT(static_cast<int>(lit), static_cast<int>(dark) + 100) << "光照未区分正反面";
+
+	renderer.mesh_unload(lit_mesh);
+	renderer.mesh_unload(dark_mesh);
+	renderer.texture_unload(texture);
+}
+
+/*
+未提供法线保持满照（第二十九轮回归口径）：只写位置 / 纹理坐标的旧网格在默认光照下画面不变
+*/
+TEST_F(Renderer_Scene_Test, 无法线网格保持满照)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	uint64_t texture = 0;
+	std::vector<uint8_t> texels = solid_white();
+	ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 2, 2));
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, quad_data()));
+	renderer.texture_bind_set(texture);
+	ASSERT_TRUE(renderer.mesh_draw(mesh, full_screen_matrix().data()));
+	std::vector<uint8_t> pixels(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(pixels.data(), static_cast<std::uint32_t>(pixels.size())));
+	//无法线 → 按满照处理，中心仍为纯白
+	EXPECT_GE(center_brightness(pixels), 200u) << "无法线网格被光照压暗，破坏既有画面";
+	renderer.mesh_unload(mesh);
+	renderer.texture_unload(texture);
+}
+
+/*
+非法光照参数整次忽略（第二十九轮）：零向量方向 / 非数 / 越界颜色均不改变画面
+*/
+TEST_F(Renderer_Scene_Test, 非法光照参数整次忽略)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	uint64_t texture = 0;
+	std::vector<uint8_t> texels = solid_white();
+	ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 2, 2));
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, quad_data_with_normal(0.0f, 0.0f, 1.0f)));
+	renderer.texture_bind_set(texture);
+
+	//渲染一帧（默认光照）作为基线（lambda 内用 EXPECT：ASSERT 不允许出现在有返回值的函数中）
+	auto render_frame = [&]()
+	{
+		EXPECT_TRUE(renderer.mesh_draw(mesh, nullptr));
+		std::vector<uint8_t> pixels(pixel_bytes());
+		EXPECT_TRUE(renderer.frame_render(pixels.data(), static_cast<std::uint32_t>(pixels.size())));
+		return pixels;
+	};
+	std::vector<uint8_t> baseline = render_frame();
+	//零长度方向（无法归一化）→ 整次拒绝
+	const float zero_direction[3] = { 0.0f, 0.0f, 0.0f };
+	const float white[3] = { 1.0f, 1.0f, 1.0f };
+	renderer.light_set(zero_direction, white, 1.0f, 0.0f);
+	//非数方向 → 整次拒绝
+	const float nan_direction[3] = { std::nanf(""), 0.0f, -1.0f };
+	renderer.light_set(nan_direction, white, 1.0f, 0.0f);
+	//越界颜色（1.5）→ 整次拒绝
+	const float over_color[3] = { 1.5f, 1.0f, 1.0f };
+	const float forward[3] = { 0.0f, 0.0f, -1.0f };
+	renderer.light_set(forward, over_color, 1.0f, 0.0f);
+	//三次非法调用后画面应与基线逐字节一致
+	EXPECT_EQ(baseline, render_frame()) << "非法光照参数改变了画面（未整次拒绝）";
+
 	renderer.mesh_unload(mesh);
 	renderer.texture_unload(texture);
 }
