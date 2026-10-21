@@ -312,3 +312,66 @@ TEST_F(Renderer_Text_Test, 不支持码点计入跳过计数)
 	renderer.font_unload(font);
 	EXPECT_EQ(renderer.font_skipped_codepoints(font), 0u);
 }
+
+/*
+文字颜色：默认白色为三通道中性；设置红色后墨迹明显偏色（通道序无关）
+口径：取全窗口「最亮」像素（三分量之和最大）作墨迹样本；
+      默认白色帧该样本三通道差 ≤ 6；红色帧该样本三通道差 ≥ 100（着色确实生效）。
+*/
+TEST_F(Renderer_Text_Test, 文字颜色着色生效)
+{
+        if (!font_available())
+                GTEST_SKIP() << "本机无 " << FONT_PATH;
+        engine::Renderer renderer;
+        ASSERT_TRUE(renderer.init(hidden_config()));
+        if (!renderer.readback_supported())
+                GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+        uint64_t font = 0;
+        ASSERT_TRUE(renderer.font_load_file(font, FONT_PATH, FONT_PIXEL_HEIGHT));
+        //第一帧：默认白色
+        ASSERT_TRUE(renderer.text_draw(font, "HH", 8.0f, 8.0f));
+        std::vector<uint8_t> white_pixels(pixel_bytes());
+        ASSERT_TRUE(renderer.frame_render(white_pixels.data(), static_cast<uint32_t>(white_pixels.size())));
+        //第二帧：红色（重新登记绘制项）
+        renderer.text_color_set(std::array<float, 4>{ 1.0f, 0.0f, 0.0f, 1.0f }.data());
+        ASSERT_TRUE(renderer.text_draw(font, "HH", 8.0f, 8.0f));
+        std::vector<uint8_t> red_pixels(pixel_bytes());
+        ASSERT_TRUE(renderer.frame_render(red_pixels.data(), static_cast<uint32_t>(red_pixels.size())));
+
+        //取两帧最亮像素
+        std::array<uint8_t, 4> white_pixel{};
+        std::array<uint8_t, 4> red_pixel{};
+        int white_sum = -1;
+        int red_sum = -1;
+        for (uint32_t y = 0; y < WINDOW_HEIGHT; ++y)
+                for (uint32_t x = 0; x < WINDOW_WIDTH; ++x)
+                {
+                        std::array<uint8_t, 4> white_value = pixel_get(white_pixels, x, y);
+                        std::array<uint8_t, 4> red_value = pixel_get(red_pixels, x, y);
+                        int current_white = white_value[0] + white_value[1] + white_value[2];
+                        int current_red = red_value[0] + red_value[1] + red_value[2];
+                        if (current_white > white_sum)
+                        {
+                                white_sum = current_white;
+                                white_pixel = white_value;
+                        }
+                        if (current_red > red_sum)
+                        {
+                                red_sum = current_red;
+                                red_pixel = red_value;
+                        }
+                }
+        //白色帧：三通道中性
+        int white_min = *std::min_element(white_pixel.begin(), white_pixel.begin() + 3);
+        int white_max = *std::max_element(white_pixel.begin(), white_pixel.begin() + 3);
+        EXPECT_LE(white_max - white_min, 6) << "默认白色被着色：" << pixel_text(white_pixel);
+        //红色帧：明显偏色（通道序无关，只看最大与最小通道之差）
+        int red_min = *std::min_element(red_pixel.begin(), red_pixel.begin() + 3);
+        int red_max = *std::max_element(red_pixel.begin(), red_pixel.begin() + 3);
+        RecordProperty("text_color_red_max", red_max);
+        RecordProperty("text_color_red_min", red_min);
+        EXPECT_GE(red_max - red_min, 100) << "文字着色未生效（仍为中性色）：" << pixel_text(red_pixel);
+        EXPECT_GE(red_max, 200) << "着色后墨迹过暗：" << pixel_text(red_pixel);
+
+        renderer.font_unload(font);
+}

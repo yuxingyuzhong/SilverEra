@@ -777,6 +777,105 @@ TEST_F(Renderer_Post_Chain_Test, 目标组不足时回落)
 }
 
 /*
+后处理双源叠加（泛光闭环）：三级链「亮部提取 → 模糊 → 泛光叠加」
+口径：
+  1. 场景用**中高亮灰纹理**（222 灰，线性 ≈0.72，高于亮部提取阈值），使叠加前后有明显亮度差
+     （白四边形线性 1.0 会直接饱和，无法区分「叠加」与「未叠加」）；
+  2. 参考帧走链长 1 的直通后处理（`后处理.frag`，即场景原样），对照帧走三级叠加链；
+  3. 断言：对照帧中心**明显更亮**（≥ 245，参考帧约 222），角落与参考帧一致（暗部不变）
+     —— 后者同时证明 binding 1 确实绑定的是「场景目标」而非上一级输出。
+说明：双源片元只能放在**链末级**，且链长 ≤ 目标数（否则前面的级会把场景目标覆盖）。
+*/
+TEST_F(Renderer_Post_Chain_Test, 双源叠加形成泛光)
+{
+	//建立 222 灰纹理（RGBA8 紧排）
+	std::vector<uint8_t> gray_pixels(16 * 16 * 4, 222);
+	//参考帧：链长 1 直通
+	std::vector<uint8_t> reference(pixel_bytes());
+	{
+		engine::Renderer renderer;
+		ASSERT_TRUE(renderer.init(hidden_config()));
+		if (!renderer.readback_supported())
+			GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+		uint64_t gray_texture = 0;
+		ASSERT_TRUE(renderer.texture_load(gray_texture, gray_pixels.data(), 16, 16));
+		uint64_t scene_target = 0;
+		ASSERT_TRUE(renderer.render_target_create(scene_target, renderer.extent_width(), renderer.extent_height()));
+		uint64_t pass = post_pipeline_register(renderer, "后处理.frag.spv");
+		ASSERT_NE(pass, 0u);
+		ASSERT_TRUE(renderer.post_chain_set(&pass, 1));
+		renderer.texture_bind_set(gray_texture);
+		engine::Mesh_Handle handle = 0;
+		ASSERT_TRUE(renderer.mesh_load(handle, quad_data()));
+		ASSERT_TRUE(renderer.mesh_draw(handle, nullptr));
+		renderer.render_target_present_set(scene_target);
+		ASSERT_TRUE(renderer.frame_render(reference.data(), static_cast<uint32_t>(reference.size())));
+		renderer.mesh_unload(handle);
+		renderer.pipeline_unload(pass);
+		renderer.render_target_destroy(scene_target);
+		renderer.texture_unload(gray_texture);
+	}
+	//对照帧：三级叠加链（3 个目标 > 链长）
+	std::vector<uint8_t> overlaid(pixel_bytes());
+	{
+		engine::Renderer renderer;
+		ASSERT_TRUE(renderer.init(hidden_config()));
+		if (!renderer.readback_supported())
+			GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+		uint64_t gray_texture = 0;
+		ASSERT_TRUE(renderer.texture_load(gray_texture, gray_pixels.data(), 16, 16));
+		uint64_t scene_target = 0;
+		uint64_t second_target = 0;
+		uint64_t third_target = 0;
+		ASSERT_TRUE(renderer.render_target_create(scene_target, renderer.extent_width(), renderer.extent_height()));
+		ASSERT_TRUE(renderer.render_target_create(second_target, renderer.extent_width(), renderer.extent_height()));
+		ASSERT_TRUE(renderer.render_target_create(third_target, renderer.extent_width(), renderer.extent_height()));
+		uint64_t bright = post_pipeline_register(renderer, "亮部提取.frag.spv");
+		uint64_t blur = post_pipeline_register(renderer, "模糊.frag.spv");
+		uint64_t overlay = post_pipeline_register(renderer, "泛光叠加.frag.spv");
+		ASSERT_NE(bright, 0u);
+		ASSERT_NE(blur, 0u);
+		ASSERT_NE(overlay, 0u);
+		uint64_t chain[3] = { bright, blur, overlay };
+		ASSERT_TRUE(renderer.post_chain_set(chain, 3));
+		uint64_t chain_targets[3] = { scene_target, second_target, third_target };
+		ASSERT_TRUE(renderer.render_target_present_chain_set(chain_targets, 3));
+		renderer.texture_bind_set(gray_texture);
+		engine::Mesh_Handle handle = 0;
+		ASSERT_TRUE(renderer.mesh_load(handle, quad_data()));
+		ASSERT_TRUE(renderer.mesh_draw(handle, nullptr));
+		ASSERT_TRUE(renderer.frame_render(overlaid.data(), static_cast<uint32_t>(overlaid.size())));
+		renderer.mesh_unload(handle);
+		renderer.pipeline_unload(bright);
+		renderer.pipeline_unload(blur);
+		renderer.pipeline_unload(overlay);
+		renderer.render_target_destroy(third_target);
+		renderer.render_target_destroy(second_target);
+		renderer.render_target_destroy(scene_target);
+		renderer.texture_unload(gray_texture);
+	}
+
+	//中心：亮部被叠加提亮（参考约 222，叠加后趋饱和）
+	std::array<uint8_t, 4> reference_center = pixel_get(reference, WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2);
+	std::array<uint8_t, 4> overlaid_center = pixel_get(overlaid, WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2);
+	RecordProperty("overlay_reference_center", static_cast<int>(reference_center[0]));
+	RecordProperty("overlay_center", static_cast<int>(overlaid_center[0]));
+	EXPECT_LE(*std::max_element(reference_center.begin(), reference_center.begin() + 3), 235)
+		<< "参考帧中心过亮（用例前提不成立）：" << pixel_text(reference_center);
+	EXPECT_GE(*std::min_element(overlaid_center.begin(), overlaid_center.begin() + 3), 245)
+		<< "亮部未被叠加提亮（binding 1 或叠加级未生效）：" << pixel_text(overlaid_center);
+
+	//角落：泛光为 0 → 叠加结果应等于场景原色（暗部不变；同时验证 binding 1 = 场景目标）
+	std::array<uint8_t, 4> reference_corner = pixel_get(reference, 1, 1);
+	std::array<uint8_t, 4> overlaid_corner = pixel_get(overlaid, 1, 1);
+	for (std::size_t index = 0; index < 3; ++index)
+	{
+		int difference = std::abs(static_cast<int>(reference_corner[index]) - static_cast<int>(overlaid_corner[index]));
+		EXPECT_LE(difference, CHAIN_TOLERANCE) << "暗部被改变（应保持场景原色）：参考 "
+			<< pixel_text(reference_corner) << " / 叠加 " << pixel_text(overlaid_corner);
+	}
+}
+/*
 后处理预设 · 对比度：暗部被压得更暗、亮部保持饱和（端点方向断言）
 参考帧走默认交换链路径；对照帧走单级「对比度」链。
 刻意只断言方向（角落明显变暗、中心仍饱和），不依赖具体曲线数值。
