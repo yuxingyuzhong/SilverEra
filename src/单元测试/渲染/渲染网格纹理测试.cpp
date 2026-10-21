@@ -242,3 +242,46 @@ TEST_F(Renderer_Texture_Test, 纹理读回与输入一致)
         //卸载后句柄失效
         EXPECT_FALSE(renderer.texture_readback(texture, pixels.data(), 16, nullptr, nullptr));
 }
+
+/*
+纹理区域读回（第二十八轮）：分块读回拼接应与整幅读回逐字节一致；越界整次拒绝
+*/
+TEST_F(Renderer_Texture_Test, 纹理区域读回与整幅一致)
+{
+        engine::Renderer renderer;
+        ASSERT_TRUE(renderer.init(hidden_config()));
+        const unsigned char texels[16] = {
+                255, 0, 0, 255,
+                0, 255, 0, 255,
+                0, 0, 255, 255,
+                255, 255, 0, 255,
+        };
+        uint64_t texture = 0;
+        ASSERT_TRUE(renderer.texture_load(texture, texels, 2, 2));
+        std::vector<uint8_t> whole(16);
+        ASSERT_TRUE(renderer.texture_readback(texture, whole.data(), 16, nullptr, nullptr));
+        //四个 1×1 子块
+        std::vector<uint8_t> stitched(16, 0);
+        const uint32_t origins[4][2] = { { 0, 0 }, { 1, 0 }, { 0, 1 }, { 1, 1 } };
+        for (uint32_t index = 0; index < 4; ++index)
+        {
+                uint8_t block[4] = {};
+                uint32_t width = 0;
+                uint32_t height = 0;
+                ASSERT_TRUE(renderer.texture_readback_region(texture, origins[index][0], origins[index][1],
+                        1, 1, block, 4, &width, &height));
+                EXPECT_EQ(width, 1u);
+                EXPECT_EQ(height, 1u);
+                for (uint32_t byte = 0; byte < 4; ++byte)
+                        stitched[index * 4 + byte] = block[byte];
+        }
+        EXPECT_EQ(whole, stitched) << "纹理分块读回与整幅不一致";
+        //越界（x=1 时宽 2）整次拒绝
+        uint8_t probe[16] = {};
+        uint32_t width = 5;
+        uint32_t height = 6;
+        EXPECT_FALSE(renderer.texture_readback_region(texture, 1, 0, 2, 1, probe, 8, &width, &height));
+        EXPECT_EQ(width, 0u);
+        EXPECT_EQ(height, 0u);
+        renderer.texture_unload(texture);
+}

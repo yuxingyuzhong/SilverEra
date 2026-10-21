@@ -11,6 +11,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <string>
 #include <vector>
 
@@ -407,6 +408,62 @@ TEST_F(Renderer_Offscreen_Test, 读回参数校验)
 	EXPECT_FALSE(renderer.render_target_readback(target, pixels.data(), 16, &width, &height));
 	//失败时尺寸出参保持 0
 	EXPECT_EQ(width, 0u);
-	EXPECT_EQ(height, 0u);
-	renderer.render_target_destroy(target);
+        EXPECT_EQ(height, 0u);
+        renderer.render_target_destroy(target);
+}
+
+/*
+深度读回（第二十八轮）：全屏四边形覆盖处深度 < 1，清屏背景深度 ≈ 1
+口径：绿场景渲染进目标后读深度原始值（D32_SFLOAT，按 float 解释）；
+      中心被四边形覆盖，应落在 (0, 1) 内且明显小于 1；角落无几何，应为清屏深度 1.0。
+*/
+TEST_F(Renderer_Offscreen_Test, 深度读回区分几何与清屏)
+{
+        engine::Renderer renderer;
+        ASSERT_TRUE(renderer.init(hidden_config()));
+        uint64_t target = 0;
+        ASSERT_TRUE(renderer.render_target_create(target, WINDOW_WIDTH, WINDOW_HEIGHT));
+        uint64_t texture = 0;
+        std::vector<uint8_t> texels = solid_green(2, 2);
+        ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 2, 2));
+        engine::Mesh_Handle handle = 0;
+        ASSERT_TRUE(renderer.mesh_load(handle, quad_data()));
+        //用单位矩阵（四边形不放大）：中心被覆盖、四角仍为清屏背景
+        renderer.render_target_set(target);
+        renderer.texture_bind_set(texture);
+        ASSERT_TRUE(renderer.mesh_draw(handle, nullptr));
+        ASSERT_TRUE(renderer.frame_render());
+
+        //读回深度（宽×高 个 32 位值）
+        std::vector<uint32_t> depth(static_cast<std::size_t>(WINDOW_WIDTH) * WINDOW_HEIGHT);
+        uint32_t width = 0;
+        uint32_t height = 0;
+        ASSERT_TRUE(renderer.render_target_readback_depth(target, depth.data(),
+                static_cast<uint32_t>(depth.size()), &width, &height));
+        EXPECT_EQ(width, WINDOW_WIDTH);
+        EXPECT_EQ(height, WINDOW_HEIGHT);
+        //中心与角落的深度（按 float 解释）
+        float center_depth = 0.0f;
+        float corner_depth = 0.0f;
+        std::size_t center_index = static_cast<std::size_t>(WINDOW_HEIGHT / 2) * WINDOW_WIDTH + WINDOW_WIDTH / 2;
+        std::memcpy(&center_depth, &depth[center_index], 4);
+        std::memcpy(&corner_depth, &depth[2 * WINDOW_WIDTH + 2], 4);
+        RecordProperty("depth_center", center_depth);
+        RecordProperty("depth_corner", corner_depth);
+        EXPECT_GT(center_depth, 0.0f);
+        EXPECT_LT(center_depth, 0.999f) << "四边形覆盖处深度未小于 1";
+        EXPECT_GT(corner_depth, 0.999f) << "清屏区域深度应接近 1";
+
+        //容量不足被拒（元素个数不足）
+        std::vector<uint32_t> tiny(16);
+        uint32_t small_width = 9;
+        uint32_t small_height = 9;
+        EXPECT_FALSE(renderer.render_target_readback_depth(target, tiny.data(),
+                static_cast<uint32_t>(tiny.size()), &small_width, &small_height));
+        EXPECT_EQ(small_width, 0u);
+        EXPECT_EQ(small_height, 0u);
+
+        renderer.mesh_unload(handle);
+        renderer.texture_unload(texture);
+        renderer.render_target_destroy(target);
 }
