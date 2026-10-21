@@ -1275,6 +1275,84 @@ TEST_F(Renderer_Post_Chain_Test, 泛光参数生效)
 }
 
 /*
+逐级泛光参数（第二十三轮）：post_stage_param_set 覆盖全局 bloom_param_set
+口径：3 目标 ＋ 三级链「亮部提取 → 模糊 → 泛光叠加」、222 灰纹理。
+  1. 全局阈值 0.9 → 中灰被提零，中心回到直通参考；
+  2. 复位全局默认后，仅对**第 0 级**设 0.9 → 画面应与「全局 0.9」一致（专设值确实下发到该级）；
+  3. 对链外级序（5）设置 → 整次忽略，画面保持上一帧的逐级设置结果。
+*/
+TEST_F(Renderer_Post_Chain_Test, 逐级泛光参数覆盖全局)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	std::vector<uint8_t> gray_pixels(16 * 16 * 4, 222);
+	uint64_t gray_texture = 0;
+	ASSERT_TRUE(renderer.texture_load(gray_texture, gray_pixels.data(), 16, 16));
+	uint64_t target0 = 0;
+	uint64_t target1 = 0;
+	uint64_t target2 = 0;
+	ASSERT_TRUE(renderer.render_target_create(target0, renderer.extent_width(), renderer.extent_height()));
+	ASSERT_TRUE(renderer.render_target_create(target1, renderer.extent_width() / 2, renderer.extent_height() / 2));
+	ASSERT_TRUE(renderer.render_target_create(target2, renderer.extent_width(), renderer.extent_height()));
+	uint64_t bright = post_pipeline_register(renderer, "亮部提取.frag.spv");
+	uint64_t blur = post_pipeline_register(renderer, "模糊.frag.spv");
+	uint64_t overlay = post_pipeline_register(renderer, "泛光叠加.frag.spv");
+	ASSERT_NE(bright, 0u);
+	ASSERT_NE(blur, 0u);
+	ASSERT_NE(overlay, 0u);
+	uint64_t chain[3] = { bright, blur, overlay };
+	ASSERT_TRUE(renderer.post_chain_set(chain, 3));
+	uint64_t chain_targets[3] = { target0, target1, target2 };
+	ASSERT_TRUE(renderer.render_target_present_chain_set(chain_targets, 3));
+	engine::Mesh_Handle handle = 0;
+	ASSERT_TRUE(renderer.mesh_load(handle, quad_data()));
+	renderer.texture_bind_set(gray_texture);
+
+	//全局阈值 0.9 的对照帧
+	renderer.bloom_param_set(0.9f, 0.1f, 1.0f);
+	ASSERT_TRUE(renderer.mesh_draw(handle, nullptr));
+	std::vector<uint8_t> global_high(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(global_high.data(), static_cast<uint32_t>(global_high.size())));
+
+	//复位全局参数，仅第 0 级设 0.9
+	renderer.bloom_param_set(0.6f, 0.1f, 1.0f);
+	renderer.post_stage_param_set(0, 0.9f, 0.1f, 1.0f);
+	ASSERT_TRUE(renderer.mesh_draw(handle, nullptr));
+	std::vector<uint8_t> stage_high(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(stage_high.data(), static_cast<uint32_t>(stage_high.size())));
+
+	//链外级序：整次忽略（画面应仍等于逐级 0.9 的结果）
+	renderer.post_stage_param_set(5, 0.6f, 0.1f, 1.0f);
+	ASSERT_TRUE(renderer.mesh_draw(handle, nullptr));
+	std::vector<uint8_t> invalid_stage(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(invalid_stage.data(), static_cast<uint32_t>(invalid_stage.size())));
+
+	int global_high_luma = luma_of(pixel_get(global_high, WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2));
+	int stage_high_luma = luma_of(pixel_get(stage_high, WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2));
+	int invalid_stage_luma = luma_of(pixel_get(invalid_stage, WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2));
+	RecordProperty("stage_global_high_luma", global_high_luma);
+	RecordProperty("stage_only_high_luma", stage_high_luma);
+	RecordProperty("stage_invalid_luma", invalid_stage_luma);
+	//逐级专设 = 全局同值（专设值确实下发到第 0 级）
+	EXPECT_LE(std::abs(stage_high_luma - global_high_luma), 2)
+		<< "逐级参数与全局同值结果不一致";
+	//链外级序被忽略 → 画面不变
+	EXPECT_LE(std::abs(invalid_stage_luma - stage_high_luma), 2)
+		<< "链外级序设置未被忽略";
+
+	renderer.mesh_unload(handle);
+	renderer.pipeline_unload(bright);
+	renderer.pipeline_unload(blur);
+	renderer.pipeline_unload(overlay);
+	renderer.render_target_destroy(target2);
+	renderer.render_target_destroy(target1);
+	renderer.render_target_destroy(target0);
+	renderer.texture_unload(gray_texture);
+}
+
+/*
 预设 · 暗角（第二十一轮）：角落被压暗、中心基本不变
 参考帧走单级直通；对照帧走单级「暗角」。
 */

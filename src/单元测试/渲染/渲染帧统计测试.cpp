@@ -235,6 +235,8 @@ TEST_F(Renderer_Stats_Test, 视锥外实例被剔除)
 	EXPECT_EQ(stats.draw_items, 0u);
 	EXPECT_EQ(stats.instances, 0u);
 	EXPECT_EQ(stats.drawn_items, 0u);
+	//剔除计数（第二十三轮）：完全不可见项计 1
+	EXPECT_EQ(stats.culled_items, 1u);
 	renderer.mesh_unload(mesh);
 }
 
@@ -255,6 +257,8 @@ TEST_F(Renderer_Stats_Test, 部分相交实例不被剔除)
 	EXPECT_EQ(stats.frames, 1u);
 	EXPECT_EQ(stats.draw_items, 1u);
 	EXPECT_EQ(stats.drawn_items, 1u);
+	//相交即保留 → 不得计入剔除
+	EXPECT_EQ(stats.culled_items, 0u);
 	renderer.mesh_unload(mesh);
 }
 
