@@ -263,6 +263,39 @@ TEST_F(Renderer_Stats_Test, 部分相交实例不被剔除)
 }
 
 /*
+剔除开关（第二十五轮）：关闭后视锥外实例照常登记，culled_items 不增
+口径：关闭 → 同一视锥外实例被登记（draw_items / drawn_items 各 +1）；重新开启 → 恢复剔除（culled_items +1）。
+*/
+TEST_F(Renderer_Stats_Test, 关闭剔除后视锥外实例仍登记)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	//默认开启
+	EXPECT_TRUE(renderer.cull_enabled());
+	//关闭剔除
+	renderer.cull_enabled_set(false);
+	EXPECT_FALSE(renderer.cull_enabled());
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, triangle_data()));
+	std::array<float, 16> matrix = translated_x(100.0f);
+	ASSERT_TRUE(renderer.mesh_draw(mesh, matrix.data()));
+	ASSERT_TRUE(renderer.frame_render());
+	engine::Frame_Stats stats = renderer.frame_stats_get();
+	EXPECT_EQ(stats.draw_items, 1u);
+	EXPECT_EQ(stats.drawn_items, 1u);
+	EXPECT_EQ(stats.culled_items, 0u);
+
+	//重新开启：同一实例被剔除
+	renderer.cull_enabled_set(true);
+	ASSERT_TRUE(renderer.mesh_draw(mesh, matrix.data()));
+	ASSERT_TRUE(renderer.frame_render());
+	stats = renderer.frame_stats_get();
+	EXPECT_EQ(stats.draw_items, 1u);
+	EXPECT_EQ(stats.culled_items, 1u);
+	renderer.mesh_unload(mesh);
+}
+
+/*
 后处理级数观测（第二十二轮）：未走链的帧 post_stages 恒为 0
 连续两帧都不设后处理链，故最近一帧应为直通路径。
 */

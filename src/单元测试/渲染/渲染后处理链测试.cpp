@@ -1608,6 +1608,39 @@ TEST_F(Renderer_Post_Chain_Test, 逐级参数可读)
 }
 
 /*
+级序压缩清除逐级参数（第二十五轮修复）：
+三级链设第 2 级专设值 → 卸载中间级（链压成 2 级）→ 全部逐级参数被整体清除（读取均返回 0）。
+*/
+TEST_F(Renderer_Post_Chain_Test, 级序压缩清除逐级参数)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	uint64_t invert_a = post_pipeline_register(renderer, "反色.frag.spv");
+	uint64_t threshold = post_pipeline_register(renderer, "亮度阈值.frag.spv");
+	uint64_t invert_b = post_pipeline_register(renderer, "反色.frag.spv");
+	ASSERT_NE(invert_a, 0u);
+	ASSERT_NE(threshold, 0u);
+	ASSERT_NE(invert_b, 0u);
+	uint64_t chain[3] = { invert_a, threshold, invert_b };
+	ASSERT_TRUE(renderer.post_chain_set(chain, 3));
+	//第 2 级设专设值
+	renderer.post_stage_param_set(2, 0.9f, 0.1f, 1.0f);
+	float probe[4] = {};
+	ASSERT_EQ(renderer.post_stage_param_get(2, probe), 1u);
+
+	//卸载中间级 → 级序压缩 → 全部逐级参数清除
+	renderer.pipeline_unload(threshold);
+	EXPECT_EQ(renderer.post_chain_count(), 2u);
+	float first[4] = {};
+	float second[4] = {};
+	EXPECT_EQ(renderer.post_stage_param_get(0, first), 0u);
+	EXPECT_EQ(renderer.post_stage_param_get(1, second), 0u);
+
+	renderer.pipeline_unload(invert_b);
+	renderer.pipeline_unload(invert_a);
+}
+
+/*
 文字经后处理链（第二十四轮）：
   1. 两级「反色 → 反色」恒等链下，文字帧应与直通帧逐字节一致（容差 4）——证明文字与场景共用同一后处理输入；
   2. 单级「灰度」链下，文字最亮像素三通道应趋同（差 ≤ 2）——证明文字同样被后处理。
