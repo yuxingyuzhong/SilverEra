@@ -1571,3 +1571,92 @@ TEST_F(Renderer_Scene_Test, 场景描述非法雾参数被忽略)
 	renderer.mesh_unload(mesh);
 	renderer.texture_unload(texture);
 }
+
+/*
+环境光颜色着色（第四十轮）
+口径：中灰纹理 ＋ 法线 (0,0,-1)（背光面）＋ 环境光强度 0.5：
+      默认白色环境光下三通道接近相等；设为纯红后红通道保留、绿 / 蓝压到接近 0。
+*/
+TEST_F(Renderer_Scene_Test, 环境光颜色着色)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	uint64_t texture = 0;
+	std::vector<uint8_t> texels = solid_gray();
+	ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 2, 2));
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, quad_data_with_normal(0.0f, 0.0f, -1.0f)));
+	renderer.texture_bind_set(texture);
+	//方向光朝 -Z + 环境光 0.5：背光面只吃环境光
+	const float forward[3] = { 0.0f, 0.0f, -1.0f };
+	const float white_light[3] = { 1.0f, 1.0f, 1.0f };
+	renderer.light_set(forward, white_light, 1.0f, 0.5f);
+
+	//渲染一帧并返回中心像素（lambda 内用 EXPECT：ASSERT 不允许出现在有返回值的函数中）
+	auto render_center = [&]()
+	{
+		EXPECT_TRUE(renderer.mesh_draw(mesh, nullptr));
+		std::vector<uint8_t> pixels(pixel_bytes());
+		EXPECT_TRUE(renderer.frame_render(pixels.data(), static_cast<std::uint32_t>(pixels.size())));
+		return pixel_get(pixels, WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2);
+	};
+
+	std::array<uint8_t, 4> plain = render_center();
+	//纯红环境光
+	const float red[3] = { 1.0f, 0.0f, 0.0f };
+	renderer.ambient_color_set(red);
+	std::array<uint8_t, 4> tinted = render_center();
+	RecordProperty("ambient_plain", pixel_text(plain));
+	RecordProperty("ambient_red", pixel_text(tinted));
+	//默认白：三通道接近相等
+	EXPECT_LE(std::abs(static_cast<int>(plain[0]) - static_cast<int>(plain[1])), 3) << "默认环境光非中性";
+	//纯红：外通道（R 与 B 的较大者）保留、另一外通道与绿通道接近 0（通道序无关）
+	uint8_t outer = outer_max(tinted);
+	uint8_t inner = tinted[0] < tinted[2] ? tinted[0] : tinted[2];
+	EXPECT_GE(outer, 50u) << "红色环境光未保留外通道（" << pixel_text(tinted) << "）";
+	EXPECT_LE(inner, 30u) << "另一外通道未被压暗（" << pixel_text(tinted) << "）";
+	EXPECT_LE(tinted[1], 30u) << "绿色通道未被压暗（" << pixel_text(tinted) << "）";
+
+	renderer.mesh_unload(mesh);
+	renderer.texture_unload(texture);
+}
+
+/*
+非法环境光颜色被忽略（第四十轮）
+口径：分量越界（1.5）整次忽略；画面与调用前逐字节一致。
+*/
+TEST_F(Renderer_Scene_Test, 非法环境光颜色被忽略)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	uint64_t texture = 0;
+	std::vector<uint8_t> texels = solid_gray();
+	ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 2, 2));
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, quad_data_with_normal(0.0f, 0.0f, -1.0f)));
+	renderer.texture_bind_set(texture);
+	const float forward[3] = { 0.0f, 0.0f, -1.0f };
+	const float white_light[3] = { 1.0f, 1.0f, 1.0f };
+	renderer.light_set(forward, white_light, 1.0f, 0.5f);
+
+	//渲染一帧并返回像素（lambda 内用 EXPECT：ASSERT 不允许出现在有返回值的函数中）
+	auto render_frame = [&]()
+	{
+		EXPECT_TRUE(renderer.mesh_draw(mesh, nullptr));
+		std::vector<uint8_t> pixels(pixel_bytes());
+		EXPECT_TRUE(renderer.frame_render(pixels.data(), static_cast<std::uint32_t>(pixels.size())));
+		return pixels;
+	};
+
+	std::vector<uint8_t> baseline = render_frame();
+	const float invalid[3] = { 1.5f, 0.0f, 0.0f };
+	renderer.ambient_color_set(invalid);
+	EXPECT_EQ(render_frame(), baseline) << "非法环境光颜色改变了画面";
+
+	renderer.mesh_unload(mesh);
+	renderer.texture_unload(texture);
+}
