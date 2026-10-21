@@ -1985,3 +1985,39 @@ TEST_F(Renderer_Scene_Test, 雾起始距离内无雾)
 	renderer.mesh_unload(mesh);
 	renderer.texture_unload(texture);
 }
+
+/*
+雾结束距离处完全遮蔽（第四十五轮）
+口径：四边形距相机 3；雾色红、密度 1、区间 [1, 3]（片元恰在结束处）→ 中心应完全变为雾色。
+*/
+TEST_F(Renderer_Scene_Test, 雾结束距离处完全遮蔽)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	uint64_t texture = 0;
+	std::vector<uint8_t> texels = solid_white();
+	ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 2, 2));
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, quad_data_with_normal(0.0f, 0.0f, 1.0f)));
+	renderer.texture_bind_set(texture);
+
+	//红色雾，片元恰在结束距离
+	const float red[3] = { 1.0f, 0.0f, 0.0f };
+	renderer.fog_set(red, 1.0f, 1.0f, 3.0f);
+	ASSERT_TRUE(renderer.mesh_draw(mesh, nullptr));
+	std::vector<uint8_t> pixels(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(pixels.data(), static_cast<std::uint32_t>(pixels.size())));
+	std::array<uint8_t, 4> center = pixel_get(pixels, WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2);
+	RecordProperty("fog_end_center", pixel_text(center));
+	//外通道保留（红 / 蓝依格式其一）、另一外通道与绿通道接近 0
+	uint8_t outer = outer_max(center);
+	uint8_t inner = center[0] < center[2] ? center[0] : center[2];
+	EXPECT_GE(outer, 200u) << "结束距离处未完全遮蔽（" << pixel_text(center) << "）";
+	EXPECT_LE(inner, 30u) << "结束距离处残留场景色（" << pixel_text(center) << "）";
+	EXPECT_LE(center[1], 30u) << "绿色通道未归零（" << pixel_text(center) << "）";
+
+	renderer.mesh_unload(mesh);
+	renderer.texture_unload(texture);
+}
