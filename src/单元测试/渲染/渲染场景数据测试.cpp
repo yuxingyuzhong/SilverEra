@@ -1387,3 +1387,92 @@ TEST_F(Renderer_Scene_Test, 场景描述非法衰减模式被忽略)
 	renderer.mesh_unload(mesh);
 	renderer.texture_unload(texture);
 }
+
+/*
+距离雾压暗远处物体（第三十八轮）
+口径：白纹理 ＋ 法线 (0,0,1) 四边形、默认方向光满照；相机距四边形 3：
+      雾色黑、密度 1、区间 [1, 4] → t = (3 − 1) / 3 ≈ 0.667、因子 t² ≈ 0.444，
+      中心亮度由约 255 降至约 195；`fog_clear` 后恢复。
+*/
+TEST_F(Renderer_Scene_Test, 距离雾压暗远处物体)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	uint64_t texture = 0;
+	std::vector<uint8_t> texels = solid_white();
+	ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 2, 2));
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, quad_data_with_normal(0.0f, 0.0f, 1.0f)));
+	renderer.texture_bind_set(texture);
+
+	//渲染一帧并返回中心亮度（lambda 内用 EXPECT：ASSERT 不允许出现在有返回值的函数中）
+	auto render_brightness = [&]()
+	{
+		EXPECT_TRUE(renderer.mesh_draw(mesh, nullptr));
+		std::vector<uint8_t> pixels(pixel_bytes());
+		EXPECT_TRUE(renderer.frame_render(pixels.data(), static_cast<std::uint32_t>(pixels.size())));
+		return center_brightness(pixels);
+	};
+
+	//无雾基线
+	uint32_t plain = render_brightness();
+	//开启黑雾（密度 1、区间 [1, 4]）
+	const float black[3] = { 0.0f, 0.0f, 0.0f };
+	renderer.fog_set(black, 1.0f, 1.0f, 4.0f);
+	uint32_t fogged = render_brightness();
+	//关闭雾
+	renderer.fog_clear();
+	uint32_t restored = render_brightness();
+	RecordProperty("fog_plain", plain);
+	RecordProperty("fog_fogged", fogged);
+	RecordProperty("fog_restored", restored);
+	EXPECT_GE(plain, 240u) << "无雾基线异常（亮度 " << plain << "）";
+	EXPECT_LE(fogged, plain - 30u) << "雾未压暗画面（" << plain << " → " << fogged << "）";
+	EXPECT_GE(fogged, 150u) << "雾压暗过度（亮度 " << fogged << "）";
+	uint32_t gap = restored > plain ? restored - plain : plain - restored;
+	EXPECT_LE(gap, 2u) << "关闭雾后亮度未恢复（" << plain << " vs " << restored << "）";
+
+	renderer.mesh_unload(mesh);
+	renderer.texture_unload(texture);
+}
+
+/*
+非法雾参数被忽略（第三十八轮）
+口径：负密度、结束不大于起始均为非法；两种调用后画面与调用前逐字节一致。
+*/
+TEST_F(Renderer_Scene_Test, 非法雾参数被忽略)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	uint64_t texture = 0;
+	std::vector<uint8_t> texels = solid_gray();
+	ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 2, 2));
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, quad_data_with_normal(0.0f, 0.0f, 1.0f)));
+	renderer.texture_bind_set(texture);
+
+	//渲染一帧并返回像素（lambda 内用 EXPECT：ASSERT 不允许出现在有返回值的函数中）
+	auto render_frame = [&]()
+	{
+		EXPECT_TRUE(renderer.mesh_draw(mesh, nullptr));
+		std::vector<uint8_t> pixels(pixel_bytes());
+		EXPECT_TRUE(renderer.frame_render(pixels.data(), static_cast<std::uint32_t>(pixels.size())));
+		return pixels;
+	};
+
+	std::vector<uint8_t> baseline = render_frame();
+	const float black[3] = { 0.0f, 0.0f, 0.0f };
+	//负密度 → 忽略
+	renderer.fog_set(black, -0.5f, 1.0f, 4.0f);
+	EXPECT_EQ(render_frame(), baseline) << "非法密度改变了画面";
+	//结束不大于起始 → 忽略
+	renderer.fog_set(black, 1.0f, 4.0f, 4.0f);
+	EXPECT_EQ(render_frame(), baseline) << "非法区间改变了画面";
+
+	renderer.mesh_unload(mesh);
+	renderer.texture_unload(texture);
+}
