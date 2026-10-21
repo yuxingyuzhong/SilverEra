@@ -371,10 +371,11 @@ TEST_F(Renderer_Post_Chain_Test, 单级链与既有单级路径等价)
 }
 
 /*
-目标范围与交换链不一致时回落原路径（处置 R-FACADE-08 / R-FRAME-09）
-用比交换链窄的目标作为「同帧后处理呈现」目标：门面预检应告警并回落，本帧正常出帧且画面为**未后处理**的场景。
+目标尺寸与交换链不一致**不再回落**（第十七轮放宽；原 R-FACADE-08 / R-FRAME-09 的 1:1 要求已解除）
+用比交换链窄 8 像素的目标作为「同帧后处理呈现」目标 ＋ 单级反色链：本帧应**仍在后处理路径上**出帧，
+故中心（白四边形）被反色成黑、角落（清屏色）被反色成亮。
 */
-TEST_F(Renderer_Post_Chain_Test, 目标范围不一致时回落)
+TEST_F(Renderer_Post_Chain_Test, 目标尺寸不一致仍走后处理)
 {
 	engine::Renderer renderer;
 	ASSERT_TRUE(renderer.init(hidden_config()));
@@ -391,13 +392,16 @@ TEST_F(Renderer_Post_Chain_Test, 目标范围不一致时回落)
 	scene_register(renderer, handle);
 	renderer.render_target_present_set(narrow_target);
 	std::vector<uint8_t> pixels(pixel_bytes());
-	//本帧应回落原路径并正常出帧（不作为硬错误）
+	//本帧应在后处理路径上正常出帧（尺寸不一致不再拒绝）
 	ASSERT_TRUE(renderer.frame_render(pixels.data(), static_cast<uint32_t>(pixels.size())));
 	EXPECT_EQ(renderer.frame_count(), 1u);
-	//回落即未经后处理：中心仍为四边形的亮色（而非反色后的黑）
+	//走了后处理：中心被反色成黑、角落被反色成亮
 	std::array<uint8_t, 4> center = pixel_get(pixels, WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2);
-	EXPECT_GE(*std::min_element(center.begin(), center.begin() + 3), 200)
-		<< "目标范围不一致时未回落（画面被后处理过）：" << pixel_text(center);
+	EXPECT_LE(*std::max_element(center.begin(), center.begin() + 3), DARK_THRESHOLD)
+		<< "中心未被反色（尺寸不一致时仍回落了原路径）：" << pixel_text(center);
+	std::array<uint8_t, 4> corner = pixel_get(pixels, 1, 1);
+	EXPECT_GE(*std::min_element(corner.begin(), corner.begin() + 3), 200)
+		<< "角落未被反色：" << pixel_text(corner);
 	renderer.mesh_unload(handle);
 	renderer.pipeline_unload(invert);
 	renderer.render_target_destroy(narrow_target);
@@ -875,6 +879,54 @@ TEST_F(Renderer_Post_Chain_Test, 双源叠加形成泛光)
 			<< pixel_text(reference_corner) << " / 叠加 " << pixel_text(overlaid_corner);
 	}
 }
+/*
+目标尺寸独立（第十七轮）：半尺寸中间目标的后处理链
+口径：
+  1. 场景目标为交换链尺寸，第二目标为**半尺寸**（宽高各 / 2），链「亮部提取 → 模糊」：
+     第 0 级全尺寸 → 半尺寸（降采样），第 1 级半尺寸 → 交换链（升采样）；
+  2. 断言：正常出帧；中心（白四边形）仍亮（≥ 240）、角落（清屏色）仍近黑（≤ 4）——降 / 升采样不破坏明暗结构。
+  3. 本用例证明「尺寸不必等于交换链」；逐像素与全尺寸链的差异不做断言（点采样图案依硬件 / 尺寸而变）。
+*/
+TEST_F(Renderer_Post_Chain_Test, 半尺寸目标链可用)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	//全尺寸场景目标 ＋ 半尺寸中间目标
+	uint64_t scene_target = 0;
+	uint64_t half_target = 0;
+	ASSERT_TRUE(renderer.render_target_create(scene_target, renderer.extent_width(), renderer.extent_height()));
+	ASSERT_TRUE(renderer.render_target_create(half_target, renderer.extent_width() / 2, renderer.extent_height() / 2));
+	uint64_t bright = post_pipeline_register(renderer, "亮部提取.frag.spv");
+	uint64_t blur = post_pipeline_register(renderer, "模糊.frag.spv");
+	ASSERT_NE(bright, 0u);
+	ASSERT_NE(blur, 0u);
+	uint64_t chain[2] = { bright, blur };
+	ASSERT_TRUE(renderer.post_chain_set(chain, 2));
+	uint64_t chain_targets[2] = { scene_target, half_target };
+	ASSERT_TRUE(renderer.render_target_present_chain_set(chain_targets, 2));
+	engine::Mesh_Handle handle = 0;
+	scene_register(renderer, handle);
+	std::vector<uint8_t> pixels(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(pixels.data(), static_cast<uint32_t>(pixels.size())));
+	EXPECT_EQ(renderer.frame_count(), 1u);
+
+	//降 / 升采样后结构不变
+	std::array<uint8_t, 4> center = pixel_get(pixels, WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2);
+	std::array<uint8_t, 4> corner = pixel_get(pixels, 1, 1);
+	EXPECT_GE(*std::min_element(center.begin(), center.begin() + 3), 240)
+		<< "半尺寸链后中心过暗（尺寸映射有误）：" << pixel_text(center);
+	EXPECT_LE(*std::max_element(corner.begin(), corner.begin() + 3), DARK_THRESHOLD)
+		<< "半尺寸链后暗部被提亮：" << pixel_text(corner);
+
+	renderer.mesh_unload(handle);
+	renderer.pipeline_unload(bright);
+	renderer.pipeline_unload(blur);
+	renderer.render_target_destroy(half_target);
+	renderer.render_target_destroy(scene_target);
+}
+
 /*
 后处理预设 · 对比度：暗部被压得更暗、亮部保持饱和（端点方向断言）
 参考帧走默认交换链路径；对照帧走单级「对比度」链。
