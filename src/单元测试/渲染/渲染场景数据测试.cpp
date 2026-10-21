@@ -1087,3 +1087,118 @@ TEST_F(Renderer_Scene_Test, 聚光灯参数校验与上限)
 	renderer.lights_clear();
 	EXPECT_TRUE(renderer.light_add_spot(position, forward, white_light, 10.0f, 1.0f, 10.0f, 20.0f, 0.0f));
 }
+
+/*
+场景描述携带聚光灯只照亮锥内（第三十五轮）
+口径：白纹理 ＋ 法线 (0,0,1) 四边形，方向光关闭；同一 Scene_Data 的聚光灯（(0,0,1) 朝 -Z）：
+      窄锥（10°/20°）中心亮、角部样本 (41,9) 暗；宽锥（60°/80°）角部被照亮，中心亮度不变。
+*/
+TEST_F(Renderer_Scene_Test, 场景描述携带聚光灯只照亮锥内)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	uint64_t texture = 0;
+	std::vector<uint8_t> texels = solid_white();
+	ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 2, 2));
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, quad_data_with_normal(0.0f, 0.0f, 1.0f)));
+	renderer.texture_bind_set(texture);
+
+	//指定像素的 RGB 均值（亮度粗量；通道序无关）
+	auto brightness_at = [](const std::vector<uint8_t>& pixels, uint32_t x, uint32_t y)
+	{
+		std::array<uint8_t, 4> value = pixel_get(pixels, x, y);
+		return (static_cast<uint32_t>(value[0]) + value[1] + value[2]) / 3;
+	};
+	//渲染一帧并返回「中心 / 右上角样本」亮度（lambda 内用 EXPECT：ASSERT 不允许出现在有返回值的函数中）
+	auto render_pair = [&]()
+	{
+		EXPECT_TRUE(renderer.mesh_draw(mesh, nullptr));
+		std::vector<uint8_t> pixels(pixel_bytes());
+		EXPECT_TRUE(renderer.frame_render(pixels.data(), static_cast<std::uint32_t>(pixels.size())));
+		return std::array<uint32_t, 2>{ brightness_at(pixels, WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2),
+			brightness_at(pixels, 41, 9) };
+	};
+
+	//场景：方向光关闭 ＋ 一盏正对四边形的聚光灯
+	engine::Scene_Data scene{};
+	scene.light_intensity = 0.0f;
+	scene.spot_light_count = 1;
+	scene.spot_light_position[0][2] = 1.0f;
+	scene.spot_light_direction[0][0] = 0.0f;
+	scene.spot_light_direction[0][1] = 0.0f;
+	scene.spot_light_direction[0][2] = -1.0f;
+	scene.spot_light_radius[0] = 10.0f;
+	scene.spot_light_intensity[0] = 1.0f;
+	scene.spot_light_inner_deg[0] = 10.0f;
+	scene.spot_light_outer_deg[0] = 20.0f;
+	renderer.scene_apply(scene);
+	std::array<uint32_t, 2> narrow = render_pair();
+	//同一场景改宽锥
+	scene.spot_light_inner_deg[0] = 60.0f;
+	scene.spot_light_outer_deg[0] = 80.0f;
+	renderer.scene_apply(scene);
+	std::array<uint32_t, 2> wide = render_pair();
+	RecordProperty("scene_narrow_center", narrow[0]);
+	RecordProperty("scene_narrow_corner", narrow[1]);
+	RecordProperty("scene_wide_center", wide[0]);
+	RecordProperty("scene_wide_corner", wide[1]);
+	EXPECT_GE(narrow[0], 200u) << "场景聚光灯未照亮锥内（亮度 " << narrow[0] << "）";
+	EXPECT_LE(narrow[1], 40u) << "锥外区域未被压暗（亮度 " << narrow[1] << "）";
+	EXPECT_GE(wide[1], 150u) << "宽锥未照亮角部（亮度 " << wide[1] << "）";
+	//中心亮度差（锥形过渡不影响光轴方向）
+	uint32_t center_gap = narrow[0] > wide[0] ? narrow[0] - wide[0] : wide[0] - narrow[0];
+	EXPECT_LE(center_gap, 6u) << "锥角变化改变了中心亮度（" << narrow[0] << " vs " << wide[0] << "）";
+
+	renderer.mesh_unload(mesh);
+	renderer.texture_unload(texture);
+}
+
+/*
+场景描述中的非法聚光灯被跳过（第三十五轮）
+口径：默认方向光（满照）；先应用默认场景回读，再把一盏「内角 ≥ 外角」的聚光灯写进 Scene_Data：
+      该条被 `light_add_spot` 拒绝，画面应与默认场景逐字节一致（方向光仍生效）。
+*/
+TEST_F(Renderer_Scene_Test, 场景描述聚光灯非法参数被跳过)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	uint64_t texture = 0;
+	std::vector<uint8_t> texels = solid_white();
+	ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 2, 2));
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, quad_data_with_normal(0.0f, 0.0f, 1.0f)));
+	renderer.texture_bind_set(texture);
+
+	//渲染一帧并返回像素（lambda 内用 EXPECT：ASSERT 不允许出现在有返回值的函数中）
+	auto render_frame = [&]()
+	{
+		EXPECT_TRUE(renderer.mesh_draw(mesh, nullptr));
+		std::vector<uint8_t> pixels(pixel_bytes());
+		EXPECT_TRUE(renderer.frame_render(pixels.data(), static_cast<std::uint32_t>(pixels.size())));
+		return pixels;
+	};
+
+	//基线：默认场景（方向光满照）
+	engine::Scene_Data baseline{};
+	renderer.scene_apply(baseline);
+	std::vector<uint8_t> plain = render_frame();
+	//非法聚光灯（内角 40° ≥ 外角 30°）应被跳过
+	engine::Scene_Data invalid = baseline;
+	invalid.spot_light_count = 1;
+	invalid.spot_light_position[0][2] = 1.0f;
+	invalid.spot_light_inner_deg[0] = 40.0f;
+	invalid.spot_light_outer_deg[0] = 30.0f;
+	renderer.scene_apply(invalid);
+	std::vector<uint8_t> after = render_frame();
+	RecordProperty("invalid_spot_center", center_brightness(after));
+	EXPECT_EQ(after, plain) << "非法聚光灯改变了画面";
+	EXPECT_GE(center_brightness(after), 200u) << "方向光未继续生效";
+
+	renderer.mesh_unload(mesh);
+	renderer.texture_unload(texture);
+}
