@@ -1898,3 +1898,90 @@ TEST_F(Renderer_Scene_Test, 雾场景上的文字仍可见)
 	renderer.mesh_unload(mesh);
 	renderer.texture_unload(texture);
 }
+
+/*
+雾不影响背景清屏色（第四十四轮）
+口径：相机背对四边形（中心为清屏色）＋ 绿色清屏色 ＋ 黑雾（密度 1）：
+      雾只在几何片元上混合，中心仍应为清屏绿而非黑。
+*/
+TEST_F(Renderer_Scene_Test, 雾不影响背景清屏色)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	uint64_t texture = 0;
+	std::vector<uint8_t> texels = solid_white();
+	ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 2, 2));
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, quad_data()));
+	renderer.texture_bind_set(texture);
+
+	//场景：相机背对四边形 ＋ 绿色清屏色 ＋ 黑雾
+	engine::Scene_Data scene{};
+	scene.position[0] = 0.0f;
+	scene.position[1] = 0.0f;
+	scene.position[2] = 3.0f;
+	scene.target[0] = 0.0f;
+	scene.target[1] = 0.0f;
+	scene.target[2] = 10.0f;
+	scene.clear_color[0] = 0.0f;
+	scene.clear_color[1] = 1.0f;
+	scene.clear_color[2] = 0.0f;
+	scene.clear_color[3] = 1.0f;
+	scene.fog_color[0] = 0.0f;
+	scene.fog_color[1] = 0.0f;
+	scene.fog_color[2] = 0.0f;
+	scene.fog_density = 1.0f;
+	scene.fog_start = 1.0f;
+	scene.fog_end = 4.0f;
+	renderer.scene_apply(scene);
+
+	ASSERT_TRUE(renderer.mesh_draw(mesh, nullptr));
+	std::vector<uint8_t> pixels(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(pixels.data(), static_cast<std::uint32_t>(pixels.size())));
+	std::array<uint8_t, 4> center = pixel_get(pixels, WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2);
+	RecordProperty("fog_background_center", pixel_text(center));
+	EXPECT_GE(center[1], 200u) << "雾把背景清屏色染黑（" << pixel_text(center) << "）";
+
+	renderer.mesh_unload(mesh);
+	renderer.texture_unload(texture);
+}
+
+/*
+雾起始距离内无雾（第四十四轮）
+口径：四边形距相机 3；雾区间 [5, 10]（起始在片元之外）→ 画面与关闭雾时逐字节一致。
+*/
+TEST_F(Renderer_Scene_Test, 雾起始距离内无雾)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	uint64_t texture = 0;
+	std::vector<uint8_t> texels = solid_gray();
+	ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 2, 2));
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, quad_data_with_normal(0.0f, 0.0f, 1.0f)));
+	renderer.texture_bind_set(texture);
+
+	//渲染一帧并返回像素（lambda 内用 EXPECT：ASSERT 不允许出现在有返回值的函数中）
+	auto render_frame = [&]()
+	{
+		EXPECT_TRUE(renderer.mesh_draw(mesh, nullptr));
+		std::vector<uint8_t> pixels(pixel_bytes());
+		EXPECT_TRUE(renderer.frame_render(pixels.data(), static_cast<std::uint32_t>(pixels.size())));
+		return pixels;
+	};
+
+	//基线：雾关闭
+	const float black[3] = { 0.0f, 0.0f, 0.0f };
+	renderer.fog_set(black, 0.0f, 5.0f, 10.0f);
+	std::vector<uint8_t> plain = render_frame();
+	//启用雾但区间在片元之外
+	renderer.fog_set(black, 1.0f, 5.0f, 10.0f);
+	EXPECT_EQ(render_frame(), plain) << "起始距离内出现了雾";
+
+	renderer.mesh_unload(mesh);
+	renderer.texture_unload(texture);
+}
