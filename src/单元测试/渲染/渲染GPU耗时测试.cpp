@@ -139,9 +139,9 @@ TEST_F(Renderer_Gpu_Test, 两级链GPU耗时随能力分支断言)
 	ASSERT_TRUE(renderer.pipeline_load(threshold, "后处理.vert.spv", "亮度阈值.frag.spv"));
 	uint64_t chain[2] = { invert, threshold };
 	ASSERT_TRUE(renderer.post_chain_set(chain, 2));
-	//设定同帧后处理呈现目标与 ping-pong 第二目标
-	renderer.render_target_present_set(scene_target);
-	renderer.render_target_present_secondary_set(second_target);
+	//设定同帧后处理呈现目标组（场景目标 ＋ 中间目标）
+	uint64_t chain_targets[2] = { scene_target, second_target };
+	ASSERT_TRUE(renderer.render_target_present_chain_set(chain_targets, 2));
 	//登记场景绘制
 	engine::Mesh_Handle mesh = 0;
 	ASSERT_TRUE(renderer.mesh_load(mesh, triangle_data()));

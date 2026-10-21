@@ -156,12 +156,12 @@ class Renderer_Post_Chain_Test : public ::testing::Test
 {
 };
 
-//未初始化时设置后处理链与第二目标均无副作用
+//未初始化时设置后处理链与目标组均无副作用
 TEST_F(Renderer_Post_Chain_Test, 未初始化设置无副作用)
 {
 	engine::Renderer renderer;
 	//未初始化时调用应静默返回 / 返回假（不崩溃）
-	renderer.render_target_present_secondary_set(1);
+	EXPECT_FALSE(renderer.render_target_present_chain_set(nullptr, 1));
 	EXPECT_FALSE(renderer.post_chain_set(nullptr, 0));
 	EXPECT_FALSE(renderer.valid());
 }
@@ -261,7 +261,8 @@ TEST_F(Renderer_Post_Chain_Test, 两级反色恒等于原画面)
 		engine::Mesh_Handle handle = 0;
 		scene_register(renderer, handle);
 		renderer.render_target_present_set(scene_target);
-		renderer.render_target_present_secondary_set(second_target);
+		uint64_t chain_targets[2] = { scene_target, second_target };
+		ASSERT_TRUE(renderer.render_target_present_chain_set(chain_targets, 2));
 		ASSERT_TRUE(renderer.frame_render(chained.data(), static_cast<uint32_t>(chained.size())));
 		EXPECT_EQ(renderer.frame_count(), 1u);
 		renderer.mesh_unload(handle);
@@ -298,7 +299,8 @@ TEST_F(Renderer_Post_Chain_Test, 两级反色与阈值叠加)
 	engine::Mesh_Handle handle = 0;
 	scene_register(renderer, handle);
 	renderer.render_target_present_set(scene_target);
-	renderer.render_target_present_secondary_set(second_target);
+	uint64_t chain_targets[2] = { scene_target, second_target };
+	ASSERT_TRUE(renderer.render_target_present_chain_set(chain_targets, 2));
 	std::vector<uint8_t> pixels(pixel_bytes());
 	ASSERT_TRUE(renderer.frame_render(pixels.data(), static_cast<uint32_t>(pixels.size())));
 	EXPECT_EQ(renderer.frame_count(), 1u);
@@ -601,7 +603,8 @@ TEST_F(Renderer_Post_Chain_Test, 预设可串联)
 	engine::Mesh_Handle handle = 0;
 	scene_register(renderer, handle);
 	renderer.render_target_present_set(scene_target);
-	renderer.render_target_present_secondary_set(second_target);
+	uint64_t chain_targets[2] = { scene_target, second_target };
+	ASSERT_TRUE(renderer.render_target_present_chain_set(chain_targets, 2));
 	std::vector<uint8_t> pixels(pixel_bytes());
 	ASSERT_TRUE(renderer.frame_render(pixels.data(), static_cast<uint32_t>(pixels.size())));
 	EXPECT_EQ(renderer.frame_count(), 1u);
@@ -617,5 +620,267 @@ TEST_F(Renderer_Post_Chain_Test, 预设可串联)
 	renderer.pipeline_unload(edge);
 	renderer.render_target_destroy(second_target);
 	renderer.render_target_destroy(scene_target);
+}
+
+/*
+多中间目标 · 三级链「亮部提取 → 模糊 → 灰度」（3 个目标轮转）
+预期：中心（白四边形）经亮部提取保留、模糊后仍亮、灰度后三通道趋同且仍亮；
+      角落（清屏色）亮度低于阈值被提零，此后保持近黑 —— 即「暗部不变」。
+中心三通道趋同即证明确实执行到了第 3 级（前两级都不改三通道相等性之外的东西）。
+*/
+TEST_F(Renderer_Post_Chain_Test, 三级链亮部提取模糊灰度)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	//三个与交换链同尺寸的目标（满足后处理 1:1 取源）
+	uint64_t scene_target = 0;
+	uint64_t second_target = 0;
+	uint64_t third_target = 0;
+	ASSERT_TRUE(renderer.render_target_create(scene_target, renderer.extent_width(), renderer.extent_height()));
+	ASSERT_TRUE(renderer.render_target_create(second_target, renderer.extent_width(), renderer.extent_height()));
+	ASSERT_TRUE(renderer.render_target_create(third_target, renderer.extent_width(), renderer.extent_height()));
+	//三级链：亮部提取 → 模糊 → 灰度
+	uint64_t bright = post_pipeline_register(renderer, "亮部提取.frag.spv");
+	uint64_t blur = post_pipeline_register(renderer, "模糊.frag.spv");
+	uint64_t gray = post_pipeline_register(renderer, "灰度.frag.spv");
+	ASSERT_NE(bright, 0u);
+	ASSERT_NE(blur, 0u);
+	ASSERT_NE(gray, 0u);
+	uint64_t chain[3] = { bright, blur, gray };
+	ASSERT_TRUE(renderer.post_chain_set(chain, 3));
+	//目标组：场景目标 ＋ 两个额外中间目标
+	uint64_t chain_targets[3] = { scene_target, second_target, third_target };
+	ASSERT_TRUE(renderer.render_target_present_chain_set(chain_targets, 3));
+	//登记场景
+	engine::Mesh_Handle handle = 0;
+	scene_register(renderer, handle);
+	std::vector<uint8_t> pixels(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(pixels.data(), static_cast<uint32_t>(pixels.size())));
+	EXPECT_EQ(renderer.frame_count(), 1u);
+
+	//中心：亮部被保留（模糊在内部等价原值），灰度后仍亮且三通道趋同（证明确实执行到第 3 级）
+	std::array<uint8_t, 4> center = pixel_get(pixels, WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2);
+	RecordProperty("bright_center", static_cast<int>(center[0]));
+	EXPECT_GE(center[0], 240) << "三级链后中心过暗：" << pixel_text(center);
+	EXPECT_LE(std::abs(static_cast<int>(center[0]) - static_cast<int>(center[1])), 2) << "中心 r/g 未趋同：" << pixel_text(center);
+	EXPECT_LE(std::abs(static_cast<int>(center[1]) - static_cast<int>(center[2])), 2) << "中心 g/b 未趋同：" << pixel_text(center);
+	//角落：清屏色亮度低于阈值 → 亮部提取归零 → 此后恒近黑（暗部不变）
+	std::array<uint8_t, 4> corner = pixel_get(pixels, 1, 1);
+	EXPECT_LE(*std::max_element(corner.begin(), corner.begin() + 3), DARK_THRESHOLD) << "暗部被提亮（应保持近黑）：" << pixel_text(corner);
+	EXPECT_GE(corner[3], SATURATION_THRESHOLD);
+
+	renderer.mesh_unload(handle);
+	renderer.pipeline_unload(bright);
+	renderer.pipeline_unload(blur);
+	renderer.pipeline_unload(gray);
+	renderer.render_target_destroy(third_target);
+	renderer.render_target_destroy(second_target);
+	renderer.render_target_destroy(scene_target);
+}
+
+/*
+多中间目标 · 二级链「亮部提取 → 模糊」必须与单级「亮部提取」画面不同
+口径：模糊只改变亮部边界附近的像素，故两帧逐像素必有差异（max_channel_diff > 0）；
+      同时两帧中心都亮、角落都近黑（模糊不改变整体明暗结构）。
+*/
+TEST_F(Renderer_Post_Chain_Test, 二级链模糊确实参与)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	//两个目标（场景目标 ＋ 模糊级宿）
+	uint64_t scene_target = 0;
+	uint64_t second_target = 0;
+	ASSERT_TRUE(renderer.render_target_create(scene_target, renderer.extent_width(), renderer.extent_height()));
+	ASSERT_TRUE(renderer.render_target_create(second_target, renderer.extent_width(), renderer.extent_height()));
+	uint64_t bright = post_pipeline_register(renderer, "亮部提取.frag.spv");
+	uint64_t blur = post_pipeline_register(renderer, "模糊.frag.spv");
+	ASSERT_NE(bright, 0u);
+	ASSERT_NE(blur, 0u);
+	engine::Mesh_Handle handle = 0;
+	scene_register(renderer, handle);
+	renderer.render_target_present_set(scene_target);
+
+	//第一帧：单级「亮部提取」
+	ASSERT_TRUE(renderer.post_chain_set(&bright, 1));
+	std::vector<uint8_t> single_pixels(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(single_pixels.data(), static_cast<uint32_t>(single_pixels.size())));
+
+	//第二帧：二级链「亮部提取 → 模糊」（同一场景重登记绘制项）
+	ASSERT_TRUE(renderer.mesh_draw(handle, nullptr));
+	uint64_t chain[2] = { bright, blur };
+	ASSERT_TRUE(renderer.post_chain_set(chain, 2));
+	uint64_t chain_targets[2] = { scene_target, second_target };
+	ASSERT_TRUE(renderer.render_target_present_chain_set(chain_targets, 2));
+	std::vector<uint8_t> blurred_pixels(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(blurred_pixels.data(), static_cast<uint32_t>(blurred_pixels.size())));
+
+	//模糊必须真实作用于画面（亮部边界被软化）
+	int difference = max_channel_diff(single_pixels, blurred_pixels);
+	RecordProperty("blur_max_diff", difference);
+	EXPECT_GT(difference, 0) << "二级链与单级画面完全一致（模糊级或第二目标未参与）";
+	//结构不变：中心仍亮、角落仍近黑
+	std::array<uint8_t, 4> center = pixel_get(blurred_pixels, WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2);
+	std::array<uint8_t, 4> corner = pixel_get(blurred_pixels, 1, 1);
+	EXPECT_GE(center[0], 240) << "模糊后中心过暗：" << pixel_text(center);
+	EXPECT_LE(*std::max_element(corner.begin(), corner.begin() + 3), DARK_THRESHOLD) << "模糊后暗部被提亮：" << pixel_text(corner);
+
+	renderer.mesh_unload(handle);
+	renderer.pipeline_unload(bright);
+	renderer.pipeline_unload(blur);
+	renderer.render_target_destroy(second_target);
+	renderer.render_target_destroy(scene_target);
+}
+
+/*
+目标组不足时回落：链长 2 但只设 1 个目标 → 本帧回落单级默认后处理路径并正常出帧
+断言画面为**未经两级链**的结果（中心仍是白四边形、角落仍是暗清屏色）。
+*/
+TEST_F(Renderer_Post_Chain_Test, 目标组不足时回落)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	uint64_t scene_target = 0;
+	ASSERT_TRUE(renderer.render_target_create(scene_target, renderer.extent_width(), renderer.extent_height()));
+	//两级链「反色 → 亮度阈值」：若被误执行则中心纯黑、角落纯白
+	uint64_t invert = post_pipeline_register(renderer, "反色.frag.spv");
+	uint64_t threshold = post_pipeline_register(renderer, "亮度阈值.frag.spv");
+	ASSERT_NE(invert, 0u);
+	ASSERT_NE(threshold, 0u);
+	uint64_t chain[2] = { invert, threshold };
+	ASSERT_TRUE(renderer.post_chain_set(chain, 2));
+	//只设一个目标（目标组不足 2 个）
+	renderer.render_target_present_set(scene_target);
+	engine::Mesh_Handle handle = 0;
+	scene_register(renderer, handle);
+	std::vector<uint8_t> pixels(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(pixels.data(), static_cast<uint32_t>(pixels.size())));
+	EXPECT_EQ(renderer.frame_count(), 1u);
+
+	//回落即两级链未执行：中心仍为白四边形、角落仍为暗清屏色
+	std::array<uint8_t, 4> center = pixel_get(pixels, WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2);
+	EXPECT_GE(*std::min_element(center.begin(), center.begin() + 3), 200)
+		<< "目标组不足时未回落（画面被两级链处理过）：" << pixel_text(center);
+	std::array<uint8_t, 4> corner = pixel_get(pixels, 1, 1);
+	EXPECT_LE(*std::max_element(corner.begin(), corner.begin() + 3), 200)
+		<< "目标组不足时未回落（角落被反色 / 阈值化为白）：" << pixel_text(corner);
+
+	renderer.mesh_unload(handle);
+	renderer.pipeline_unload(invert);
+	renderer.pipeline_unload(threshold);
+	renderer.render_target_destroy(scene_target);
+}
+
+/*
+后处理预设 · 对比度：暗部被压得更暗、亮部保持饱和（端点方向断言）
+参考帧走默认交换链路径；对照帧走单级「对比度」链。
+刻意只断言方向（角落明显变暗、中心仍饱和），不依赖具体曲线数值。
+*/
+TEST_F(Renderer_Post_Chain_Test, 对比度放大明暗差)
+{
+	//参考帧：默认交换链路径
+	std::vector<uint8_t> reference(pixel_bytes());
+	{
+		engine::Renderer renderer;
+		ASSERT_TRUE(renderer.init(hidden_config()));
+		if (!renderer.readback_supported())
+			GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+		engine::Mesh_Handle handle = 0;
+		scene_register(renderer, handle);
+		ASSERT_TRUE(renderer.frame_render(reference.data(), static_cast<uint32_t>(reference.size())));
+		renderer.mesh_unload(handle);
+	}
+	//对照帧：单级对比度链
+	std::vector<uint8_t> adjusted(pixel_bytes());
+	{
+		engine::Renderer renderer;
+		ASSERT_TRUE(renderer.init(hidden_config()));
+		if (!renderer.readback_supported())
+			GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+		uint64_t scene_target = 0;
+		ASSERT_TRUE(renderer.render_target_create(scene_target, renderer.extent_width(), renderer.extent_height()));
+		uint64_t contrast = post_pipeline_register(renderer, "对比度.frag.spv");
+		ASSERT_NE(contrast, 0u);
+		ASSERT_TRUE(renderer.post_chain_set(&contrast, 1));
+		engine::Mesh_Handle handle = 0;
+		scene_register(renderer, handle);
+		renderer.render_target_present_set(scene_target);
+		ASSERT_TRUE(renderer.frame_render(adjusted.data(), static_cast<uint32_t>(adjusted.size())));
+		renderer.mesh_unload(handle);
+		renderer.pipeline_unload(contrast);
+		renderer.render_target_destroy(scene_target);
+	}
+
+	//暗部（清屏色）：参考帧约 60、对照帧应被压到近黑
+	std::array<uint8_t, 4> reference_corner = pixel_get(reference, 1, 1);
+	std::array<uint8_t, 4> adjusted_corner = pixel_get(adjusted, 1, 1);
+	RecordProperty("contrast_corner_reference", static_cast<int>(reference_corner[0]));
+	RecordProperty("contrast_corner_adjusted", static_cast<int>(adjusted_corner[0]));
+	EXPECT_GE(reference_corner[0], 30) << "参考帧角落过暗（用例前提不成立）：" << pixel_text(reference_corner);
+	EXPECT_LE(*std::max_element(adjusted_corner.begin(), adjusted_corner.begin() + 3), 8)
+		<< "暗部未被对比度压暗：" << pixel_text(adjusted_corner);
+	//亮部（白四边形）：仍保持饱和
+	std::array<uint8_t, 4> adjusted_center = pixel_get(adjusted, WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2);
+	EXPECT_GE(*std::min_element(adjusted_center.begin(), adjusted_center.begin() + 3), 250)
+		<< "亮部未保持饱和：" << pixel_text(adjusted_center);
+}
+
+/*
+后处理预设 · 饱和度：色偏区域通道差被放大（清屏色 b > r），纯白保持中性
+参考帧走默认交换链路径；对照帧走单级「饱和度」链。
+*/
+TEST_F(Renderer_Post_Chain_Test, 饱和度放大通道差)
+{
+	//参考帧：默认交换链路径
+	std::vector<uint8_t> reference(pixel_bytes());
+	{
+		engine::Renderer renderer;
+		ASSERT_TRUE(renderer.init(hidden_config()));
+		if (!renderer.readback_supported())
+			GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+		engine::Mesh_Handle handle = 0;
+		scene_register(renderer, handle);
+		ASSERT_TRUE(renderer.frame_render(reference.data(), static_cast<uint32_t>(reference.size())));
+		renderer.mesh_unload(handle);
+	}
+	//对照帧：单级饱和度链
+	std::vector<uint8_t> adjusted(pixel_bytes());
+	{
+		engine::Renderer renderer;
+		ASSERT_TRUE(renderer.init(hidden_config()));
+		if (!renderer.readback_supported())
+			GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+		uint64_t scene_target = 0;
+		ASSERT_TRUE(renderer.render_target_create(scene_target, renderer.extent_width(), renderer.extent_height()));
+		uint64_t saturation = post_pipeline_register(renderer, "饱和度.frag.spv");
+		ASSERT_NE(saturation, 0u);
+		ASSERT_TRUE(renderer.post_chain_set(&saturation, 1));
+		engine::Mesh_Handle handle = 0;
+		scene_register(renderer, handle);
+		renderer.render_target_present_set(scene_target);
+		ASSERT_TRUE(renderer.frame_render(adjusted.data(), static_cast<uint32_t>(adjusted.size())));
+		renderer.mesh_unload(handle);
+		renderer.pipeline_unload(saturation);
+		renderer.render_target_destroy(scene_target);
+	}
+
+	//清屏色（含蓝偏，通道顺序随表面格式而变）的通道差绝对值应被放大
+	std::array<uint8_t, 4> reference_corner = pixel_get(reference, 1, 1);
+	std::array<uint8_t, 4> adjusted_corner = pixel_get(adjusted, 1, 1);
+	int reference_spread = std::abs(static_cast<int>(reference_corner[2]) - static_cast<int>(reference_corner[0]));
+	int adjusted_spread = std::abs(static_cast<int>(adjusted_corner[2]) - static_cast<int>(adjusted_corner[0]));
+	RecordProperty("saturation_spread_reference", reference_spread);
+	RecordProperty("saturation_spread_adjusted", adjusted_spread);
+	EXPECT_GE(reference_spread, 5) << "参考帧角落无明显色偏（用例前提不成立）：" << pixel_text(reference_corner);
+	EXPECT_GE(adjusted_spread, reference_spread + 5) << "色偏未放大：" << pixel_text(adjusted_corner);
+	//白四边形应保持中性（三通道差 ≤ 2）
+	std::array<uint8_t, 4> adjusted_center = pixel_get(adjusted, WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2);
+	EXPECT_LE(std::abs(static_cast<int>(adjusted_center[0]) - static_cast<int>(adjusted_center[2])), 2)
+		<< "纯白被着色：" << pixel_text(adjusted_center);
 }
 
