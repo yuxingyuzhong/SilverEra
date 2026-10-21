@@ -8,6 +8,7 @@
 */
 #include <gtest/gtest.h>
 
+#include <array>
 #include <cstdint>
 
 //获取渲染器门面（含帧统计结构）与网格数据
@@ -201,4 +202,73 @@ TEST_F(Renderer_Stats_Test, 空帧实际绘制量为零)
 	EXPECT_EQ(stats.instances, 0u);
 	EXPECT_EQ(stats.drawn_items, 0u);
 	EXPECT_EQ(stats.drawn_instances, 0u);
+}
+
+//构造沿 X 轴平移的模型矩阵（列主序；其余为单位阵）
+std::array<float, 16> translated_x(float offset)
+{
+	return {
+		1.0f, 0.0f, 0.0f, 0.0f,
+		0.0f, 1.0f, 0.0f, 0.0f,
+		0.0f, 0.0f, 1.0f, 0.0f,
+		offset, 0.0f, 0.0f, 1.0f,
+	};
+}
+
+/*
+视锥剔除（第二十二轮）：完全在视锥外的实例不登记
+三角形局部范围约 ±0.5，平移到 x = 100 远超水平裁剪面（相机 z=3、fov 60° 时约 ±3.08），
+故 mesh_draw 应视为合法跳过：返回真但登记量与实际绘制量均为 0。
+*/
+TEST_F(Renderer_Stats_Test, 视锥外实例被剔除)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, triangle_data()));
+	//平移到视口外后登记（应被剔除）
+	std::array<float, 16> matrix = translated_x(100.0f);
+	ASSERT_TRUE(renderer.mesh_draw(mesh, matrix.data()));
+	ASSERT_TRUE(renderer.frame_render());
+	engine::Frame_Stats stats = renderer.frame_stats_get();
+	EXPECT_EQ(stats.frames, 1u);
+	EXPECT_EQ(stats.draw_items, 0u);
+	EXPECT_EQ(stats.instances, 0u);
+	EXPECT_EQ(stats.drawn_items, 0u);
+	renderer.mesh_unload(mesh);
+}
+
+/*
+视锥剔除的保守性：与裁剪面相交的实例必须保留
+三角形平移到 x = 3（范围约 2.5..3.5）与右裁剪面（约 3.08）相交，故不得剔除。
+*/
+TEST_F(Renderer_Stats_Test, 部分相交实例不被剔除)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, triangle_data()));
+	std::array<float, 16> matrix = translated_x(3.0f);
+	ASSERT_TRUE(renderer.mesh_draw(mesh, matrix.data()));
+	ASSERT_TRUE(renderer.frame_render());
+	engine::Frame_Stats stats = renderer.frame_stats_get();
+	EXPECT_EQ(stats.frames, 1u);
+	EXPECT_EQ(stats.draw_items, 1u);
+	EXPECT_EQ(stats.drawn_items, 1u);
+	renderer.mesh_unload(mesh);
+}
+
+/*
+后处理级数观测（第二十二轮）：未走链的帧 post_stages 恒为 0
+连续两帧都不设后处理链，故最近一帧应为直通路径。
+*/
+TEST_F(Renderer_Stats_Test, 直通路径后处理级数为零)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	for (uint32_t index = 0; index < 2; ++index)
+		ASSERT_TRUE(renderer.frame_render());
+	engine::Frame_Stats stats = renderer.frame_stats_get();
+	EXPECT_EQ(stats.frames, 2u);
+	EXPECT_EQ(stats.post_stages, 0u);
 }

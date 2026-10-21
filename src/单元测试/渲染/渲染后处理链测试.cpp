@@ -1441,3 +1441,43 @@ TEST_F(Renderer_Post_Chain_Test, 饱和度放大通道差)
 		<< "纯白被着色：" << pixel_text(adjusted_center);
 }
 
+/*
+后处理级数观测（第二十二轮）：Frame_Stats.post_stages 反映本帧实际执行的级数
+口径：未设链且无呈现目标 → 直通路径，post_stages == 0；设 2 级链 → post_stages == 2。
+注意：清空链但保留呈现目标时，门面按既有定案**回落单级默认路径**（级数 1，不是 0），故本用例
+      以「先直通、后链」的顺序取值，避免把回落路径误当直通。
+*/
+TEST_F(Renderer_Post_Chain_Test, 后处理级数可观测)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	//直通路径（无链、无呈现目标）：级数为 0
+	ASSERT_TRUE(renderer.frame_render());
+	EXPECT_EQ(renderer.frame_stats_get().post_stages, 0u);
+
+	//两级链所需的目标（两级各一）与管线
+	uint64_t scene_target = 0;
+	uint64_t second_target = 0;
+	ASSERT_TRUE(renderer.render_target_create(scene_target, renderer.extent_width(), renderer.extent_height()));
+	ASSERT_TRUE(renderer.render_target_create(second_target, renderer.extent_width(), renderer.extent_height()));
+	uint64_t invert = post_pipeline_register(renderer, "反色.frag.spv");
+	uint64_t threshold = post_pipeline_register(renderer, "亮度阈值.frag.spv");
+	ASSERT_NE(invert, 0u);
+	ASSERT_NE(threshold, 0u);
+	uint64_t chain[2] = { invert, threshold };
+	ASSERT_TRUE(renderer.post_chain_set(chain, 2));
+	uint64_t chain_targets[2] = { scene_target, second_target };
+	ASSERT_TRUE(renderer.render_target_present_chain_set(chain_targets, 2));
+	engine::Mesh_Handle handle = 0;
+	scene_register(renderer, handle);
+	ASSERT_TRUE(renderer.frame_render());
+	//链路径：级数 = 链长
+	EXPECT_EQ(renderer.frame_stats_get().post_stages, 2u);
+
+	renderer.mesh_unload(handle);
+	renderer.pipeline_unload(invert);
+	renderer.pipeline_unload(threshold);
+	renderer.render_target_destroy(second_target);
+	renderer.render_target_destroy(scene_target);
+}
+
