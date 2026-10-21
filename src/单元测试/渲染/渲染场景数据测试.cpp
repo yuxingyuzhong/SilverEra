@@ -1850,3 +1850,51 @@ TEST_F(Renderer_Scene_Test, 聚光灯锥内两种衰减可区分)
 	renderer.mesh_unload(mesh);
 	renderer.texture_unload(texture);
 }
+
+/*
+雾场景上的文字仍可见（第四十三轮）
+口径：白纹理四边形 ＋ 黑雾（密度 1、区间 [1,4]）压暗场景后叠白色文字：
+      文字走独立着色器（不读雾参数），左上 1/9 区域仍应有明显亮像素；字体缺失则跳过。
+*/
+TEST_F(Renderer_Scene_Test, 雾场景上的文字仍可见)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	//系统等宽字体缺失则跳过
+	uint64_t font = 0;
+	if (!renderer.font_load_file(font, "C:\\Windows\\Fonts\\consola.ttf", 16))
+		GTEST_SKIP() << "系统中缺少 consola.ttf";
+	uint64_t texture = 0;
+	std::vector<uint8_t> texels = solid_white();
+	ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 2, 2));
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, quad_data_with_normal(0.0f, 0.0f, 1.0f)));
+	renderer.texture_bind_set(texture);
+
+	//开启黑雾并叠白色文字
+	const float black[3] = { 0.0f, 0.0f, 0.0f };
+	renderer.fog_set(black, 1.0f, 1.0f, 4.0f);
+	const float white_text[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+	renderer.text_color_set(white_text);
+	ASSERT_TRUE(renderer.mesh_draw(mesh, nullptr));
+	ASSERT_TRUE(renderer.text_draw(font, "FOG", 4.0f, 4.0f));
+	std::vector<uint8_t> pixels(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(pixels.data(), static_cast<std::uint32_t>(pixels.size())));
+
+	//文字所在区域（左上角）统计接近纯白的像素数
+	uint32_t bright_count = 0;
+	for (uint32_t y = 0; y < WINDOW_HEIGHT / 3; ++y)
+		for (uint32_t x = 0; x < WINDOW_WIDTH / 3; ++x)
+		{
+			std::array<uint8_t, 4> value = pixel_get(pixels, x, y);
+			if (value[0] >= 200 && value[1] >= 200 && value[2] >= 200)
+				++bright_count;
+		}
+	RecordProperty("fog_text_bright_pixels", bright_count);
+	EXPECT_GT(bright_count, 10u) << "雾场景上的文字不可见（亮像素 " << bright_count << "）";
+
+	renderer.mesh_unload(mesh);
+	renderer.texture_unload(texture);
+}
