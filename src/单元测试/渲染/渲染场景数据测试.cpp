@@ -993,3 +993,97 @@ TEST_F(Renderer_Scene_Test, 光照场景上的文字仍可见)
 	renderer.mesh_unload(mesh);
 	renderer.texture_unload(texture);
 }
+
+/*
+聚光灯只照亮锥内（第三十四轮）
+口径：白纹理 ＋ 法线 (0,0,1) 全屏四边形；光源位于 (0,0,1) 朝 -Z（正对四边形）：
+      中心像素与光轴夹角 0°、右上角样本（41, 9）约 51°。窄锥（10°/20°）只保留中心，
+      宽锥（60°/80°）连角部一起照亮；两次中心亮度应基本一致。
+*/
+TEST_F(Renderer_Scene_Test, 聚光灯只照亮锥内)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	uint64_t texture = 0;
+	std::vector<uint8_t> texels = solid_white();
+	ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 2, 2));
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, quad_data_with_normal(0.0f, 0.0f, 1.0f)));
+	renderer.texture_bind_set(texture);
+	const float white_light[3] = { 1.0f, 1.0f, 1.0f };
+	const float forward[3] = { 0.0f, 0.0f, -1.0f };
+	//关闭方向光（本用例只观察聚光灯）
+	renderer.light_set(forward, white_light, 0.0f, 0.0f);
+
+	//指定像素的 RGB 均值（亮度粗量；通道序无关）
+	auto brightness_at = [](const std::vector<uint8_t>& pixels, uint32_t x, uint32_t y)
+	{
+		std::array<uint8_t, 4> value = pixel_get(pixels, x, y);
+		return (static_cast<uint32_t>(value[0]) + value[1] + value[2]) / 3;
+	};
+	//渲染一帧并返回「中心 / 右上角样本」亮度（lambda 内用 EXPECT：ASSERT 不允许出现在有返回值的函数中）
+	auto render_pair = [&]()
+	{
+		EXPECT_TRUE(renderer.mesh_draw(mesh, nullptr));
+		std::vector<uint8_t> pixels(pixel_bytes());
+		EXPECT_TRUE(renderer.frame_render(pixels.data(), static_cast<std::uint32_t>(pixels.size())));
+		return std::array<uint32_t, 2>{ brightness_at(pixels, WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2),
+			brightness_at(pixels, 41, 9) };
+	};
+
+	const float position[3] = { 0.0f, 0.0f, 1.0f };
+	//窄锥（10° / 20°）
+	ASSERT_TRUE(renderer.light_add_spot(position, forward, white_light, 10.0f, 1.0f, 10.0f, 20.0f, 0.0f));
+	std::array<uint32_t, 2> narrow = render_pair();
+	//清空后改宽锥（同一盏灯、同一四边形；先恢复方向光关闭，再登记）
+	renderer.lights_clear();
+	renderer.light_set(forward, white_light, 0.0f, 0.0f);
+	ASSERT_TRUE(renderer.light_add_spot(position, forward, white_light, 10.0f, 1.0f, 60.0f, 80.0f, 0.0f));
+	std::array<uint32_t, 2> wide = render_pair();
+	RecordProperty("narrow_center", narrow[0]);
+	RecordProperty("narrow_corner", narrow[1]);
+	RecordProperty("wide_center", wide[0]);
+	RecordProperty("wide_corner", wide[1]);
+	EXPECT_GE(narrow[0], 200u) << "窄锥中心未被照亮（亮度 " << narrow[0] << "）";
+	//中心亮度差（锥形过渡不影响光轴方向）
+	uint32_t center_gap = narrow[0] > wide[0] ? narrow[0] - wide[0] : wide[0] - narrow[0];
+	EXPECT_LE(center_gap, 6u) << "锥角收窄改变了中心亮度（" << narrow[0] << " vs " << wide[0] << "）";
+	EXPECT_LE(narrow[1], 40u) << "锥外区域未被压暗（亮度 " << narrow[1] << "）";
+	EXPECT_GE(wide[1], 150u) << "宽锥未照亮角部（亮度 " << wide[1] << "）";
+
+	renderer.mesh_unload(mesh);
+	renderer.texture_unload(texture);
+}
+
+/*
+聚光灯参数校验与数量上限（第三十四轮）
+口径：内角 ≥ 外角、外角越界（> 90°）、方向退化为零向量均被拒绝；
+      合法登记 4 盏后第 5 盏被拒；清空后可重新登记。
+*/
+TEST_F(Renderer_Scene_Test, 聚光灯参数校验与上限)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	const float position[3] = { 0.0f, 0.0f, 1.0f };
+	const float forward[3] = { 0.0f, 0.0f, -1.0f };
+	const float zero_direction[3] = { 0.0f, 0.0f, 0.0f };
+	const float white_light[3] = { 1.0f, 1.0f, 1.0f };
+	//内角等于外角 → 拒绝
+	EXPECT_FALSE(renderer.light_add_spot(position, forward, white_light, 10.0f, 1.0f, 30.0f, 30.0f, 0.0f));
+	//内角大于外角 → 拒绝
+	EXPECT_FALSE(renderer.light_add_spot(position, forward, white_light, 10.0f, 1.0f, 40.0f, 30.0f, 0.0f));
+	//外角越界（> 90°）→ 拒绝
+	EXPECT_FALSE(renderer.light_add_spot(position, forward, white_light, 10.0f, 1.0f, 20.0f, 120.0f, 0.0f));
+	//方向退化（零向量）→ 拒绝
+	EXPECT_FALSE(renderer.light_add_spot(position, zero_direction, white_light, 10.0f, 1.0f, 10.0f, 20.0f, 0.0f));
+	//合法登记 4 盏（共用点光源上限）
+	for (uint32_t index = 0; index < 4; ++index)
+		EXPECT_TRUE(renderer.light_add_spot(position, forward, white_light, 10.0f, 1.0f, 10.0f, 20.0f, 0.0f));
+	//第 5 盏被拒
+	EXPECT_FALSE(renderer.light_add_spot(position, forward, white_light, 10.0f, 1.0f, 10.0f, 20.0f, 0.0f));
+	//清空后可重新登记
+	renderer.lights_clear();
+	EXPECT_TRUE(renderer.light_add_spot(position, forward, white_light, 10.0f, 1.0f, 10.0f, 20.0f, 0.0f));
+}
