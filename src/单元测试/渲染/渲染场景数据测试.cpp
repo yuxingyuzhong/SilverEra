@@ -1757,3 +1757,96 @@ TEST_F(Renderer_Scene_Test, 场景描述非法环境光颜色被忽略)
 	renderer.mesh_unload(mesh);
 	renderer.texture_unload(texture);
 }
+
+/*
+平方反比下聚光灯仍只照锥内（第四十二轮）
+口径：白纹理 ＋ 法线 (0,0,1) 四边形、方向光关闭；聚光灯 (0,0,1) 朝 -Z、窄锥（10°/20°）、半径 10、
+      衰减模式切平方反比：中心（锥内）亮、角部 (41,9)（锥外）仍被压暗。
+*/
+TEST_F(Renderer_Scene_Test, 平方反比下聚光灯仍只照锥内)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	uint64_t texture = 0;
+	std::vector<uint8_t> texels = solid_white();
+	ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 2, 2));
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, quad_data_with_normal(0.0f, 0.0f, 1.0f)));
+	renderer.texture_bind_set(texture);
+	const float white_light[3] = { 1.0f, 1.0f, 1.0f };
+	const float forward[3] = { 0.0f, 0.0f, -1.0f };
+	//关闭方向光并切平方反比衰减
+	renderer.light_set(forward, white_light, 0.0f, 0.0f);
+	ASSERT_TRUE(renderer.light_attenuation_set(1));
+	const float position[3] = { 0.0f, 0.0f, 1.0f };
+	ASSERT_TRUE(renderer.light_add_spot(position, forward, white_light, 10.0f, 1.0f, 10.0f, 20.0f, 0.0f));
+
+	//渲染一帧并返回「中心 / 右上角样本」亮度（lambda 内用 EXPECT：ASSERT 不允许出现在有返回值的函数中）
+	auto render_pair = [&]()
+	{
+		EXPECT_TRUE(renderer.mesh_draw(mesh, nullptr));
+		std::vector<uint8_t> pixels(pixel_bytes());
+		EXPECT_TRUE(renderer.frame_render(pixels.data(), static_cast<std::uint32_t>(pixels.size())));
+		std::array<uint8_t, 4> center = pixel_get(pixels, WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2);
+		std::array<uint8_t, 4> corner = pixel_get(pixels, 41, 9);
+		return std::array<uint32_t, 2>{
+			(static_cast<uint32_t>(center[0]) + center[1] + center[2]) / 3,
+			(static_cast<uint32_t>(corner[0]) + corner[1] + corner[2]) / 3 };
+	};
+
+	std::array<uint32_t, 2> pair = render_pair();
+	RecordProperty("spot_inverse_center", pair[0]);
+	RecordProperty("spot_inverse_corner", pair[1]);
+	EXPECT_GE(pair[0], 200u) << "平方反比下锥内未被照亮（亮度 " << pair[0] << "）";
+	EXPECT_LE(pair[1], 40u) << "平方反比削弱了锥形（锥外亮度 " << pair[1] << "）";
+
+	renderer.mesh_unload(mesh);
+	renderer.texture_unload(texture);
+}
+
+/*
+聚光灯锥内闪烁两种衰减可区分（第四十二轮）
+口径：白纹理 ＋ 法线 (0,0,1)、方向光关闭；聚光灯 (0,0,2.9) 朝 -Z、半径 3、宽锥：
+      线性衰减约 0.03（暗）、平方反比约 0.52（亮），中心亮度差 ≥ 40。
+*/
+TEST_F(Renderer_Scene_Test, 聚光灯锥内两种衰减可区分)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	uint64_t texture = 0;
+	std::vector<uint8_t> texels = solid_white();
+	ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 2, 2));
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, quad_data_with_normal(0.0f, 0.0f, 1.0f)));
+	renderer.texture_bind_set(texture);
+	const float white_light[3] = { 1.0f, 1.0f, 1.0f };
+	const float forward[3] = { 0.0f, 0.0f, -1.0f };
+	renderer.light_set(forward, white_light, 0.0f, 0.0f);
+	const float position[3] = { 0.0f, 0.0f, 2.9f };
+	ASSERT_TRUE(renderer.light_add_spot(position, forward, white_light, 3.0f, 1.0f, 60.0f, 80.0f, 0.0f));
+
+	//渲染一帧并返回中心亮度（lambda 内用 EXPECT：ASSERT 不允许出现在有返回值的函数中）
+	auto render_brightness = [&]()
+	{
+		EXPECT_TRUE(renderer.mesh_draw(mesh, nullptr));
+		std::vector<uint8_t> pixels(pixel_bytes());
+		EXPECT_TRUE(renderer.frame_render(pixels.data(), static_cast<std::uint32_t>(pixels.size())));
+		return center_brightness(pixels);
+	};
+
+	//线性（默认）
+	uint32_t linear = render_brightness();
+	//平方反比
+	ASSERT_TRUE(renderer.light_attenuation_set(1));
+	uint32_t inverse = render_brightness();
+	RecordProperty("spot_atten_linear", linear);
+	RecordProperty("spot_atten_inverse", inverse);
+	EXPECT_GE(inverse, linear + 40u) << "聚光灯未随衰减模式变亮（" << linear << " → " << inverse << "）";
+
+	renderer.mesh_unload(mesh);
+	renderer.texture_unload(texture);
+}
