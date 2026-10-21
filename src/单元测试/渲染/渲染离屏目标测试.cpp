@@ -274,3 +274,73 @@ TEST_F(Renderer_Offscreen_Test, 无效目标句柄回落交换链)
 	renderer.mesh_unload(handle);
 	renderer.texture_unload(texture);
 }
+
+/*
+离屏目标读回（第二十六轮）：render_target_readback 直接从目标颜色图像取像素
+口径：先把绿场景渲染进目标（frame_render 不回读），再读回目标内容；
+      应得到与目标尺寸一致的绿；连续两次读回结果一致（读回不破坏内容与布局）。
+*/
+TEST_F(Renderer_Offscreen_Test, 读回离屏目标内容)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	//创建与窗口同尺寸的目标
+	uint64_t target = 0;
+	ASSERT_TRUE(renderer.render_target_create(target, WINDOW_WIDTH, WINDOW_HEIGHT));
+	//绿纹理与全屏四边形
+	uint64_t texture = 0;
+	std::vector<uint8_t> texels = solid_green(2, 2);
+	ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 2, 2));
+	engine::Mesh_Handle handle = 0;
+	ASSERT_TRUE(renderer.mesh_load(handle, quad_data()));
+	std::array<float, 16> full = full_screen_matrix();
+	renderer.render_target_set(target);
+	renderer.texture_bind_set(texture);
+	ASSERT_TRUE(renderer.mesh_draw(handle, full.data()));
+	ASSERT_TRUE(renderer.frame_render());
+
+	//读回目标内容
+	std::vector<uint8_t> pixels(pixel_bytes());
+	uint32_t width = 0;
+	uint32_t height = 0;
+	ASSERT_TRUE(renderer.render_target_readback(target, pixels.data(),
+		static_cast<uint32_t>(pixels.size()), &width, &height));
+	EXPECT_EQ(width, WINDOW_WIDTH);
+	EXPECT_EQ(height, WINDOW_HEIGHT);
+	std::array<uint8_t, 4> center = pixel_get(pixels, WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2);
+	EXPECT_TRUE(pixel_is_green(center)) << "目标读回中心非纯绿：" << pixel_text(center);
+	EXPECT_TRUE(pixel_is_green(pixel_get(pixels, 2, 2))) << "目标读回角落非纯绿";
+
+	//第二次读回：内容不因读回而改变
+	std::vector<uint8_t> again(pixel_bytes());
+	ASSERT_TRUE(renderer.render_target_readback(target, again.data(), static_cast<uint32_t>(again.size()), nullptr, nullptr));
+	EXPECT_EQ(pixels, again);
+
+	renderer.mesh_unload(handle);
+	renderer.texture_unload(texture);
+	renderer.render_target_destroy(target);
+}
+
+/*
+离屏目标读回的参数校验（第二十六轮）：未初始化 / 句柄无效 / 容量不足均返回假
+*/
+TEST_F(Renderer_Offscreen_Test, 读回参数校验)
+{
+	engine::Renderer renderer;
+	std::vector<uint8_t> pixels(64 * 36 * 4);
+	//未初始化
+	EXPECT_FALSE(renderer.render_target_readback(1, pixels.data(), static_cast<uint32_t>(pixels.size()), nullptr, nullptr));
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	//句柄无效（从未创建）
+	EXPECT_FALSE(renderer.render_target_readback(9999u, pixels.data(), static_cast<uint32_t>(pixels.size()), nullptr, nullptr));
+	//容量不足
+	uint64_t target = 0;
+	ASSERT_TRUE(renderer.render_target_create(target, WINDOW_WIDTH, WINDOW_HEIGHT));
+	uint32_t width = 123;
+	uint32_t height = 456;
+	EXPECT_FALSE(renderer.render_target_readback(target, pixels.data(), 16, &width, &height));
+	//失败时尺寸出参保持 0
+	EXPECT_EQ(width, 0u);
+	EXPECT_EQ(height, 0u);
+	renderer.render_target_destroy(target);
+}
