@@ -805,3 +805,91 @@ TEST_F(Renderer_Scene_Test, 镜面高光提升亮度)
 	renderer.mesh_unload(mesh);
 	renderer.texture_unload(texture);
 }
+/*
+多个点光源累加（第三十二轮）
+口径：法线 (0,0,1) 全屏四边形、半径 3；单灯（中心 0,0,1）与双灯（±0.5, 0, 1）：
+      单灯照度约 0.67；双灯各约 0.56，累加后钳制到 1.0 → 画面更亮。
+*/
+TEST_F(Renderer_Scene_Test, 多个点光源累加更亮)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	uint64_t texture = 0;
+	std::vector<uint8_t> texels = solid_gray();
+	ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 2, 2));
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, quad_data_with_normal(0.0f, 0.0f, 1.0f)));
+	renderer.texture_bind_set(texture);
+	const float white_light[3] = { 1.0f, 1.0f, 1.0f };
+
+	//渲染一帧并返回中心亮度（lambda 内用 EXPECT：ASSERT 不允许出现在有返回值的函数中）
+	auto render_brightness = [&]()
+	{
+		EXPECT_TRUE(renderer.mesh_draw(mesh, nullptr));
+		std::vector<uint8_t> pixels(pixel_bytes());
+		EXPECT_TRUE(renderer.frame_render(pixels.data(), static_cast<std::uint32_t>(pixels.size())));
+		return center_brightness(pixels);
+	};
+
+	//单灯（中心）
+	const float single_position[3] = { 0.0f, 0.0f, 1.0f };
+	ASSERT_TRUE(renderer.light_add_point(single_position, white_light, 3.0f, 1.0f, 0.0f));
+	uint32_t single = render_brightness();
+	//追加第二盏灯（左移 0.5）
+	const float second_position[3] = { -0.5f, 0.0f, 1.0f };
+	ASSERT_TRUE(renderer.light_add_point(second_position, white_light, 3.0f, 1.0f, 0.0f));
+	uint32_t doubled = render_brightness();
+	RecordProperty("single_light", single);
+	RecordProperty("double_light", doubled);
+	EXPECT_GE(doubled, single + 15u) << "双灯未比单灯更亮（" << single << " → " << doubled << "）";
+
+	renderer.mesh_unload(mesh);
+	renderer.texture_unload(texture);
+}
+
+/*
+点光源数量上限与清空（第三十二轮）
+口径：上限 4 个；第 5 个返回假且画面不变；`lights_clear` 后回到默认方向光。
+*/
+TEST_F(Renderer_Scene_Test, 点光源上限与清空)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	uint64_t texture = 0;
+	std::vector<uint8_t> texels = solid_white();
+	ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 2, 2));
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, quad_data_with_normal(0.0f, 0.0f, 1.0f)));
+	renderer.texture_bind_set(texture);
+	const float white_light[3] = { 1.0f, 1.0f, 1.0f };
+
+	//渲染一帧并返回中心亮度（lambda 内用 EXPECT：ASSERT 不允许出现在有返回值的函数中）
+	auto render_brightness = [&]()
+	{
+		EXPECT_TRUE(renderer.mesh_draw(mesh, nullptr));
+		std::vector<uint8_t> pixels(pixel_bytes());
+		EXPECT_TRUE(renderer.frame_render(pixels.data(), static_cast<std::uint32_t>(pixels.size())));
+		return center_brightness(pixels);
+	};
+
+	//登记 4 个点光源（高度避开中心像素，避免完全饱和而无法比较）
+	const float positions[4][3] = {
+		{ -1.5f, 0.0f, 1.0f }, { -0.5f, 0.0f, 1.0f }, { 0.5f, 0.0f, 1.0f }, { 1.5f, 0.0f, 1.0f },
+	};
+	for (uint32_t index = 0; index < 4; ++index)
+		ASSERT_TRUE(renderer.light_add_point(positions[index], white_light, 6.0f, 0.4f, 0.0f));
+	uint32_t full = render_brightness();
+	//第 5 个被拒（上限 4），画面不变
+	ASSERT_FALSE(renderer.light_add_point(positions[0], white_light, 6.0f, 0.4f, 0.0f));
+	EXPECT_EQ(render_brightness(), full) << "超上限的追加改变了画面";
+	//清空后回到默认方向光（满照，纯白中心）
+	renderer.lights_clear();
+	EXPECT_GE(render_brightness(), 200u) << "清空点光源后未回到方向光满照";
+
+	renderer.mesh_unload(mesh);
+	renderer.texture_unload(texture);
+}
