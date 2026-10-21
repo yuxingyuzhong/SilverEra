@@ -1185,6 +1185,155 @@ TEST_F(Renderer_Post_Chain_Test, 多级降采样链扩散更广)
 }
 
 /*
+泛光参数（第二十一轮）：强度与阈值经推送常量生效
+口径：222 灰纹理（线性 ≈0.72）；链「亮部 → 模糊 → 叠加」（2 目标）。
+  1. 默认参数（0.6 / 0.1 / 1.0）与强度 0.5 各一帧：强度 0.5 的中心应更暗（但高于参考帧）；
+  2. 阈值 0.9（0.72 < 0.8 = 阈值 − 软膝）时提零 → 中心应回到参考帧水平（差 ≤ 容差）。
+*/
+TEST_F(Renderer_Post_Chain_Test, 泛光参数生效)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	std::vector<uint8_t> gray_pixels(16 * 16 * 4, 222);
+	uint64_t gray_texture = 0;
+	ASSERT_TRUE(renderer.texture_load(gray_texture, gray_pixels.data(), 16, 16));
+	uint64_t target0 = 0;
+	uint64_t target1 = 0;
+	uint64_t target2 = 0;
+	ASSERT_TRUE(renderer.render_target_create(target0, renderer.extent_width(), renderer.extent_height()));
+	ASSERT_TRUE(renderer.render_target_create(target1, renderer.extent_width() / 2, renderer.extent_height() / 2));
+	ASSERT_TRUE(renderer.render_target_create(target2, renderer.extent_width(), renderer.extent_height()));
+	uint64_t pass = post_pipeline_register(renderer, "后处理.frag.spv");
+	uint64_t bright = post_pipeline_register(renderer, "亮部提取.frag.spv");
+	uint64_t blur = post_pipeline_register(renderer, "模糊.frag.spv");
+	uint64_t overlay = post_pipeline_register(renderer, "泛光叠加.frag.spv");
+	ASSERT_NE(pass, 0u);
+	ASSERT_NE(bright, 0u);
+	ASSERT_NE(blur, 0u);
+	ASSERT_NE(overlay, 0u);
+	engine::Mesh_Handle handle = 0;
+	ASSERT_TRUE(renderer.mesh_load(handle, quad_data()));
+	renderer.texture_bind_set(gray_texture);
+
+	//参考帧：直通
+	ASSERT_TRUE(renderer.post_chain_set(&pass, 1));
+	uint64_t ref_targets[1] = { target0 };
+	ASSERT_TRUE(renderer.render_target_present_chain_set(ref_targets, 1));
+	ASSERT_TRUE(renderer.mesh_draw(handle, nullptr));
+	std::vector<uint8_t> reference(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(reference.data(), static_cast<uint32_t>(reference.size())));
+
+	//默认参数泛光（t0 → t1（半）→ t2（全）→ 叠加）
+	uint64_t chain[3] = { bright, blur, overlay };
+	ASSERT_TRUE(renderer.post_chain_set(chain, 3));
+	uint64_t chain_targets[3] = { target0, target1, target2 };
+	ASSERT_TRUE(renderer.render_target_present_chain_set(chain_targets, 3));
+	ASSERT_TRUE(renderer.mesh_draw(handle, nullptr));
+	std::vector<uint8_t> full_pixels(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(full_pixels.data(), static_cast<uint32_t>(full_pixels.size())));
+
+	//强度 0.1（灰 0.72 + 0.072 = 0.79 未饱和，可与默认 1.0 区分）
+	renderer.bloom_param_set(0.6f, 0.1f, 0.1f);
+	ASSERT_TRUE(renderer.mesh_draw(handle, nullptr));
+	std::vector<uint8_t> half_pixels(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(half_pixels.data(), static_cast<uint32_t>(half_pixels.size())));
+
+	//阈值 0.9（灰 0.72 被提零）
+	renderer.bloom_param_set(0.9f, 0.1f, 1.0f);
+	ASSERT_TRUE(renderer.mesh_draw(handle, nullptr));
+	std::vector<uint8_t> high_threshold_pixels(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(high_threshold_pixels.data(), static_cast<uint32_t>(high_threshold_pixels.size())));
+
+	int reference_luma = luma_of(pixel_get(reference, WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2));
+	int full_luma = luma_of(pixel_get(full_pixels, WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2));
+	int half_luma = luma_of(pixel_get(half_pixels, WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2));
+	int threshold_luma = luma_of(pixel_get(high_threshold_pixels, WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2));
+	RecordProperty("bloom_full_luma", full_luma);
+	RecordProperty("bloom_half_luma", half_luma);
+	RecordProperty("bloom_threshold_luma", threshold_luma);
+	RecordProperty("bloom_reference_luma", reference_luma);
+	//强度减半：更暗，但仍高于参考
+	EXPECT_LT(half_luma, full_luma) << "强度 0.5 未降低亮度";
+	EXPECT_GT(half_luma, reference_luma) << "强度 0.5 应仍有泛光（高于参考帧）";
+	//阈值 0.9：中灰被提零 → 回到参考水平
+	EXPECT_LE(std::abs(threshold_luma - reference_luma), 6)
+		<< "阈值 0.9 未把中灰提零（仍有泛光）";
+
+	//恢复默认参数（避免影响后续用例语义）
+	renderer.bloom_param_set(0.6f, 0.1f, 1.0f);
+	renderer.mesh_unload(handle);
+	renderer.pipeline_unload(pass);
+	renderer.pipeline_unload(bright);
+	renderer.pipeline_unload(blur);
+	renderer.pipeline_unload(overlay);
+	renderer.render_target_destroy(target2);
+	renderer.render_target_destroy(target1);
+	renderer.render_target_destroy(target0);
+	renderer.texture_unload(gray_texture);
+}
+
+/*
+预设 · 暗角（第二十一轮）：角落被压暗、中心基本不变
+参考帧走单级直通；对照帧走单级「暗角」。
+*/
+TEST_F(Renderer_Post_Chain_Test, 暗角压暗边角)
+{
+	//参考帧
+	std::vector<uint8_t> reference(pixel_bytes());
+	{
+		engine::Renderer renderer;
+		ASSERT_TRUE(renderer.init(hidden_config()));
+		if (!renderer.readback_supported())
+			GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+		uint64_t scene_target = 0;
+		ASSERT_TRUE(renderer.render_target_create(scene_target, renderer.extent_width(), renderer.extent_height()));
+		uint64_t pass = post_pipeline_register(renderer, "后处理.frag.spv");
+		ASSERT_NE(pass, 0u);
+		ASSERT_TRUE(renderer.post_chain_set(&pass, 1));
+		renderer.render_target_present_set(scene_target);
+		engine::Mesh_Handle handle = 0;
+		scene_register(renderer, handle);
+		ASSERT_TRUE(renderer.frame_render(reference.data(), static_cast<uint32_t>(reference.size())));
+		renderer.mesh_unload(handle);
+		renderer.pipeline_unload(pass);
+		renderer.render_target_destroy(scene_target);
+	}
+	//对照帧：暗角
+	std::vector<uint8_t> vignetted(pixel_bytes());
+	{
+		engine::Renderer renderer;
+		ASSERT_TRUE(renderer.init(hidden_config()));
+		if (!renderer.readback_supported())
+			GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+		uint64_t scene_target = 0;
+		ASSERT_TRUE(renderer.render_target_create(scene_target, renderer.extent_width(), renderer.extent_height()));
+		uint64_t vignette = post_pipeline_register(renderer, "暗角.frag.spv");
+		ASSERT_NE(vignette, 0u);
+		ASSERT_TRUE(renderer.post_chain_set(&vignette, 1));
+		renderer.render_target_present_set(scene_target);
+		engine::Mesh_Handle handle = 0;
+		scene_register(renderer, handle);
+		ASSERT_TRUE(renderer.frame_render(vignetted.data(), static_cast<uint32_t>(vignetted.size())));
+		renderer.mesh_unload(handle);
+		renderer.pipeline_unload(vignette);
+		renderer.render_target_destroy(scene_target);
+	}
+
+	//角落：明显变暗
+	int reference_corner = luma_of(pixel_get(reference, 1, 1));
+	int vignetted_corner = luma_of(pixel_get(vignetted, 1, 1));
+	RecordProperty("vignette_reference_corner", reference_corner);
+	RecordProperty("vignette_corner", vignetted_corner);
+	EXPECT_LT(vignetted_corner, reference_corner - 20) << "暗角未压暗角落";
+	//中心：基本不变
+	int reference_center = luma_of(pixel_get(reference, WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2));
+	int vignetted_center = luma_of(pixel_get(vignetted, WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2));
+	EXPECT_LE(std::abs(vignetted_center - reference_center), 6) << "暗角影响了中心";
+}
+
+/*
 后处理预设 · 对比度：暗部被压得更暗、亮部保持饱和（端点方向断言）
 参考帧走默认交换链路径；对照帧走单级「对比度」链。
 刻意只断言方向（角落明显变暗、中心仍饱和），不依赖具体曲线数值。
