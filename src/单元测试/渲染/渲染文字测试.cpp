@@ -370,8 +370,66 @@ TEST_F(Renderer_Text_Test, 文字颜色着色生效)
         int red_max = *std::max_element(red_pixel.begin(), red_pixel.begin() + 3);
         RecordProperty("text_color_red_max", red_max);
         RecordProperty("text_color_red_min", red_min);
-        EXPECT_GE(red_max - red_min, 100) << "文字着色未生效（仍为中性色）：" << pixel_text(red_pixel);
-        EXPECT_GE(red_max, 200) << "着色后墨迹过暗：" << pixel_text(red_pixel);
+	EXPECT_GE(red_max - red_min, 100) << "文字着色未生效（仍为中性色）：" << pixel_text(red_pixel);
+	EXPECT_GE(red_max, 200) << "着色后墨迹过暗：" << pixel_text(red_pixel);
 
-        renderer.font_unload(font);
+	renderer.font_unload(font);
+}
+
+/*
+文字 alpha（第二十轮）：颜色的第 4 分量参与混合
+口径：白字（alpha = 1）与半透明白字（alpha = 0.5）各画一帧；
+      半透明帧的最亮像素应比不透明帧暗、但明显亮于清屏色（介于两者之间）。
+*/
+TEST_F(Renderer_Text_Test, 文字透明度生效)
+{
+	if (!font_available())
+		GTEST_SKIP() << "本机无 " << FONT_PATH;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	uint64_t font = 0;
+	ASSERT_TRUE(renderer.font_load_file(font, FONT_PATH, FONT_PIXEL_HEIGHT));
+	//不透明白字
+	renderer.text_color_set(std::array<float, 4>{ 1.0f, 1.0f, 1.0f, 1.0f }.data());
+	ASSERT_TRUE(renderer.text_draw(font, "HH", 8.0f, 8.0f));
+	std::vector<uint8_t> opaque_pixels(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(opaque_pixels.data(), static_cast<uint32_t>(opaque_pixels.size())));
+	//半透明白字
+	renderer.text_color_set(std::array<float, 4>{ 1.0f, 1.0f, 1.0f, 0.5f }.data());
+	ASSERT_TRUE(renderer.text_draw(font, "HH", 8.0f, 8.0f));
+	std::vector<uint8_t> alpha_pixels(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(alpha_pixels.data(), static_cast<uint32_t>(alpha_pixels.size())));
+
+	//两帧各自的最亮像素
+	auto brightest = [](const std::vector<uint8_t>& pixels)
+	{
+		std::array<uint8_t, 4> best{};
+		int best_sum = -1;
+		for (uint32_t y = 0; y < WINDOW_HEIGHT; ++y)
+			for (uint32_t x = 0; x < WINDOW_WIDTH; ++x)
+			{
+				std::array<uint8_t, 4> value = pixel_get(pixels, x, y);
+				int sum = value[0] + value[1] + value[2];
+				if (sum > best_sum)
+				{
+					best_sum = sum;
+					best = value;
+				}
+			}
+		return best;
+	};
+	std::array<uint8_t, 4> opaque = brightest(opaque_pixels);
+	std::array<uint8_t, 4> alpha = brightest(alpha_pixels);
+	std::array<uint8_t, 4> background = pixel_get(opaque_pixels, 1, 1);
+	int opaque_luma = opaque[0] + opaque[1] + opaque[2];
+	int alpha_luma = alpha[0] + alpha[1] + alpha[2];
+	int background_luma = background[0] + background[1] + background[2];
+	RecordProperty("alpha_opaque_luma", opaque_luma);
+	RecordProperty("alpha_half_luma", alpha_luma);
+	EXPECT_LT(alpha_luma, opaque_luma) << "半透明文字未变暗：" << pixel_text(alpha) << " / " << pixel_text(opaque);
+	EXPECT_GT(alpha_luma, background_luma + 30) << "半透明文字过暗（已接近背景）：" << pixel_text(alpha);
+
+	renderer.font_unload(font);
 }

@@ -284,3 +284,69 @@ TEST_F(Renderer_Scene_Test, 默认场景描述与原默认画面一致)
 	renderer.mesh_unload(mesh);
 	renderer.texture_unload(texture);
 }
+
+/*
+正交投影（第二十轮）：同一四边形在相机远近不同时屏幕占比不变；透视下则明显变小
+口径：纯红纹理 ＋ 覆盖视口中央的四边形（单位矩阵）；统计「红饱和（外通道 ≥ 200）」的像素数。
+      透视：z = 5 的红色像素数应显著少于 z = 3；
+      正交（ortho_height = 2）：z = 3 与 z = 5 的红色像素数应基本一致（差 ≤ 2%）。
+*/
+TEST_F(Renderer_Scene_Test, 正交投影下远近尺寸一致)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	uint64_t texture = 0;
+	std::vector<uint8_t> texels = solid_red();
+	ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 2, 2));
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, quad_data()));
+	renderer.texture_bind_set(texture);
+
+	//红色像素计数（外通道饱和即视为四边形覆盖）
+	auto red_count = [](const std::vector<uint8_t>& pixels)
+	{
+		uint32_t count = 0;
+		for (uint32_t y = 0; y < WINDOW_HEIGHT; ++y)
+			for (uint32_t x = 0; x < WINDOW_WIDTH; ++x)
+				if (outer_max(pixel_get(pixels, x, y)) >= 200)
+					++count;
+		return count;
+	};
+	//按给定相机位置 / 正文模式渲染一帧并计数
+	auto render_count = [&](float camera_z, bool ortho)
+	{
+		engine::Scene_Data scene{};
+		scene.position[2] = camera_z;
+		scene.ortho = ortho;
+		scene.ortho_height = 2.0f;
+		renderer.scene_apply(scene);
+		renderer.mesh_draw(mesh, nullptr);
+		std::vector<uint8_t> pixels(pixel_bytes());
+		EXPECT_TRUE(renderer.frame_render(pixels.data(), static_cast<std::uint32_t>(pixels.size())));
+		return red_count(pixels);
+	};
+
+	//透视：近大远小
+	uint32_t perspective_near = render_count(3.0f, false);
+	uint32_t perspective_far = render_count(5.0f, false);
+	RecordProperty("ortho_perspective_near", perspective_near);
+	RecordProperty("ortho_perspective_far", perspective_far);
+	EXPECT_GT(perspective_near, 0u) << "透视近距帧无四边形（用例前提不成立）";
+	EXPECT_LT(perspective_far, perspective_near * 8 / 10) << "透视下远距未明显变小";
+
+	//正交：远近一致
+	uint32_t ortho_near = render_count(3.0f, true);
+	uint32_t ortho_far = render_count(5.0f, true);
+	RecordProperty("ortho_near", ortho_near);
+	RecordProperty("ortho_far", ortho_far);
+	EXPECT_GT(ortho_near, 0u) << "正交帧无四边形（用例前提不成立）";
+	//允许 2% 的像素级误差
+	uint32_t tolerance = ortho_near / 50 + 1;
+	EXPECT_LE(std::abs(static_cast<int>(ortho_far) - static_cast<int>(ortho_near)), static_cast<int>(tolerance))
+		<< "正交投影下远距画面占比改变（正交" << ortho_near << " / " << ortho_far << "）";
+
+	renderer.mesh_unload(mesh);
+	renderer.texture_unload(texture);
+}
