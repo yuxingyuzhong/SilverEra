@@ -2843,6 +2843,89 @@ TEST_F(Renderer_Scene_Test, 阴影软度连续可调)
 }
 
 /*
+阴影图读回（第五十七轮）
+口径：开阴影画遮挡面 ＋ 接收面后读回阴影图；尺寸等于当前分辨率；
+     中心像素含几何深度（非全零），左上角为清屏值（全零）；切 512 后尺寸随之为 512；
+     容量不足（小于 边长² × 4）返回假。
+*/
+TEST_F(Renderer_Scene_Test, 阴影图读回)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	uint64_t texture = 0;
+	std::vector<uint8_t> texels = solid_white();
+	ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 2, 2));
+	engine::Mesh_Handle receiver = 0;
+	engine::Mesh_Handle occluder = 0;
+	ASSERT_TRUE(renderer.mesh_load(receiver, quad_data_with_normal(0.0f, 0.0f, -1.0f)));
+	ASSERT_TRUE(renderer.mesh_load(occluder, quad_data_with_normal(0.0f, 0.0f, -1.0f)));
+	renderer.texture_bind_set(texture);
+
+	//场景：方向光沿 +Z、强度 1、环境光 0、阴影开启
+	engine::Camera_Data camera{};
+	engine::Light_Data light{};
+	light.direction[2] = 1.0f;
+	light.intensity = 1.0f;
+	light.ambient = 0.0f;
+	engine::Fog_Data fog{};
+	renderer.scene_apply(camera, light, fog);
+	renderer.shadow_enable_set(true);
+
+	//遮挡面（缩放 0.6、居中、z = -0.5）与接收面
+	float occluder_transform[16] = {};
+	occluder_transform[0] = 0.6f;
+	occluder_transform[5] = 0.6f;
+	occluder_transform[10] = 0.6f;
+	occluder_transform[14] = -0.5f;
+	occluder_transform[15] = 1.0f;
+	ASSERT_TRUE(renderer.mesh_draw(occluder, occluder_transform));
+	ASSERT_TRUE(renderer.mesh_draw(receiver, nullptr));
+	ASSERT_TRUE(renderer.frame_render());
+
+	//读回 1024 阴影图
+	const uint32_t shadow_size = renderer.shadow_resolution();
+	std::vector<uint8_t> shadow_pixels(static_cast<std::size_t>(shadow_size) * shadow_size * 4);
+	uint32_t read_width = 0;
+	uint32_t read_height = 0;
+	ASSERT_TRUE(renderer.shadow_readback(shadow_pixels.data(),
+		static_cast<uint32_t>(shadow_pixels.size()), &read_width, &read_height));
+	EXPECT_EQ(read_width, shadow_size);
+	EXPECT_EQ(read_height, shadow_size);
+
+	//中心像素（含几何深度）与左上角（清屏值）
+	const std::size_t center_index = (static_cast<std::size_t>(read_height / 2) * read_width + read_width / 2) * 4;
+	const std::size_t corner_index = 0;
+	const uint32_t center_sum = static_cast<uint32_t>(shadow_pixels[center_index])
+		+ shadow_pixels[center_index + 1] + shadow_pixels[center_index + 2] + shadow_pixels[center_index + 3];
+	const uint32_t corner_sum = static_cast<uint32_t>(shadow_pixels[corner_index])
+		+ shadow_pixels[corner_index + 1] + shadow_pixels[corner_index + 2] + shadow_pixels[corner_index + 3];
+	RecordProperty("shadow_readback_size", read_width);
+	RecordProperty("shadow_readback_center", center_sum);
+	RecordProperty("shadow_readback_corner", corner_sum);
+
+	EXPECT_GT(center_sum, 0u) << "阴影图中心没有几何深度";
+	EXPECT_EQ(corner_sum, 0u) << "阴影图角落不是清屏值";
+
+	//容量不足被拒
+	EXPECT_FALSE(renderer.shadow_readback(shadow_pixels.data(), 1024, nullptr, nullptr));
+
+	//切 512 后尺寸随之变化
+	renderer.shadow_resolution_set(512);
+	ASSERT_TRUE(renderer.mesh_draw(occluder, occluder_transform));
+	ASSERT_TRUE(renderer.mesh_draw(receiver, nullptr));
+	ASSERT_TRUE(renderer.frame_render());
+	std::vector<uint8_t> small_pixels(512 * 512 * 4);
+	ASSERT_TRUE(renderer.shadow_readback(small_pixels.data(),
+		static_cast<uint32_t>(small_pixels.size()), &read_width, &read_height));
+	EXPECT_EQ(read_width, 512u);
+	EXPECT_EQ(read_height, 512u);
+
+	renderer.mesh_unload(receiver);
+	renderer.mesh_unload(occluder);
+	renderer.texture_unload(texture);
+}
+
+/*
 方向光与补光逐光高光缩放（第五十轮）
 口径：四边形法线朝 +Z、环境光 0、全局高光 1.0 / 16：
       方向光强度 0.4 时「缩放 0」仅漫反射、「缩放 1」叠加高光明显更亮；
