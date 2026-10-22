@@ -2485,6 +2485,112 @@ TEST_F(Renderer_Scene_Test, 方向光阴影生效)
 }
 
 /*
+阴影软度与强度（第五十三轮）
+口径：同「方向光阴影生效」用法线 -Z 的接收面与方向光 +Z、环境光 0、遮挡面 z = -0.5；
+     强度 0 时阴影完全无效（中心回到基线）、强度 1 时中心完全遮蔽、强度 0.5 时中心介于两者之间；
+     软度 1（3×3 PCF）时中心仍被遮蔽；非法强度 1.5 整次忽略且画面不变。
+*/
+TEST_F(Renderer_Scene_Test, 阴影强度生效)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	uint64_t texture = 0;
+	std::vector<uint8_t> texels = solid_white();
+	ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 2, 2));
+	engine::Mesh_Handle receiver = 0;
+	engine::Mesh_Handle occluder = 0;
+	ASSERT_TRUE(renderer.mesh_load(receiver, quad_data_with_normal(0.0f, 0.0f, -1.0f)));
+	ASSERT_TRUE(renderer.mesh_load(occluder, quad_data_with_normal(0.0f, 0.0f, -1.0f)));
+	renderer.texture_bind_set(texture);
+
+	//渲染一帧并返回整帧像素
+	auto render_frame = [&]()
+	{
+		std::vector<uint8_t> pixels(pixel_bytes());
+		EXPECT_TRUE(renderer.frame_render(pixels.data(), static_cast<std::uint32_t>(pixels.size())));
+		return pixels;
+	};
+
+	//场景：方向光沿 +Z、强度 1、环境光 0
+	engine::Camera_Data camera{};
+	engine::Light_Data light{};
+	light.direction[2] = 1.0f;
+	light.intensity = 1.0f;
+	light.ambient = 0.0f;
+	engine::Fog_Data fog{};
+	renderer.scene_apply(camera, light, fog);
+
+	//遮挡面（缩放 0.6、平移 z = -0.5，列主序）
+	float occluder_transform[16] = {};
+	occluder_transform[0] = 0.6f;
+	occluder_transform[5] = 0.6f;
+	occluder_transform[10] = 0.6f;
+	occluder_transform[14] = -0.5f;
+	occluder_transform[15] = 1.0f;
+
+	//无遮挡且未开阴影的基线
+	ASSERT_TRUE(renderer.mesh_draw(receiver, nullptr));
+	const uint32_t baseline = center_brightness(render_frame());
+
+	//开启阴影、强度 1：中心完全遮蔽
+	renderer.shadow_enable_set(true);
+	renderer.shadow_strength_set(1.0f);
+	ASSERT_TRUE(renderer.mesh_draw(occluder, occluder_transform));
+	ASSERT_TRUE(renderer.mesh_draw(receiver, nullptr));
+	const uint32_t full_shadow = center_brightness(render_frame());
+
+	//强度 0：阴影完全无效，中心回到基线
+	renderer.shadow_strength_set(0.0f);
+	ASSERT_TRUE(renderer.mesh_draw(occluder, occluder_transform));
+	ASSERT_TRUE(renderer.mesh_draw(receiver, nullptr));
+	const uint32_t no_shadow = center_brightness(render_frame());
+
+	//强度 0.5：中心介于两者之间
+	renderer.shadow_strength_set(0.5f);
+	ASSERT_TRUE(renderer.mesh_draw(occluder, occluder_transform));
+	ASSERT_TRUE(renderer.mesh_draw(receiver, nullptr));
+	const uint32_t half_shadow = center_brightness(render_frame());
+
+	//非法强度 1.5：整次忽略，画面与 0.5 一致
+	renderer.shadow_strength_set(1.5f);
+	EXPECT_FLOAT_EQ(renderer.shadow_strength(), 0.5f);
+	ASSERT_TRUE(renderer.mesh_draw(occluder, occluder_transform));
+	ASSERT_TRUE(renderer.mesh_draw(receiver, nullptr));
+	const uint32_t rejected = center_brightness(render_frame());
+
+	//软度 1（3×3 PCF）、强度恢复 1：中心仍处于遮蔽区，亮度保持低位
+	renderer.shadow_strength_set(1.0f);
+	renderer.shadow_softness_set(1.0f);
+	ASSERT_TRUE(renderer.mesh_draw(occluder, occluder_transform));
+	ASSERT_TRUE(renderer.mesh_draw(receiver, nullptr));
+	const uint32_t soft_shadow = center_brightness(render_frame());
+
+	RecordProperty("strength_baseline", baseline);
+	RecordProperty("strength_full", full_shadow);
+	RecordProperty("strength_zero", no_shadow);
+	RecordProperty("strength_half", half_shadow);
+	RecordProperty("strength_rejected", rejected);
+	RecordProperty("softness_full", soft_shadow);
+
+	EXPECT_GE(baseline, 200u) << "接收面未被方向光照亮（" << baseline << "）";
+	EXPECT_LT(full_shadow, 60u) << "强度 1 时中心未完全遮蔽（" << full_shadow << "）";
+	EXPECT_NEAR(no_shadow, baseline, 4u) << "强度 0 时阴影未失效（"
+		<< no_shadow << " vs " << baseline << "）";
+	EXPECT_GT(half_shadow, 100u) << "强度 0.5 时中心过暗（" << half_shadow << "）";
+	EXPECT_LT(half_shadow, baseline - 50u) << "强度 0.5 时中心未变暗（"
+		<< half_shadow << " vs " << baseline << "）";
+	EXPECT_NEAR(rejected, half_shadow, 4u) << "非法强度未整次忽略（"
+		<< rejected << " vs " << half_shadow << "）";
+	EXPECT_LT(soft_shadow, 60u) << "软度 1 时中心未被遮蔽（" << soft_shadow << "）";
+
+	renderer.mesh_unload(receiver);
+	renderer.mesh_unload(occluder);
+	renderer.texture_unload(texture);
+}
+
+/*
 方向光与补光逐光高光缩放（第五十轮）
 口径：四边形法线朝 +Z、环境光 0、全局高光 1.0 / 16：
       方向光强度 0.4 时「缩放 0」仅漫反射、「缩放 1」叠加高光明显更亮；
