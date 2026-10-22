@@ -70,6 +70,7 @@ target_sources(EngineTestObjects PRIVATE
     "src/单元测试/渲染/渲染着色器校验测试.cpp"
     "src/单元测试/渲染/渲染离屏目标测试.cpp"
     "src/单元测试/渲染/渲染网格纹理测试.cpp"
+    "src/单元测试/渲染/渲染聚光灯测试.cpp"
     "src/单元测试/渲染/渲染超采样测试.cpp"
     "src/单元测试/渲染/渲染采样器各向异性测试.cpp"
     "src/单元测试/渲染/渲染阴影测试.cpp"
