@@ -2149,6 +2149,14 @@ TEST_F(Renderer_Scene_Test, 三组入参与扁平场景等价)
 	scene.ambient_ground[1] = 0.1f;
 	scene.ambient_ground[2] = 0.1f;
 	scene.ambient_hemisphere = 1.0f;
+	//补光（第四十七轮：方向 / 颜色 / 强度须随三组等价传递）
+	scene.fill_direction[0] = 0.3f;
+	scene.fill_direction[1] = 0.4f;
+	scene.fill_direction[2] = -0.5f;
+	scene.fill_color[0] = 0.5f;
+	scene.fill_color[1] = 0.6f;
+	scene.fill_color[2] = 0.7f;
+	scene.fill_intensity = 0.4f;
 	renderer.scene_apply(scene);
 	std::vector<uint8_t> flat_pixels = render_frame();
 
@@ -2166,8 +2174,11 @@ TEST_F(Renderer_Scene_Test, 三组入参与扁平场景等价)
 		light.point_color[0][index] = scene.point_light_color[0][index];
 		light.ambient_color[index] = scene.ambient_color[index];
 		light.ambient_ground[index] = scene.ambient_ground[index];
+		light.fill_direction[index] = scene.fill_direction[index];
+		light.fill_color[index] = scene.fill_color[index];
 	}
 	light.ambient_hemisphere = scene.ambient_hemisphere;
+	light.fill_intensity = scene.fill_intensity;
 	light.point_radius[0] = scene.point_light_radius[0];
 	light.point_intensity[0] = scene.point_light_intensity[0];
 	light.point_attenuation[0] = scene.point_light_attenuation[0];
@@ -2307,5 +2318,58 @@ TEST_F(Renderer_Scene_Test, 半球环境光上下异色)
 
 	renderer.mesh_unload(up_mesh);
 	renderer.mesh_unload(down_mesh);
+	renderer.texture_unload(texture);
+}
+
+/*
+补光可独立生效（第四十七轮）
+口径：四边形法线朝 +Z；关闭主方向光与环境光，补光方向 (0,0,-1)、强度 0.5：
+      补光关闭（强度 0）时中心近黑；开启后中心亮度约 0.5；非法强度（负值）整次拒绝、画面不变。
+*/
+TEST_F(Renderer_Scene_Test, 补光可独立生效)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	uint64_t texture = 0;
+	std::vector<uint8_t> texels = solid_white();
+	ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 2, 2));
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, quad_data_with_normal(0.0f, 0.0f, 1.0f)));
+	renderer.texture_bind_set(texture);
+
+	//渲染一帧并返回中心亮度（lambda 内用 EXPECT：ASSERT 不允许出现在有返回值的函数中）
+	auto render_brightness = [&]()
+	{
+		EXPECT_TRUE(renderer.mesh_draw(mesh, nullptr));
+		std::vector<uint8_t> pixels(pixel_bytes());
+		EXPECT_TRUE(renderer.frame_render(pixels.data(), static_cast<std::uint32_t>(pixels.size())));
+		return center_brightness(pixels);
+	};
+
+	//关闭主方向光与环境光
+	const float light_direction[3] = { 0.0f, 0.0f, -1.0f };
+	const float white[3] = { 1.0f, 1.0f, 1.0f };
+	renderer.light_set(light_direction, white, 0.0f, 0.0f);
+	//补光关闭
+	renderer.light_fill_set(light_direction, white, 0.0f);
+	uint32_t off = render_brightness();
+	//补光开启
+	renderer.light_fill_set(light_direction, white, 0.5f);
+	uint32_t on = render_brightness();
+	//非法强度整次拒绝（保持既有 0.5）
+	renderer.light_fill_set(light_direction, white, -1.0f);
+	uint32_t invalid = render_brightness();
+
+	RecordProperty("fill_off", off);
+	RecordProperty("fill_on", on);
+	RecordProperty("fill_invalid", invalid);
+
+	EXPECT_LT(off, 20u) << "补光关闭时仍有照明（" << off << "）";
+	EXPECT_GE(on, 100u) << "补光未照亮正面（" << on << "）";
+	EXPECT_NEAR(invalid, on, 4u) << "非法补光强度改变了画面（" << invalid << " vs " << on << "）";
+
+	renderer.mesh_unload(mesh);
 	renderer.texture_unload(texture);
 }
