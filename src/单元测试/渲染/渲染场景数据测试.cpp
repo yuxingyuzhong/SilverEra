@@ -2018,6 +2018,75 @@ TEST_F(Renderer_Scene_Test, 雾结束距离处完全遮蔽)
 	EXPECT_LE(inner, 30u) << "结束距离处残留场景色（" << pixel_text(center) << "）";
 	EXPECT_LE(center[1], 30u) << "绿色通道未归零（" << pixel_text(center) << "）";
 
+        renderer.mesh_unload(mesh);
+        renderer.texture_unload(texture);
+}
+
+/*
+逐光源距离衰减模式覆盖全局（第四十六轮）
+口径：立方体 +Z 面中心距点光源 2.0、半径 2.0（d/r = 1）：
+      线性衰减为 0、平方反比为 0.5，故「全局线性 ＋ 逐盏平方反比」应明显亮于「全局平方反比 ＋ 逐盏线性」；
+      逐盏模式 0 应跟随全局；越界值按 2（平方反比）处理。
+*/
+TEST_F(Renderer_Scene_Test, 逐光源衰减模式覆盖全局)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	uint64_t texture = 0;
+	std::vector<uint8_t> texels = solid_white();
+	ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 2, 2));
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, cube_data(0.5f)));
+	renderer.texture_bind_set(texture);
+
+	//渲染一帧并返回中心亮度（lambda 内用 EXPECT：ASSERT 不允许出现在有返回值的函数中）
+	auto render_brightness = [&]()
+	{
+		EXPECT_TRUE(renderer.mesh_draw(mesh, nullptr));
+		std::vector<uint8_t> pixels(pixel_bytes());
+		EXPECT_TRUE(renderer.frame_render(pixels.data(), static_cast<std::uint32_t>(pixels.size())));
+		return center_brightness(pixels);
+	};
+
+	//关闭方向光，仅保留点光源
+	const float white_light[3] = { 1.0f, 1.0f, 1.0f };
+	const float light_direction[3] = { 0.0f, 0.0f, -1.0f };
+	const float light_position[3] = { 0.0f, 0.0f, 2.5f };
+	//(1) 全局线性 ＋ 逐盏平方反比
+	renderer.lights_clear();
+	renderer.light_set(light_direction, white_light, 0.0f, 0.0f);
+	renderer.light_attenuation_set(0);
+	ASSERT_TRUE(renderer.light_add_point(light_position, white_light, 2.0f, 1.0f, 0.0f, 2));
+	uint32_t inverse = render_brightness();
+	//(2) 全局平方反比 ＋ 逐盏线性
+	renderer.lights_clear();
+	renderer.light_set(light_direction, white_light, 0.0f, 0.0f);
+	renderer.light_attenuation_set(1);
+	ASSERT_TRUE(renderer.light_add_point(light_position, white_light, 2.0f, 1.0f, 0.0f, 1));
+	uint32_t linear = render_brightness();
+	//(3) 逐盏 0 = 跟随全局（全局平方反比）
+	renderer.lights_clear();
+	renderer.light_set(light_direction, white_light, 0.0f, 0.0f);
+	renderer.light_attenuation_set(1);
+	ASSERT_TRUE(renderer.light_add_point(light_position, white_light, 2.0f, 1.0f, 0.0f, 0));
+	uint32_t follow = render_brightness();
+	//(4) 越界值 9 按 2 处理（与 (1) 同口径）
+	renderer.lights_clear();
+	renderer.light_set(light_direction, white_light, 0.0f, 0.0f);
+	renderer.light_attenuation_set(0);
+	ASSERT_TRUE(renderer.light_add_point(light_position, white_light, 2.0f, 1.0f, 0.0f, 9));
+	uint32_t clamped = render_brightness();
+	RecordProperty("per_light_inverse", inverse);
+	RecordProperty("per_light_linear", linear);
+	RecordProperty("follow_global", follow);
+
+	EXPECT_GT(inverse, linear + 40u) << "逐盏平方反比未覆盖全局线性（" << inverse << " vs " << linear << "）";
+	EXPECT_LT(linear, 120u) << "逐盏线性未覆盖全局平方反比（中心仍亮：" << linear << "）";
+	EXPECT_NEAR(follow, inverse, 4u) << "逐盏模式 0 未跟随全局（" << follow << " vs " << inverse << "）";
+	EXPECT_NEAR(clamped, inverse, 4u) << "逐光源模式越界未被钳到 2（" << clamped << " vs " << inverse << "）";
+
 	renderer.mesh_unload(mesh);
 	renderer.texture_unload(texture);
 }
