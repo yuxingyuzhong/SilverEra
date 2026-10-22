@@ -194,7 +194,7 @@ namespace engine
 			group.effects.push_back(new_record);
 
 			//降序排列（对象池的排序键即定位投影字段，本池投影字段为对象ID）
-			effect_set.order_set(std::ranges::greater{});
+			effect_set.mode_set(Object_Order::Sorted, std::ranges::greater{});
 			
 			//返回新效应ID
 			return new_record->ID();
