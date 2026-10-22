@@ -79,6 +79,7 @@ target_sources(EngineTestObjects PRIVATE
     "src/单元测试/渲染/渲染超采样测试.cpp"
     "src/单元测试/渲染/渲染采样器各向异性测试.cpp"
     "src/单元测试/渲染/渲染阴影测试.cpp"
+    "src/单元测试/渲染/渲染雾测试.cpp"
     "src/单元测试/渲染/纹理Mipmap测试.cpp"
     "src/单元测试/渲染/纹理解码测试.cpp"
 )
