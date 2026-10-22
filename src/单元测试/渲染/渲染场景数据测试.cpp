@@ -2670,6 +2670,94 @@ TEST_F(Renderer_Scene_Test, 阴影分辨率可配)
 }
 
 /*
+阴影 pass 按需重绘（第五十五轮）
+口径：同一静态场景连续两帧——第二帧输入签名不变，阴影 pass 不应再执行（计数不增）且画面一致；
+     平移遮挡面后签名变化，第三帧必须重绘（计数 +1）且阴影离开中心（中心明显变亮）。
+*/
+TEST_F(Renderer_Scene_Test, 阴影按需重绘)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	uint64_t texture = 0;
+	std::vector<uint8_t> texels = solid_white();
+	ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 2, 2));
+	engine::Mesh_Handle receiver = 0;
+	engine::Mesh_Handle occluder = 0;
+	ASSERT_TRUE(renderer.mesh_load(receiver, quad_data_with_normal(0.0f, 0.0f, -1.0f)));
+	ASSERT_TRUE(renderer.mesh_load(occluder, quad_data_with_normal(0.0f, 0.0f, -1.0f)));
+	renderer.texture_bind_set(texture);
+
+	//渲染一帧并返回整帧像素
+	auto render_frame = [&]()
+	{
+		std::vector<uint8_t> pixels(pixel_bytes());
+		EXPECT_TRUE(renderer.frame_render(pixels.data(), static_cast<std::uint32_t>(pixels.size())));
+		return pixels;
+	};
+
+	//场景：方向光沿 +Z、强度 1、环境光 0、阴影开启
+	engine::Camera_Data camera{};
+	engine::Light_Data light{};
+	light.direction[2] = 1.0f;
+	light.intensity = 1.0f;
+	light.ambient = 0.0f;
+	engine::Fog_Data fog{};
+	renderer.scene_apply(camera, light, fog);
+	renderer.shadow_enable_set(true);
+
+	//遮挡面（缩放 0.6、居中、z = -0.5）
+	float occluder_transform[16] = {};
+	occluder_transform[0] = 0.6f;
+	occluder_transform[5] = 0.6f;
+	occluder_transform[10] = 0.6f;
+	occluder_transform[14] = -0.5f;
+	occluder_transform[15] = 1.0f;
+
+	//第一帧：阴影 pass 必须执行
+	ASSERT_TRUE(renderer.mesh_draw(occluder, occluder_transform));
+	ASSERT_TRUE(renderer.mesh_draw(receiver, nullptr));
+	const uint32_t first_brightness = center_brightness(render_frame());
+	const uint64_t first_count = renderer.shadow_pass_count();
+
+	//第二帧：输入完全一致，阴影 pass 应被跳过且画面一致
+	ASSERT_TRUE(renderer.mesh_draw(occluder, occluder_transform));
+	ASSERT_TRUE(renderer.mesh_draw(receiver, nullptr));
+	const uint32_t second_brightness = center_brightness(render_frame());
+	const uint64_t second_count = renderer.shadow_pass_count();
+
+	//第三帧：遮挡面平移，签名变化 → 必须重绘且中心阴影移开
+	float moved_transform[16] = {};
+	for (std::size_t index = 0; index < 16; ++index)
+		moved_transform[index] = occluder_transform[index];
+	moved_transform[12] = 0.9f;
+	ASSERT_TRUE(renderer.mesh_draw(occluder, moved_transform));
+	ASSERT_TRUE(renderer.mesh_draw(receiver, nullptr));
+	const uint32_t moved_brightness = center_brightness(render_frame());
+	const uint64_t moved_count = renderer.shadow_pass_count();
+
+	RecordProperty("reuse_first", first_count);
+	RecordProperty("reuse_second", second_count);
+	RecordProperty("reuse_moved", moved_count);
+	RecordProperty("reuse_first_brightness", first_brightness);
+	RecordProperty("reuse_second_brightness", second_brightness);
+	RecordProperty("reuse_moved_brightness", moved_brightness);
+
+	EXPECT_GE(first_count, 1u) << "首帧未执行阴影 pass";
+	EXPECT_EQ(second_count, first_count) << "输入未变仍重绘了阴影图";
+	EXPECT_LE(second_brightness > first_brightness ? second_brightness - first_brightness : first_brightness - second_brightness, 1u)
+		<< "复用阴影图导致画面变化（" << first_brightness << " vs " << second_brightness << "）";
+	EXPECT_EQ(moved_count, second_count + 1) << "输入变化后未重绘阴影图";
+	EXPECT_GT(moved_brightness, first_brightness + 20u) << "遮挡面平移后阴影未移开（"
+		<< moved_brightness << " vs " << first_brightness << "）";
+
+	renderer.mesh_unload(receiver);
+	renderer.mesh_unload(occluder);
+	renderer.texture_unload(texture);
+}
+
+/*
 方向光与补光逐光高光缩放（第五十轮）
 口径：四边形法线朝 +Z、环境光 0、全局高光 1.0 / 16：
       方向光强度 0.4 时「缩放 0」仅漫反射、「缩放 1」叠加高光明显更亮；
