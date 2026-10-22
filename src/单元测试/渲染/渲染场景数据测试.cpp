@@ -2090,3 +2090,154 @@ TEST_F(Renderer_Scene_Test, 逐光源衰减模式覆盖全局)
 	renderer.mesh_unload(mesh);
 	renderer.texture_unload(texture);
 }
+
+/*
+三组入参与扁平场景等价（第四十七轮）
+口径：同一份「相机 ＋ 单点光源 ＋ 高光 ＋ 衰减模式 ＋ 雾 ＋ 环境光颜色」分别经
+      扁平 Scene_Data 与 Camera_Data / Light_Data / Fog_Data 三组提交，两帧画面应逐字节一致。
+*/
+TEST_F(Renderer_Scene_Test, 三组入参与扁平场景等价)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	uint64_t texture = 0;
+	std::vector<uint8_t> texels = solid_white();
+	ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 2, 2));
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, cube_data(0.5f)));
+	renderer.texture_bind_set(texture);
+
+	//渲染一帧并返回像素（lambda 内用 EXPECT：ASSERT 不允许出现在有返回值的函数中）
+	auto render_frame = [&]()
+	{
+		EXPECT_TRUE(renderer.mesh_draw(mesh, nullptr));
+		std::vector<uint8_t> pixels(pixel_bytes());
+		EXPECT_TRUE(renderer.frame_render(pixels.data(), static_cast<std::uint32_t>(pixels.size())));
+		return pixels;
+	};
+
+	//同一份场景的扁平描述
+	engine::Scene_Data scene{};
+	scene.clear_color[0] = 0.1f;
+	scene.clear_color[1] = 0.2f;
+	scene.clear_color[2] = 0.3f;
+	scene.clear_color[3] = 1.0f;
+	scene.light_ambient = 0.2f;
+	scene.light_count = 1;
+	scene.point_light_position[0][0] = 0.0f;
+	scene.point_light_position[0][1] = 0.0f;
+	scene.point_light_position[0][2] = 2.5f;
+	scene.point_light_radius[0] = 2.0f;
+	scene.point_light_intensity[0] = 1.0f;
+	scene.point_light_attenuation[0] = 2;
+	scene.specular_intensity = 0.4f;
+	scene.specular_shininess = 32.0f;
+	scene.attenuation_mode = 1;
+	scene.fog_color[0] = 0.6f;
+	scene.fog_color[1] = 0.1f;
+	scene.fog_color[2] = 0.1f;
+	scene.fog_density = 0.5f;
+	scene.fog_start = 1.0f;
+	scene.fog_end = 8.0f;
+	scene.ambient_color[0] = 1.0f;
+	scene.ambient_color[1] = 0.8f;
+	scene.ambient_color[2] = 0.6f;
+	renderer.scene_apply(scene);
+	std::vector<uint8_t> flat_pixels = render_frame();
+
+	//等价的三组描述
+	engine::Camera_Data camera{};
+	for (std::size_t index = 0; index < 4; ++index)
+		camera.clear_color[index] = scene.clear_color[index];
+	engine::Light_Data light{};
+	light.intensity = scene.light_intensity;
+	light.ambient = scene.light_ambient;
+	light.point_count = scene.light_count;
+	for (std::size_t index = 0; index < 3; ++index)
+	{
+		light.point_position[0][index] = scene.point_light_position[0][index];
+		light.point_color[0][index] = scene.point_light_color[0][index];
+		light.ambient_color[index] = scene.ambient_color[index];
+	}
+	light.point_radius[0] = scene.point_light_radius[0];
+	light.point_intensity[0] = scene.point_light_intensity[0];
+	light.point_attenuation[0] = scene.point_light_attenuation[0];
+	light.specular_intensity = scene.specular_intensity;
+	light.specular_shininess = scene.specular_shininess;
+	light.attenuation_mode = scene.attenuation_mode;
+	engine::Fog_Data fog{};
+	for (std::size_t index = 0; index < 3; ++index)
+		fog.color[index] = scene.fog_color[index];
+	fog.density = scene.fog_density;
+	fog.start = scene.fog_start;
+	fog.end = scene.fog_end;
+	renderer.scene_apply(camera, light, fog);
+	std::vector<uint8_t> group_pixels = render_frame();
+
+	RecordProperty("flat_center", pixel_text(pixel_get(flat_pixels, WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2)));
+	EXPECT_EQ(group_pixels, flat_pixels) << "三组入参与扁平场景的画面不一致";
+	//场景确有可见几何（排除「两帧都是纯清屏色」的空等价）
+	EXPECT_GT(center_brightness(flat_pixels), 0u) << "等价性用例的两帧均为空白，未覆盖光照与雾";
+
+	renderer.mesh_unload(mesh);
+	renderer.texture_unload(texture);
+}
+
+/*
+三组入参相机非法整次拒绝（第四十七轮）
+口径：先提交「相机背对四边形 ＋ 绿色清屏色」的三组描述并渲染；
+      再提交「视场角为 0 ＋ 红色清屏色」的三组描述（相机非法）→ 整次拒绝，
+      画面应与上一帧逐字节一致（清屏色未被改红、相机未被改回）。
+*/
+TEST_F(Renderer_Scene_Test, 三组入参相机非法整次拒绝)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	uint64_t texture = 0;
+	std::vector<uint8_t> texels = solid_white();
+	ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 2, 2));
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, quad_data()));
+	renderer.texture_bind_set(texture);
+
+	//渲染一帧并返回像素（lambda 内用 EXPECT：ASSERT 不允许出现在有返回值的函数中）
+	auto render_frame = [&]()
+	{
+		EXPECT_TRUE(renderer.mesh_draw(mesh, nullptr));
+		std::vector<uint8_t> pixels(pixel_bytes());
+		EXPECT_TRUE(renderer.frame_render(pixels.data(), static_cast<std::uint32_t>(pixels.size())));
+		return pixels;
+	};
+
+	//合法三组：相机背对四边形 ＋ 绿色清屏色
+	engine::Camera_Data camera{};
+	camera.target[2] = 10.0f;
+	camera.clear_color[0] = 0.0f;
+	camera.clear_color[1] = 1.0f;
+	camera.clear_color[2] = 0.0f;
+	camera.clear_color[3] = 1.0f;
+	engine::Light_Data light{};
+	engine::Fog_Data fog{};
+	renderer.scene_apply(camera, light, fog);
+	std::vector<uint8_t> baseline = render_frame();
+
+	//非法三组：视场角为 0 ＋ 红色清屏色
+	engine::Camera_Data invalid = camera;
+	invalid.fov = 0.0f;
+	invalid.clear_color[0] = 1.0f;
+	invalid.clear_color[1] = 0.0f;
+	invalid.clear_color[2] = 0.0f;
+	renderer.scene_apply(invalid, light, fog);
+	std::vector<uint8_t> after = render_frame();
+
+	RecordProperty("invalid_camera_center", pixel_text(pixel_get(after, WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2)));
+	EXPECT_EQ(after, baseline) << "非法相机未整次拒绝（清屏色或相机被部分应用）";
+	EXPECT_GE(pixel_get(after, WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2)[1], 200u) << "绿色清屏色丢失";
+
+	renderer.mesh_unload(mesh);
+	renderer.texture_unload(texture);
+}
