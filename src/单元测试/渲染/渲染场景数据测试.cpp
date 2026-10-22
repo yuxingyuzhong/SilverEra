@@ -2448,6 +2448,75 @@ TEST_F(Renderer_Scene_Test, 方向光与补光高光缩放生效)
 }
 
 /*
+逐盏光泽度生效（第五十一轮）
+口径：斜视相机（中心处 半程向量 不重合法线）、关闭方向光与环境光、单点光源强度 0.4 / 半径 5、全局光泽度 16：
+      低光泽度（2）的高光更宽、中心更亮；高光泽度（64）更窄、中心更暗；非法光泽度（0.5）整次拒绝。
+*/
+TEST_F(Renderer_Scene_Test, 逐盏光泽度生效)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	uint64_t texture = 0;
+	std::vector<uint8_t> texels = solid_white();
+	ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 2, 2));
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, quad_data_with_normal(0.0f, 0.0f, 1.0f)));
+	renderer.texture_bind_set(texture);
+
+	//渲染一帧并返回中心亮度（lambda 内用 EXPECT：ASSERT 不允许出现在有返回值的函数中）
+	auto render_brightness = [&]()
+	{
+		EXPECT_TRUE(renderer.mesh_draw(mesh, nullptr));
+		std::vector<uint8_t> pixels(pixel_bytes());
+		EXPECT_TRUE(renderer.frame_render(pixels.data(), static_cast<std::uint32_t>(pixels.size())));
+		return center_brightness(pixels);
+	};
+
+	//斜视相机：机位 (1, 0, 3)、注视原点，使中心处半程向量不重合法线
+	engine::Camera_Data camera{};
+	camera.position[0] = 1.0f;
+	engine::Light_Data light{};
+	light.intensity = 0.0f;
+	light.ambient = 0.0f;
+	light.specular_intensity = 1.0f;
+	light.specular_shininess = 16.0f;
+	light.point_count = 1;
+	light.point_position[0][2] = 2.5f;
+	light.point_radius[0] = 5.0f;
+	light.point_intensity[0] = 0.4f;
+	light.point_attenuation[0] = 1;
+	light.point_specular[0] = 1.0f;
+	//低光泽度
+	light.point_shininess[0] = 2.0f;
+	engine::Fog_Data fog{};
+	renderer.scene_apply(camera, light, fog);
+	uint32_t low_shininess = render_brightness();
+	//高光泽度
+	light.point_shininess[0] = 64.0f;
+	renderer.scene_apply(camera, light, fog);
+	uint32_t high_shininess = render_brightness();
+	//非法光泽度（0.5）整次拒绝，既有光源保持不变
+	const float white[3] = { 1.0f, 1.0f, 1.0f };
+	const float light_position[3] = { 0.0f, 0.0f, 2.5f };
+	EXPECT_FALSE(renderer.light_add_point(light_position, white, 5.0f, 0.4f, 0.0f, 1, 1.0f, 0.5f));
+	uint32_t after_invalid = render_brightness();
+
+	RecordProperty("low_shininess", low_shininess);
+	RecordProperty("high_shininess", high_shininess);
+	RecordProperty("after_invalid_shininess", after_invalid);
+
+	EXPECT_GT(low_shininess, high_shininess + 20u) << "逐盏光泽度未生效（"
+		<< low_shininess << " vs " << high_shininess << "）";
+	EXPECT_NEAR(after_invalid, high_shininess, 4u) << "非法光泽度改变了画面（"
+		<< after_invalid << " vs " << high_shininess << "）";
+
+	renderer.mesh_unload(mesh);
+	renderer.texture_unload(texture);
+}
+
+/*
 补光可独立生效（第四十七轮）
 口径：四边形法线朝 +Z；关闭主方向光与环境光，补光方向 (0,0,-1)、强度 0.5：
       补光关闭（强度 0）时中心近黑；开启后中心亮度约 0.5；非法强度（负值）整次拒绝、画面不变。
