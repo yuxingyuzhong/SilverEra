@@ -431,5 +431,35 @@ TEST_F(Renderer_Text_Test, 文字透明度生效)
 	EXPECT_LT(alpha_luma, opaque_luma) << "半透明文字未变暗：" << pixel_text(alpha) << " / " << pixel_text(opaque);
 	EXPECT_GT(alpha_luma, background_luma + 30) << "半透明文字过暗（已接近背景）：" << pixel_text(alpha);
 
+        renderer.font_unload(font);
+}
+
+//文本网格缓存上限（第四十八轮）：连画 70 段不同文本触发 LRU 淘汰，淘汰后重画最早文本仍应成功出墨
+TEST_F(Renderer_Text_Test, 文本网格缓存淘汰后仍可重画)
+{
+	if (!font_available())
+		GTEST_SKIP() << "本机无 " << FONT_PATH;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	uint64_t font = 0;
+	ASSERT_TRUE(renderer.font_load_file(font, FONT_PATH, FONT_PIXEL_HEIGHT));
+
+	//连续登记 70 段不同文本（缓存上限 64，必有 6 条被淘汰）
+	for (uint32_t index = 0; index < 70; ++index)
+	{
+		const std::string text = "T" + std::to_string(index);
+		ASSERT_TRUE(renderer.text_draw(font, text, 4.0f, 4.0f)) << "第 " << index << " 段文本登记失败";
+	}
+	std::vector<uint8_t> pixels(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(pixels.data(), static_cast<uint32_t>(pixels.size())));
+	EXPECT_GT(ink_count(pixels, 0, 0, WINDOW_WIDTH, WINDOW_HEIGHT), 0u) << "大量文本下未出现墨迹";
+
+	//重画最早的一段（其网格已被淘汰，应经重建再次成功）
+	ASSERT_TRUE(renderer.text_draw(font, "T0", 4.0f, 4.0f)) << "淘汰后的文本无法重画";
+	ASSERT_TRUE(renderer.frame_render(pixels.data(), static_cast<uint32_t>(pixels.size())));
+	EXPECT_GT(ink_count(pixels, 0, 0, WINDOW_WIDTH, WINDOW_HEIGHT), 0u) << "淘汰重建后未出现墨迹";
+
 	renderer.font_unload(font);
 }
