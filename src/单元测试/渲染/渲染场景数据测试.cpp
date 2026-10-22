@@ -2382,6 +2382,72 @@ TEST_F(Renderer_Scene_Test, 逐盏高光缩放生效)
 }
 
 /*
+方向光与补光逐光高光缩放（第五十轮）
+口径：四边形法线朝 +Z、环境光 0、全局高光 1.0 / 16：
+      方向光强度 0.4 时「缩放 0」仅漫反射、「缩放 1」叠加高光明显更亮；
+      补光强度 0.4 时同理（主光关闭）。
+*/
+TEST_F(Renderer_Scene_Test, 方向光与补光高光缩放生效)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	uint64_t texture = 0;
+	std::vector<uint8_t> texels = solid_white();
+	ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 2, 2));
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, quad_data_with_normal(0.0f, 0.0f, 1.0f)));
+	renderer.texture_bind_set(texture);
+
+	//渲染一帧并返回中心亮度（lambda 内用 EXPECT：ASSERT 不允许出现在有返回值的函数中）
+	auto render_brightness = [&]()
+	{
+		EXPECT_TRUE(renderer.mesh_draw(mesh, nullptr));
+		std::vector<uint8_t> pixels(pixel_bytes());
+		EXPECT_TRUE(renderer.frame_render(pixels.data(), static_cast<std::uint32_t>(pixels.size())));
+		return center_brightness(pixels);
+	};
+
+	const float white[3] = { 1.0f, 1.0f, 1.0f };
+	const float light_direction[3] = { 0.0f, 0.0f, -1.0f };
+	//方向光 0.4、环境光 0、全局高光开启
+	renderer.light_set(light_direction, white, 0.4f, 0.0f);
+	renderer.specular_set(1.0f, 16.0f);
+	//方向光高光缩放 0 / 1
+	renderer.directional_specular_set(0.0f);
+	uint32_t dir_no_spec = render_brightness();
+	renderer.directional_specular_set(1.0f);
+	uint32_t dir_spec = render_brightness();
+	//非法缩放整次忽略（保持 1）
+	renderer.directional_specular_set(-1.0f);
+	uint32_t dir_after_invalid = render_brightness();
+
+	//补光 0.4（主光关闭）：高光缩放 0 / 1
+	renderer.light_set(light_direction, white, 0.0f, 0.0f);
+	renderer.light_fill_set(light_direction, white, 0.4f, 0.0f);
+	uint32_t fill_no_spec = render_brightness();
+	renderer.light_fill_set(light_direction, white, 0.4f, 1.0f);
+	uint32_t fill_spec = render_brightness();
+
+	RecordProperty("dir_no_spec", dir_no_spec);
+	RecordProperty("dir_spec", dir_spec);
+	RecordProperty("dir_after_invalid", dir_after_invalid);
+	RecordProperty("fill_no_spec", fill_no_spec);
+	RecordProperty("fill_spec", fill_spec);
+
+	EXPECT_GT(dir_spec, dir_no_spec + 40u) << "方向光高光缩放未生效（"
+		<< dir_no_spec << " vs " << dir_spec << "）";
+	EXPECT_NEAR(dir_after_invalid, dir_spec, 4u) << "非法方向光缩放改变了画面（"
+		<< dir_after_invalid << " vs " << dir_spec << "）";
+	EXPECT_GT(fill_spec, fill_no_spec + 40u) << "补光高光缩放未生效（"
+		<< fill_no_spec << " vs " << fill_spec << "）";
+
+	renderer.mesh_unload(mesh);
+	renderer.texture_unload(texture);
+}
+
+/*
 补光可独立生效（第四十七轮）
 口径：四边形法线朝 +Z；关闭主方向光与环境光，补光方向 (0,0,-1)、强度 0.5：
       补光关闭（强度 0）时中心近黑；开启后中心亮度约 0.5；非法强度（负值）整次拒绝、画面不变。
