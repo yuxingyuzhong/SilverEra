@@ -2322,6 +2322,66 @@ TEST_F(Renderer_Scene_Test, 半球环境光上下异色)
 }
 
 /*
+逐盏高光缩放（第四十九轮）
+口径：四边形法线朝 +Z、关闭方向光与环境光、单点光源强度 0.4、半径 5：
+      缩放 0（无高光）时中心仅漫反射；缩放 1 时叠加高光明显更亮；缩放 -1 整次拒绝。
+*/
+TEST_F(Renderer_Scene_Test, 逐盏高光缩放生效)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	uint64_t texture = 0;
+	std::vector<uint8_t> texels = solid_white();
+	ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 2, 2));
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, quad_data_with_normal(0.0f, 0.0f, 1.0f)));
+	renderer.texture_bind_set(texture);
+
+	//渲染一帧并返回中心亮度（lambda 内用 EXPECT：ASSERT 不允许出现在有返回值的函数中）
+	auto render_brightness = [&]()
+	{
+		EXPECT_TRUE(renderer.mesh_draw(mesh, nullptr));
+		std::vector<uint8_t> pixels(pixel_bytes());
+		EXPECT_TRUE(renderer.frame_render(pixels.data(), static_cast<std::uint32_t>(pixels.size())));
+		return center_brightness(pixels);
+	};
+
+	const float white[3] = { 1.0f, 1.0f, 1.0f };
+	const float light_direction[3] = { 0.0f, 0.0f, -1.0f };
+	const float light_position[3] = { 0.0f, 0.0f, 2.5f };
+	//关闭方向光与环境光，开启全局高光
+	renderer.light_set(light_direction, white, 0.0f, 0.0f);
+	renderer.specular_set(1.0f, 16.0f);
+	//缩放 0：该灯不产生高光
+	renderer.lights_clear();
+	renderer.light_set(light_direction, white, 0.0f, 0.0f);
+	ASSERT_TRUE(renderer.light_add_point(light_position, white, 5.0f, 0.4f, 0.0f, 1, 0.0f));
+	uint32_t no_specular = render_brightness();
+	//缩放 1：叠加高光
+	renderer.lights_clear();
+	renderer.light_set(light_direction, white, 0.0f, 0.0f);
+	ASSERT_TRUE(renderer.light_add_point(light_position, white, 5.0f, 0.4f, 0.0f, 1, 1.0f));
+	uint32_t with_specular = render_brightness();
+	//非法缩放整次拒绝（数量保持 1）
+	EXPECT_FALSE(renderer.light_add_point(light_position, white, 5.0f, 0.4f, 0.0f, 1, -1.0f));
+	uint32_t after_invalid = render_brightness();
+
+	RecordProperty("per_light_no_specular", no_specular);
+	RecordProperty("per_light_with_specular", with_specular);
+	RecordProperty("per_light_after_invalid", after_invalid);
+
+	EXPECT_GT(with_specular, no_specular + 40u) << "逐盏高光缩放未生效（"
+		<< no_specular << " vs " << with_specular << "）";
+	EXPECT_NEAR(after_invalid, with_specular, 4u) << "非法高光缩放改变了画面（"
+		<< after_invalid << " vs " << with_specular << "）";
+
+	renderer.mesh_unload(mesh);
+	renderer.texture_unload(texture);
+}
+
+/*
 补光可独立生效（第四十七轮）
 口径：四边形法线朝 +Z；关闭主方向光与环境光，补光方向 (0,0,-1)、强度 0.5：
       补光关闭（强度 0）时中心近黑；开启后中心亮度约 0.5；非法强度（负值）整次拒绝、画面不变。
