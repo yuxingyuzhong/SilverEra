@@ -44,7 +44,10 @@ target_sources(EngineTestObjects PRIVATE
     "src/单元测试/核心/坐标类型测试.cpp"
     "src/单元测试/核心/对象池测试.cpp"
     "src/单元测试/核心/对象测试.cpp"
+    "src/单元测试/核心/碰撞代理测试.cpp"
     "src/单元测试/核心/碰撞体测试.cpp"
+    "src/单元测试/核心/碰撞区域测试.cpp"
+    "src/单元测试/核心/碰撞响应测试.cpp"
     "src/单元测试/核心/碰撞测试.cpp"
     "src/单元测试/核心/配置加载器测试.cpp"
     "src/单元测试/渲染/渲染GPU耗时测试.cpp"
@@ -83,6 +86,7 @@ target_sources(EngineTestObjects PRIVATE
 # 头文件不参与编译，只为让 IDE 建立文件索引；同样经 target_sources 列出，
 # 使头文件改名 / 迁移时 VS 也能改写引用
 target_sources(EngineTestObjects PRIVATE
+    "src/单元测试/核心/碰撞测试辅助.h"
     "src/单元测试/渲染/渲染后处理链测试辅助.h"
     "src/单元测试/渲染/渲染场景测试辅助.h"
 )
