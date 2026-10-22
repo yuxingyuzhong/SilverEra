@@ -2124,7 +2124,7 @@ TEST_F(Renderer_Scene_Test, 三组入参与扁平场景等价)
 	scene.clear_color[1] = 0.2f;
 	scene.clear_color[2] = 0.3f;
 	scene.clear_color[3] = 1.0f;
-	scene.light_ambient = 0.2f;
+	scene.light_ambient = 0.3f;
 	scene.light_count = 1;
 	scene.point_light_position[0][0] = 0.0f;
 	scene.point_light_position[0][1] = 0.0f;
@@ -2144,6 +2144,11 @@ TEST_F(Renderer_Scene_Test, 三组入参与扁平场景等价)
 	scene.ambient_color[0] = 1.0f;
 	scene.ambient_color[1] = 0.8f;
 	scene.ambient_color[2] = 0.6f;
+	//半球环境光（第四十七轮：地面色与混合强度须随三组等价传递）
+	scene.ambient_ground[0] = 0.2f;
+	scene.ambient_ground[1] = 0.1f;
+	scene.ambient_ground[2] = 0.1f;
+	scene.ambient_hemisphere = 1.0f;
 	renderer.scene_apply(scene);
 	std::vector<uint8_t> flat_pixels = render_frame();
 
@@ -2160,7 +2165,9 @@ TEST_F(Renderer_Scene_Test, 三组入参与扁平场景等价)
 		light.point_position[0][index] = scene.point_light_position[0][index];
 		light.point_color[0][index] = scene.point_light_color[0][index];
 		light.ambient_color[index] = scene.ambient_color[index];
+		light.ambient_ground[index] = scene.ambient_ground[index];
 	}
+	light.ambient_hemisphere = scene.ambient_hemisphere;
 	light.point_radius[0] = scene.point_light_radius[0];
 	light.point_intensity[0] = scene.point_light_intensity[0];
 	light.point_attenuation[0] = scene.point_light_attenuation[0];
@@ -2239,5 +2246,66 @@ TEST_F(Renderer_Scene_Test, 三组入参相机非法整次拒绝)
 	EXPECT_GE(pixel_get(after, WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2)[1], 200u) << "绿色清屏色丢失";
 
 	renderer.mesh_unload(mesh);
+	renderer.texture_unload(texture);
+}
+
+/*
+半球环境光上下异色（第四十七轮）
+口径：两块正对相机的四边形，法线分别朝上（+Y）与朝下（-Y）；关闭方向光、环境光强度 0.5、天顶色白、地面色黑。
+      半球强度 1 时「朝上」应明显亮于「朝下」；强度 0 时两者一致（退化为单一环境光颜色）。
+*/
+TEST_F(Renderer_Scene_Test, 半球环境光上下异色)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	uint64_t texture = 0;
+	std::vector<uint8_t> texels = solid_white();
+	ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 2, 2));
+	//朝上法线与朝下法线的两块四边形
+	engine::Mesh_Handle up_mesh = 0;
+	engine::Mesh_Handle down_mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(up_mesh, quad_data_with_normal(0.0f, 1.0f, 0.0f)));
+	ASSERT_TRUE(renderer.mesh_load(down_mesh, quad_data_with_normal(0.0f, -1.0f, 0.0f)));
+	renderer.texture_bind_set(texture);
+
+	//渲染一帧并返回中心亮度（lambda 内用 EXPECT：ASSERT 不允许出现在有返回值的函数中）
+	auto render_brightness = [&](engine::Mesh_Handle mesh)
+	{
+		EXPECT_TRUE(renderer.mesh_draw(mesh, nullptr));
+		std::vector<uint8_t> pixels(pixel_bytes());
+		EXPECT_TRUE(renderer.frame_render(pixels.data(), static_cast<std::uint32_t>(pixels.size())));
+		return center_brightness(pixels);
+	};
+
+	//关闭方向光，仅保留环境光（强度 0.5），天顶白、地面黑
+	const float light_direction[3] = { 0.0f, 0.0f, -1.0f };
+	const float white[3] = { 1.0f, 1.0f, 1.0f };
+	const float black[3] = { 0.0f, 0.0f, 0.0f };
+	renderer.light_set(light_direction, white, 0.0f, 0.5f);
+	renderer.ambient_color_set(white);
+	//启用满强度半球
+	renderer.ambient_ground_set(black, 1.0f);
+	uint32_t up = render_brightness(up_mesh);
+	uint32_t down = render_brightness(down_mesh);
+	//关闭半球（退化为单一环境光颜色）
+	renderer.ambient_ground_set(black, 0.0f);
+	uint32_t up_plain = render_brightness(up_mesh);
+	uint32_t down_plain = render_brightness(down_mesh);
+
+	RecordProperty("hemisphere_up", up);
+	RecordProperty("hemisphere_down", down);
+	RecordProperty("hemisphere_up_plain", up_plain);
+	RecordProperty("hemisphere_down_plain", down_plain);
+
+	EXPECT_GT(up, down + 80u) << "朝上法线未取天顶色（" << up << " vs " << down << "）";
+	EXPECT_LT(down, 40u) << "朝下法线未取地面色（" << down << "）";
+	EXPECT_GE(up, 100u) << "朝上法线亮度偏低（" << up << "）";
+	EXPECT_NEAR(up_plain, down_plain, 5u) << "半球关闭后上下法线不应有差异（"
+		<< up_plain << " vs " << down_plain << "）";
+
+	renderer.mesh_unload(up_mesh);
+	renderer.mesh_unload(down_mesh);
 	renderer.texture_unload(texture);
 }
