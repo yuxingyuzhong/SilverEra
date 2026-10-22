@@ -55,6 +55,8 @@ target_sources(EngineTestObjects PRIVATE
     "src/单元测试/渲染/渲染初始化测试.cpp"
     "src/单元测试/渲染/渲染可见窗口测试.cpp"
     "src/单元测试/渲染/渲染同帧后处理测试.cpp"
+    "src/单元测试/渲染/渲染后处理泛光测试.cpp"
+    "src/单元测试/渲染/渲染后处理调色测试.cpp"
     "src/单元测试/渲染/渲染后处理链测试.cpp"
     "src/单元测试/渲染/渲染场景效果测试.cpp"
     "src/单元测试/渲染/渲染场景数据测试.cpp"
@@ -81,5 +83,6 @@ target_sources(EngineTestObjects PRIVATE
 # 头文件不参与编译，只为让 IDE 建立文件索引；同样经 target_sources 列出，
 # 使头文件改名 / 迁移时 VS 也能改写引用
 target_sources(EngineTestObjects PRIVATE
+    "src/单元测试/渲染/渲染后处理链测试辅助.h"
     "src/单元测试/渲染/渲染场景测试辅助.h"
 )
