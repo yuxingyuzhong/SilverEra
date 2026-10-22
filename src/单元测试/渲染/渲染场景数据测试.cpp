@@ -2758,6 +2758,91 @@ TEST_F(Renderer_Scene_Test, 阴影按需重绘)
 }
 
 /*
+阴影软度连续可调（第五十六轮）
+口径：同「方向光阴影生效」场景；软度 0.3（3×3）、0.6（5×5）、1.0（7×7）三档下中心仍被遮蔽，
+     关闭阴影后恢复基线（三档均不引入额外偏移或漏光）。
+*/
+TEST_F(Renderer_Scene_Test, 阴影软度连续可调)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	uint64_t texture = 0;
+	std::vector<uint8_t> texels = solid_white();
+	ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 2, 2));
+	engine::Mesh_Handle receiver = 0;
+	engine::Mesh_Handle occluder = 0;
+	ASSERT_TRUE(renderer.mesh_load(receiver, quad_data_with_normal(0.0f, 0.0f, -1.0f)));
+	ASSERT_TRUE(renderer.mesh_load(occluder, quad_data_with_normal(0.0f, 0.0f, -1.0f)));
+	renderer.texture_bind_set(texture);
+
+	//渲染一帧并返回整帧像素
+	auto render_frame = [&]()
+	{
+		std::vector<uint8_t> pixels(pixel_bytes());
+		EXPECT_TRUE(renderer.frame_render(pixels.data(), static_cast<std::uint32_t>(pixels.size())));
+		return pixels;
+	};
+
+	//场景：方向光沿 +Z、强度 1、环境光 0、阴影开启
+	engine::Camera_Data camera{};
+	engine::Light_Data light{};
+	light.direction[2] = 1.0f;
+	light.intensity = 1.0f;
+	light.ambient = 0.0f;
+	engine::Fog_Data fog{};
+	renderer.scene_apply(camera, light, fog);
+	renderer.shadow_enable_set(true);
+
+	//遮挡面（缩放 0.6、居中、z = -0.5）
+	float occluder_transform[16] = {};
+	occluder_transform[0] = 0.6f;
+	occluder_transform[5] = 0.6f;
+	occluder_transform[10] = 0.6f;
+	occluder_transform[14] = -0.5f;
+	occluder_transform[15] = 1.0f;
+
+	//基线（无遮挡）
+	ASSERT_TRUE(renderer.mesh_draw(receiver, nullptr));
+	const uint32_t baseline = center_brightness(render_frame());
+
+	//三档软度下中心均被遮蔽
+	const float softness_list[3] = { 0.3f, 0.6f, 1.0f };
+	uint32_t soft_brightness[3] = {};
+	for (std::size_t index = 0; index < 3; ++index)
+	{
+		renderer.shadow_softness_set(softness_list[index]);
+		ASSERT_TRUE(renderer.mesh_draw(occluder, occluder_transform));
+		ASSERT_TRUE(renderer.mesh_draw(receiver, nullptr));
+		soft_brightness[index] = center_brightness(render_frame());
+	}
+
+	//关闭阴影恢复基线
+	renderer.shadow_enable_set(false);
+	ASSERT_TRUE(renderer.mesh_draw(occluder, occluder_transform));
+	ASSERT_TRUE(renderer.mesh_draw(receiver, nullptr));
+	const uint32_t restored = center_brightness(render_frame());
+
+	RecordProperty("soft_baseline", baseline);
+	RecordProperty("soft_0_3", soft_brightness[0]);
+	RecordProperty("soft_0_6", soft_brightness[1]);
+	RecordProperty("soft_1_0", soft_brightness[2]);
+	RecordProperty("soft_restored", restored);
+
+	EXPECT_GE(baseline, 200u) << "接收面未被方向光照亮（" << baseline << "）";
+	EXPECT_LT(soft_brightness[0], 60u) << "软度 0.3 时中心未被遮蔽（" << soft_brightness[0] << "）";
+	EXPECT_LT(soft_brightness[1], 60u) << "软度 0.6 时中心未被遮蔽（" << soft_brightness[1] << "）";
+	EXPECT_LT(soft_brightness[2], 60u) << "软度 1.0 时中心未被遮蔽（" << soft_brightness[2] << "）";
+	EXPECT_NEAR(restored, baseline, 4u) << "关闭阴影后未恢复基线（"
+		<< restored << " vs " << baseline << "）";
+
+	renderer.mesh_unload(receiver);
+	renderer.mesh_unload(occluder);
+	renderer.texture_unload(texture);
+}
+
+/*
 方向光与补光逐光高光缩放（第五十轮）
 口径：四边形法线朝 +Z、环境光 0、全局高光 1.0 / 16：
       方向光强度 0.4 时「缩放 0」仅漫反射、「缩放 1」叠加高光明显更亮；
