@@ -2382,6 +2382,109 @@ TEST_F(Renderer_Scene_Test, 逐盏高光缩放生效)
 }
 
 /*
+方向光阴影生效（第五十二轮）
+口径：接收面法线朝 -Z（法线受光面朝光源）、方向光沿 +Z（光源在 -Z 侧）、强度 1、环境光 0；
+     遮挡面位于接收面之后（z = -0.5）并缩到 0.6，故相机看不到它、光源却先看到它。
+     关闭阴影时中心亮度与无遮挡基线一致；开启后中心被遮蔽变暗、而阴影外的接收面仍受光。
+*/
+TEST_F(Renderer_Scene_Test, 方向光阴影生效)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	uint64_t texture = 0;
+	std::vector<uint8_t> texels = solid_white();
+	ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 2, 2));
+	engine::Mesh_Handle receiver = 0;
+	engine::Mesh_Handle occluder = 0;
+	ASSERT_TRUE(renderer.mesh_load(receiver, quad_data_with_normal(0.0f, 0.0f, -1.0f)));
+	ASSERT_TRUE(renderer.mesh_load(occluder, quad_data_with_normal(0.0f, 0.0f, -1.0f)));
+	renderer.texture_bind_set(texture);
+
+	//渲染一帧并返回整帧像素（lambda 内用 EXPECT：ASSERT 不允许出现在有返回值的函数中）
+	auto render_frame = [&]()
+	{
+		std::vector<uint8_t> pixels(pixel_bytes());
+		EXPECT_TRUE(renderer.frame_render(pixels.data(), static_cast<std::uint32_t>(pixels.size())));
+		return pixels;
+	};
+
+	//场景：方向光沿 +Z（光源在 -Z 侧），强度 1、环境光 0
+	engine::Camera_Data camera{};
+	engine::Light_Data light{};
+	light.direction[2] = 1.0f;
+	light.intensity = 1.0f;
+	light.ambient = 0.0f;
+	engine::Fog_Data fog{};
+	renderer.scene_apply(camera, light, fog);
+
+	//无遮挡基线（只画接收面）
+	ASSERT_TRUE(renderer.mesh_draw(receiver, nullptr));
+	std::vector<uint8_t> baseline_pixels = render_frame();
+	const uint32_t baseline = center_brightness(baseline_pixels);
+	//阴影外参考点（中心右侧 150 像素：仍在接收面内、但位于遮挡面投影之外）
+	const std::array<uint8_t, 4> baseline_edge =
+		pixel_get(baseline_pixels, WINDOW_WIDTH / 2 + 150, WINDOW_HEIGHT / 2);
+	const uint32_t baseline_edge_brightness =
+		(static_cast<uint32_t>(baseline_edge[0]) + baseline_edge[1] + baseline_edge[2]) / 3;
+
+	//遮挡面：缩放 0.6、平移到 z = -0.5（列主序模型矩阵）
+	float occluder_transform[16] = {};
+	occluder_transform[0] = 0.6f;
+	occluder_transform[5] = 0.6f;
+	occluder_transform[10] = 0.6f;
+	occluder_transform[14] = -0.5f;
+	occluder_transform[15] = 1.0f;
+
+	//关闭阴影：遮挡面在接收面之后，画面应与基线一致
+	ASSERT_TRUE(renderer.mesh_draw(occluder, occluder_transform));
+	ASSERT_TRUE(renderer.mesh_draw(receiver, nullptr));
+	std::vector<uint8_t> unshadowed_pixels = render_frame();
+	const uint32_t unshadowed = center_brightness(unshadowed_pixels);
+
+	//开启阴影
+	renderer.shadow_enable_set(true);
+	ASSERT_TRUE(renderer.shadow_enabled());
+	ASSERT_TRUE(renderer.mesh_draw(occluder, occluder_transform));
+	ASSERT_TRUE(renderer.mesh_draw(receiver, nullptr));
+	std::vector<uint8_t> shadowed_pixels = render_frame();
+	const uint32_t shadowed = center_brightness(shadowed_pixels);
+	const std::array<uint8_t, 4> shadowed_edge =
+		pixel_get(shadowed_pixels, WINDOW_WIDTH / 2 + 150, WINDOW_HEIGHT / 2);
+	const uint32_t shadowed_edge_brightness =
+		(static_cast<uint32_t>(shadowed_edge[0]) + shadowed_edge[1] + shadowed_edge[2]) / 3;
+
+	//关闭阴影后应恢复基线
+	renderer.shadow_enable_set(false);
+	ASSERT_FALSE(renderer.shadow_enabled());
+	ASSERT_TRUE(renderer.mesh_draw(occluder, occluder_transform));
+	ASSERT_TRUE(renderer.mesh_draw(receiver, nullptr));
+	const uint32_t restored = center_brightness(render_frame());
+
+	RecordProperty("shadow_baseline", baseline);
+	RecordProperty("shadow_unshadowed", unshadowed);
+	RecordProperty("shadow_shadowed", shadowed);
+	RecordProperty("shadow_edge_baseline", baseline_edge_brightness);
+	RecordProperty("shadow_edge_shadowed", shadowed_edge_brightness);
+	RecordProperty("shadow_restored", restored);
+
+	EXPECT_GE(baseline, 200u) << "接收面未被方向光照亮（" << baseline << "）";
+	EXPECT_NEAR(unshadowed, baseline, 3u) << "关闭阴影时遮挡面不应影响画面（"
+		<< unshadowed << " vs " << baseline << "）";
+	EXPECT_LT(shadowed, 60u) << "阴影未遮蔽中心（" << shadowed << "）";
+	//阴影外参考点与基线一致（该点落在接收面边缘外的背景 / 边缘过渡，只要求不被阴影额外压暗）
+	EXPECT_NEAR(shadowed_edge_brightness, baseline_edge_brightness, 3u) << "阴影外区域被误遮蔽（"
+		<< shadowed_edge_brightness << " vs " << baseline_edge_brightness << "）";
+	EXPECT_NEAR(restored, baseline, 3u) << "关闭阴影后画面未恢复（"
+		<< restored << " vs " << baseline << "）";
+
+	renderer.mesh_unload(receiver);
+	renderer.mesh_unload(occluder);
+	renderer.texture_unload(texture);
+}
+
+/*
 方向光与补光逐光高光缩放（第五十轮）
 口径：四边形法线朝 +Z、环境光 0、全局高光 1.0 / 16：
       方向光强度 0.4 时「缩放 0」仅漫反射、「缩放 1」叠加高光明显更亮；
