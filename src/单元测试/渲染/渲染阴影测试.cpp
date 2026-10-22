@@ -548,3 +548,60 @@ TEST_F(Renderer_Scene_Test, 阴影图读回)
       方向光强度 0.4 时「缩放 0」仅漫反射、「缩放 1」叠加高光明显更亮；
       补光强度 0.4 时同理（主光关闭）。
 */
+
+/*
+斜法线不产生自阴影（第五十九轮）
+口径：接收面绕 Y 轴倾斜 40°（法线不再平行光源方向），方向光沿 +Z、环境光 0、无遮挡面；
+     阴影开启后中心亮度应与关闭时一致（法线偏移抵消掠射角自阴影），且保持受光（≥150）。
+*/
+TEST_F(Renderer_Scene_Test, 斜法线不产生自阴影)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	uint64_t texture = 0;
+	std::vector<uint8_t> texels = solid_white();
+	ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 2, 2));
+	engine::Mesh_Handle receiver = 0;
+	ASSERT_TRUE(renderer.mesh_load(receiver, quad_data_with_normal(0.0f, 0.0f, -1.0f)));
+	renderer.texture_bind_set(texture);
+
+	//场景：方向光沿 +Z（光源在 -Z 侧）、强度 1、环境光 0
+	engine::Camera_Data camera{};
+	engine::Light_Data light{};
+	light.direction[2] = 1.0f;
+	light.intensity = 1.0f;
+	light.ambient = 0.0f;
+	engine::Fog_Data fog{};
+	renderer.scene_apply(camera, light, fog);
+
+	//接收面绕 Y 轴倾斜 40°（法线经模型矩阵变换后与光线成约 50° 掠射）
+	std::array<float, 16> model = rotation_y_matrix(0.6981f);
+
+	//渲染一帧并返回中心亮度（lambda 内用 EXPECT：ASSERT 不允许出现在有返回值的函数中）
+	auto render_brightness = [&]()
+	{
+		EXPECT_TRUE(renderer.mesh_draw(receiver, model.data()));
+		std::vector<uint8_t> pixels(pixel_bytes());
+		EXPECT_TRUE(renderer.frame_render(pixels.data(), static_cast<std::uint32_t>(pixels.size())));
+		return center_brightness(pixels);
+	};
+
+	//关闭阴影（参考帧）
+	renderer.shadow_enable_set(false);
+	const uint32_t without_shadow = render_brightness();
+	//开启阴影（无遮挡面：不得出现自阴影压暗）
+	renderer.shadow_enable_set(true);
+	const uint32_t with_shadow = render_brightness();
+	RecordProperty("slanted_without_shadow", without_shadow);
+	RecordProperty("slanted_with_shadow", with_shadow);
+
+	EXPECT_GE(with_shadow, 150u) << "斜法线接收面在阴影开启后被自阴影压暗（" << with_shadow << "）";
+	EXPECT_NEAR(with_shadow, without_shadow, 8u) << "法线偏移未消除自阴影（"
+		<< with_shadow << " vs " << without_shadow << "）";
+
+	renderer.shadow_enable_set(false);
+	renderer.mesh_unload(receiver);
+	renderer.texture_unload(texture);
+}
