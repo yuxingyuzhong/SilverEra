@@ -9,6 +9,7 @@
 #include <gtest/gtest.h>
 
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -284,8 +285,60 @@ TEST_F(Renderer_Material_Test, 同混合档材质共享管线)
 	//另一仍可绑定并绘制一帧（共享的具名管线未随卸载释放）
 	renderer.material_bind_set(second);
 	ASSERT_TRUE(renderer.mesh_draw(mesh, full_screen_matrix().data()));
-	ASSERT_TRUE(renderer.frame_render());
-	renderer.material_unload(second);
-	renderer.mesh_unload(mesh);
-	renderer.texture_unload(texture);
+        ASSERT_TRUE(renderer.frame_render());
+        renderer.material_unload(second);
+        renderer.mesh_unload(mesh);
+        renderer.texture_unload(texture);
+}
+
+/*
+逐物体 PBR 覆盖字段（第六十八轮）
+口径：Material_Data 声明 pbr_override 且参数合法时，绑定后门面吸附状态与材质一致；
+      参数非法（粗糙度 0 / 9、金属度 1.5、非数）按「不覆盖」登记；
+      绑定句柄 0 清除覆盖；未绑定材质前默认不覆盖。
+*/
+TEST_F(Renderer_Material_Test, 逐物体PBR覆盖字段)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	//默认不覆盖
+	EXPECT_FALSE(renderer.material_pbr_active());
+	EXPECT_FLOAT_EQ(renderer.material_pbr_roughness(), 1.0f);
+	EXPECT_FLOAT_EQ(renderer.material_pbr_metallic(), 0.0f);
+
+	//合法覆盖材质
+	engine::Material_Data data;
+	data.pbr_override = true;
+	data.pbr_roughness = 2.5f;
+	data.pbr_metallic = 0.25f;
+	engine::Material_Handle handle = 0;
+	ASSERT_TRUE(renderer.material_load(handle, data));
+	renderer.material_bind_set(handle);
+	EXPECT_TRUE(renderer.material_pbr_active());
+	EXPECT_FLOAT_EQ(renderer.material_pbr_roughness(), 2.5f);
+	EXPECT_FLOAT_EQ(renderer.material_pbr_metallic(), 0.25f);
+	//绑定 0 清除覆盖
+	renderer.material_bind_set(0);
+	EXPECT_FALSE(renderer.material_pbr_active());
+
+	//非法参数按不覆盖登记
+	engine::Material_Data invalid_rough;
+	invalid_rough.pbr_override = true;
+	invalid_rough.pbr_roughness = 9.0f;
+	engine::Material_Handle invalid_handle = 0;
+	ASSERT_TRUE(renderer.material_load(invalid_handle, invalid_rough));
+	renderer.material_bind_set(invalid_handle);
+	EXPECT_FALSE(renderer.material_pbr_active());
+	//非数同样视为非法
+	engine::Material_Data nan_metallic;
+	nan_metallic.pbr_override = true;
+	nan_metallic.pbr_metallic = std::nanf("");
+	engine::Material_Handle nan_handle = 0;
+	ASSERT_TRUE(renderer.material_load(nan_handle, nan_metallic));
+	renderer.material_bind_set(nan_handle);
+	EXPECT_FALSE(renderer.material_pbr_active());
+
+	renderer.material_unload(nan_handle);
+	renderer.material_unload(invalid_handle);
+	renderer.material_unload(handle);
 }

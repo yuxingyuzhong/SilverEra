@@ -345,3 +345,30 @@ TEST_F(Renderer_Mesh_Test, 程序化圆环可绘制)
 
 	renderer.mesh_unload(torus);
 }
+
+/*
+程序化圆锥（第六十八轮）
+口径：圆锥（半径 0.8 / 高 2 / 24 分段）可加载并出帧；
+      非法参数（半径 0、高度 -1、分段 2）整次拒绝且句柄归零。
+*/
+TEST_F(Renderer_Mesh_Test, 程序化圆锥可绘制)
+{
+        engine::Renderer renderer;
+        ASSERT_TRUE(renderer.init(hidden_config()));
+        engine::Mesh_Handle cone = 0;
+        ASSERT_TRUE(renderer.mesh_cone_load(cone, 0.8f, 2.0f, 24));
+        EXPECT_NE(cone, 0u);
+        EXPECT_TRUE(renderer.mesh_draw(cone, nullptr));
+        EXPECT_TRUE(renderer.frame_render());
+
+        //非法参数整次拒绝（句柄归零）
+        engine::Mesh_Handle invalid = 88;
+        EXPECT_FALSE(renderer.mesh_cone_load(invalid, 0.0f, 2.0f, 24));
+        EXPECT_EQ(invalid, 0u);
+        EXPECT_FALSE(renderer.mesh_cone_load(invalid, 0.8f, -1.0f, 24));
+        EXPECT_EQ(invalid, 0u);
+        EXPECT_FALSE(renderer.mesh_cone_load(invalid, 0.8f, 2.0f, 2));
+        EXPECT_EQ(invalid, 0u);
+
+        renderer.mesh_unload(cone);
+}

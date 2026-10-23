@@ -627,3 +627,78 @@ TEST_F(Renderer_Scene_Test, PBR金属度压暗漫反射)
 	renderer.mesh_unload(mesh);
 	renderer.texture_unload(texture);
 }
+
+/*
+逐物体材质覆盖全局 PBR（第六十八轮）
+口径：中灰纹理、法线 +Z、方向光沿 -Z、环境光 0、全局 PBR 开启（粗糙度 1、金属度 0）：
+      ① 全局高光 1 / 光泽度 16 → 基线中心 100–230（GGX）；
+      ② material_pbr_set(4, 0) → 中心再降（≥10），证逐物体粗糙度生效；
+      ③ 非法参数（粗糙度 9 / 金属度 1.5）整次拒绝且状态不变；
+      ④ material_pbr_clear → 画面与基线逐字节一致；
+      ⑤ 关高光后 material_pbr_set(1, 1) → 中心近 0（逐物体金属度压暗漫反射）。
+*/
+TEST_F(Renderer_Scene_Test, 逐物体材质覆盖全局PBR)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	uint64_t texture = 0;
+	std::vector<uint8_t> texels = solid_gray();
+	ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 2, 2));
+	renderer.texture_bind_set(texture);
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, quad_data_with_normal(0.0f, 0.0f, 1.0f)));
+
+	//方向光沿 -Z、环境光 0；全局高光 1、光泽度 16；PBR 开启
+	const float forward[3] = { 0.0f, 0.0f, -1.0f };
+	const float white_light[3] = { 1.0f, 1.0f, 1.0f };
+	renderer.light_set(forward, white_light, 1.0f, 0.0f);
+	renderer.specular_set(1.0f, 16.0f);
+	renderer.pbr_enable_set(true);
+
+	//渲染一帧并返回像素
+	auto render_frame = [&]()
+	{
+		EXPECT_TRUE(renderer.mesh_draw(mesh, nullptr));
+		std::vector<uint8_t> pixels(pixel_bytes());
+		EXPECT_TRUE(renderer.frame_render(pixels.data(), static_cast<std::uint32_t>(pixels.size())));
+		return pixels;
+	};
+
+	//基线（未启用逐物体材质）
+	std::vector<uint8_t> baseline_pixels = render_frame();
+	uint32_t baseline = center_brightness(baseline_pixels);
+	//逐物体粗糙度 4：高光更散
+	ASSERT_TRUE(renderer.material_pbr_set(4.0f, 0.0f));
+	EXPECT_TRUE(renderer.material_pbr_active());
+	uint32_t rough = center_brightness(render_frame());
+	//非法参数整次拒绝（保持 4 / 0）
+	EXPECT_FALSE(renderer.material_pbr_set(9.0f, 0.0f));
+	EXPECT_FLOAT_EQ(renderer.material_pbr_roughness(), 4.0f);
+	EXPECT_FALSE(renderer.material_pbr_set(1.0f, 1.5f));
+	EXPECT_FLOAT_EQ(renderer.material_pbr_metallic(), 0.0f);
+	//清除：回落全局参数，画面逐字节恢复
+	renderer.material_pbr_clear();
+	EXPECT_FALSE(renderer.material_pbr_active());
+	std::vector<uint8_t> restored_pixels = render_frame();
+
+	//关闭高光后只看漫反射：逐物体金属度 1 应消除漫反射
+	renderer.specular_set(0.0f, 16.0f);
+	uint32_t diffuse_base = center_brightness(render_frame());
+	ASSERT_TRUE(renderer.material_pbr_set(1.0f, 1.0f));
+	uint32_t metallic = center_brightness(render_frame());
+
+	RecordProperty("object_baseline", baseline);
+	RecordProperty("object_rough", rough);
+	RecordProperty("object_metallic", metallic);
+	EXPECT_GE(baseline, 100u) << "PBR 基线中心过暗（" << baseline << "）";
+	EXPECT_LE(baseline, 230u) << "PBR 基线中心仍饱和（" << baseline << "）";
+	EXPECT_LT(rough + 10u, baseline) << "逐物体粗糙度未削弱中心高光（" << rough << " vs " << baseline << "）";
+	EXPECT_EQ(restored_pixels, baseline_pixels) << "清除逐物体材质后画面未恢复";
+	EXPECT_LT(metallic + 20u, diffuse_base) << "逐物体金属度未压暗漫反射（" << metallic << " vs " << diffuse_base << "）";
+	EXPECT_LE(metallic, 15u) << "逐物体金属度 1 未消除漫反射（" << metallic << "）";
+
+	renderer.mesh_unload(mesh);
+	renderer.texture_unload(texture);
+}

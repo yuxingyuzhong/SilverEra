@@ -511,16 +511,16 @@ TEST_F(Renderer_Scene_Test, 实例缓冲按需写入)
 		}
 	};
 
-	//静止场景：两个帧槽依次预热（各 64 字节），之后为 0
+	//静止场景：两个帧槽依次预热（各 80 字节：模型矩阵 16 ＋ 材质 4 浮点），之后为 0
 	std::vector<uint64_t> deltas;
 	uint64_t previous = renderer.instance_upload_bytes();
 	upload_delta(deltas, previous, 4, nullptr);
 	RecordProperty("instance_upload_frame1", static_cast<int>(deltas[0]));
 	RecordProperty("instance_upload_frame3", static_cast<int>(deltas[2]));
-	EXPECT_EQ(deltas[0], 64u) << "首帧未写入单个实例";
+	EXPECT_EQ(deltas[0], 80u) << "首帧未写入单个实例";
 	EXPECT_EQ(*std::min_element(deltas.begin(), deltas.end()), 0u) << "静止场景仍整块上传";
 	for (uint64_t delta : deltas)
-		EXPECT_LE(delta, 64u) << "单帧上传超出本帧实例字节数";
+		EXPECT_LE(delta, 80u) << "单帧上传超出本帧实例字节数";
 
 	//平移模型矩阵 → 模型矩阵变化，应重新上传该实例
 	std::array<float, 16> model = {};

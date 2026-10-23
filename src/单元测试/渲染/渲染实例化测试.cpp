@@ -294,3 +294,54 @@ TEST_F(Renderer_Instanced_Test, 实例数为一与逐次绘制等价)
 
 	renderer.mesh_unload(handle);
 }
+
+/*
+实例化绘制共享同一材质（第六十八轮）
+口径：默认白纹理、中心小四边形、两个重叠实例；PBR 开启且关闭高光（只看漫反射）：
+      ① 未设置逐物体材质 → 中心区域为纹理白；
+      ② material_pbr_set(1, 1) → 整批实例按金属度 1 消除漫反射（纹理白像素归零）；
+      ③ material_pbr_clear → 纹理白像素数恢复到基线。
+*/
+TEST_F(Renderer_Instanced_Test, 实例化绘制共享同一材质)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	//回落内置默认白纹理
+	renderer.texture_bind_set(0);
+	engine::Mesh_Handle handle = 0;
+	ASSERT_TRUE(renderer.mesh_load(handle, quad_data(QUAD_HALF)));
+	//关闭高光只看漫反射，PBR 开启
+	renderer.specular_set(0.0f, 16.0f);
+	renderer.pbr_enable_set(true);
+
+	//两个重叠实例（恒等变换）
+	std::array<float, 16> transforms[2] = {
+		translation(0.0f, 0.0f, 0.0f),
+		translation(0.0f, 0.0f, 0.0f),
+	};
+	//渲染一帧并返回纹理白像素数
+	auto render_white = [&]()
+	{
+		EXPECT_TRUE(renderer.mesh_draw_instanced(handle, transforms[0].data(), 2));
+		std::vector<uint8_t> pixels(pixel_bytes());
+		EXPECT_TRUE(renderer.frame_render(pixels.data(), static_cast<uint32_t>(pixels.size())));
+		return white_count(pixels);
+	};
+
+	//基线：整批为纹理白
+	uint32_t baseline = render_white();
+	ASSERT_TRUE(renderer.material_pbr_set(1.0f, 1.0f));
+	uint32_t metallized = render_white();
+	renderer.material_pbr_clear();
+	uint32_t restored = render_white();
+
+	RecordProperty("instanced_white", baseline);
+	RecordProperty("instanced_metallic", metallized);
+	EXPECT_GT(baseline, 20u) << "实例化基线未见纹理白（" << baseline << "）";
+	EXPECT_LT(metallized, 5u) << "逐物体金属度未作用于整批实例（" << metallized << "）";
+	EXPECT_EQ(restored, baseline) << "清除逐物体材质后实例画面未恢复";
+
+	renderer.mesh_unload(handle);
+}
