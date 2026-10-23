@@ -493,6 +493,71 @@ TEST_F(Renderer_Scene_Test, 补光可独立生效)
 	EXPECT_GE(on, 100u) << "补光未照亮正面（" << on << "）";
 	EXPECT_NEAR(invalid, on, 4u) << "非法补光强度改变了画面（" << invalid << " vs " << on << "）";
 
+        renderer.mesh_unload(mesh);
+        renderer.texture_unload(texture);
+}
+
+/*
+PBR-lite 镜面开关与粗糙度（第六十四轮）
+口径：中灰纹理、法线 +Z、方向光沿 -Z（与视线同向）、环境光 0、全局高光 1 / 光泽度 16：
+      关闭 → Blinn-Phong 中心饱和（≥240）；开启（缩放 1）→ 中心下降到 100–230（GGX 能量重分配）；
+      粗糙度缩放 4 → 中心再降（≥10）；非法缩放 9 整次忽略（保持 4）；关闭后画面与初始逐字节一致。
+*/
+TEST_F(Renderer_Scene_Test, PBR镜面开关与粗糙度)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	uint64_t texture = 0;
+	std::vector<uint8_t> texels = solid_gray();
+	ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 2, 2));
+	renderer.texture_bind_set(texture);
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, quad_data_with_normal(0.0f, 0.0f, 1.0f)));
+
+	//方向光沿 -Z（to_light 与视线 +Z 对齐）、环境光 0；全局高光 1、光泽度 16
+	const float forward[3] = { 0.0f, 0.0f, -1.0f };
+	const float white_light[3] = { 1.0f, 1.0f, 1.0f };
+	renderer.light_set(forward, white_light, 1.0f, 0.0f);
+	renderer.specular_set(1.0f, 16.0f);
+
+	//渲染一帧并返回像素
+	auto render_frame = [&]()
+	{
+		EXPECT_TRUE(renderer.mesh_draw(mesh, nullptr));
+		std::vector<uint8_t> pixels(pixel_bytes());
+		EXPECT_TRUE(renderer.frame_render(pixels.data(), static_cast<std::uint32_t>(pixels.size())));
+		return pixels;
+	};
+
+	//关闭：Blinn-Phong 中心饱和
+	std::vector<uint8_t> legacy_pixels = render_frame();
+	uint32_t legacy = center_brightness(legacy_pixels);
+	//开启：GGX
+	renderer.pbr_enable_set(true);
+	ASSERT_TRUE(renderer.pbr_enabled());
+	uint32_t smooth = center_brightness(render_frame());
+	//粗糙度缩放 4：高光更散
+	renderer.pbr_roughness_set(4.0f);
+	uint32_t rough = center_brightness(render_frame());
+	//非法缩放 9 整次忽略（保持 4）
+	renderer.pbr_roughness_set(9.0f);
+	EXPECT_FLOAT_EQ(renderer.pbr_roughness(), 4.0f);
+	//关闭：恢复逐字节一致
+	renderer.pbr_enable_set(false);
+	ASSERT_FALSE(renderer.pbr_enabled());
+	std::vector<uint8_t> restored_pixels = render_frame();
+
+	RecordProperty("pbr_legacy", legacy);
+	RecordProperty("pbr_smooth", smooth);
+	RecordProperty("pbr_rough", rough);
+	EXPECT_GE(legacy, 240u) << "关闭 PBR 时中心未饱和（" << legacy << "）";
+	EXPECT_GE(smooth, 100u) << "开启 PBR 后中心过暗（" << smooth << "）";
+	EXPECT_LE(smooth, 230u) << "开启 PBR 后中心仍饱和（" << smooth << "）";
+	EXPECT_LT(rough + 10u, smooth) << "粗糙度放大未削弱中心高光（" << rough << " vs " << smooth << "）";
+	EXPECT_EQ(restored_pixels, legacy_pixels) << "关闭 PBR 后画面未恢复";
+
 	renderer.mesh_unload(mesh);
 	renderer.texture_unload(texture);
 }
