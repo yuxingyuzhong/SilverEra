@@ -433,3 +433,60 @@ TEST_F(Renderer_Text_Layout_Test, 首行缩进只影响首行)
 	EXPECT_EQ(indented_second_min, plain_second_min) << "缩进不应影响第二行";
 	renderer.font_unload(font);
 }
+
+/*
+行距倍数拉伸行间步进（第六十三轮）
+口径：`line_spacing = 2` 时第二行整体下移一个行高（墨迹从 [16,32) 区移到 [32,48) 区）；
+     非法值（0 / -1）按单倍处理，画面与默认布局逐字节一致。
+*/
+TEST_F(Renderer_Text_Layout_Test, 行距倍数拉伸行间步进)
+{
+	if (!font_available())
+		GTEST_SKIP() << "本机无 " << FONT_PATH;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	uint64_t font = 0;
+	ASSERT_TRUE(renderer.font_load_file(font, FONT_PATH, FONT_PIXEL_HEIGHT));
+
+	//单倍行距：第二行在 [16,32)
+	engine::Text_Layout plain{};
+	ASSERT_TRUE(renderer.text_draw_layout(font, "I\nI", 0.0f, 0.0f, plain));
+	std::vector<uint8_t> plain_pixels(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(plain_pixels.data(), static_cast<std::uint32_t>(plain_pixels.size())));
+	uint32_t plain_second_band = ink_in_band(plain_pixels, FONT_PIXEL_HEIGHT, 2 * FONT_PIXEL_HEIGHT);
+	uint32_t plain_third_band = ink_in_band(plain_pixels, 2 * FONT_PIXEL_HEIGHT, 3 * FONT_PIXEL_HEIGHT);
+	EXPECT_GT(plain_second_band, 0u) << "单倍行距下第二行不在第二个行高区间";
+	EXPECT_EQ(plain_third_band, 0u) << "单倍行距下第三行区间不应有墨迹";
+
+	//双倍行距：第二行整体下移一个行高
+	engine::Text_Layout spaced{};
+	spaced.line_spacing = 2.0f;
+	ASSERT_TRUE(renderer.text_draw_layout(font, "I\nI", 0.0f, 0.0f, spaced));
+	std::vector<uint8_t> spaced_pixels(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(spaced_pixels.data(), static_cast<std::uint32_t>(spaced_pixels.size())));
+	uint32_t spaced_second_band = ink_in_band(spaced_pixels, FONT_PIXEL_HEIGHT, 2 * FONT_PIXEL_HEIGHT);
+	uint32_t spaced_third_band = ink_in_band(spaced_pixels, 2 * FONT_PIXEL_HEIGHT, 3 * FONT_PIXEL_HEIGHT);
+	RecordProperty("spacing_second_band", static_cast<int>(spaced_second_band));
+	RecordProperty("spacing_third_band", static_cast<int>(spaced_third_band));
+	EXPECT_EQ(spaced_second_band, 0u) << "双倍行距下第二行未下移（第二个行高区间仍有墨迹）";
+	EXPECT_GT(spaced_third_band, 0u) << "双倍行距下第二行未落到第三个行高区间";
+
+	//非法值按单倍：画面与默认布局逐字节一致
+	engine::Text_Layout invalid_zero{};
+	invalid_zero.line_spacing = 0.0f;
+	ASSERT_TRUE(renderer.text_draw_layout(font, "I\nI", 0.0f, 0.0f, invalid_zero));
+	std::vector<uint8_t> zero_pixels(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(zero_pixels.data(), static_cast<std::uint32_t>(zero_pixels.size())));
+	EXPECT_EQ(zero_pixels, plain_pixels) << "行距 0 未按单倍处理";
+
+	engine::Text_Layout invalid_negative{};
+	invalid_negative.line_spacing = -1.0f;
+	ASSERT_TRUE(renderer.text_draw_layout(font, "I\nI", 0.0f, 0.0f, invalid_negative));
+	std::vector<uint8_t> negative_pixels(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(negative_pixels.data(), static_cast<std::uint32_t>(negative_pixels.size())));
+	EXPECT_EQ(negative_pixels, plain_pixels) << "负行距未按单倍处理";
+
+	renderer.font_unload(font);
+}
