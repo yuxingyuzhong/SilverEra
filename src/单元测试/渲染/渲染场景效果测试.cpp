@@ -561,3 +561,69 @@ TEST_F(Renderer_Scene_Test, PBR镜面开关与粗糙度)
 	renderer.mesh_unload(mesh);
 	renderer.texture_unload(texture);
 }
+
+/*
+PBR 金属度压暗漫反射（第六十五轮）
+口径：中灰纹理、法线 +Z、方向光沿 -Z、环境光 0、**高光强度 0**（只看漫反射）：
+      PBR 关闭 → 中心约 128（sRGB 采样）；开启且金属度 0 → 不变；0.5 → 约 92；1 → 近 0；
+      非法金属度（-0.1 / 1.5）整次忽略；PBR 关闭时金属度不生效（仍约 128）。
+*/
+TEST_F(Renderer_Scene_Test, PBR金属度压暗漫反射)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	uint64_t texture = 0;
+	std::vector<uint8_t> texels = solid_gray();
+	ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 2, 2));
+	renderer.texture_bind_set(texture);
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, quad_data_with_normal(0.0f, 0.0f, 1.0f)));
+
+	//方向光沿 -Z、环境光 0；关闭高光
+	const float forward[3] = { 0.0f, 0.0f, -1.0f };
+	const float white_light[3] = { 1.0f, 1.0f, 1.0f };
+	renderer.light_set(forward, white_light, 1.0f, 0.0f);
+	renderer.specular_set(0.0f, 64.0f);
+
+	//渲染一帧并返回中心亮度
+	auto render_brightness = [&]()
+	{
+		EXPECT_TRUE(renderer.mesh_draw(mesh, nullptr));
+		std::vector<uint8_t> pixels(pixel_bytes());
+		EXPECT_TRUE(renderer.frame_render(pixels.data(), static_cast<std::uint32_t>(pixels.size())));
+		return center_brightness(pixels);
+	};
+
+	//PBR 关闭（基线）
+	uint32_t legacy = render_brightness();
+	//PBR 开启、金属度 0：应保持基线
+	renderer.pbr_enable_set(true);
+	uint32_t metallic_zero = render_brightness();
+	//金属度 0.5 / 1：漫反射按 (1 − metallic) 压暗
+	renderer.pbr_metallic_set(0.5f);
+	uint32_t metallic_half = render_brightness();
+	renderer.pbr_metallic_set(1.0f);
+	uint32_t metallic_full = render_brightness();
+	//非法金属度整次忽略
+	renderer.pbr_metallic_set(-0.1f);
+	EXPECT_FLOAT_EQ(renderer.pbr_metallic(), 1.0f);
+	renderer.pbr_metallic_set(1.5f);
+	EXPECT_FLOAT_EQ(renderer.pbr_metallic(), 1.0f);
+	//PBR 关闭：金属度不生效
+	renderer.pbr_enable_set(false);
+	uint32_t restored = render_brightness();
+
+	RecordProperty("metallic_legacy", legacy);
+	RecordProperty("metallic_zero", metallic_zero);
+	RecordProperty("metallic_half", metallic_half);
+	RecordProperty("metallic_full", metallic_full);
+	EXPECT_NEAR(metallic_zero, legacy, 3u) << "金属度 0 改变了漫反射";
+	EXPECT_LT(metallic_half + 20u, metallic_zero) << "金属度 0.5 未压暗漫反射（" << metallic_half << "）";
+	EXPECT_LE(metallic_full, 15u) << "金属度 1 未消除漫反射（" << metallic_full << "）";
+	EXPECT_NEAR(restored, legacy, 3u) << "PBR 关闭时金属度不应生效";
+
+	renderer.mesh_unload(mesh);
+	renderer.texture_unload(texture);
+}
