@@ -320,3 +320,28 @@ TEST_F(Renderer_Mesh_Test, 程序化球体与圆柱可绘制)
 	renderer.mesh_unload(sphere);
 	renderer.mesh_unload(cylinder);
 }
+
+/*
+程序化圆环（第六十七轮）
+口径：圆环（环半径 1 / 管半径 0.3 / 32 × 16 分段）可加载并出帧；
+      非法参数（环半径 0、环分段 2）整次拒绝且句柄归零。
+*/
+TEST_F(Renderer_Mesh_Test, 程序化圆环可绘制)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	engine::Mesh_Handle torus = 0;
+	ASSERT_TRUE(renderer.mesh_torus_load(torus, 1.0f, 0.3f, 32, 16));
+	EXPECT_NE(torus, 0u);
+	EXPECT_TRUE(renderer.mesh_draw(torus, nullptr));
+	EXPECT_TRUE(renderer.frame_render());
+
+	//非法参数整次拒绝（句柄归零）
+	engine::Mesh_Handle invalid = 77;
+	EXPECT_FALSE(renderer.mesh_torus_load(invalid, 0.0f, 0.3f, 32, 16));
+	EXPECT_EQ(invalid, 0u);
+	EXPECT_FALSE(renderer.mesh_torus_load(invalid, 1.0f, 0.3f, 2, 16));
+	EXPECT_EQ(invalid, 0u);
+
+	renderer.mesh_unload(torus);
+}
