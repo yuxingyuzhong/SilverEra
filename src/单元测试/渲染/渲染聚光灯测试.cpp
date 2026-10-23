@@ -69,9 +69,9 @@ TEST_F(Renderer_Scene_Test, 聚光灯只照亮锥内)
 }
 
 /*
-聚光灯参数校验与数量上限（第三十四轮）
+聚光灯参数校验与数量上限（第三十四轮；第六十二轮上限 4 → 8）
 口径：内角 ≥ 外角、外角越界（> 90°）、方向退化为零向量均被拒绝；
-      合法登记 4 盏后第 5 盏被拒；清空后可重新登记。
+      合法登记 8 盏后第 9 盏被拒；清空后可重新登记。
 */
 TEST_F(Renderer_Scene_Test, 聚光灯参数校验与上限)
 {
@@ -89,10 +89,10 @@ TEST_F(Renderer_Scene_Test, 聚光灯参数校验与上限)
 	EXPECT_FALSE(renderer.light_add_spot(position, forward, white_light, 10.0f, 1.0f, 20.0f, 120.0f, 0.0f));
 	//方向退化（零向量）→ 拒绝
 	EXPECT_FALSE(renderer.light_add_spot(position, zero_direction, white_light, 10.0f, 1.0f, 10.0f, 20.0f, 0.0f));
-	//合法登记 4 盏（共用点光源上限）
-	for (uint32_t index = 0; index < 4; ++index)
+	//合法登记 8 盏（共用点光源上限）
+	for (uint32_t index = 0; index < 8; ++index)
 		EXPECT_TRUE(renderer.light_add_spot(position, forward, white_light, 10.0f, 1.0f, 10.0f, 20.0f, 0.0f));
-	//第 5 盏被拒
+	//第 9 盏被拒
 	EXPECT_FALSE(renderer.light_add_spot(position, forward, white_light, 10.0f, 1.0f, 10.0f, 20.0f, 0.0f));
 	//清空后可重新登记
 	renderer.lights_clear();

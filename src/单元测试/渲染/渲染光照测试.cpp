@@ -393,8 +393,8 @@ TEST_F(Renderer_Scene_Test, 多个点光源累加更亮)
 }
 
 /*
-点光源数量上限与清空（第三十二轮）
-口径：上限 4 个；第 5 个返回假且画面不变；`lights_clear` 后回到默认方向光。
+点光源数量上限与清空（第三十二轮；第六十二轮上限 4 → 8）
+口径：上限 8 个；第 9 个返回假且画面不变；`lights_clear` 后回到默认方向光。
 */
 TEST_F(Renderer_Scene_Test, 点光源上限与清空)
 {
@@ -419,19 +419,69 @@ TEST_F(Renderer_Scene_Test, 点光源上限与清空)
 		return center_brightness(pixels);
 	};
 
-	//登记 4 个点光源（高度避开中心像素，避免完全饱和而无法比较）
-	const float positions[4][3] = {
+	//登记 8 个点光源（高度避开中心像素，避免完全饱和而无法比较）
+	const float positions[8][3] = {
 		{ -1.5f, 0.0f, 1.0f }, { -0.5f, 0.0f, 1.0f }, { 0.5f, 0.0f, 1.0f }, { 1.5f, 0.0f, 1.0f },
+		{ -1.5f, 0.5f, 1.0f }, { -0.5f, 0.5f, 1.0f }, { 0.5f, 0.5f, 1.0f }, { 1.5f, 0.5f, 1.0f },
 	};
-	for (uint32_t index = 0; index < 4; ++index)
+	for (uint32_t index = 0; index < 8; ++index)
 		ASSERT_TRUE(renderer.light_add_point(positions[index], white_light, 6.0f, 0.4f, 0.0f));
 	uint32_t full = render_brightness();
-	//第 5 个被拒（上限 4），画面不变
+	//第 9 个被拒（上限 8），画面不变
 	ASSERT_FALSE(renderer.light_add_point(positions[0], white_light, 6.0f, 0.4f, 0.0f));
 	EXPECT_EQ(render_brightness(), full) << "超上限的追加改变了画面";
 	//清空后回到默认方向光（满照，纯白中心）
 	renderer.lights_clear();
 	EXPECT_GE(render_brightness(), 200u) << "清空点光源后未回到方向光满照";
+
+	renderer.mesh_unload(mesh);
+	renderer.texture_unload(texture);
+}
+
+/*
+第八盏点光源参与着色（第六十二轮）
+口径：方向光强度 0、环境光 0；先登记 7 盏强度 0 的点光源 → 中心暗；
+     第 8 盏（中心正前方、强度 1）登记后中心被照亮，证明循环上限确为 8。
+*/
+TEST_F(Renderer_Scene_Test, 第八盏点光源参与着色)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	uint64_t texture = 0;
+	std::vector<uint8_t> texels = solid_white();
+	ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 2, 2));
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, quad_data_with_normal(0.0f, 0.0f, 1.0f)));
+	renderer.texture_bind_set(texture);
+
+	//方向光关闭、环境光 0
+	const float forward[3] = { 0.0f, 0.0f, -1.0f };
+	const float white_light[3] = { 1.0f, 1.0f, 1.0f };
+	renderer.light_set(forward, white_light, 0.0f, 0.0f);
+
+	//渲染一帧并返回中心亮度
+	auto render_brightness = [&]()
+	{
+		EXPECT_TRUE(renderer.mesh_draw(mesh, nullptr));
+		std::vector<uint8_t> pixels(pixel_bytes());
+		EXPECT_TRUE(renderer.frame_render(pixels.data(), static_cast<std::uint32_t>(pixels.size())));
+		return center_brightness(pixels);
+	};
+
+	//前 7 盏强度 0（占位）
+	const float center_light[3] = { 0.0f, 0.0f, 1.0f };
+	for (uint32_t index = 0; index < 7; ++index)
+		ASSERT_TRUE(renderer.light_add_point(center_light, white_light, 6.0f, 0.0f, 0.0f));
+	uint32_t before = render_brightness();
+	//第 8 盏强度 1 → 中心被照亮
+	ASSERT_TRUE(renderer.light_add_point(center_light, white_light, 6.0f, 1.0f, 0.0f));
+	uint32_t after = render_brightness();
+	RecordProperty("light8_before", before);
+	RecordProperty("light8_after", after);
+	EXPECT_LE(before, 40u) << "占位光源意外照亮了中心（" << before << "）";
+	EXPECT_GE(after, 150u) << "第 8 盏点光源未参与着色（" << after << "）";
 
 	renderer.mesh_unload(mesh);
 	renderer.texture_unload(texture);
