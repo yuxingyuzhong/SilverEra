@@ -285,3 +285,38 @@ TEST_F(Renderer_Texture_Test, 纹理区域读回与整幅一致)
         EXPECT_EQ(height, 0u);
         renderer.texture_unload(texture);
 }
+
+/*
+程序化球体与圆柱（第六十六轮）
+口径：默认相机下球体（半径 1 / 24 × 12 分段）与圆柱（半径 0.5 / 高 2 / 24 分段）均可加载并同帧出帧；
+      非法参数（半径 0、经度 2、高度 0、分段 2）整次拒绝且句柄归零。
+*/
+TEST_F(Renderer_Mesh_Test, 程序化球体与圆柱可绘制)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	engine::Mesh_Handle sphere = 0;
+	engine::Mesh_Handle cylinder = 0;
+	ASSERT_TRUE(renderer.mesh_sphere_load(sphere, 1.0f, 24, 12));
+	ASSERT_TRUE(renderer.mesh_cylinder_load(cylinder, 0.5f, 2.0f, 24));
+	EXPECT_NE(sphere, 0u);
+	EXPECT_NE(cylinder, 0u);
+	//两网格同帧登记并出帧
+	EXPECT_TRUE(renderer.mesh_draw(sphere, nullptr));
+	EXPECT_TRUE(renderer.mesh_draw(cylinder, nullptr));
+	EXPECT_TRUE(renderer.frame_render());
+
+	//非法参数整次拒绝（句柄归零）
+	engine::Mesh_Handle invalid = 99;
+	EXPECT_FALSE(renderer.mesh_sphere_load(invalid, 0.0f, 24, 12));
+	EXPECT_EQ(invalid, 0u);
+	EXPECT_FALSE(renderer.mesh_sphere_load(invalid, 1.0f, 2, 12));
+	EXPECT_EQ(invalid, 0u);
+	EXPECT_FALSE(renderer.mesh_cylinder_load(invalid, 0.5f, 0.0f, 24));
+	EXPECT_EQ(invalid, 0u);
+	EXPECT_FALSE(renderer.mesh_cylinder_load(invalid, 0.5f, 2.0f, 2));
+	EXPECT_EQ(invalid, 0u);
+
+	renderer.mesh_unload(sphere);
+	renderer.mesh_unload(cylinder);
+}
