@@ -5,6 +5,8 @@
 */
 #include "渲染场景测试辅助.h"
 
+#include <numeric>
+
 TEST_F(Renderer_Scene_Test, 未初始化应用场景无副作用)
 {
 	engine::Renderer renderer;
@@ -476,4 +478,64 @@ TEST_F(Renderer_Scene_Test, 场景UBO按需写入)
 	EXPECT_GT(changed_total, 0u) << "光照参数变化后未上传";
 	//各帧槽均同步后应回到 0（按需写入生效）
 	EXPECT_EQ(last_delta, 0u) << "静止场景仍上传（按需写入未生效）";
+}
+
+/*
+实例缓冲按需写入（第六十一轮）
+口径：frame_overlap = 2；每帧绘制同一个四边形（1 个实例 = 64 字节）；
+     各帧槽预热后静止帧上传 0 字节；平移模型矩阵后逐帧上传 >0 且 ≤64，随后回到 0。
+*/
+TEST_F(Renderer_Scene_Test, 实例缓冲按需写入)
+{
+	engine::Renderer renderer;
+	engine::Renderer_Config config = hidden_config();
+	config.frame_overlap = 2;
+	ASSERT_TRUE(renderer.init(config));
+	uint64_t texture = 0;
+	std::vector<uint8_t> texels = solid_white();
+	ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 2, 2));
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, quad_data()));
+	renderer.texture_bind_set(texture);
+
+	//逐帧累计上传字节的增量（transform 为空表示单位矩阵）
+	auto upload_delta = [&](std::vector<uint64_t>& deltas, uint64_t& previous, int frames, const float* transform)
+	{
+		for (int frame = 0; frame < frames; ++frame)
+		{
+			EXPECT_TRUE(renderer.mesh_draw(mesh, transform));
+			EXPECT_TRUE(renderer.frame_render());
+			uint64_t current = renderer.instance_upload_bytes();
+			deltas.push_back(current - previous);
+			previous = current;
+		}
+	};
+
+	//静止场景：两个帧槽依次预热（各 64 字节），之后为 0
+	std::vector<uint64_t> deltas;
+	uint64_t previous = renderer.instance_upload_bytes();
+	upload_delta(deltas, previous, 4, nullptr);
+	RecordProperty("instance_upload_frame1", static_cast<int>(deltas[0]));
+	RecordProperty("instance_upload_frame3", static_cast<int>(deltas[2]));
+	EXPECT_EQ(deltas[0], 64u) << "首帧未写入单个实例";
+	EXPECT_EQ(*std::min_element(deltas.begin(), deltas.end()), 0u) << "静止场景仍整块上传";
+	for (uint64_t delta : deltas)
+		EXPECT_LE(delta, 64u) << "单帧上传超出本帧实例字节数";
+
+	//平移模型矩阵 → 模型矩阵变化，应重新上传该实例
+	std::array<float, 16> model = {};
+	model[0] = 1.0f;
+	model[5] = 1.0f;
+	model[10] = 1.0f;
+	model[12] = 0.3f;
+	model[15] = 1.0f;
+	std::vector<uint64_t> moved;
+	upload_delta(moved, previous, 4, model.data());
+	RecordProperty("instance_upload_moved_total",
+		static_cast<int>(std::accumulate(moved.begin(), moved.end(), static_cast<uint64_t>(0))));
+	EXPECT_GT(*std::max_element(moved.begin(), moved.end()), 0u) << "模型矩阵变化后未上传";
+	EXPECT_EQ(moved.back(), 0u) << "静止后仍上传（按需写入未生效）";
+
+	renderer.mesh_unload(mesh);
+	renderer.texture_unload(texture);
 }
