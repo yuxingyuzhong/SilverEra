@@ -61,6 +61,7 @@ target_sources(EngineTestObjects PRIVATE
     "src/单元测试/渲染/渲染后处理泛光测试.cpp"
     "src/单元测试/渲染/渲染后处理调色测试.cpp"
     "src/单元测试/渲染/渲染后处理链测试.cpp"
+    "src/单元测试/渲染/渲染后处理颗粒测试.cpp"
     "src/单元测试/渲染/渲染场景效果测试.cpp"
     "src/单元测试/渲染/渲染场景数据测试.cpp"
     "src/单元测试/渲染/渲染多管线测试.cpp"
