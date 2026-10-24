@@ -510,3 +510,35 @@ TEST_F(Renderer_Mesh_Test, 程序化圆盘可绘制)
 
         renderer.mesh_unload(handle);
 }
+
+//纹理尺寸查询（第九十轮）：任意尺寸纹理可查回同值；未初始化 / 无效 / 已卸载句柄返回假且出参归零
+TEST_F(Renderer_Mesh_Test, 纹理尺寸可查询)
+{
+        engine::Renderer renderer;
+        uint32_t width = 7;
+        uint32_t height = 7;
+        EXPECT_FALSE(renderer.texture_size(1, &width, &height));
+        EXPECT_EQ(width, 0u);
+        EXPECT_EQ(height, 0u);
+
+        ASSERT_TRUE(renderer.init(hidden_config()));
+        uint64_t texture = 0;
+        ASSERT_TRUE(renderer.texture_load_checkerboard(texture, 64, 32, 8));
+        uint32_t queried_width = 0;
+        uint32_t queried_height = 0;
+        EXPECT_TRUE(renderer.texture_size(texture, &queried_width, &queried_height));
+        EXPECT_EQ(queried_width, 64u);
+        EXPECT_EQ(queried_height, 32u);
+        //只取高（宽指针为空）亦有效
+        uint32_t only_height = 0;
+        EXPECT_TRUE(renderer.texture_size(texture, nullptr, &only_height));
+        EXPECT_EQ(only_height, 32u);
+        //无效句柄
+        EXPECT_FALSE(renderer.texture_size(0, &queried_width, &queried_height));
+        EXPECT_EQ(queried_width, 0u);
+        EXPECT_FALSE(renderer.texture_size(texture + 99, &queried_width, &queried_height));
+        //卸载后失效
+        renderer.texture_unload(texture);
+        EXPECT_FALSE(renderer.texture_size(texture, &queried_width, &queried_height));
+        EXPECT_EQ(queried_height, 0u);
+}
