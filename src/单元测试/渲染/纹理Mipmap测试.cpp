@@ -11,6 +11,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -27,6 +28,11 @@ namespace
 	constexpr uint32_t CHECKER_CELL = 8;
 	//缩小绘制所用小四边形半边长（世界尺度；屏幕上约 5~6 像素宽，采样密度远高于 1）
 	constexpr float SMALL_QUAD_HALF = 0.2f;
+	/*
+	细节层级偏置用例的中等四边形半边长（屏幕约 15~18 像素）
+	基准 LOD 落在 mip 链中段（棋盘格纹理仍有可见明暗差），故 -2 更锐、+2 更糊两个方向都可观察。
+	*/
+	constexpr float MEDIUM_QUAD_HALF = 0.6f;
 
 	//构造隐藏窗口配置
 	engine::Renderer_Config hidden_config(void)
@@ -324,4 +330,111 @@ TEST_F(Renderer_Mipmap_Test, 寻址模式可配)
 
 	renderer.mesh_unload(handle);
 	renderer.texture_unload(texture);
+}
+
+/*
+采样器 · 细节层级偏置（第七十七轮）
+口径：复用「缩小绘制」场景（64×64 棋盘格 ＋ 屏幕约 5~6 像素的小四边形）；
+      同一几何与纹理下只改 `lod_bias`：负值使硬件 LOD 下移、采到更高级别（更锐利），
+      正值使 LOD 上移、采到更低级别（更模糊）；以区域对比度为观测量。
+*/
+TEST_F(Renderer_Mipmap_Test, 细节层级偏置改变缩小采样)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	//棋盘格纹理与小四边形（与「缩小绘制时mip生效」同一前提）
+	uint64_t texture = 0;
+	ASSERT_TRUE(renderer.texture_load_checkerboard(texture, CHECKER_SIZE, CHECKER_SIZE, CHECKER_CELL));
+	renderer.texture_bind_set(texture);
+	engine::Mesh_Handle handle = 0;
+	ASSERT_TRUE(renderer.mesh_load(handle, quad_data(MEDIUM_QUAD_HALF, 0.0f, 1.0f, 0.0f, 1.0f)));
+
+	//按给定偏置渲染一帧（void λ 以允许 ASSERT）
+	auto render_with_bias = [&](float bias, std::vector<uint8_t>& pixels)
+	{
+		engine::Texture_Sampler_State state;
+		state.mip_filter = true;
+		state.lod_bias = bias;
+		renderer.texture_sampler_state_set(state);
+		ASSERT_TRUE(renderer.mesh_draw(handle, nullptr));
+		pixels.assign(pixel_bytes(), 0);
+		ASSERT_TRUE(renderer.frame_render(pixels.data(), static_cast<uint32_t>(pixels.size())));
+	};
+
+	//三帧：更锐利（-2）／基准（0）／更模糊（+2）
+	std::vector<uint8_t> sharp_pixels;
+	std::vector<uint8_t> baseline_pixels;
+	std::vector<uint8_t> blur_pixels;
+	render_with_bias(-2.0f, sharp_pixels);
+	render_with_bias(0.0f, baseline_pixels);
+	render_with_bias(2.0f, blur_pixels);
+	uint32_t sharp_spread = region_spread(sharp_pixels, WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2, 3);
+	uint32_t baseline_spread = region_spread(baseline_pixels, WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2, 3);
+	uint32_t blur_spread = region_spread(blur_pixels, WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2, 3);
+	RecordProperty("lod_bias_sharp_spread", static_cast<int>(sharp_spread));
+	RecordProperty("lod_bias_baseline_spread", static_cast<int>(baseline_spread));
+	RecordProperty("lod_bias_blur_spread", static_cast<int>(blur_spread));
+
+	//负偏置应比基准更锐利（区域对比度更高）
+	EXPECT_GT(sharp_spread, baseline_spread) << "负偏置未提升细节（锐 "
+		<< sharp_spread << " vs 基准 " << baseline_spread << "）";
+	//正偏置应比基准更模糊（区域对比度更低）
+	EXPECT_LT(blur_spread, baseline_spread) << "正偏置未降低细节（糊 "
+		<< blur_spread << " vs 基准 " << baseline_spread << "）";
+	//锐利帧实际发生了画面变化（排除偏置被忽略）
+	EXPECT_GT(sharp_spread, baseline_spread + 10u) << "偏置影响过弱，疑未生效";
+
+	renderer.mesh_unload(handle);
+	renderer.texture_unload(texture);
+}
+
+/*
+采样器状态可读与钳制（第七十七轮）
+口径：默认状态即既有行为；设置后 `texture_sampler_state_get` 返回生效值；
+      lod_bias 越界钳到 [-16, 16]、非数归 0；未初始化返回默认状态。
+*/
+TEST_F(Renderer_Mipmap_Test, 采样器状态可读与钳制)
+{
+	engine::Renderer renderer;
+	//未初始化：返回默认状态
+	engine::Texture_Sampler_State before_init = renderer.texture_sampler_state_get();
+	EXPECT_EQ(before_init.lod_bias, 0.0f);
+	EXPECT_FALSE(before_init.mip_filter);
+
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	//默认值（与本轮之前行为一致）
+	engine::Texture_Sampler_State default_state = renderer.texture_sampler_state_get();
+	EXPECT_EQ(default_state.address_mode, engine::Texture_Address_Mode::Repeat);
+	EXPECT_FALSE(default_state.mip_filter);
+	EXPECT_EQ(default_state.min_lod, 0.0f);
+	EXPECT_EQ(default_state.max_lod, -1.0f);
+	EXPECT_EQ(default_state.lod_bias, 0.0f);
+
+	//合法值原样保留
+	engine::Texture_Sampler_State legal;
+	legal.mip_filter = true;
+	legal.lod_bias = -2.0f;
+	renderer.texture_sampler_state_set(legal);
+	EXPECT_EQ(renderer.texture_sampler_state_get().lod_bias, -2.0f);
+	EXPECT_TRUE(renderer.texture_sampler_state_get().mip_filter);
+
+	//上界钳制
+	engine::Texture_Sampler_State high;
+	high.lod_bias = 99.0f;
+	renderer.texture_sampler_state_set(high);
+	EXPECT_EQ(renderer.texture_sampler_state_get().lod_bias, 16.0f);
+
+	//下界钳制
+	engine::Texture_Sampler_State low;
+	low.lod_bias = -99.0f;
+	renderer.texture_sampler_state_set(low);
+	EXPECT_EQ(renderer.texture_sampler_state_get().lod_bias, -16.0f);
+
+	//非数归 0
+	engine::Texture_Sampler_State not_a_number;
+	not_a_number.lod_bias = std::numeric_limits<float>::quiet_NaN();
+	renderer.texture_sampler_state_set(not_a_number);
+	EXPECT_EQ(renderer.texture_sampler_state_get().lod_bias, 0.0f);
 }

@@ -467,3 +467,48 @@ TEST_F(Renderer_Offscreen_Test, 深度读回区分几何与清屏)
         renderer.texture_unload(texture);
         renderer.render_target_destroy(target);
 }
+
+/*
+渲染目标尺寸查询（第七十七轮）
+口径：创建任意尺寸的目标后可直接查回实际尺寸；未初始化 / 无效句柄 / 已销毁句柄返回假且出参归零。
+*/
+TEST_F(Renderer_Offscreen_Test, 目标尺寸可查询)
+{
+        engine::Renderer renderer;
+        //未初始化：返回假且出参归零
+        uint32_t width = 7;
+        uint32_t height = 7;
+        EXPECT_FALSE(renderer.render_target_size(1, &width, &height));
+        EXPECT_EQ(width, 0u);
+        EXPECT_EQ(height, 0u);
+
+        ASSERT_TRUE(renderer.init(hidden_config()));
+        //任意尺寸（与交换链不同）也应原样查回
+        uint64_t target = 0;
+        uint32_t target_width = WINDOW_WIDTH / 2;
+        uint32_t target_height = WINDOW_HEIGHT / 2;
+        ASSERT_TRUE(renderer.render_target_create(target, target_width, target_height));
+        uint32_t queried_width = 0;
+        uint32_t queried_height = 0;
+        EXPECT_TRUE(renderer.render_target_size(target, &queried_width, &queried_height));
+        EXPECT_EQ(queried_width, target_width);
+        EXPECT_EQ(queried_height, target_height);
+
+        //只取宽（高指针为空）亦有效
+        uint32_t only_width = 0;
+        EXPECT_TRUE(renderer.render_target_size(target, &only_width, nullptr));
+        EXPECT_EQ(only_width, target_width);
+
+        //无效句柄被拒且出参归零
+        uint32_t invalid_width = 5;
+        uint32_t invalid_height = 5;
+        EXPECT_FALSE(renderer.render_target_size(0, &invalid_width, &invalid_height));
+        EXPECT_EQ(invalid_width, 0u);
+        EXPECT_EQ(invalid_height, 0u);
+        EXPECT_FALSE(renderer.render_target_size(target + 99, &invalid_width, &invalid_height));
+
+        //销毁后同样失效
+        renderer.render_target_destroy(target);
+        EXPECT_FALSE(renderer.render_target_size(target, &invalid_width, &invalid_height));
+        EXPECT_EQ(invalid_width, 0u);
+}
