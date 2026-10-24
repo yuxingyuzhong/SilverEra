@@ -1,0 +1,9 @@
+﻿ninja.exe : ninja: error: loading 'build.ninja': The system cannot find the file specified.
+At line:15 char:2301
++ ... x64-Debug"; & $ninja -k 0 2>&1 > "D:\agent\working_station\silver_era ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (ninja: error: l...file specified.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+
+
