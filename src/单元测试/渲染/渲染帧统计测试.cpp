@@ -301,11 +301,43 @@ TEST_F(Renderer_Stats_Test, 关闭剔除后视锥外实例仍登记)
 */
 TEST_F(Renderer_Stats_Test, 直通路径后处理级数为零)
 {
-	engine::Renderer renderer;
-	ASSERT_TRUE(renderer.init(hidden_config()));
-	for (uint32_t index = 0; index < 2; ++index)
-		ASSERT_TRUE(renderer.frame_render());
-	engine::Frame_Stats stats = renderer.frame_stats_get();
-	EXPECT_EQ(stats.frames, 2u);
-	EXPECT_EQ(stats.post_stages, 0u);
+        engine::Renderer renderer;
+        ASSERT_TRUE(renderer.init(hidden_config()));
+        for (uint32_t index = 0; index < 2; ++index)
+                ASSERT_TRUE(renderer.frame_render());
+        engine::Frame_Stats stats = renderer.frame_stats_get();
+        EXPECT_EQ(stats.frames, 2u);
+        EXPECT_EQ(stats.post_stages, 0u);
+}
+
+/*
+按需上传字节入统计（第七十二轮）
+口径：`Frame_Stats.scene_upload_bytes` / `instance_upload_bytes` 与门面同名接口同源；
+      绘制一帧后两者均大于 0 且与接口返回值一致；静止帧后实例上传不再增长（按需写入）。
+*/
+TEST_F(Renderer_Stats_Test, 按需上传字节入统计)
+{
+        engine::Renderer renderer;
+        ASSERT_TRUE(renderer.init(hidden_config()));
+        engine::Mesh_Handle mesh = 0;
+        ASSERT_TRUE(renderer.mesh_load(mesh, triangle_data()));
+        //首帧：场景 UBO 与实例缓冲均需写入
+        ASSERT_TRUE(renderer.mesh_draw(mesh, nullptr));
+        ASSERT_TRUE(renderer.frame_render());
+        engine::Frame_Stats stats = renderer.frame_stats_get();
+        EXPECT_EQ(stats.scene_upload_bytes, renderer.scene_upload_bytes());
+        EXPECT_EQ(stats.instance_upload_bytes, renderer.instance_upload_bytes());
+        EXPECT_GT(stats.scene_upload_bytes, 0u);
+        EXPECT_GT(stats.instance_upload_bytes, 0u);
+        //连续静止帧：实例上传不再增长
+        uint64_t before = stats.instance_upload_bytes;
+        for (uint32_t index = 0; index < 4; ++index)
+        {
+                ASSERT_TRUE(renderer.mesh_draw(mesh, nullptr));
+                ASSERT_TRUE(renderer.frame_render());
+        }
+        engine::Frame_Stats later = renderer.frame_stats_get();
+        EXPECT_EQ(later.instance_upload_bytes, renderer.instance_upload_bytes());
+        EXPECT_LT(later.instance_upload_bytes, before + 400u) << "静止帧仍在整块上传实例";
+        renderer.mesh_unload(mesh);
 }
