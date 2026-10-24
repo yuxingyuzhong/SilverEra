@@ -604,3 +604,103 @@ TEST_F(Renderer_Post_Chain_Test, 色差分离红蓝通道)
 			<< pixel_text(reference_center) << " → " << pixel_text(aberration_center);
 	}
 }
+
+/*
+后处理预设 · 色调分离（第七十八轮）
+口径：64×1 水平灰度渐变（0..255）贴中央四边形；参考帧交换链直通，
+      对照帧单级「色调分离」链并把该级强度专设为 4（色阶数）；
+      以「中央行（去掉清屏色）不同灰度值个数」为色带数观测量：直通应多、量化后应少。
+*/
+TEST_F(Renderer_Post_Chain_Test, 色调分离产生色带)
+{
+	//水平灰度渐变（64×1，0..255 均匀分布）
+	std::vector<uint8_t> texels(64 * 4);
+	for (uint32_t x = 0; x < 64; ++x)
+	{
+		uint8_t value = static_cast<uint8_t>(x * 255 / 63);
+		std::size_t offset = static_cast<std::size_t>(x) * 4;
+		texels[offset + 0] = value;
+		texels[offset + 1] = value;
+		texels[offset + 2] = value;
+		texels[offset + 3] = 255;
+	}
+	//中央行的不同灰度值个数（跳过清屏色：清屏色外通道不等）
+	auto distinct_grays = [&](const std::vector<uint8_t>& pixels)
+	{
+		bool seen[256] = {};
+		uint32_t count = 0;
+		uint32_t row = WINDOW_HEIGHT / 2;
+		for (uint32_t x = WINDOW_WIDTH / 4; x < WINDOW_WIDTH * 3 / 4; ++x)
+		{
+			std::array<uint8_t, 4> value = pixel_get(pixels, x, row);
+			int spread = static_cast<int>(value[0]) - static_cast<int>(value[2]);
+			if (spread < 0)
+				spread = -spread;
+			//清屏色（外通道差较大）不参与统计
+			if (spread > 3)
+				continue;
+			uint8_t gray = value[1];
+			if (!seen[gray])
+			{
+				seen[gray] = true;
+				++count;
+			}
+		}
+		return count;
+	};
+
+	//参考帧：交换链直通
+	std::vector<uint8_t> reference(pixel_bytes());
+	{
+		engine::Renderer renderer;
+		ASSERT_TRUE(renderer.init(hidden_config()));
+		if (!renderer.readback_supported())
+			GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+		uint64_t texture = 0;
+		ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 64, 1));
+		renderer.texture_bind_set(texture);
+		engine::Mesh_Handle handle = 0;
+		ASSERT_TRUE(renderer.mesh_load(handle, quad_data()));
+		ASSERT_TRUE(renderer.mesh_draw(handle, nullptr));
+		ASSERT_TRUE(renderer.frame_render(reference.data(), static_cast<uint32_t>(reference.size())));
+		renderer.mesh_unload(handle);
+		renderer.texture_unload(texture);
+	}
+	//对照帧：单级色调分离链（色阶数 4）
+	std::vector<uint8_t> posterized(pixel_bytes());
+	{
+		engine::Renderer renderer;
+		ASSERT_TRUE(renderer.init(hidden_config()));
+		if (!renderer.readback_supported())
+			GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+		uint64_t target = 0;
+		ASSERT_TRUE(renderer.render_target_create(target, renderer.extent_width(), renderer.extent_height()));
+		uint64_t pass = post_pipeline_register(renderer, "色调分离.frag.spv");
+		ASSERT_NE(pass, 0u);
+		ASSERT_TRUE(renderer.post_chain_set(&pass, 1));
+		//色阶数专设（阈值 / 软膝由校验规则要求合法，本片元不使用）
+		renderer.post_stage_param_set(0, 1.0f, 0.0f, 4.0f);
+		uint64_t texture = 0;
+		ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 64, 1));
+		renderer.texture_bind_set(texture);
+		engine::Mesh_Handle handle = 0;
+		ASSERT_TRUE(renderer.mesh_load(handle, quad_data()));
+		ASSERT_TRUE(renderer.mesh_draw(handle, nullptr));
+		renderer.render_target_present_set(target);
+		ASSERT_TRUE(renderer.frame_render(posterized.data(), static_cast<uint32_t>(posterized.size())));
+		renderer.mesh_unload(handle);
+		renderer.texture_unload(texture);
+		renderer.pipeline_unload(pass);
+		renderer.render_target_destroy(target);
+	}
+
+	//渐变直通应有较多灰度级，量化后应只剩少数色带
+	uint32_t reference_grays = distinct_grays(reference);
+	uint32_t posterized_grays = distinct_grays(posterized);
+	RecordProperty("posterize_reference_grays", static_cast<int>(reference_grays));
+	RecordProperty("posterize_posterized_grays", static_cast<int>(posterized_grays));
+	EXPECT_GE(reference_grays, 10u) << "参考帧灰度级过少（用例前提不成立）：" << reference_grays;
+	EXPECT_LE(posterized_grays, 5u) << "色调分离未形成色带（仍有 " << posterized_grays << " 个灰度级）";
+	EXPECT_LE(posterized_grays * 3, reference_grays) << "量化后灰度级未显著减少（"
+		<< posterized_grays << " vs " << reference_grays << "）";
+}
