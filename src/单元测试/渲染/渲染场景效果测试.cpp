@@ -702,3 +702,76 @@ TEST_F(Renderer_Scene_Test, 逐物体材质覆盖全局PBR)
 	renderer.mesh_unload(mesh);
 	renderer.texture_unload(texture);
 }
+
+/*
+逐物体反照率色调（第六十九轮）
+口径：中灰纹理、法线 +Z、方向光沿 -Z、环境光 0、高光关闭：
+      ① material_tint_set(1, 0, 0, 1) → 中心绿通道显著下降，外通道（R / B 随格式）仍较高；
+      ② 显式 mesh_draw 颜色（白色）优先于吸附色调 → 与基线逐字节一致；
+      ③ 非法分量（-0.1 / 1.5）整次拒绝且状态不变；
+      ④ material_tint_clear → 画面与基线逐字节一致。
+*/
+TEST_F(Renderer_Scene_Test, 逐物体色调着色)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	uint64_t texture = 0;
+	std::vector<uint8_t> texels = solid_gray();
+	ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 2, 2));
+	renderer.texture_bind_set(texture);
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, quad_data_with_normal(0.0f, 0.0f, 1.0f)));
+
+	//方向光沿 -Z、环境光 0；关闭高光只看漫反射
+	const float forward[3] = { 0.0f, 0.0f, -1.0f };
+	const float white_light[3] = { 1.0f, 1.0f, 1.0f };
+	renderer.light_set(forward, white_light, 1.0f, 0.0f);
+	renderer.specular_set(0.0f, 16.0f);
+
+	//渲染一帧并返回像素（可选显式颜色）
+	auto render_frame = [&](const float* color)
+	{
+		EXPECT_TRUE(renderer.mesh_draw(mesh, nullptr, color));
+		std::vector<uint8_t> pixels(pixel_bytes());
+		EXPECT_TRUE(renderer.frame_render(pixels.data(), static_cast<std::uint32_t>(pixels.size())));
+		return pixels;
+	};
+
+	//基线（未设置色调）
+	std::vector<uint8_t> baseline_pixels = render_frame(nullptr);
+	std::array<uint8_t, 4> baseline = pixel_get(baseline_pixels, WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2);
+	//红色色调
+	ASSERT_TRUE(renderer.material_tint_set(1.0f, 0.0f, 0.0f, 1.0f));
+	EXPECT_TRUE(renderer.material_tint_active());
+	std::vector<uint8_t> tinted_pixels = render_frame(nullptr);
+	std::array<uint8_t, 4> tinted = pixel_get(tinted_pixels, WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2);
+	//显式白色颜色应覆盖吸附色调
+	const float white_color[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+	std::vector<uint8_t> explicit_pixels = render_frame(white_color);
+	//非法分量整次拒绝（状态保持红）
+	EXPECT_FALSE(renderer.material_tint_set(-0.1f, 0.0f, 0.0f, 1.0f));
+	EXPECT_FALSE(renderer.material_tint_set(1.0f, 1.5f, 0.0f, 1.0f));
+	float state[4] = {};
+	renderer.material_tint_get(state);
+	EXPECT_FLOAT_EQ(state[0], 1.0f);
+	EXPECT_FLOAT_EQ(state[1], 0.0f);
+	//清除后逐字节恢复
+	renderer.material_tint_clear();
+	EXPECT_FALSE(renderer.material_tint_active());
+	std::vector<uint8_t> restored_pixels = render_frame(nullptr);
+
+	//外通道（R / B 随表面格式互换，取较大者）
+	uint8_t tinted_outer = tinted[0] > tinted[2] ? tinted[0] : tinted[2];
+	RecordProperty("tint_baseline_green", static_cast<int>(baseline[1]));
+	RecordProperty("tint_tinted_green", static_cast<int>(tinted[1]));
+	EXPECT_GT(baseline[1], 60u) << "基线中心过暗：" << pixel_text(baseline);
+	EXPECT_LT(tinted[1] + 40u, baseline[1]) << "色调未压暗绿通道：" << pixel_text(tinted);
+	EXPECT_GT(tinted_outer, 80u) << "色调未保留红色通道：" << pixel_text(tinted);
+	EXPECT_EQ(explicit_pixels, baseline_pixels) << "显式颜色未覆盖吸附色调";
+	EXPECT_EQ(restored_pixels, baseline_pixels) << "清除色调后画面未恢复";
+
+	renderer.mesh_unload(mesh);
+	renderer.texture_unload(texture);
+}

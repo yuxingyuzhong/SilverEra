@@ -1,8 +1,9 @@
 /*
-渲染可见窗口测试（L3，默认跳过）
-可见窗口会弹窗，仅用于人工目视确认「清屏色 / 三角形 / 棋盘格纹理」这类真实呈现效果。
-默认不运行：需设置环境变量 BYJY_RUN_L3=1 才执行，避免无人值守运行与 CI 被弹窗挂住。
-显式复跑示例：set BYJY_RUN_L3=1 && EngineTests.exe --gtest_filter=Renderer_Visible_Test.*
+渲染可见窗口测试（L3，默认运行）
+可见窗口会弹窗，用于人工目视确认「清屏色 / 三角形 / 棋盘格纹理」这类真实呈现效果。
+默认运行（2026-10-24 用户确认两个用例可稳定通过后取消默认跳过）；
+如需在无人值守环境关闭，设置环境变量 BYJY_RUN_L3=0 即可跳过。
+显式只跑本套件示例：EngineTests.exe --gtest_filter=Renderer_Visible_Test.*
 */
 #include <gtest/gtest.h>
 
@@ -14,16 +15,17 @@
 
 namespace
 {
-	//是否允许运行可见窗口用例（默认不跑）
+	//是否允许运行可见窗口用例（默认运行，环境变量置 0 时跳过）
 	bool l3_enabled(void)
 	{
 		//读取环境变量开关
 		const char* flag = std::getenv("BYJY_RUN_L3");
-		//仅当显式给出且非 "0" 时视为开启
+		//未设置时默认运行
 		if (flag == nullptr)
-			return false;
+			return true;
 		const std::string text(flag);
-		return !text.empty() && text != "0";
+		//显式置 0 时跳过
+		return text != "0";
 	}
 
 	//构造可见窗口配置

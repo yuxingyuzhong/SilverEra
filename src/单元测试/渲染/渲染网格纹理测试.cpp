@@ -372,3 +372,38 @@ TEST_F(Renderer_Mesh_Test, 程序化圆锥可绘制)
 
         renderer.mesh_unload(cone);
 }
+
+/*
+程序化胶囊（第六十九轮）
+口径：胶囊（半径 0.5 / 中段高 1 / 24 分段 / 8 纬圈）可加载并出帧；中段高 0 退化为球亦可加载；
+      非法参数（半径 0、高度 -1、分段 2、纬圈 1）整次拒绝且句柄归零。
+*/
+TEST_F(Renderer_Mesh_Test, 程序化胶囊可绘制)
+{
+        engine::Renderer renderer;
+        ASSERT_TRUE(renderer.init(hidden_config()));
+        engine::Mesh_Handle capsule = 0;
+        ASSERT_TRUE(renderer.mesh_capsule_load(capsule, 0.5f, 1.0f, 24, 8));
+        EXPECT_NE(capsule, 0u);
+        EXPECT_TRUE(renderer.mesh_draw(capsule, nullptr));
+        EXPECT_TRUE(renderer.frame_render());
+
+        //中段高 0 → 退化为球，仍可加载
+        engine::Mesh_Handle sphere_like = 0;
+        ASSERT_TRUE(renderer.mesh_capsule_load(sphere_like, 0.5f, 0.0f, 24, 8));
+        EXPECT_NE(sphere_like, 0u);
+
+        //非法参数整次拒绝（句柄归零）
+        engine::Mesh_Handle invalid = 99;
+        EXPECT_FALSE(renderer.mesh_capsule_load(invalid, 0.0f, 1.0f, 24, 8));
+        EXPECT_EQ(invalid, 0u);
+        EXPECT_FALSE(renderer.mesh_capsule_load(invalid, 0.5f, -1.0f, 24, 8));
+        EXPECT_EQ(invalid, 0u);
+        EXPECT_FALSE(renderer.mesh_capsule_load(invalid, 0.5f, 1.0f, 2, 8));
+        EXPECT_EQ(invalid, 0u);
+        EXPECT_FALSE(renderer.mesh_capsule_load(invalid, 0.5f, 1.0f, 24, 1));
+        EXPECT_EQ(invalid, 0u);
+
+        renderer.mesh_unload(sphere_like);
+        renderer.mesh_unload(capsule);
+}

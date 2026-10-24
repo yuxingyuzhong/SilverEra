@@ -342,3 +342,51 @@ TEST_F(Renderer_Material_Test, 逐物体PBR覆盖字段)
 	renderer.material_unload(invalid_handle);
 	renderer.material_unload(handle);
 }
+
+/*
+逐物体色调覆盖字段（第六十九轮）
+口径：`Material_Data` 声明 tint_override 且四分量合法时，绑定后门面吸附状态与材质一致；
+      分量越界（1.5）按「不覆盖」登记；绑定句柄 0 清除；未绑定时默认不启用且取值为白。
+*/
+TEST_F(Renderer_Material_Test, 逐物体色调覆盖字段)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	//默认不启用、取值为白
+	EXPECT_FALSE(renderer.material_tint_active());
+	float white[4] = {};
+	renderer.material_tint_get(white);
+	for (std::size_t index = 0; index < 4; ++index)
+		EXPECT_FLOAT_EQ(white[index], 1.0f);
+
+	//合法色调材质
+	engine::Material_Data data;
+	data.tint_override = true;
+	data.tint[0] = 1.0f;
+	data.tint[1] = 0.5f;
+	data.tint[2] = 0.25f;
+	data.tint[3] = 1.0f;
+	engine::Material_Handle handle = 0;
+	ASSERT_TRUE(renderer.material_load(handle, data));
+	renderer.material_bind_set(handle);
+	EXPECT_TRUE(renderer.material_tint_active());
+	float actual[4] = {};
+	renderer.material_tint_get(actual);
+	EXPECT_FLOAT_EQ(actual[1], 0.5f);
+	EXPECT_FLOAT_EQ(actual[2], 0.25f);
+	//绑定 0 清除
+	renderer.material_bind_set(0);
+	EXPECT_FALSE(renderer.material_tint_active());
+
+	//非法分量按不覆盖登记
+	engine::Material_Data invalid;
+	invalid.tint_override = true;
+	invalid.tint[0] = 1.5f;
+	engine::Material_Handle invalid_handle = 0;
+	ASSERT_TRUE(renderer.material_load(invalid_handle, invalid));
+	renderer.material_bind_set(invalid_handle);
+	EXPECT_FALSE(renderer.material_tint_active());
+
+	renderer.material_unload(invalid_handle);
+	renderer.material_unload(handle);
+}
