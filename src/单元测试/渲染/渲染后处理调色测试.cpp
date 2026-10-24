@@ -491,3 +491,116 @@ TEST_F(Renderer_Post_Chain_Test, 锐化放大边缘对比)
 	EXPECT_GT(sharpened_energy, reference_energy) << "锐化未放大边缘对比（"
 		<< sharpened_energy << " vs " << reference_energy << "）";
 }
+
+/*
+后处理预设 · 色差（第七十六轮）
+口径：4×4 双灰阶棋盘（100 / 180）经线性过滤贴在视口中央四边形上；
+      清屏色置纯黑（三通道相等），使「外通道差」只可能来自色差本身；
+      参考帧走交换链直通（灰度输入 → 外通道相等），对照帧走单级「色差」链，
+      并把该级强度专设为 6 像素（半径为 1 处的径向偏移）。
+      以「|外通道差| ≥ 8 的像素数」为通道分离度，参考帧应为 0、色差帧应显著增大；
+      中心半径近 0（偏移近 0），故中心像素三通道应基本不变。
+*/
+TEST_F(Renderer_Post_Chain_Test, 色差分离红蓝通道)
+{
+	//双灰阶棋盘（RGBA8：两种灰度交替 2 像素块）
+	std::vector<uint8_t> texels(4 * 4 * 4);
+	for (uint32_t y = 0; y < 4; ++y)
+	{
+		for (uint32_t x = 0; x < 4; ++x)
+		{
+			uint8_t value = (((x / 2) + (y / 2)) % 2 == 0) ? 100 : 180;
+			std::size_t offset = (static_cast<std::size_t>(y) * 4 + x) * 4;
+			texels[offset + 0] = value;
+			texels[offset + 1] = value;
+			texels[offset + 2] = value;
+			texels[offset + 3] = 255;
+		}
+	}
+	//清屏色置纯黑（外通道相等，避免污染分离度计数）
+	const float black[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
+	//通道分离度：外通道差（下标 0 与 2）≥ 8 的像素数（与表面格式无关）
+	auto separated_count = [&](const std::vector<uint8_t>& pixels)
+	{
+		uint32_t count = 0;
+		for (uint32_t y = 0; y < WINDOW_HEIGHT; ++y)
+		{
+			for (uint32_t x = 0; x < WINDOW_WIDTH; ++x)
+			{
+				std::array<uint8_t, 4> value = pixel_get(pixels, x, y);
+				int difference = static_cast<int>(value[0]) - static_cast<int>(value[2]);
+				if (difference < 0)
+					difference = -difference;
+				if (difference >= 8)
+					++count;
+			}
+		}
+		return count;
+	};
+
+	//参考帧：交换链直通
+	std::vector<uint8_t> reference(pixel_bytes());
+	{
+		engine::Renderer renderer;
+		ASSERT_TRUE(renderer.init(hidden_config()));
+		if (!renderer.readback_supported())
+			GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+		renderer.clear_color_set(black);
+		uint64_t texture = 0;
+		ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 4, 4));
+		renderer.texture_bind_set(texture);
+		engine::Mesh_Handle handle = 0;
+		ASSERT_TRUE(renderer.mesh_load(handle, quad_data()));
+		ASSERT_TRUE(renderer.mesh_draw(handle, nullptr));
+		ASSERT_TRUE(renderer.frame_render(reference.data(), static_cast<uint32_t>(reference.size())));
+		renderer.mesh_unload(handle);
+		renderer.texture_unload(texture);
+	}
+	//对照帧：单级色差链（该级强度专设 6 像素）
+	std::vector<uint8_t> separated(pixel_bytes());
+	{
+		engine::Renderer renderer;
+		ASSERT_TRUE(renderer.init(hidden_config()));
+		if (!renderer.readback_supported())
+			GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+		uint64_t target = 0;
+		ASSERT_TRUE(renderer.render_target_create(target, renderer.extent_width(), renderer.extent_height()));
+		uint64_t aberration = post_pipeline_register(renderer, "色差.frag.spv");
+		ASSERT_NE(aberration, 0u);
+		ASSERT_TRUE(renderer.post_chain_set(&aberration, 1));
+		//强度专设（阈值 / 软膝由校验规则要求合法，本片元不使用）
+		renderer.post_stage_param_set(0, 1.0f, 0.0f, 6.0f);
+		renderer.clear_color_set(black);
+		uint64_t texture = 0;
+		ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 4, 4));
+		renderer.texture_bind_set(texture);
+		engine::Mesh_Handle handle = 0;
+		ASSERT_TRUE(renderer.mesh_load(handle, quad_data()));
+		ASSERT_TRUE(renderer.mesh_draw(handle, nullptr));
+		renderer.render_target_present_set(target);
+		ASSERT_TRUE(renderer.frame_render(separated.data(), static_cast<uint32_t>(separated.size())));
+		renderer.mesh_unload(handle);
+		renderer.texture_unload(texture);
+		renderer.pipeline_unload(aberration);
+		renderer.render_target_destroy(target);
+	}
+
+	//灰度输入直通时不应有色偏
+	uint32_t reference_separated = separated_count(reference);
+	uint32_t aberration_separated = separated_count(separated);
+	RecordProperty("aberration_reference_separated", static_cast<int>(reference_separated));
+	RecordProperty("aberration_separated", static_cast<int>(aberration_separated));
+	EXPECT_EQ(reference_separated, 0u) << "参考帧出现色偏（用例前提不成立）";
+	EXPECT_GT(aberration_separated, 30u) << "色差未分离红蓝通道（"
+		<< aberration_separated << " 像素）";
+
+	//中心像素：半径近 0 → 偏移近 0 → 三通道基本不变
+	std::array<uint8_t, 4> reference_center = pixel_get(reference, WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2);
+	std::array<uint8_t, 4> aberration_center = pixel_get(separated, WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2);
+	for (std::size_t channel = 0; channel < 3; ++channel)
+	{
+		int difference = static_cast<int>(aberration_center[channel]) - static_cast<int>(reference_center[channel]);
+		EXPECT_LE(std::abs(difference), 2) << "中心像素被色差偏移（通道 " << channel << "）："
+			<< pixel_text(reference_center) << " → " << pixel_text(aberration_center);
+	}
+}
