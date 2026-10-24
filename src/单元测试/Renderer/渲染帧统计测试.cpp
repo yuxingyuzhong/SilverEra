@@ -1,4 +1,4 @@
-/*
+﻿/*
 渲染帧统计测试（L2 隐藏窗口）
 覆盖：未初始化取帧统计为零；空帧（无绘制项）的帧数推进与帧时间；
       绘制项数与实例数累计与登记项一致（逐次绘制 / 实例化绘制混合）；
@@ -340,4 +340,36 @@ TEST_F(Renderer_Stats_Test, 按需上传字节入统计)
         EXPECT_EQ(later.instance_upload_bytes, renderer.instance_upload_bytes());
         EXPECT_LT(later.instance_upload_bytes, before + 400u) << "静止帧仍在整块上传实例";
         renderer.mesh_unload(mesh);
+}
+
+//帧统计清零（第九十一轮）：清零累计量后帧数 / 绘制项 / 上传字节归零，随后渲染重新累计
+TEST_F(Renderer_Stats_Test, 帧统计可清零)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	engine::Mesh_Handle handle = 0;
+	ASSERT_TRUE(renderer.mesh_load(handle, triangle_data()));
+	ASSERT_TRUE(renderer.mesh_draw(handle, nullptr));
+	ASSERT_TRUE(renderer.frame_render());
+	engine::Frame_Stats before = renderer.frame_stats_get();
+	EXPECT_EQ(before.frames, 1u);
+	EXPECT_GE(before.draw_items, 1u);
+
+	renderer.frame_stats_reset();
+	engine::Frame_Stats cleared = renderer.frame_stats_get();
+	EXPECT_EQ(cleared.frames, 0u);
+	EXPECT_EQ(cleared.draw_items, 0u);
+	EXPECT_EQ(cleared.instances, 0u);
+	EXPECT_EQ(cleared.drawn_items, 0u);
+	EXPECT_EQ(cleared.scene_upload_bytes, 0u);
+	EXPECT_EQ(cleared.instance_upload_bytes, 0u);
+	EXPECT_EQ(cleared.culled_items, 0u);
+
+	//清零后重新渲染，累计量从 1 开始
+	ASSERT_TRUE(renderer.mesh_draw(handle, nullptr));
+	ASSERT_TRUE(renderer.frame_render());
+	engine::Frame_Stats after = renderer.frame_stats_get();
+	EXPECT_EQ(after.frames, 1u);
+	EXPECT_GE(after.draw_items, 1u);
+	renderer.mesh_unload(handle);
 }
