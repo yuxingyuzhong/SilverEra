@@ -775,3 +775,63 @@ TEST_F(Renderer_Scene_Test, 逐物体色调着色)
 	renderer.mesh_unload(mesh);
 	renderer.texture_unload(texture);
 }
+
+/*
+逐物体自发光（第七十轮）
+口径：中灰纹理、法线 +Z、**方向光强度 0、环境光 0、高光 0**（全黑基线）：
+      ① 基线中心近 0；② material_emissive_set(0.5) 后中心明显提亮（≥60）；
+      ③ 非法值（-1 / 9）整次拒绝且状态不变；④ material_emissive_clear 后逐字节还原。
+*/
+TEST_F(Renderer_Scene_Test, 逐物体自发光提亮)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	uint64_t texture = 0;
+	std::vector<uint8_t> texels = solid_gray();
+	ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 2, 2));
+	renderer.texture_bind_set(texture);
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, quad_data_with_normal(0.0f, 0.0f, 1.0f)));
+
+	//全黑场景：方向光强度 0、环境光 0、高光 0
+	const float forward[3] = { 0.0f, 0.0f, -1.0f };
+	const float white_light[3] = { 1.0f, 1.0f, 1.0f };
+	renderer.light_set(forward, white_light, 0.0f, 0.0f);
+	renderer.specular_set(0.0f, 16.0f);
+
+	//渲染一帧并返回像素
+	auto render_frame = [&]()
+	{
+		EXPECT_TRUE(renderer.mesh_draw(mesh, nullptr));
+		std::vector<uint8_t> pixels(pixel_bytes());
+		EXPECT_TRUE(renderer.frame_render(pixels.data(), static_cast<std::uint32_t>(pixels.size())));
+		return pixels;
+	};
+
+	//基线（无自发光）
+	std::vector<uint8_t> baseline_pixels = render_frame();
+	uint32_t baseline = center_brightness(baseline_pixels);
+	//自发光 0.5
+	ASSERT_TRUE(renderer.material_emissive_set(0.5f));
+	EXPECT_FLOAT_EQ(renderer.material_emissive(), 0.5f);
+	uint32_t emissive = center_brightness(render_frame());
+	//非法值整次拒绝（保持 0.5）
+	EXPECT_FALSE(renderer.material_emissive_set(-1.0f));
+	EXPECT_FALSE(renderer.material_emissive_set(9.0f));
+	EXPECT_FLOAT_EQ(renderer.material_emissive(), 0.5f);
+	//清除后逐字节恢复
+	renderer.material_emissive_clear();
+	EXPECT_FLOAT_EQ(renderer.material_emissive(), 0.0f);
+	std::vector<uint8_t> restored_pixels = render_frame();
+
+	RecordProperty("emissive_baseline", baseline);
+	RecordProperty("emissive_lit", emissive);
+	EXPECT_LE(baseline, 20u) << "全黑基线未被压暗（" << baseline << "）";
+	EXPECT_GE(emissive, 60u) << "自发光未提亮中心（" << emissive << "）";
+	EXPECT_EQ(restored_pixels, baseline_pixels) << "清除自发光后画面未恢复";
+
+	renderer.mesh_unload(mesh);
+	renderer.texture_unload(texture);
+}

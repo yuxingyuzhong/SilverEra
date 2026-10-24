@@ -390,3 +390,38 @@ TEST_F(Renderer_Material_Test, 逐物体色调覆盖字段)
 	renderer.material_unload(invalid_handle);
 	renderer.material_unload(handle);
 }
+
+/*
+逐物体自发光字段（第七十轮）
+口径：`Material_Data.emissive` 合法值（2.5）绑定后门面取值一致；越界（9）按 0 登记；
+      绑定句柄 0 清除；未绑定时默认 0。
+*/
+TEST_F(Renderer_Material_Test, 逐物体自发光字段)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	//默认 0
+	EXPECT_FLOAT_EQ(renderer.material_emissive(), 0.0f);
+
+	//合法自发光材质
+	engine::Material_Data data;
+	data.emissive = 2.5f;
+	engine::Material_Handle handle = 0;
+	ASSERT_TRUE(renderer.material_load(handle, data));
+	renderer.material_bind_set(handle);
+	EXPECT_FLOAT_EQ(renderer.material_emissive(), 2.5f);
+	//绑定 0 清除
+	renderer.material_bind_set(0);
+	EXPECT_FLOAT_EQ(renderer.material_emissive(), 0.0f);
+
+	//越界按 0 登记
+	engine::Material_Data invalid;
+	invalid.emissive = 9.0f;
+	engine::Material_Handle invalid_handle = 0;
+	ASSERT_TRUE(renderer.material_load(invalid_handle, invalid));
+	renderer.material_bind_set(invalid_handle);
+	EXPECT_FLOAT_EQ(renderer.material_emissive(), 0.0f);
+
+	renderer.material_unload(invalid_handle);
+	renderer.material_unload(handle);
+}
