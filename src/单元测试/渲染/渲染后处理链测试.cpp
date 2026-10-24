@@ -472,3 +472,51 @@ TEST_F(Renderer_Post_Chain_Test, 预设可串联)
 	renderer.render_target_destroy(second_target);
 	renderer.render_target_destroy(scene_target);
 }
+
+/*
+批量读回链各级参数（第八十二轮）
+口径：两级链只给第 0 级设专设值 → 批量读回返回 2、第 0 级为设定值、第 1 级全 0；
+      容量不足一级 / 出参为空 / 未初始化返回 0。
+*/
+TEST_F(Renderer_Post_Chain_Test, 链参数可批量读回)
+{
+	engine::Renderer renderer;
+	float empty[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+	//未初始化：返回 0 且不写内容
+	EXPECT_EQ(renderer.post_chain_params_get(empty, 4), 0u);
+	EXPECT_EQ(renderer.post_chain_params_get(nullptr, 8), 0u);
+	EXPECT_EQ(empty[0], 1.0f);
+
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	//容量不足一级
+	EXPECT_EQ(renderer.post_chain_params_get(empty, 3), 0u);
+
+	//两级链
+	uint64_t invert = post_pipeline_register(renderer, "反色.frag.spv");
+	uint64_t threshold = post_pipeline_register(renderer, "亮度阈值.frag.spv");
+	ASSERT_NE(invert, 0u);
+	ASSERT_NE(threshold, 0u);
+	uint64_t chain[2] = { invert, threshold };
+	ASSERT_TRUE(renderer.post_chain_set(chain, 2));
+	//只给第 0 级设专设值
+	renderer.post_stage_param_set(0, 0.7f, 0.2f, 2.5f);
+
+	//批量读回两级（8 个浮点）
+	float values[8] = {};
+	ASSERT_EQ(renderer.post_chain_params_get(values, 8), 2u);
+	EXPECT_FLOAT_EQ(values[0], 0.7f);
+	EXPECT_FLOAT_EQ(values[1], 0.2f);
+	EXPECT_FLOAT_EQ(values[2], 2.5f);
+	EXPECT_FLOAT_EQ(values[3], 0.0f);
+	//第 1 级未专设 → 全 0
+	for (uint32_t each = 4; each < 8; ++each)
+		EXPECT_FLOAT_EQ(values[each], 0.0f) << "第 1 级未专设却读回非零：下标 " << each;
+
+	//容量只够一级 → 返回 1，只写前 4 个
+	float single[4] = {};
+	EXPECT_EQ(renderer.post_chain_params_get(single, 4), 1u);
+	EXPECT_FLOAT_EQ(single[0], 0.7f);
+
+	renderer.pipeline_unload(invert);
+	renderer.pipeline_unload(threshold);
+}
