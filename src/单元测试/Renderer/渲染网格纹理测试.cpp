@@ -1,4 +1,4 @@
-/*
+﻿/*
 渲染网格与纹理测试（L2 隐藏窗口）
 覆盖：未初始化守卫、三角形网格加载与绘制、同一帧多网格绘制、无效句柄绘制被拒、
       卸载后绘制被拒与重复卸载幂等、纹理加载（RGBA8 字节流 / 程序生成棋盘格）、
@@ -541,4 +541,55 @@ TEST_F(Renderer_Mesh_Test, 纹理尺寸可查询)
         renderer.texture_unload(texture);
         EXPECT_FALSE(renderer.texture_size(texture, &queried_width, &queried_height));
         EXPECT_EQ(queried_height, 0u);
+}
+
+//细分平面与网格计数（第九十三轮）：4×3 分段的 2×2 平面 → 20 顶点 / 72 索引；包围盒与非法参数校验
+TEST_F(Renderer_Mesh_Test, 细分平面与网格计数)
+{
+        engine::Renderer renderer;
+        uint32_t vertex_count = 7;
+        uint32_t index_count = 7;
+        EXPECT_FALSE(renderer.mesh_counts(1, &vertex_count, &index_count));
+        EXPECT_EQ(vertex_count, 0u);
+        EXPECT_EQ(index_count, 0u);
+
+        ASSERT_TRUE(renderer.init(hidden_config()));
+        engine::Mesh_Handle grid = 0;
+        ASSERT_TRUE(renderer.mesh_grid_load(grid, 2.0f, 2.0f, 4, 3));
+        ASSERT_TRUE(renderer.mesh_counts(grid, &vertex_count, &index_count));
+        EXPECT_EQ(vertex_count, 20u);
+        EXPECT_EQ(index_count, 72u);
+
+        float min_value[3] = {};
+        float max_value[3] = {};
+        ASSERT_TRUE(renderer.mesh_bounds(grid, min_value, max_value));
+        EXPECT_NEAR(min_value[0], -1.0f, 0.001f);
+        EXPECT_NEAR(max_value[0], 1.0f, 0.001f);
+        EXPECT_NEAR(min_value[1], -1.0f, 0.001f);
+        EXPECT_NEAR(max_value[1], 1.0f, 0.001f);
+        EXPECT_NEAR(max_value[2], 0.0f, 0.001f);
+
+        //出帧成功
+        ASSERT_TRUE(renderer.mesh_draw(grid, nullptr));
+        ASSERT_TRUE(renderer.frame_render());
+
+        //非法参数：宽为 0、列为 0 / 257、行为 0，均整次拒绝且句柄归零
+        engine::Mesh_Handle invalid = 9;
+        EXPECT_FALSE(renderer.mesh_grid_load(invalid, 0.0f, 1.0f, 4, 3));
+        EXPECT_EQ(invalid, 0u);
+        invalid = 9;
+        EXPECT_FALSE(renderer.mesh_grid_load(invalid, 1.0f, 1.0f, 0, 3));
+        EXPECT_EQ(invalid, 0u);
+        invalid = 9;
+        EXPECT_FALSE(renderer.mesh_grid_load(invalid, 1.0f, 1.0f, 257, 3));
+        EXPECT_EQ(invalid, 0u);
+        invalid = 9;
+        EXPECT_FALSE(renderer.mesh_grid_load(invalid, 1.0f, 1.0f, 4, 0));
+        EXPECT_EQ(invalid, 0u);
+
+        //无效句柄计数失败且出参归零
+        EXPECT_FALSE(renderer.mesh_counts(grid + 99, &vertex_count, &index_count));
+        EXPECT_EQ(vertex_count, 0u);
+
+        renderer.mesh_unload(grid);
 }
