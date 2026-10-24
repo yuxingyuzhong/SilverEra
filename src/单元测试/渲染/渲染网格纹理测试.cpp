@@ -466,3 +466,47 @@ TEST_F(Renderer_Mesh_Test, 网格包围盒查询)
         renderer.mesh_unload(plane);
         renderer.mesh_unload(sphere);
 }
+
+//程序化圆盘（第八十三轮）：可加载出帧、包围盒为 XY 平面上半径范围内的圆盘、非法参数被拒
+TEST_F(Renderer_Mesh_Test, 程序化圆盘可绘制)
+{
+        engine::Renderer renderer;
+        engine::Mesh_Handle handle = 7;
+        //未初始化：拒绝且句柄归零
+        EXPECT_FALSE(renderer.mesh_disc_load(handle, 1.0f, 16));
+        EXPECT_EQ(handle, 0u);
+        ASSERT_TRUE(renderer.init(hidden_config()));
+        ASSERT_TRUE(renderer.mesh_disc_load(handle, 1.0f, 16));
+        EXPECT_NE(handle, 0u);
+
+        //包围盒：XY 各到 ±1、z 恒 0
+        float min_value[3] = {};
+        float max_value[3] = {};
+        ASSERT_TRUE(renderer.mesh_bounds(handle, min_value, max_value));
+        EXPECT_NEAR(min_value[0], -1.0f, 0.02f);
+        EXPECT_NEAR(max_value[0], 1.0f, 0.02f);
+        EXPECT_NEAR(min_value[1], -1.0f, 0.02f);
+        EXPECT_NEAR(max_value[1], 1.0f, 0.02f);
+        EXPECT_NEAR(min_value[2], 0.0f, 0.001f);
+        EXPECT_NEAR(max_value[2], 0.0f, 0.001f);
+
+        //出帧成功（登记绘制 + 渲染）
+        ASSERT_TRUE(renderer.mesh_draw(handle, nullptr));
+        ASSERT_TRUE(renderer.frame_render());
+
+        //非法参数：半径为 0 / 负、分段过少 / 过多，均整次拒绝且句柄归零
+        engine::Mesh_Handle invalid = 9;
+        EXPECT_FALSE(renderer.mesh_disc_load(invalid, 0.0f, 16));
+        EXPECT_EQ(invalid, 0u);
+        invalid = 9;
+        EXPECT_FALSE(renderer.mesh_disc_load(invalid, -1.0f, 16));
+        EXPECT_EQ(invalid, 0u);
+        invalid = 9;
+        EXPECT_FALSE(renderer.mesh_disc_load(invalid, 1.0f, 2));
+        EXPECT_EQ(invalid, 0u);
+        invalid = 9;
+        EXPECT_FALSE(renderer.mesh_disc_load(invalid, 1.0f, 257));
+        EXPECT_EQ(invalid, 0u);
+
+        renderer.mesh_unload(handle);
+}

@@ -462,6 +462,52 @@ TEST_F(Renderer_Text_Test, 文字缓存命中计数)
         renderer.font_unload(font);
 }
 
+//文本网格缓存容量可配（第八十四轮）：默认 64；设为 2 后条目数受限于 2，最早条目被淘汰后重画计未命中
+TEST_F(Renderer_Text_Test, 文本缓存容量可配)
+{
+	if (!font_available())
+		GTEST_SKIP() << "本机无 " << FONT_PATH;
+	engine::Renderer renderer;
+	//未初始化：set 静默忽略、get 为 0
+	renderer.text_cache_capacity_set(8);
+	EXPECT_EQ(renderer.text_cache_capacity(), 0u);
+	EXPECT_EQ(renderer.text_cache_size(), 0u);
+
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	//默认 64
+	EXPECT_EQ(renderer.text_cache_capacity(), 64u);
+	uint64_t font = 0;
+	ASSERT_TRUE(renderer.font_load_file(font, FONT_PATH, FONT_PIXEL_HEIGHT));
+
+	//缩到 2
+	renderer.text_cache_capacity_set(2);
+	EXPECT_EQ(renderer.text_cache_capacity(), 2u);
+	//画三段不同文本（第三段触发淘汰）
+	ASSERT_TRUE(renderer.text_draw(font, "C1", 4.0f, 4.0f));
+	ASSERT_TRUE(renderer.text_draw(font, "C2", 4.0f, 4.0f));
+	ASSERT_TRUE(renderer.text_draw(font, "C3", 4.0f, 4.0f));
+	EXPECT_LE(renderer.text_cache_size(), 2u) << "缓存条目数超过设定上限";
+
+	//最早一段已被淘汰，重画应再次计未命中
+	uint64_t misses_before = renderer.text_cache_misses();
+	ASSERT_TRUE(renderer.text_draw(font, "C1", 4.0f, 4.0f));
+	EXPECT_EQ(renderer.text_cache_misses(), misses_before + 1) << "被淘汰文本重画未计未命中";
+	EXPECT_LE(renderer.text_cache_size(), 2u);
+
+	//缩容立即生效：从 2 缩到 1，条目数应回到 1
+	renderer.text_cache_capacity_set(1);
+	EXPECT_EQ(renderer.text_cache_capacity(), 1u);
+	EXPECT_LE(renderer.text_cache_size(), 1u) << "缩容未立即淘汰";
+
+	//钳制：0 → 1、超大 → 1024
+	renderer.text_cache_capacity_set(0);
+	EXPECT_EQ(renderer.text_cache_capacity(), 1u);
+	renderer.text_cache_capacity_set(5000);
+	EXPECT_EQ(renderer.text_cache_capacity(), 1024u);
+
+	renderer.font_unload(font);
+}
+
 //文本网格缓存上限（第四十八轮）：连画 70 段不同文本触发 LRU 淘汰，淘汰后重画最早文本仍应成功出墨
 TEST_F(Renderer_Text_Test, 文本网格缓存淘汰后仍可重画)
 {
