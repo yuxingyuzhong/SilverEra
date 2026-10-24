@@ -397,8 +397,97 @@ TEST_F(Renderer_Post_Chain_Test, 文字经后处理链保持)
 
 	renderer.pipeline_unload(gray);
 	renderer.pipeline_unload(invert_a);
-	renderer.pipeline_unload(invert_b);
-	renderer.render_target_destroy(target1);
-	renderer.render_target_destroy(target0);
-	renderer.font_unload(font);
+        renderer.pipeline_unload(invert_b);
+        renderer.render_target_destroy(target1);
+        renderer.render_target_destroy(target0);
+        renderer.font_unload(font);
+}
+
+/*
+后处理预设 · 锐化（第七十四轮）
+口径：4×4 双灰阶棋盘（100 / 180）经线性过滤贴在整屏四边形上；
+      参考帧走交换链直通，对照帧走单级「锐化」链；
+      以中心行相邻像素的通道差绝对值之和为「边缘能量」，锐化后应严格增大。
+*/
+TEST_F(Renderer_Post_Chain_Test, 锐化放大边缘对比)
+{
+	//双灰阶棋盘（RGBA8：两种灰度交替 2 像素块）
+	std::vector<uint8_t> texels(4 * 4 * 4);
+	for (uint32_t y = 0; y < 4; ++y)
+	{
+		for (uint32_t x = 0; x < 4; ++x)
+		{
+			uint8_t value = (((x / 2) + (y / 2)) % 2 == 0) ? 100 : 180;
+			std::size_t offset = (static_cast<std::size_t>(y) * 4 + x) * 4;
+			texels[offset + 0] = value;
+			texels[offset + 1] = value;
+			texels[offset + 2] = value;
+			texels[offset + 3] = 255;
+		}
+	}
+	//边缘能量：中心行相邻像素的绿通道差之和（格式无关）
+	auto edge_energy = [&](const std::vector<uint8_t>& pixels)
+	{
+		std::uint64_t sum = 0;
+		uint32_t row = WINDOW_HEIGHT / 2;
+		for (uint32_t x = 1; x < WINDOW_WIDTH; ++x)
+		{
+			int left = static_cast<int>(pixels[(static_cast<std::size_t>(row) * WINDOW_WIDTH + x - 1) * 4 + 1]);
+			int right = static_cast<int>(pixels[(static_cast<std::size_t>(row) * WINDOW_WIDTH + x) * 4 + 1]);
+			sum += static_cast<std::uint64_t>(left > right ? left - right : right - left);
+		}
+		return sum;
+	};
+
+	//参考帧：交换链直通
+	std::vector<uint8_t> reference(pixel_bytes());
+	{
+		engine::Renderer renderer;
+		ASSERT_TRUE(renderer.init(hidden_config()));
+		if (!renderer.readback_supported())
+			GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+		uint64_t texture = 0;
+		ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 4, 4));
+		renderer.texture_bind_set(texture);
+		engine::Mesh_Handle handle = 0;
+		ASSERT_TRUE(renderer.mesh_load(handle, quad_data()));
+		ASSERT_TRUE(renderer.mesh_draw(handle, nullptr));
+		ASSERT_TRUE(renderer.frame_render(reference.data(), static_cast<uint32_t>(reference.size())));
+		renderer.mesh_unload(handle);
+		renderer.texture_unload(texture);
+	}
+	//对照帧：单级锐化链
+	std::vector<uint8_t> sharpened(pixel_bytes());
+	{
+		engine::Renderer renderer;
+		ASSERT_TRUE(renderer.init(hidden_config()));
+		if (!renderer.readback_supported())
+			GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+		uint64_t target = 0;
+		ASSERT_TRUE(renderer.render_target_create(target, renderer.extent_width(), renderer.extent_height()));
+		uint64_t pass = post_pipeline_register(renderer, "锐化.frag.spv");
+		ASSERT_NE(pass, 0u);
+		ASSERT_TRUE(renderer.post_chain_set(&pass, 1));
+		renderer.render_target_present_set(target);
+		uint64_t texture = 0;
+		ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 4, 4));
+		renderer.texture_bind_set(texture);
+		engine::Mesh_Handle handle = 0;
+		ASSERT_TRUE(renderer.mesh_load(handle, quad_data()));
+		ASSERT_TRUE(renderer.mesh_draw(handle, nullptr));
+		ASSERT_TRUE(renderer.frame_render(sharpened.data(), static_cast<uint32_t>(sharpened.size())));
+		renderer.mesh_unload(handle);
+		renderer.texture_unload(texture);
+		renderer.pipeline_unload(pass);
+		renderer.render_target_destroy(target);
+	}
+
+	//边缘能量对比
+	std::uint64_t reference_energy = edge_energy(reference);
+	std::uint64_t sharpened_energy = edge_energy(sharpened);
+	RecordProperty("sharpen_reference_energy", static_cast<int>(reference_energy));
+	RecordProperty("sharpen_sharpened_energy", static_cast<int>(sharpened_energy));
+	EXPECT_GT(reference_energy, 50u) << "参考帧无边缘（用例前提不成立）";
+	EXPECT_GT(sharpened_energy, reference_energy) << "锐化未放大边缘对比（"
+		<< sharpened_energy << " vs " << reference_energy << "）";
 }
