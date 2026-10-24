@@ -13,7 +13,7 @@ param(
 
 $extensions = @('.h', '.hpp', '.hxx', '.c', '.cpp', '.cc', '.cxx', '.inl',
                 '.glsl', '.vert', '.frag', '.comp', '.geom', '.tesc', '.tese')
-$excludeNames = @('external', 'out', 'build', '.git', '.vs', '.cyrene', '.trae', 'node_modules')
+$excludeNames = @('external', 'out', 'build', '.git', '.vs', '.cyrene', '.trae', 'node_modules', '下层依赖')
 
 # 各层（相对项目根）
 $layers = @(
@@ -152,7 +152,7 @@ foreach ($layer in $layers)
 
 Write-Output "===== 白银纪元 · 源码行数统计 ====="
 Write-Output ("项目根：{0}" -f $Root)
-Write-Output ("口径：总行数含空行；有效行 = 非空非纯空白行；已排除 external / out / 工具目录")
+Write-Output ("口径：总行数含空行；有效行 = 非空非纯空白行；已排除 external / out / 下层依赖快照 / 工具目录")
 Write-Output ""
 
 Write-Output "【总计】"
