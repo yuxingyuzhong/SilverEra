@@ -407,3 +407,27 @@ TEST_F(Renderer_Mesh_Test, 程序化胶囊可绘制)
         renderer.mesh_unload(sphere_like);
         renderer.mesh_unload(capsule);
 }
+
+/*
+程序化平面（第七十一轮）
+口径：平面（2 × 2）可加载并出帧；宽 0 / 高 -1 整次拒绝且句柄归零。
+*/
+TEST_F(Renderer_Mesh_Test, 程序化平面可绘制)
+{
+        engine::Renderer renderer;
+        ASSERT_TRUE(renderer.init(hidden_config()));
+        engine::Mesh_Handle plane = 0;
+        ASSERT_TRUE(renderer.mesh_plane_load(plane, 2.0f, 2.0f));
+        EXPECT_NE(plane, 0u);
+        EXPECT_TRUE(renderer.mesh_draw(plane, nullptr));
+        EXPECT_TRUE(renderer.frame_render());
+
+        //非法参数整次拒绝（句柄归零）
+        engine::Mesh_Handle invalid = 55;
+        EXPECT_FALSE(renderer.mesh_plane_load(invalid, 0.0f, 2.0f));
+        EXPECT_EQ(invalid, 0u);
+        EXPECT_FALSE(renderer.mesh_plane_load(invalid, 2.0f, -1.0f));
+        EXPECT_EQ(invalid, 0u);
+
+        renderer.mesh_unload(plane);
+}
