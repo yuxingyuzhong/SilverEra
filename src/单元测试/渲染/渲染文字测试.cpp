@@ -434,6 +434,34 @@ TEST_F(Renderer_Text_Test, 文字透明度生效)
         renderer.font_unload(font);
 }
 
+/*
+文字网格缓存命中计数（第七十五轮）
+口径：未初始化时两计数均为 0；同一（字体, 文本, 布局）首次绘制计未命中、再次绘制计命中；
+      换文本后再次计未命中。
+*/
+TEST_F(Renderer_Text_Test, 文字缓存命中计数)
+{
+        engine::Renderer renderer;
+        EXPECT_EQ(renderer.text_cache_hits(), 0u);
+        EXPECT_EQ(renderer.text_cache_misses(), 0u);
+        ASSERT_TRUE(renderer.init(hidden_config()));
+        uint64_t font = 0;
+        ASSERT_TRUE(renderer.font_load_file(font, FONT_PATH, FONT_PIXEL_HEIGHT));
+        //首次：未命中
+        ASSERT_TRUE(renderer.text_draw(font, "AB", 4.0f, 4.0f));
+        EXPECT_EQ(renderer.text_cache_misses(), 1u);
+        EXPECT_EQ(renderer.text_cache_hits(), 0u);
+        //再次：命中
+        ASSERT_TRUE(renderer.text_draw(font, "AB", 4.0f, 4.0f));
+        EXPECT_EQ(renderer.text_cache_hits(), 1u);
+        EXPECT_EQ(renderer.text_cache_misses(), 1u);
+        //换文本：未命中
+        ASSERT_TRUE(renderer.text_draw(font, "AC", 4.0f, 4.0f));
+        EXPECT_EQ(renderer.text_cache_misses(), 2u);
+        EXPECT_EQ(renderer.text_cache_hits(), 1u);
+        renderer.font_unload(font);
+}
+
 //文本网格缓存上限（第四十八轮）：连画 70 段不同文本触发 LRU 淘汰，淘汰后重画最早文本仍应成功出墨
 TEST_F(Renderer_Text_Test, 文本网格缓存淘汰后仍可重画)
 {

@@ -431,3 +431,38 @@ TEST_F(Renderer_Mesh_Test, 程序化平面可绘制)
 
         renderer.mesh_unload(plane);
 }
+
+/*
+网格包围盒查询（第七十三轮）
+口径：半径 1 的球体包围盒约为 [-1,1]（三轴）；2 × 2 平面的 z 分量恒 0；
+      未初始化 / 无效句柄返回假。
+*/
+TEST_F(Renderer_Mesh_Test, 网格包围盒查询)
+{
+        engine::Renderer renderer;
+        float min_value[3] = {};
+        float max_value[3] = {};
+        //未初始化：返回假
+        EXPECT_FALSE(renderer.mesh_bounds(0, min_value, max_value));
+        ASSERT_TRUE(renderer.init(hidden_config()));
+        engine::Mesh_Handle sphere = 0;
+        ASSERT_TRUE(renderer.mesh_sphere_load(sphere, 1.0f, 16, 8));
+        ASSERT_TRUE(renderer.mesh_bounds(sphere, min_value, max_value));
+        for (int axis = 0; axis < 3; ++axis)
+        {
+                EXPECT_NEAR(min_value[axis], -1.0f, 0.01f);
+                EXPECT_NEAR(max_value[axis], 1.0f, 0.01f);
+        }
+        //平面：z 恒 0、x 到 ±1
+        engine::Mesh_Handle plane = 0;
+        ASSERT_TRUE(renderer.mesh_plane_load(plane, 2.0f, 2.0f));
+        ASSERT_TRUE(renderer.mesh_bounds(plane, min_value, max_value));
+        EXPECT_NEAR(min_value[2], 0.0f, 0.001f);
+        EXPECT_NEAR(max_value[2], 0.0f, 0.001f);
+        EXPECT_NEAR(max_value[0], 1.0f, 0.001f);
+        //无效句柄：返回假
+        EXPECT_FALSE(renderer.mesh_bounds(9999u, min_value, max_value));
+
+        renderer.mesh_unload(plane);
+        renderer.mesh_unload(sphere);
+}
