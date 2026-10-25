@@ -368,10 +368,88 @@ TEST_F(Renderer_Stats_Test, 帧统计可清零)
 	EXPECT_EQ(cleared.culled_items, 0u);
 
 	//清零后重新渲染，累计量从 1 开始
-	ASSERT_TRUE(renderer.mesh_draw(handle, nullptr));
+        ASSERT_TRUE(renderer.mesh_draw(handle, nullptr));
+        ASSERT_TRUE(renderer.frame_render());
+        engine::Frame_Stats after = renderer.frame_stats_get();
+        EXPECT_EQ(after.frames, 1u);
+        EXPECT_GE(after.draw_items, 1u);
+        renderer.mesh_unload(handle);
+}
+
+/*
+最近一帧绘制量与累计口径一致（第一百三十二轮）
+关闭合批：首帧登记 3 项 → last_draw_items / last_instances = 3；次帧登记 1 项 → 均为 1，累计为 4；
+清零累计量后最近一帧量保持不变。
+*/
+TEST_F(Renderer_Stats_Test, 最近一帧绘制量与累计一致)
+{
+	engine::Renderer renderer;
+	engine::Renderer_Config config = hidden_config();
+	config.static_batching = false;
+	ASSERT_TRUE(renderer.init(config));
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, triangle_data()));
+
+	//首帧：3 项 / 3 实例
+	for (uint32_t index = 0; index < 3; ++index)
+		ASSERT_TRUE(renderer.mesh_draw(mesh, nullptr));
 	ASSERT_TRUE(renderer.frame_render());
-	engine::Frame_Stats after = renderer.frame_stats_get();
-	EXPECT_EQ(after.frames, 1u);
-	EXPECT_GE(after.draw_items, 1u);
-	renderer.mesh_unload(handle);
+	engine::Frame_Stats first = renderer.frame_stats_get();
+	EXPECT_EQ(first.last_draw_items, 3u);
+	EXPECT_EQ(first.last_instances, 3u);
+
+	//次帧：1 项 / 1 实例，累计 4
+	ASSERT_TRUE(renderer.mesh_draw(mesh, nullptr));
+	ASSERT_TRUE(renderer.frame_render());
+	engine::Frame_Stats second = renderer.frame_stats_get();
+	EXPECT_EQ(second.last_draw_items, 1u) << "最近一帧量未随帧切换";
+	EXPECT_EQ(second.last_instances, 1u);
+	EXPECT_EQ(second.draw_items, 4u);
+
+	//清零累计量：最近一帧量保持不变
+	renderer.frame_stats_reset();
+	engine::Frame_Stats cleared = renderer.frame_stats_get();
+	EXPECT_EQ(cleared.draw_items, 0u);
+	EXPECT_EQ(cleared.last_draw_items, 1u) << "清零不应改动最近一帧即时量";
+	EXPECT_EQ(cleared.last_instances, 1u);
+
+	renderer.mesh_unload(mesh);
+}
+
+/*
+最近一帧剔除量（第一百三十二轮）
+首帧把网格平移到视锥外：最近一帧剔除 = 1、最近一帧绘制项 = 0、累计剔除 = 1；
+次帧画可见网格：最近一帧剔除归 0、最近一帧绘制项 = 1，累计剔除保持 1。
+*/
+TEST_F(Renderer_Stats_Test, 最近一帧剔除量)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, triangle_data()));
+	ASSERT_TRUE(renderer.cull_enabled());
+
+	//视锥外：平移 x = 100（列主序平移位于下标 12）
+	float transform[16] = {};
+	transform[0] = 1.0f;
+	transform[5] = 1.0f;
+	transform[10] = 1.0f;
+	transform[12] = 100.0f;
+	transform[15] = 1.0f;
+	ASSERT_TRUE(renderer.mesh_draw(mesh, transform));
+	ASSERT_TRUE(renderer.frame_render());
+	engine::Frame_Stats culled = renderer.frame_stats_get();
+	EXPECT_EQ(culled.culled_items, 1u);
+	EXPECT_EQ(culled.last_culled_items, 1u) << "最近一帧剔除量未记录";
+	EXPECT_EQ(culled.last_draw_items, 0u);
+
+	//可见：最近一帧剔除归零，累计保持 1
+	ASSERT_TRUE(renderer.mesh_draw(mesh, nullptr));
+	ASSERT_TRUE(renderer.frame_render());
+	engine::Frame_Stats visible = renderer.frame_stats_get();
+	EXPECT_EQ(visible.culled_items, 1u);
+	EXPECT_EQ(visible.last_culled_items, 0u) << "最近一帧剔除量未按帧重置";
+	EXPECT_EQ(visible.last_draw_items, 1u);
+
+	renderer.mesh_unload(mesh);
 }
