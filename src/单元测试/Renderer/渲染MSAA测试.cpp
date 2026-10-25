@@ -501,7 +501,83 @@ TEST_F(Renderer_Msaa_Test, 渲染目标随采样数重建且深度读回降级)
 		static_cast<uint32_t>(depth_values.size()), &width, &height));
 
 	//清理
-	renderer.render_target_set(0);
-	renderer.render_target_destroy(target);
-	renderer.mesh_unload(plane);
+        renderer.render_target_set(0);
+        renderer.render_target_destroy(target);
+        renderer.mesh_unload(plane);
+}
+
+/*
+高组合冒烟（第一百三十七轮）
+MSAA 4× ＋ 方向光阴影 ＋ 两级后处理链 ＋ 文字 ＋ 静态合批同时启用，连续 3 帧均可渲染，统计自洽。
+*/
+TEST_F(Renderer_Msaa_Test, 高组合冒烟)
+{
+        engine::Renderer renderer;
+        ASSERT_TRUE(renderer.init(hidden_config(4)));
+
+        //两级链所需目标（与交换链同尺寸）
+        uint64_t scene_target = 0;
+        uint64_t second_target = 0;
+        ASSERT_TRUE(renderer.render_target_create(scene_target, renderer.extent_width(), renderer.extent_height()));
+        ASSERT_TRUE(renderer.render_target_create(second_target, renderer.extent_width(), renderer.extent_height()));
+        uint64_t invert = 0;
+        uint64_t threshold = 0;
+        ASSERT_TRUE(renderer.pipeline_load(invert, "后处理.vert.spv", "反色.frag.spv"));
+        ASSERT_TRUE(renderer.pipeline_load(threshold, "后处理.vert.spv", "亮度阈值.frag.spv"));
+        uint64_t chain[2] = { invert, threshold };
+        ASSERT_TRUE(renderer.post_chain_set(chain, 2));
+        uint64_t targets[2] = { scene_target, second_target };
+        ASSERT_TRUE(renderer.render_target_present_chain_set(targets, 2));
+
+        //场景：方向光沿 +Z，开启阴影
+        engine::Camera_Data camera{};
+        engine::Light_Data light{};
+        light.direction[2] = 1.0f;
+        light.intensity = 1.0f;
+        light.ambient = 0.0f;
+        engine::Fog_Data fog{};
+        renderer.scene_apply(camera, light, fog);
+        renderer.shadow_enable_set(true);
+
+        //遮挡面与接收面
+        engine::Mesh_Handle receiver = 0;
+        engine::Mesh_Handle occluder = 0;
+        ASSERT_TRUE(renderer.mesh_plane_load(receiver, 2.0f, 2.0f));
+        ASSERT_TRUE(renderer.mesh_plane_load(occluder, 1.0f, 1.0f));
+        float transform[16] = {};
+        transform[0] = 0.6f;
+        transform[5] = 0.6f;
+        transform[10] = 0.6f;
+        transform[14] = -0.5f;
+        transform[15] = 1.0f;
+
+        //文字项（字体缺失时跳过文字部分，其余组合照常验证）
+        uint64_t font = 0;
+        const bool text_ready = renderer.font_load_file(font, "C:\\Windows\\Fonts\\consola.ttf", 16);
+
+        for (uint32_t frame = 0; frame < 3; ++frame)
+        {
+                ASSERT_TRUE(renderer.mesh_draw(occluder, transform));
+                ASSERT_TRUE(renderer.mesh_draw(receiver, nullptr));
+                //文字每帧重新登记（待绘制项逐帧清空）
+                if (text_ready)
+                        ASSERT_TRUE(renderer.text_draw(font, "MSAA", 4.0f, 4.0f));
+                ASSERT_TRUE(renderer.frame_render());
+        }
+        engine::Frame_Stats stats = renderer.frame_stats_get();
+        RecordProperty("combo_draw_items", static_cast<int>(stats.draw_items));
+        EXPECT_EQ(stats.frames, 3u);
+        EXPECT_EQ(stats.post_stages, 2u) << "两级链未生效";
+        EXPECT_EQ(stats.drawn_items, stats.draw_items) << "高组合下存在被跳过的绘制项";
+        EXPECT_GE(stats.msaa_samples, 1u);
+        EXPECT_LE(stats.msaa_samples, 4u);
+        EXPECT_GT(stats.instances, 0u);
+
+        renderer.shadow_enable_set(false);
+        renderer.mesh_unload(receiver);
+        renderer.mesh_unload(occluder);
+        renderer.pipeline_unload(invert);
+        renderer.pipeline_unload(threshold);
+        renderer.render_target_destroy(second_target);
+        renderer.render_target_destroy(scene_target);
 }
