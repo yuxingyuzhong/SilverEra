@@ -36,6 +36,20 @@ namespace
 		data.indices = { 0, 1, 2 };
 		return data;
 	}
+
+	//构造带法线的四边形（阴影用例的接收面 / 遮挡面）
+	engine::Mesh_Data normal_quad(void)
+	{
+		engine::Mesh_Data data;
+		data.vertices = {
+			{ { -1.0f, -1.0f, 0.0f }, { 0.0f, 1.0f }, { 0.0f, 0.0f, -1.0f } },
+			{ { 1.0f, -1.0f, 0.0f }, { 1.0f, 1.0f }, { 0.0f, 0.0f, -1.0f } },
+			{ { 1.0f, 1.0f, 0.0f }, { 1.0f, 0.0f }, { 0.0f, 0.0f, -1.0f } },
+			{ { -1.0f, 1.0f, 0.0f }, { 0.0f, 0.0f }, { 0.0f, 0.0f, -1.0f } },
+		};
+		data.indices = { 0, 1, 2, 0, 2, 3 };
+		return data;
+	}
 }
 
 //GPU 耗时测试夹具
@@ -175,4 +189,124 @@ TEST_F(Renderer_Gpu_Test, 两级链GPU耗时随能力分支断言)
 	renderer.pipeline_unload(threshold);
 	renderer.render_target_destroy(second_target);
 	renderer.render_target_destroy(scene_target);
+}
+
+/*
+直通路径的 GPU 分解（第一百二十八轮）
+无后处理时：场景耗时 > 0、后处理耗时约 0、阴影耗时 0，且场景耗时不超过总耗时。
+设备不支持时间戳时三项恒 0（不跳过）。
+*/
+TEST_F(Renderer_Gpu_Test, 直通路径GPU分解)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, triangle_data()));
+	for (uint32_t index = 0; index < 4; ++index)
+	{
+		ASSERT_TRUE(renderer.mesh_draw(mesh, nullptr));
+		ASSERT_TRUE(renderer.frame_render());
+	}
+	engine::Frame_Stats stats = renderer.frame_stats_get();
+	if (renderer.gpu_timestamp_supported())
+	{
+		EXPECT_GT(stats.gpu_scene_ms, 0.0) << "场景阶段未产生 GPU 耗时";
+		EXPECT_LE(stats.gpu_post_ms, 0.05) << "直通路径不应有后处理耗时";
+		EXPECT_LE(stats.gpu_scene_ms, stats.gpu_frame_ms + 0.01) << "场景耗时超过总耗时";
+	}
+	else
+	{
+		EXPECT_EQ(stats.gpu_scene_ms, 0.0);
+		EXPECT_EQ(stats.gpu_post_ms, 0.0);
+	}
+	EXPECT_EQ(stats.gpu_shadow_ms, 0.0) << "未启用阴影时阴影耗时须为 0";
+	renderer.mesh_unload(mesh);
+}
+
+/*
+后处理链的 GPU 分解（第一百二十八轮）
+单级后处理链：场景与后处理各有非零耗时，两者之和不超过总耗时。
+*/
+TEST_F(Renderer_Gpu_Test, 后处理链GPU分解)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	uint64_t scene_target = 0;
+	ASSERT_TRUE(renderer.render_target_create(scene_target, renderer.extent_width(), renderer.extent_height()));
+	uint64_t invert = 0;
+	ASSERT_TRUE(renderer.pipeline_load(invert, "后处理.vert.spv", "反色.frag.spv"));
+	ASSERT_TRUE(renderer.post_chain_set(&invert, 1));
+	renderer.render_target_present_set(scene_target);
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, triangle_data()));
+	for (uint32_t index = 0; index < 4; ++index)
+	{
+		ASSERT_TRUE(renderer.mesh_draw(mesh, nullptr));
+		ASSERT_TRUE(renderer.frame_render());
+	}
+	engine::Frame_Stats stats = renderer.frame_stats_get();
+	if (renderer.gpu_timestamp_supported())
+	{
+		EXPECT_GT(stats.gpu_scene_ms, 0.0) << "链路径场景阶段未产生耗时";
+		EXPECT_GT(stats.gpu_post_ms, 0.0) << "链路径未产生后处理耗时";
+		EXPECT_LE(stats.gpu_scene_ms + stats.gpu_post_ms, stats.gpu_frame_ms + 0.01)
+			<< "场景 ＋ 后处理超过总耗时";
+	}
+	else
+	{
+		EXPECT_EQ(stats.gpu_scene_ms, 0.0);
+		EXPECT_EQ(stats.gpu_post_ms, 0.0);
+	}
+	renderer.mesh_unload(mesh);
+	renderer.pipeline_unload(invert);
+	renderer.render_target_destroy(scene_target);
+}
+
+/*
+阴影 pass 独立计时（第一百二十八轮）
+开启方向光阴影后，阴影耗时（独立提交）应大于 0；关闭阴影后不再刷新。
+*/
+TEST_F(Renderer_Gpu_Test, 阴影pass独立计时)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	engine::Mesh_Handle receiver = 0;
+	engine::Mesh_Handle occluder = 0;
+	ASSERT_TRUE(renderer.mesh_load(receiver, normal_quad()));
+	ASSERT_TRUE(renderer.mesh_load(occluder, normal_quad()));
+
+	//场景：方向光沿 +Z（光源在 -Z 侧），强度 1
+	engine::Camera_Data camera{};
+	engine::Light_Data light{};
+	light.direction[2] = 1.0f;
+	light.intensity = 1.0f;
+	light.ambient = 0.0f;
+	engine::Fog_Data fog{};
+	renderer.scene_apply(camera, light, fog);
+	renderer.shadow_enable_set(true);
+	ASSERT_TRUE(renderer.shadow_enabled());
+
+	//遮挡面缩放 0.6、平移到 z = -0.5
+	float transform[16] = {};
+	transform[0] = 0.6f;
+	transform[5] = 0.6f;
+	transform[10] = 0.6f;
+	transform[14] = -0.5f;
+	transform[15] = 1.0f;
+	for (uint32_t index = 0; index < 4; ++index)
+	{
+		ASSERT_TRUE(renderer.mesh_draw(occluder, transform));
+		ASSERT_TRUE(renderer.mesh_draw(receiver, nullptr));
+		ASSERT_TRUE(renderer.frame_render());
+	}
+	engine::Frame_Stats stats = renderer.frame_stats_get();
+	RecordProperty("shadow_pass_gpu_ms", stats.gpu_shadow_ms);
+	if (renderer.gpu_timestamp_supported())
+		EXPECT_GT(stats.gpu_shadow_ms, 0.0) << "阴影 pass 未产生独立 GPU 耗时";
+	else
+		EXPECT_EQ(stats.gpu_shadow_ms, 0.0);
+
+	renderer.shadow_enable_set(false);
+	renderer.mesh_unload(receiver);
+	renderer.mesh_unload(occluder);
 }
