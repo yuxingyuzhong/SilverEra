@@ -14,8 +14,8 @@ namespace engine
 	//构造函数
 	Entity::Entity(const int64_t& ID) : Entity()
 	{
-		//设置实体ID编号
-		this->object_ID = ID;
+		//将实体ID编号写入基类（对象 ID 私有，仅经基类赋值写入）
+		Object::operator=(Object(static_cast<uint64_t>(ID), true));
 	}
 
 	//构造函数
