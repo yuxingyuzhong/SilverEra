@@ -17,6 +17,7 @@
 #include <gtest/gtest.h>
 
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -35,10 +36,10 @@ namespace
 	//冒烟用例窗口尺寸（与既有隐藏用例一致，便于快速跑完）
 	constexpr uint32_t 冒烟窗口宽 = 64;
 	constexpr uint32_t 冒烟窗口高 = 36;
-	//每个阶段停留的帧数（垂直同步 60 fps 下约 2.5 秒）
-	constexpr uint32_t 每阶段帧数 = 150;
+	//每个阶段停留的秒数（按真实时间计时，与显示器刷新率无关）
+	constexpr double 每阶段秒数 = 2.5;
 	//自动轮播的轮数（防止无人值守时无限循环）
-	constexpr uint32_t 轮播轮数 = 3;
+	constexpr uint32_t 轮播轮数 = 2;
 	//中文字体候选（按顺序取第一个可用者）
 	const char* const 字体候选[] = {
 		"C:\\Windows\\Fonts\\simhei.ttf",
@@ -855,27 +856,36 @@ TEST_F(Renderer_Showcase_Test, 交互巡览)
 	资源准备(资源);
 
 	uint32_t 阶段序号 = 0;
-	uint32_t 本阶段已用帧 = 0;
 	uint64_t 总帧数 = 0;
-	const uint64_t 总帧上限 = static_cast<uint64_t>(阶段数量) * 每阶段帧数 * 轮播轮数;
-	while (!渲染器.close_requested() && 总帧数 < 总帧上限)
+	//已完成的阶段数（达到「阶段数 × 轮数」即结束）
+	uint64_t 已完成阶段 = 0;
+	//本阶段是否需要复位（切换阶段后的首帧复位全部开关）
+	bool 需复位 = true;
+	std::chrono::steady_clock::time_point 阶段起点 = std::chrono::steady_clock::now();
+	const uint64_t 阶段总数 = static_cast<uint64_t>(阶段数量) * 轮播轮数;
+	while (!渲染器.close_requested() && 已完成阶段 < 阶段总数)
 	{
 		const 展示阶段& 阶段 = 阶段表[阶段序号];
 		//阶段切换时复位全部开关，保证自包含
-		if (本阶段已用帧 == 0)
+		if (需复位)
+		{
 			默认恢复(渲染器);
+			需复位 = false;
+		}
 		//配置场景并登记本帧绘制项
 		阶段.应用(资源);
 		//左上角字幕与右下角实时观测
 		绘制字幕(资源, 阶段, 总帧数);
 		ASSERT_TRUE(渲染器.frame_render());
 		++总帧数;
-		++本阶段已用帧;
-		//到点切换到下一阶段（轮播）
-		if (本阶段已用帧 >= 每阶段帧数)
+		//按真实时间切换到下一阶段（与刷新率无关）
+		const double 已用秒 = std::chrono::duration<double>(std::chrono::steady_clock::now() - 阶段起点).count();
+		if (已用秒 >= 每阶段秒数)
 		{
-			本阶段已用帧 = 0;
+			++已完成阶段;
 			阶段序号 = (阶段序号 + 1) % 阶段数量;
+			需复位 = true;
+			阶段起点 = std::chrono::steady_clock::now();
 		}
 	}
 	EXPECT_GE(总帧数, static_cast<uint64_t>(阶段数量));
