@@ -453,3 +453,67 @@ TEST_F(Renderer_Stats_Test, 最近一帧剔除量)
 
 	renderer.mesh_unload(mesh);
 }
+
+/*
+主机侧分段与总耗时一致（第一百三十三轮）
+直通路径：录制段 > 0，录制 ＋ 提交 ＋ 呈现 ≤ frame_ms；清零累计量后三段即时量保持不变。
+*/
+TEST_F(Renderer_Stats_Test, 主机侧分段与总耗时一致)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, triangle_data()));
+	ASSERT_TRUE(renderer.mesh_draw(mesh, nullptr));
+	ASSERT_TRUE(renderer.frame_render());
+	engine::Frame_Stats stats = renderer.frame_stats_get();
+	RecordProperty("host_record_ms", stats.host_record_ms);
+	RecordProperty("host_submit_ms", stats.host_submit_ms);
+	RecordProperty("host_present_ms", stats.host_present_ms);
+
+	EXPECT_GT(stats.frame_ms, 0.0);
+	EXPECT_GT(stats.host_record_ms, 0.0) << "录制段未记录";
+	EXPECT_GE(stats.host_submit_ms, 0.0);
+	EXPECT_GE(stats.host_present_ms, 0.0);
+	EXPECT_LE(stats.host_record_ms + stats.host_submit_ms + stats.host_present_ms, stats.frame_ms + 0.01)
+		<< "三段之和超出主机侧总耗时";
+
+	//清零累计量：三段即时量保持
+	const double record_before = stats.host_record_ms;
+	renderer.frame_stats_reset();
+	engine::Frame_Stats cleared = renderer.frame_stats_get();
+	EXPECT_EQ(cleared.frame_ms, stats.frame_ms);
+	EXPECT_EQ(cleared.host_record_ms, record_before);
+	EXPECT_EQ(cleared.host_submit_ms, stats.host_submit_ms);
+	EXPECT_EQ(cleared.host_present_ms, stats.host_present_ms);
+
+	renderer.mesh_unload(mesh);
+}
+
+/*
+离屏路径不产生呈现段（第一百三十三轮）
+渲染到离屏目标：host_present_ms 恒 0，录制 ＋ 提交 ≤ frame_ms。
+*/
+TEST_F(Renderer_Stats_Test, 离屏路径无呈现段)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	uint64_t target = 0;
+	ASSERT_TRUE(renderer.render_target_create(target, renderer.extent_width(), renderer.extent_height()));
+	//设为本帧渲染目标（无返回值入口）
+	renderer.render_target_set(target);
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, triangle_data()));
+	ASSERT_TRUE(renderer.mesh_draw(mesh, nullptr));
+	ASSERT_TRUE(renderer.frame_render());
+	engine::Frame_Stats stats = renderer.frame_stats_get();
+	RecordProperty("offscreen_record_ms", stats.host_record_ms);
+
+	EXPECT_GT(stats.frame_ms, 0.0);
+	EXPECT_GT(stats.host_record_ms, 0.0);
+	EXPECT_EQ(stats.host_present_ms, 0.0) << "离屏路径不应有呈现段";
+	EXPECT_LE(stats.host_record_ms + stats.host_submit_ms, stats.frame_ms + 0.01);
+
+	renderer.mesh_unload(mesh);
+	renderer.render_target_destroy(target);
+}
