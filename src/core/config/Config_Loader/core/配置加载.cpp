@@ -27,7 +27,7 @@ namespace engine
             return true;
     }
 
-    //对象配置投递（读配置 → 发 Config/Load → 写条目标记）
+    //对象配置投递（读配置 → 按条目事件名投递 → 写条目标记）
     bool Config_Loader::object_config_deliver(const std::string& object, const std::string& config_path,
         uint64_t mark, json& entry)
     {
@@ -50,16 +50,12 @@ namespace engine
         if (config_data.is_object())
             config_data.erase("dirty_mark");
 
-        //若条目事件标识无效
-        if (!detail::field_check<string>(entry, "event_category") ||
-            !detail::field_check<string>(entry, "event_tag"))
-        {
-            logger.error("Config_Loader::条目事件标识无效，配置投递中止");
-            return false;
-        }
-        //取条目事件类别与标签（事件名完全由路由条目决定，不提供缺省回落）
-        const string event_category = entry["event_category"];
-        const string event_tag = entry["event_tag"];
+        //取条目事件类别（缺省回落 Config）
+        const string event_category = detail::field_check<string>(entry, "event_category")
+            ? entry["event_category"].get<string>() : "Config";
+        //取条目事件标签（缺省回落 Load）
+        const string event_tag = detail::field_check<string>(entry, "event_tag")
+            ? entry["event_tag"].get<string>() : "Load";
         //若条目事件标识命中配置加载器预定义事件
         if (event_identifier_reserved(event_category, event_tag))
         {

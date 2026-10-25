@@ -6,12 +6,29 @@
 
 namespace engine
 {
+    //规则优先级模式（决定「日志级别」与「日志归属」的判定先后）
+    enum class Rule_Priority
+    {
+        //归属优先（默认）：文件/目录先判，命中即终裁；级别仅可否决
+        Scope_First,
+        //级别优先：级别先判，命中即终裁；归属仅可否决
+        Level_First
+    };
+
     /*
     日志规则（日志根目录作用域 ＋ 文件/目录/级别三张输出许可表）
 
     根目录即路径规范化的锚点：设置后以该根为界剥离调用处绝对路径，键＝根相对路径；
     未设置则禁止绑定输出流；空串表示整个项目（不做剥离、不限制作用域）。
     允许设置的根目录只有一个（项目根）；再次设置即覆盖。
+
+    优先级模式决定「级别」与「归属（文件/目录）」的判定先后：
+        高优先级一级命中规则即终裁（允许或否决都由其决定）；
+        低优先级一级仅在命中且为否决时才生效，其允许不放行。
+    归属内部恒为「文件精确 → 目录最长前缀」。
+
+    全局取反开关对上述判定的**最终结果**取反（原本放行的丢弃、原本否决的放行）；
+    它不作用于作用域越界截断（域外日志仍先被丢弃）。
     */
     class Log_Rules
     {
@@ -95,6 +112,46 @@ namespace engine
             dir_rules[key] = allowed;
             return true;
         }
+        //优先级模式设置（同模式＝重复设置返回 false，否则返回 true）
+        bool priority_set(Rule_Priority mode)
+        {
+            //持规则锁改写
+            std::lock_guard<std::mutex> lock(rule_mtx);
+            //同模式即重复设置，不作改动
+            if (priority == mode)
+                return false;
+            //改写优先级模式
+            priority = mode;
+            return true;
+        }
+        //优先级模式查询
+        Rule_Priority priority_get() const
+        {
+            //持规则锁读取
+            std::lock_guard<std::mutex> lock(rule_mtx);
+            //返回当前模式
+            return priority;
+        }
+        //全局取反开关设置（同值＝重复设置返回 false，否则返回 true）
+        bool verdict_invert_set(bool invert)
+        {
+            //持规则锁改写
+            std::lock_guard<std::mutex> lock(rule_mtx);
+            //同值即重复设置，不作改动
+            if (verdict_invert == invert)
+                return false;
+            //改写全局取反开关
+            verdict_invert = invert;
+            return true;
+        }
+        //全局取反开关查询
+        bool verdict_invert_get() const
+        {
+            //持规则锁读取
+            std::lock_guard<std::mutex> lock(rule_mtx);
+            //返回当前开关
+            return verdict_invert;
+        }
         //级别输出许可设置（级别名不做路径规范化）
         bool level_allowed_set(const std::string& level, bool allowed)
         {
@@ -109,7 +166,7 @@ namespace engine
             level_rules[level] = allowed;
             return true;
         }
-        //输出许可表清空（保留根目录设置）
+        //输出许可表清空（保留根目录设置；优先级模式复位为默认的归属优先）
         void clear()
         {
             //持规则锁清空三张许可表
@@ -120,20 +177,71 @@ namespace engine
             dir_rules.clear();
             //清空级别许可表
             level_rules.clear();
+            //优先级模式复位为默认值
+            priority = Rule_Priority::Scope_First;
+            //全局取反开关复位为默认值
+            verdict_invert = false;
         }
-        //输出放行判定（文件精确 → 目录最长前缀 → 级别 → 默认允许；越界已由 key_make 处理）
+        //输出放行判定（按优先级模式得出基础结论，再按全局开关取反；越界已由 key_make 处理）
         bool output_pass(const std::string& key, const std::string& level) const
         {
             //持规则锁判定
             std::lock_guard<std::mutex> lock(rule_mtx);
-            //文件精确匹配
+            //基础结论（未取反）
+            bool pass = true;
+            //若为级别优先模式
+            if (priority == Rule_Priority::Level_First)
+            {
+                //级别为高优先：命中即终裁
+                const auto level_it = level_rules.find(level);
+                if (level_it != level_rules.end())
+                    pass = level_it->second;
+                else
+                {
+                    //归属为低优先：仅可否决（命中允许不放行）
+                    bool scope_hit = false;
+                    bool scope_allowed = true;
+                    scope_eval_locked(key, scope_hit, scope_allowed);
+                    pass = !scope_hit || scope_allowed;
+                }
+            }
+            //归属优先模式：归属为高优先
+            else
+            {
+                //归属命中即终裁
+                bool scope_hit = false;
+                bool scope_allowed = true;
+                scope_eval_locked(key, scope_hit, scope_allowed);
+                if (scope_hit)
+                    pass = scope_allowed;
+                else
+                {
+                    //级别为低优先：仅可否决（命中允许不放行）
+                    const auto level_it = level_rules.find(level);
+                    pass = level_it == level_rules.end() || level_it->second;
+                }
+            }
+            //按全局开关对最终结论取反（不影响作用域截断）
+            return verdict_invert ? !pass : pass;
+        }
+    private:
+        //归属许可求值（持锁调用版：文件精确 → 目录最长前缀；hit 表示是否命中，allowed 表示命中结论）
+        void scope_eval_locked(const std::string& key, bool& hit, bool& allowed) const
+        {
+            //默认未命中
+            hit = false;
+            //默认允许
+            allowed = true;
+            //文件精确匹配优先
             const auto file_it = file_rules.find(key);
-            //文件命中则以文件许可为准
+            //文件命中即以文件许可为结论
             if (file_it != file_rules.end())
-                return file_it->second;
+            {
+                hit = true;
+                allowed = file_it->second;
+                return;
+            }
             //目录最长前缀匹配
-            bool dir_hit = false;
-            bool dir_allowed = true;
             size_t dir_length = 0;
             for (const auto& rule : dir_rules)
             {
@@ -142,23 +250,12 @@ namespace engine
                     key.size() < rule.first.size() ||
                     key.compare(0, rule.first.size(), rule.first) != 0)
                     continue;
-                //记录最长前缀命中
+                //记录最长前缀命中与结论
                 dir_length = rule.first.size();
-                dir_allowed = rule.second;
-                dir_hit = true;
+                allowed = rule.second;
+                hit = true;
             }
-            //目录命中则以目录许可为准
-            if (dir_hit)
-                return dir_allowed;
-            //级别匹配
-            const auto level_it = level_rules.find(level);
-            //级别命中则以级别许可为准
-            if (level_it != level_rules.end())
-                return level_it->second;
-            //全未命中，默认允许输出
-            return true;
         }
-    private:
         //路径键生成（持锁调用版：根非空则以根为锚点剥离，命中即域内；否则只做基础规范化且恒域内）
         std::string key_make_locked(const std::string& raw, bool& in_scope) const
         {
@@ -185,6 +282,10 @@ namespace engine
 
         //规则互斥锁（保护根目录键与三张许可表）
         mutable std::mutex rule_mtx{};
+        //规则优先级模式（默认归属优先）
+        Rule_Priority priority = Rule_Priority::Scope_First;
+        //全局取反开关（默认关闭＝按判定原义）
+        bool verdict_invert = false;
         //日志根目录键（无值＝未设置；空值＝整个项目；非空＝锚点兼作用域）
         std::optional<std::string> root_key{};
         //文件输出许可表

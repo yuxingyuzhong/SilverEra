@@ -88,20 +88,14 @@ namespace engine
                 continue;
             }
 
-            //若条目事件标识无效
-            if(!detail::field_check<string>(entry,"event_category") ||
-               !detail::field_check<string>(entry,"event_tag"))
-            {
-                logger.error("Config_Loader::条目事件标识无效");
-                logger.error("Config_Loader::可能原因如下：");
-                logger.error("<1>，目标字段不存在：\"event_category\" and \"event_tag\"");
-                logger.error("<2>，目标字段非所需字符串格式");
-                logger.error("<3>，目标字段无实际内容");
-                continue;
-            }
+            //取条目事件类别（缺省回落 Config）
+            const string event_category = detail::field_check<string>(entry, "event_category")
+                ? entry["event_category"].get<string>() : "Config";
+            //取条目事件标签（缺省回落 Load）
+            const string event_tag = detail::field_check<string>(entry, "event_tag")
+                ? entry["event_tag"].get<string>() : "Load";
             //若条目事件标识命中配置加载器预定义事件
-            if(event_identifier_reserved(entry["event_category"].get<string>(),
-               entry["event_tag"].get<string>()))
+            if(event_identifier_reserved(event_category,event_tag))
             {
                 logger.error("Config_Loader::条目事件标识命中预定义事件，已驳回该条目");
                 continue;

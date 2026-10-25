@@ -284,7 +284,7 @@ Engine/EngineCore/
   └ Quadtree_Manager::seek(单点检索) 或 seek(范围检索, stable)
        ├ 从树缓存中定位覆盖目标的四叉树（无则 quadtree_build_smart 新建）
        ├ Quadtree::chunk_operate / chunk_operate
-       │    ├ seekable_analyse 判断是否需要扩大
+       │    ├ reachable_range_calcu 判断是否需要扩大
        │    ├ 需要扩大 → 扩大回调交给管理器裁决（tree_expand_approve）→ tree_expand 原地加倍
        │    └ 沿递归路径下钻，产出 Tree_Chunk_Data<T>
        └ 多树命中时用布尔表去重后返回
@@ -707,12 +707,12 @@ namespace engine
         bool tree_expand(void);                                             //原地扩大（边长翻倍）
 
         //底层计算工具（供 Quadtree_Manager 复用）
-        void manage_range_calcu(Rect2l& receiver, const Point2d& root,
+        void recta_range_calcu(Rect2l& receiver, const Point2d& root,
                                 const uint64_t tree_size);
         void target_range_format(Rect2l& target_range, const Point2d& root,
                                  const uint64_t block_size);
-        Point2d seekable_range_calcu(const Rect2l& target_range,
-                                     Rect2l& seekable_range);
+        Point2d reachable_range_calcu(const Rect2l& target_range,
+                                     Rect2l& reachable_range);
     };
 }
 ```

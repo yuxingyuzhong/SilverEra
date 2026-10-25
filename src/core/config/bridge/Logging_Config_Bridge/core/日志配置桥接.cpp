@@ -83,6 +83,47 @@ namespace engine
             root.empty() ? string("<整个项目>") : root);
     }
 
+    //规则优先级配置应用
+    void Log_Config_Bridge::priority_apply(const json& config)
+    {
+        //若未定义 priority 字段
+        if (!config.contains("priority"))
+            return;
+        //若 priority 字段非字符串
+        if (!config["priority"].is_string())
+        {
+            logger.error("Log_Config_Bridge::priority 字段非字符串\n已驳回");
+            return;
+        }
+        //取优先级模式文本
+        const string mode = config["priority"].get<string>();
+        //归属优先模式
+        if (mode == "scope_first")
+            logger.priority_set(Rule_Priority::Scope_First);
+        //级别优先模式
+        else if (mode == "level_first")
+            logger.priority_set(Rule_Priority::Level_First);
+        //未知模式
+        else
+            logger.error("Log_Config_Bridge::未知优先级模式: {}\n已略过", mode);
+    }
+
+    //全局取反配置应用
+    void Log_Config_Bridge::verdict_apply(const json& config)
+    {
+        //若未定义 verdict_invert 字段
+        if (!config.contains("verdict_invert"))
+            return;
+        //若字段非布尔
+        if (!config["verdict_invert"].is_boolean())
+        {
+            logger.error("Log_Config_Bridge::verdict_invert 字段非布尔\n已驳回");
+            return;
+        }
+        //登记全局取反开关（true 取反 / false 按原义）
+        logger.verdict_invert_set(config["verdict_invert"].get<bool>());
+    }
+
     //输出流配置应用
     void Log_Config_Bridge::streams_apply(const json& config)
     {
@@ -213,7 +254,7 @@ namespace engine
     {
         //清除本模块登记的输出流绑定
         streams_revert();
-        //清空三张输出许可表
+        //清空三张输出许可表并把优先级模式复位为默认
         logger.rule_clear();
         //清除日志根目录
         logger.root_clear();
@@ -229,6 +270,10 @@ namespace engine
         {
             //应用根目录配置
             root_apply(evt->config);
+            //应用规则优先级配置
+            priority_apply(evt->config);
+            //应用全局取反配置
+            verdict_apply(evt->config);
             //应用输出流配置
             streams_apply(evt->config);
             //应用文件许可配置

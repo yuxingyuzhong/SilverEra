@@ -21,7 +21,7 @@ namespace engine
 			//符号不同视为差值极大
 			if ((lhs_bits & 0x8000000000000000ULL) !=
 				(rhs_bits & 0x8000000000000000ULL))
-				return UINT64_MAX;
+				return (std::numeric_limits<uint64_t>::max)();
 
 			//计算 ULP 数量
 			if (lhs_bits > rhs_bits)

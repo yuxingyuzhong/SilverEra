@@ -4,254 +4,219 @@
 //引擎命名空间
 namespace engine
 {
-    //查询范围列表修改
+    //范围裁剪
     template<typename T>
-    void Quadtree_Manager<T>::target_range_amend(const Rect2l& excel_range, std::vector<bool>& excel,
-        const Rect2l& target_range) const
+    bool Quadtree_Manager<T>::range_clip(const Rect2l& lhs, const Rect2l& rhs, Rect2l& receiver) const
     {
-        //区块尺寸按 64 位整数参与计算
-        //简化表示路径
-        int64_t block_size = static_cast<int64_t>(settings.block_size);
-        //行宽度（每行列数）
-        int64_t width = (excel_range.right - excel_range.left + 1) / block_size;
-        //总行数
-        int64_t height = (excel_range.up - excel_range.down + 1) / block_size;
+        //四边界取交集
+        receiver.left = (std::max)(lhs.left, rhs.left);
+        receiver.right = (std::min)(lhs.right, rhs.right);
+        receiver.down = (std::max)(lhs.down, rhs.down);
+        receiver.up = (std::min)(lhs.up, rhs.up);
 
-        //表尺寸非法防御
-        if (width <= 0 || height <= 0)
-            return;
-        //完全无交集防御
-        if (target_range.right < excel_range.left || target_range.left > excel_range.right ||
-            target_range.down > excel_range.up || target_range.up < excel_range.down)
-            return;
-
-        //X轴起点列索引（包含）
-        int64_t X_start = (target_range.left - excel_range.left) / block_size;
-        //X轴终点列索引（包含），+1用于循环 < 结束
-        int64_t X_end = (target_range.right - excel_range.left) / block_size + 1;
-        //Y轴起始行索引（包含），从excel_range.up向下，行号递增
-        int64_t Y_start = (excel_range.up - target_range.up) / block_size; // 注意：up在坐标中较大，向下减小
-        //Y轴终点行索引（包含）
-        int64_t Y_end = (excel_range.up - target_range.down) / block_size + 1;
-
-        //裁剪到表内合法范围，越界部分丢弃
-        if (X_start < 0)
-            X_start = 0;
-        if (Y_start < 0)
-            Y_start = 0;
-        if (X_end > width)
-            X_end = width;
-        if (Y_end > height)
-            Y_end = height;
-
-        //裁剪后区间为空则无需写入
-        if (X_start >= X_end || Y_start >= Y_end)
-            return;
-
-        //开始修改元素
-        //std::vector<bool> 的元素为代理引用，无法取行首指针
-        //故按行列下标定位元素
-        for (int64_t row = Y_start; row < Y_end; row++)
-        {
-            for (int64_t col = X_start; col < X_end; col++)
-                excel[row * width + col] = true;
-        }
-    }   
-    
-    //查询结果列表元素坐标化
-    template<typename T>
-    void Quadtree_Manager<T>::excel_element_to_coord(const Rect2l& excel_range, const uint64_t& element_ID,
-        Point2l& receiver) const
-    {
-        //区块尺寸按 64 位整数参与计算
-        uint64_t block_size = settings.block_size;
-        //表格宽度（列数）
-        uint64_t width = std::abs(excel_range.right - excel_range.left + 1) / block_size;
-        //表宽度非法防御
-        //宽度不足一个区块时无法定位行列，退回原点
-        if (width <= 0)
-        {
-            receiver = Point2l{};
-            return;
-        }
-
-        //计算当前元素所在行列
-        uint64_t row = element_ID / width;
-        uint64_t col = element_ID % width;
-        //将行列转换为坐标（区块左边界和上边界）
-        //无符号行列数与区块尺寸的乘积先按 64 位无符号计算，再显式转为有符号坐标
-        receiver.X = excel_range.left + static_cast<int64_t>(col * block_size);
-        receiver.Y = excel_range.up - static_cast<int64_t>(row * block_size);
+        //返回交集是否有效
+        return receiver.left <= receiver.right && receiver.down <= receiver.up;
     }
 
-    //区块查询（read_only 决定只读查找或缺失智能建树）
+    //确保范围内每个区块都有四叉树覆盖
     template<typename T>
-    void Quadtree_Manager<T>::chunk_query(const Rect2l& target_range,
-        std::vector<std::shared_ptr<Tree_Chunk_Data<T>>>& receiver, bool read_only)
+    void Quadtree_Manager<T>::coverage_ensure(const Rect2l& target_range)
     {
-        //获取四叉树序列
-        auto& tree_group = X_sequence;
-        //若四叉树序列为空
-        if (tree_group.empty())
+        //若序列为空则先建立基准树
+        if (X_sequence.empty())
         {
-            //若为只读查找模式则直接返回
-            if (read_only)
-                return;   
-            //若非只读查找模式则兜底建树
-            else
-            {
-                //创建基准四叉树
-                quadtree_build_smart({ {target_range.left, target_range.down} });
-                //若创建失败
-                if (tree_group.empty())  
-                    return;
-            }
-        }
-        
-        //获取基准树
-        auto& baseline_tree = tree_group.front()->tree;
-        //获取基准树根坐标
-        auto& root = tree_group.front()->root;
-        //获取区块单元大小
-        auto& block_size = settings.block_size;
-
-        //可查询范围存储
-        Rect2l seekable_range{ target_range.left, target_range.right, target_range.up, target_range.down };
-        //可查询范围格式化
-        baseline_tree->target_range_format(seekable_range, root, block_size);
-
-        //待查询区块列数与行数
-        uint64_t want_col = std::abs(seekable_range.right - seekable_range.left + 1) / block_size;
-        uint64_t want_row = std::abs(seekable_range.up - seekable_range.down + 1) / block_size;
-        //可查询范围非法防御
-        if (want_col <= 0 || want_row <= 0)
-            return;
-        //待查询区块数计算（乘法前做溢出拦截）
-        if (want_row > (std::numeric_limits<uint64_t>::max)() / want_col)
-            return;
-        //计算总区块数量
-        uint64_t total_num = want_col * want_row;
-
-        //查询结果列表
-        std::vector<bool> target_excel(total_num);
-
-        //查找坐标存储
-        Point2l target{};
-        //四叉树管理范围存储
-        Rect2l tree_range{};
-        //四叉树返回结果存储
-        std::vector<std::shared_ptr<Tree_Chunk_Data<T>>> buffer{};
-
-        //内层循环查找结果
-        for (uint64_t seek_time = 0; seek_time < total_num; seek_time++)
-        {
-            //若检测到未查找区块
-            if (target_excel[seek_time] == false)
-            {
-                //索引格式化坐标
-                excel_element_to_coord(seekable_range, seek_time, target);
-                //查找直属四叉树
-                Tree_Record<T>* ptr_tree = quadtree_inclusion_seek(target);
-                //若未查询到直属四叉树且非只读查询模式
-                if (!ptr_tree && !read_only)
-                {
-                    //智能创建合适四叉树
-                    quadtree_build_smart({ target });
-                    //提取新创建四叉树
-                    ptr_tree = quadtree_inclusion_seek(target);
-                }
-
-                //若四叉树创建失败或者为不稳定查询模式
-                if (ptr_tree == nullptr)
-                    continue;
-
-                //查询待查询区块
-                if(read_only)
-                    ptr_tree->tree->seek(seekable_range, buffer);
-                else
-                    ptr_tree->tree->get(seekable_range, buffer);
-                //记录查询结果
-                receiver.insert(receiver.end(), buffer.begin(), buffer.end());
-                //重置查询结果存储器
-                buffer.clear();
-                //获取四叉树管理范围
-                ptr_tree->tree->manage_range_calcu(tree_range, ptr_tree->root, ptr_tree->size);
-                //裁剪实际查找范围
-                ptr_tree->tree->seekable_range_calcu(seekable_range, tree_range);
-                //修改查询结果列表
-                target_range_amend(tree_range, target_excel, seekable_range);
-            }
-        }
-    }
-
-    //范围区块信息查找（只读）
-    template<typename T>
-    void Quadtree_Manager<T>::seek(const Rect2l& target_range,
-        std::vector<std::shared_ptr<Tree_Chunk_Data<T>>>& receiver)
-    {
-        //启动只读区块查询
-        chunk_query(target_range, receiver, true);
-    }
-
-    //范围区块信息获取（缺失则智能建树）
-    template<typename T>
-    void Quadtree_Manager<T>::get(const Rect2l& target_range,
-        std::vector<std::shared_ptr<Tree_Chunk_Data<T>>>& receiver)
-    {
-        //启动非只读区块查询
-        chunk_query(target_range, receiver, false);
-    }
-
-    //单区块信息查找（只读）
-    template<typename T>
-    void Quadtree_Manager<T>::seek(const Point2l& target, std::shared_ptr<Tree_Chunk_Data<T>>& receiver)
-    {
-        //简化表示路径
-        auto& tree_group = X_sequence;
-        //只读查找无基准四叉树可用则直接返回
-        if (tree_group.empty())
-            return;
-
-        //借用基准四叉树把点坐标格式化为区块范围
-        Rect2l target_range{};
-        tree_group.front()->tree->inclusion_range_calcu(target_range, target);
-
-        //子节点数据缓冲
-        std::vector<std::shared_ptr<Tree_Chunk_Data<T>>> buffer{};
-        //转调范围查找重载
-        seek(target_range, buffer);
-        //取出单区块结果
-        if (!buffer.empty())
-            receiver = buffer.front();
-    }
-
-    //单区块信息获取（缺失则智能建树）
-    template<typename T>
-    void Quadtree_Manager<T>::get(const Point2l& target, std::shared_ptr<Tree_Chunk_Data<T>>& receiver)
-    {
-        //简化表示路径
-        auto& tree_group = X_sequence;
-        //获取模式下无基准四叉树则先智能建树
-        if (tree_group.empty())
-        {
-            //按目标点智能创建
-            quadtree_build_smart({ target });
-            //若建树失败则直接返回
-            if (tree_group.empty())
+            tree_build_smart_first({ { target_range.left, target_range.down } });
+            if (X_sequence.empty())
                 return;
         }
 
-        //借用基准四叉树把点坐标格式化为区块范围
-        Rect2l target_range{};
-        tree_group.front()->tree->inclusion_range_calcu(target_range, target);
+        //以基准树网格对齐查询范围
+        Rect2l aligned = target_range;
+        Tree_Record<T>* base = X_sequence.front();
+        base->tree->range_align(aligned, base->root, settings.block_size);
 
-        //子节点数据缓冲
-        std::vector<std::shared_ptr<Tree_Chunk_Data<T>>> buffer{};
-        //转调范围获取重载
-        get(target_range, buffer);
-        //取出单区块结果
-        if (!buffer.empty())
-            receiver = buffer.front();
+        //区块尺寸非正防御
+        int64_t block = static_cast<int64_t>(settings.block_size);
+        if (block <= 0)
+            return;
+
+        //网格列数与行数
+        int64_t width = (aligned.right - aligned.left + 1) / block;
+        int64_t height = (aligned.up - aligned.down + 1) / block;
+        if (width <= 0 || height <= 0)
+            return;
+
+        //逐格检查四个角点是否被覆盖
+        for (int64_t row = 0; row < height; row++)
+        {
+            for (int64_t col = 0; col < width; col++)
+            {
+                int64_t left = aligned.left + col * block;
+                int64_t right = left + block - 1;
+                int64_t up = aligned.up - row * block;
+                int64_t down = up - block + 1;
+                ensure_tree({ left, down });
+                ensure_tree({ right, down });
+                ensure_tree({ left, up });
+                ensure_tree({ right, up });
+            }
+        }
+    }
+
+    //区块查询/操作分派
+    template<typename T>
+    void Quadtree_Manager<T>::chunk_dispatch(const Rect2l& target_range, const Chunk_Mode& mode,
+        std::vector<Tree_Chunk_Data<T>>& receiver)
+    {
+        //只读模式不建树也不扩树
+        bool read_only = (mode == Chunk_Mode::Seek || mode == Chunk_Mode::Unload);
+
+        //若序列为空
+        if (X_sequence.empty())
+        {
+            //只读模式直接返回
+            if (read_only)
+                return;
+            //非只读模式先建立基准树
+            tree_build_smart_first({ { target_range.left, target_range.down } });
+            if (X_sequence.empty())
+                return;
+        }
+
+        //构建/获取模式先补齐范围内覆盖
+        if (mode == Chunk_Mode::Build || mode == Chunk_Mode::Get)
+            coverage_ensure(target_range);
+
+        //以基准树网格对齐查询范围
+        Rect2l aligned = target_range;
+        Tree_Record<T>* base = X_sequence.front();
+        base->tree->range_align(aligned, base->root, settings.block_size);
+
+        //快照四叉树序列，避免操作期间序列变化影响遍历
+        std::vector<Tree_Record<T>*> snapshot = X_sequence;
+
+        //逐树求交并执行区块操作
+        for (Tree_Record<T>* record : snapshot)
+        {
+            //计算四叉树管理范围
+            Rect2l tree_range = record->tree->rect_range_calcu(record->root, record->size);
+            //裁剪出本次操作范围
+            Rect2l region{};
+            if (!range_clip(aligned, tree_range, region))
+                continue;
+
+            //四叉树返回结果缓冲
+            std::vector<Tree_Chunk_Data<T>> buffer{};
+            //按模式执行区块操作
+            switch (mode)
+            {
+            case Chunk_Mode::Build:
+                record->tree->build(region);
+                break;
+            case Chunk_Mode::Seek:
+                record->tree->seek(region, buffer);
+                break;
+            case Chunk_Mode::Get:
+                record->tree->get(region, buffer);
+                break;
+            case Chunk_Mode::Unload:
+                record->tree->unload(region);
+                break;
+            }
+
+            //查找/获取模式收集结果
+            if (mode == Chunk_Mode::Seek || mode == Chunk_Mode::Get)
+            {
+                receiver.insert(receiver.end(),
+                    std::make_move_iterator(buffer.begin()),
+                    std::make_move_iterator(buffer.end()));
+            }
+        }
+    }
+
+    //区块构建 —— 单区块重载
+    template<typename T>
+    void Quadtree_Manager<T>::build(const Point2l& target, const std::shared_ptr<T>& data)
+    {
+        //确保目标坐标被四叉树覆盖
+        Tree_Record<T>* record = ensure_tree(target);
+        if (record == nullptr)
+            return;
+        //在归属树中构建区块
+        record->tree->build(target, data);
+    }
+
+    //区块构建 —— 范围重载
+    template<typename T>
+    void Quadtree_Manager<T>::build(const Rect2l& target_range)
+    {
+        //参数填充临时对象
+        std::vector<Tree_Chunk_Data<T>> temp{};
+        //启动区块构建模式
+        chunk_dispatch(target_range, Chunk_Mode::Build, temp);
+    }
+
+    //区块查找 —— 单区块重载
+    template<typename T>
+    bool Quadtree_Manager<T>::seek(const Point2l& target, Tree_Chunk_Data<T>& receiver)
+    {
+        //查找直属四叉树
+        Tree_Record<T>* record = tree_inclusion_seek(target);
+        if (record == nullptr)
+            return false;
+        //在归属树中查找区块
+        return record->tree->seek(target, receiver);
+    }
+
+    //区块查找 —— 范围重载
+    template<typename T>
+    void Quadtree_Manager<T>::seek(const Rect2l& target_range,
+        std::vector<Tree_Chunk_Data<T>>& receiver)
+    {
+        //启动区块查找模式
+        chunk_dispatch(target_range, Chunk_Mode::Seek, receiver);
+    }
+
+    //区块获取 —— 单区块重载
+    template<typename T>
+    bool Quadtree_Manager<T>::get(const Point2l& target, Tree_Chunk_Data<T>& receiver)
+    {
+        //确保目标坐标被四叉树覆盖
+        Tree_Record<T>* record = ensure_tree(target);
+        if (record == nullptr)
+            return false;
+        //在归属树中获取区块
+        return record->tree->get(target, receiver);
+    }
+
+    //区块获取 —— 范围重载
+    template<typename T>
+    void Quadtree_Manager<T>::get(const Rect2l& target_range,
+        std::vector<Tree_Chunk_Data<T>>& receiver)
+    {
+        //启动区块获取模式
+        chunk_dispatch(target_range, Chunk_Mode::Get, receiver);
+    }
+
+    //区块卸载 —— 单区块重载
+    template<typename T>
+    void Quadtree_Manager<T>::unload(const Point2l& target)
+    {
+        //查找直属四叉树
+        Tree_Record<T>* record = tree_inclusion_seek(target);
+        if (record == nullptr)
+            return;
+        //在归属树中卸载区块
+        record->tree->unload(target);
+    }
+
+    //区块卸载 —— 范围重载
+    template<typename T>
+    void Quadtree_Manager<T>::unload(const Rect2l& target_range)
+    {
+        //参数填充临时对象
+        std::vector<Tree_Chunk_Data<T>> temp{};
+        //启动区块卸载模式
+        chunk_dispatch(target_range, Chunk_Mode::Unload, temp);
     }
 }
-

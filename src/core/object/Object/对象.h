@@ -4,15 +4,27 @@
 
 namespace engine
 {
+    //对象前向声明
+    class Object;
+    //对象池前向声明
+    template <typename T, typename Projector, typename Key>
+        requires std::is_base_of_v<Object, T>
+    class Object_Pool;
+
 	//对象
 	class Object
 	{
-	protected:
+	private:
 		//对象ID
 		uint64_t object_ID = 0;
 		//合法标记
 		bool is_valid = false;
 	public:
+        //对象池友元声明
+        template <typename T, typename Projector, typename Key>
+            requires std::is_base_of_v<Object, T>
+        friend class Object_Pool;
+    public:
         //默认构造
         Object() = default;
         //带参构造
@@ -49,17 +61,6 @@ namespace engine
         //析构函数
         virtual ~Object() = default;
 
-		//ID设置
-		void ID_set(const uint64_t& ID)
-		{
-			//设置对象ID
-			this->object_ID = ID;
-		}
-		//对象有效性设置
-		void valid_set(bool valid)
-		{
-			this->is_valid = valid;
-		}
 		//ID获取
 		uint64_t ID(void) const
 		{

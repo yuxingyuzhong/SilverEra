@@ -91,6 +91,13 @@ namespace engine
 		//若权限密钥匹配
 		if (this->acl_key == acl_key)
 		{
+			//若事件为空
+			if (!evt)
+			{
+				logger.warn("Event_Terminal::事件为空\n已取消该事件发送");
+				return false;
+			}
+
 			//若注册单事件发送入口
 			if (terminal_port.check(Port_ID::Evt_Sender))
 			{

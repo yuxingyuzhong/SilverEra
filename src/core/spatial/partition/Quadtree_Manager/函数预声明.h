@@ -20,7 +20,7 @@ namespace engine
         Quadtree_Manager();
         //默认析构函数
         ~Quadtree_Manager();
-        
+
         // ---- 设置 ----
         //四叉树最小区块单元大小设置
         bool set_block_size(const uint64_t& block_size);
@@ -37,17 +37,28 @@ namespace engine
 
         // ---- 创建 ----
         //四叉树智能创建主函数
-        void quadtree_build_smart(const std::vector<Point2l>& coord_set);
+        void tree_build_smart(const std::vector<Point2l>& coord_set);
 
-        // ---- 查询 ----
-        //单区块信息查找（只读）
-        void seek(const Point2l& target, std::shared_ptr<Tree_Chunk_Data<T>>& receiver);
-        //范围区块信息查找（只读）
-        void seek(const Rect2l& target_range, std::vector<std::shared_ptr<Tree_Chunk_Data<T>>>& receiver);
-        //单区块信息获取（缺失则智能建树）
-        void get(const Point2l& target, std::shared_ptr<Tree_Chunk_Data<T>>& receiver);
-        //范围区块信息获取（缺失则智能建树）
-        void get(const Rect2l& target_range, std::vector<std::shared_ptr<Tree_Chunk_Data<T>>>& receiver);
+        // ---- 区块操作 ----
+        //区块构建 —— 单区块重载(可直接挂载数据)
+        void build(const Point2l& target, const std::shared_ptr<T>& data = nullptr);
+        //区块构建 —— 范围重载(不可直接挂载数据)
+        void build(const Rect2l& target_range);
+
+        //区块查找 —— 单区块重载(命中返回 true)
+        bool seek(const Point2l& target, Tree_Chunk_Data<T>& receiver);
+        //区块查找 —— 范围重载
+        void seek(const Rect2l& target_range, std::vector<Tree_Chunk_Data<T>>& receiver);
+
+        //区块获取 —— 单区块重载(命中或新建返回 true)
+        bool get(const Point2l& target, Tree_Chunk_Data<T>& receiver);
+        //区块获取 —— 范围重载
+        void get(const Rect2l& target_range, std::vector<Tree_Chunk_Data<T>>& receiver);
+
+        //区块卸载 —— 单区块重载
+        void unload(const Point2l& target);
+        //区块卸载 —— 范围重载
+        void unload(const Rect2l& target_range);
 
         // ---- 读取 ----
         //四叉树管理器设置获取
@@ -59,19 +70,32 @@ namespace engine
 
         // ---- 维护 ----
         //四叉树合并总函数
-        void quadtree_merge(void);
+        void tree_merge(void);
         //清空高速缓存
         void cache_clear(void);
         //清空所有四叉树
         void clear(void);
         //卸载——根节点重载
-        void quadtree_unload(const std::vector<Point2d>& root_set);
+        void tree_unload(const std::vector<Point2d>& root_set);
 
     private:
+        //区块操作模式枚举
+        enum class Chunk_Mode
+        {
+            //构建
+            Build,
+            //查找
+            Seek,
+            //获取
+            Get,
+            //卸载
+            Unload
+        };
+
         // ---- 数据成员 ----
-        
+
         //当前最大四叉树大小
-        uint64_t largest_tree_size = 0;  
+        uint64_t largest_tree_size = 0;
         //四叉树序列(依据根节点X轴坐标降序)
         std::vector<Tree_Record<T>*> X_sequence{};
         //四叉树高速缓存
@@ -80,7 +104,6 @@ namespace engine
             //缓存记录
             std::vector<Tree_Record<T>*> records{};
             //缓存范围
-            //范围边界由树边长推导，用 64 位整数承载
             std::vector<Rect2l> ranges{};
         }tree_cache;
         //管理器设置
@@ -90,65 +113,70 @@ namespace engine
 
         // ---------- 相邻四叉树筛选 ----------
         //直属四叉树查找
-        Tree_Record<T>* quadtree_inclusion_seek(const Point2l& target);
+        Tree_Record<T>* tree_inclusion_seek(const Point2l& target);
         //四叉树序列索引查找
-        std::optional<uint64_t> quadtree_index_seek(const Point2d& root) const;
+        std::optional<uint64_t> tree_index_seek(const Point2d& root) const;
+        //最近四叉树查找
+        Tree_Record<T>* nearest_tree(const Point2l& target) const;
+        //确保目标坐标被某棵四叉树覆盖
+        Tree_Record<T>* ensure_tree(const Point2l& target);
         //矩形筛选
-        void rectangle_filter(std::vector<Tree_Record<T>*>& receiver, const Tree_Record<T>* tree,
+        void rect_filter(std::vector<Tree_Record<T>*>& receiver, const Tree_Record<T>* tree,
             const Rect2l& range, const std::vector<Tree_Record<T>*>* tree_group = nullptr) const;
         //分类筛选
-        std::vector<Tree_Record<T>*> next_tree_classify(std::vector<Tree_Record<T>*>& receiver, const Tree_Record<T>* tree,
-            const std::vector<Tree_Record<T>*>& candidate) const;
+        std::vector<Tree_Record<T>*> neighbor_classify(std::vector<Tree_Record<T>*>& receiver,
+            const Tree_Record<T>* tree, const std::vector<Tree_Record<T>*>& candidate) const;
         //验证确认（模板）
         template<typename Screen>
-        void next_tree_verify(std::vector<Tree_Record<T>*>& receiver, const Tree_Record<T>* tree,
+        void neighbor_verify(std::vector<Tree_Record<T>*>& receiver, const Tree_Record<T>* tree,
             const std::vector<Tree_Record<T>*>& candidate, Screen way) const;
         //候选树筛选
-        void candidate_tree_filter(std::vector<Tree_Record<T>*>& receiver, const Tree_Record<T>* tree,
+        void candidate_filter(std::vector<Tree_Record<T>*>& receiver, const Tree_Record<T>* tree,
             const std::vector<Tree_Record<T>*>& candidate) const;
         //相邻四叉树查找总函数
-        void next_tree_seek(std::vector<Tree_Record<T>*>& receiver, const Tree_Record<T>* tree, const std::vector<Tree_Record<T>*>* tree_group = nullptr) const;
+        void neighbor_seek(std::vector<Tree_Record<T>*>& receiver, const Tree_Record<T>* tree,
+            const std::vector<Tree_Record<T>*>* tree_group = nullptr) const;
 
         // ---------- 四叉树扩大管理 ----------
         //回调管理四叉树查找
         Tree_Record<T>* callback_tree_seek(const Point2d& root) const;
         //新四叉树管理范围计算
-        void new_tree_range_calcu(const Tree_Record<T>* primary_tree, const Point2l& seek, Rect2l& new_tree) const;
+        void new_tree_range_calcu(const Tree_Record<T>* primary_tree, const Point2l& target,
+            Rect2l& new_tree) const;
         //扩大管理方法
-        bool tree_expand_approve(const Point2d& root, const Point2l& seek, bool internal = false);
+        bool tree_expand_approve(const Point2d& root, const Point2l& target, bool internal = false);
 
         // ---------- 四叉树合并 / 卸载 ----------
         //四叉树创建
-        void quadtree_build(Point2d root = {0.5,0.5}, uint64_t tree_size = 256);
+        bool tree_build(Point2d root = {0.5,0.5}, uint64_t tree_size = 256);
         //合并：收集候选组合
-        void quadtree_merge_collect(std::vector<std::vector<Tree_Record<T>*>>& receiver) const;
+        void merge_collect(std::vector<std::vector<Tree_Record<T>*>>& receiver) const;
         //合并：精确筛选组合
-        void quadtree_merge_filter(const std::vector<std::vector<Tree_Record<T>*>>& candidate,
+        void merge_filter(const std::vector<std::vector<Tree_Record<T>*>>& candidate,
             std::vector<std::vector<Tree_Record<T>*>>& receiver) const;
         //卸载——序列索引重载
-        void quadtree_unload(std::vector<uint64_t>& index_set);
+        void unload_index(std::vector<uint64_t>& index_set);
 
         // ---------- 智能创建辅助 ----------
         //计算初始包围矩形及最大区块划分参数
-        void prepare_smart_create_params(const std::vector<Point2l>& coord_set,
-            Rect2l& recta_range, uint64_t& father_block_num_all,
+        void smart_params_prepare(const std::vector<Point2l>& coord_set,
+            Rect2l& rect_range, uint64_t& father_block_num_all,
             uint64_t& father_block_size) const;
-        //单个最大区块的深度划分（递归复制子集版）
-        void divide_single_father_block(const std::vector<Point2l>& coord_set,
+        //单个最大区块的深度划分
+        void father_block_divide(const std::vector<Point2l>& coord_set,
             int64_t block_left, int64_t block_right, int64_t block_up, int64_t block_down,
-            uint64_t block_size, uint64_t coord_count_in_parent,
-            std::vector<Point2d>& node_centers,
+            uint64_t block_size, std::vector<Point2d>& node_centers,
             std::vector<uint64_t>& tree_sizes) const;
+        //空序列下的首轮智能创建
+        void tree_build_smart_first(const std::vector<Point2l>& coord_set);
 
         // ---------- 查询辅助 ----------
-        //查询范围列表修改
-        void target_range_amend(const Rect2l& excel_range, std::vector<bool>& excel,
-            const Rect2l& target_range) const;
-        //查询结果列表元素坐标化
-        void excel_element_to_coord(const Rect2l& excel_range, const uint64_t& element_ID,
-            Point2l& receiver) const;
-        //区块查询（read_only 决定只读查找或缺失智能建树）
-        void chunk_query(const Rect2l& target_range,
-            std::vector<std::shared_ptr<Tree_Chunk_Data<T>>>& receiver, bool read_only);
+        //范围裁剪
+        bool range_clip(const Rect2l& lhs, const Rect2l& rhs, Rect2l& receiver) const;
+        //确保范围内每个区块都有四叉树覆盖
+        void coverage_ensure(const Rect2l& target_range);
+        //区块查询/操作分派
+        void chunk_dispatch(const Rect2l& target_range, const Chunk_Mode& mode,
+            std::vector<Tree_Chunk_Data<T>>& receiver);
     };
 }

@@ -83,6 +83,30 @@ namespace engine
             //读取根目录键
             return rules.root_get();
         }
+        //规则优先级模式设置（级别与归属的判定先后；同模式＝重复设置返回 false）
+        bool priority_set(Rule_Priority mode)
+        {
+            //登记优先级模式并回传结果
+            return rules.priority_set(mode);
+        }
+        //规则优先级模式查询
+        Rule_Priority priority_get(void) const
+        {
+            //读取优先级模式
+            return rules.priority_get();
+        }
+        //全局取反开关设置（对许可判定最终结果取反；同值＝重复设置返回 false）
+        bool verdict_invert_set(bool invert)
+        {
+            //登记全局取反开关并回传结果
+            return rules.verdict_invert_set(invert);
+        }
+        //全局取反开关查询
+        bool verdict_invert_get(void) const
+        {
+            //读取全局取反开关
+            return rules.verdict_invert_get();
+        }
         //文件输出许可设置（file → 是否允许输出；同键同值＝重复设置返回 false）
         bool file_rule_set(const std::string& file, bool allowed)
         {
@@ -101,10 +125,10 @@ namespace engine
             //登记级别许可并回传结果
             return rules.level_allowed_set(level, allowed);
         }
-        //输出许可表清空（保留根目录设置）
+        //输出许可表清空（保留根目录设置；优先级模式与全局取反开关复位为默认）
         void rule_clear(void)
         {
-            //清空三张许可表
+            //清空三张许可表并复位优先级模式、全局取反开关
             rules.clear();
         }
         //输出流绑定（路径节点绑定文件输出流，目录节点绑定后其后代共享该流）

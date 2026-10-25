@@ -51,6 +51,14 @@ namespace engine
 					v);
 			}
 		};
+		//对象记录
+		struct Object_Record
+		{
+			//对象ID
+			uint64_t ID = 0;
+			//对象索引
+			uint64_t index = 0;
+		};
 
 		//ID分配器
 		Number_Allocator<uint64_t> ID_allocator;
@@ -88,6 +96,7 @@ namespace engine
 		//析构函数
 		~Object_Pool()
 		{}
+
 		//对象排列方式设置
 		template <typename Compare = std::ranges::less>
 			requires std::same_as<Compare, std::ranges::less> ||
@@ -130,7 +139,8 @@ namespace engine
 			else
 				logger.warn("Object_Pool::当前已为目标模式");
 		}
-		//对象查找
+
+		//对象查找 —— 非常量重载
 		typename std::vector<T>::iterator find(const Key& key)
 		{
 			//若为哈希定位模式
@@ -162,74 +172,68 @@ namespace engine
 		//对象查找 —— 常量重载
 		typename std::vector<T>::const_iterator find(const Key& key) const
 		{
-			//若为哈希定位模式
-			if (!is_sorted)
-			{
-				//获取索引映射迭代器
-				auto it = mapping.find(key);
-				//若迭代器有效
-				if (it != mapping.end())
-					return objects.begin() + it->second;
-				//若不存在目标对象则返回超尾迭代器
-				else
-					return objects.end();
-			}
-			//若为排序模式
-			else
-			{
-				//获取目标对象索引
-				std::optional<uint64_t> object_index = detail::binary_search
-				(begin(), end(), key, compare, projector);
-				//若返回索引有效
-				if (object_index.has_value())
-					return begin() + object_index.value();
-				//若不存在目标对象则返回超尾迭代器
-				else
-					return end();
-			}
+			//复用非常量重载完成查找，迭代器隐式转换为常量迭代器
+			return const_cast<Object_Pool*>(this)->find(key);
 		}
-		//对象添加
+		//对象添加 —— 单对象重载
 		uint64_t build(T object = {})
 		{
-			//分配新对象索引
-			uint64_t object_index = index_allocator.get();
-			//若槽位不足则直接创建新对象
-			if (object_index >= objects.size())
-				objects.push_back(std::move(object));
-			//若获得旧槽位则销毁旧对象并原地重建新对象
-			else
+			//构造单元素对象集合
+			std::vector<T> object_set{};
+			object_set.push_back(std::move(object));
+			//调用多对象重载
+			return build(std::move(object_set)).front();
+		}
+		//对象添加 —— 多对象重载
+		std::vector<uint64_t> build(std::vector<T> object_set)
+		{
+			//ID存储缓冲
+			std::vector<uint64_t> buffer{};
+			//构建对象
+			for (uint64_t build_time = 0; build_time < object_set.size(); build_time++)
 			{
-				//析构旧对象
-				std::destroy_at(&objects[object_index]);
-				//在旧槽位原地构造新对象
-				std::construct_at(&objects[object_index], std::move(object));
+				//分配新对象索引
+				uint64_t object_index = index_allocator.get();
+				//若槽位不足则直接创建新对象
+				if (object_index >= objects.size())
+					objects.push_back(std::move(object_set[build_time]));
+				//若获得旧槽位则销毁旧对象并原地重建新对象
+				else
+				{
+					//析构旧对象
+					std::destroy_at(&objects[object_index]);
+					//在旧槽位原地构造新对象
+					std::construct_at(&objects[object_index], std::move(object_set[build_time]));
+				}
+
+				//若当前存在无效区间
+				if (min_valid_index > 0)
+				{
+					//将新对象交换至无效区边界并收缩无效区
+					std::swap(objects[object_index], objects[--min_valid_index]);
+					//更新新对象索引
+					object_index = min_valid_index;
+				}
+
+				//获取新对象
+				auto& new_object = objects[object_index];
+				//分配对象ID
+				new_object.object_ID = (ID_allocator.get());
+				//缓冲对象ID
+				buffer.push_back(new_object.ID());
+				//设置记录有效
+				new_object.is_valid = true ;
+
+				//若为哈希定位模式则记录索引映射
+				if (!is_sorted)
+					mapping.insert_or_assign(projector(new_object), object_index);
 			}
+			//若为排序模式则重排序对象
+			if (is_sorted)
+				sort();
 
-			//若当前存在无效区间
-			if (min_valid_index > 0)
-			{
-				//将新对象交换至无效区边界并收缩无效区
-				std::swap(objects[object_index], objects[--min_valid_index]);
-				//更新新对象索引
-				object_index = min_valid_index;
-			}
-
-			//获取新对象
-			auto& new_object = objects[object_index];
-			//分配对象ID
-			new_object.ID_set(ID_allocator.get());
-			//设置记录有效
-			new_object.valid_set(true);
-
-			//若为哈希定位模式则记录索引映射
-			if (!is_sorted)
-				mapping.insert_or_assign(projector(new_object), object_index);
-			//若为排序模式则提示调用方重排序
-			else
-				logger.info("Object_Pool::请自行调用sort()方法重排序对象");
-
-			//返回对象ID
-			return new_object.ID();
+			//返回对象ID集合
+			return buffer;
 		}
 		//对象排序
 		bool sort(void)
@@ -252,9 +256,19 @@ namespace engine
 		//对象卸载 —— 多对象重载
 		void unload(const std::vector<Key>& keys)
 		{
-			//逐个卸载目标对象
+			//去重哈希容器
+			std::unordered_set<Key> removed_keys;
+			//对象记录集合
+			std::vector<Object_Record> records{};
+			//收集目标卸载对象信息
 			for (const auto& key : keys)
 			{
+				//若出现重复键则略过
+				if (removed_keys.count(key))
+					continue;
+
+				//记录当前查找键
+				removed_keys.insert(key);
 				//获取目标对象迭代器
 				auto it = find(key);
 				//若目标迭代器无效
@@ -263,38 +277,47 @@ namespace engine
 					logger.warn("Object_Pool::目标对象不存在: {}", key);
 					continue;
 				}
-				//记录目标对象绝对槽位
-				uint64_t target_index = it - objects.begin();
-				//获取目标对象ID
-				uint64_t ID = it->ID();
+				//记录目标对象信息
+				records.push_back({ it->ID(),static_cast<uint64_t>(it - objects.begin())});
+				//若当前为哈希定位模式则卸载索引映射
+				if(!is_sorted)
+					mapping.erase(key);
+			}
+
+			//升序排列索引防止失效
+			std::ranges::sort(records,std::ranges::less(),&Object_Record::index);
+
+			//逐个卸载目标对象
+			for (const Object_Record& record : records)
+			{
+				//获取目标对象
+				auto& object = objects[record.index];
 				//回收目标对象ID
-				ID_allocator.recycle(ID);
+				ID_allocator.recycle(record.ID);
 				//设置预留无效ID
-				it->ID_set(0);
+				object.object_ID = min_ID - 1;
 				//设置目标对象记录不合法
-				it->valid_set(false);
+				object.is_valid = false;
 
 				//若目标不在无效区边界则交换到边界
-				if (target_index != min_valid_index)
+				if (record.index != min_valid_index)
 				{
-					std::swap(objects[target_index], objects[min_valid_index]);
+					std::swap(object, objects[min_valid_index]);
 					//若为哈希定位模式则同步更新被交换有效对象映射索引
 					if (!is_sorted)
-						mapping.insert_or_assign(projector(objects[target_index]), target_index);
+						mapping.insert_or_assign(projector(object), record.index);
 				}
 				//回收目标对象索引
 				index_allocator.recycle(min_valid_index);
 				//更新有效索引起点
 				min_valid_index++;
-
-				//若为哈希定位模式则取消被卸载对象映射
-				if (!is_sorted)
-					mapping.erase(key);
-				//若为排序模式则重排序，保证后续 find 的二分有效
-				else
-					sort();
 			}
+
+			//若当前为排序模式则重排序对象集合
+			if (is_sorted)
+			    sort();
 		}
+
 		//对象清除
 		void clear(void)
 		{
@@ -320,14 +343,6 @@ namespace engine
 			//若为哈希定位模式则清空所有索引映射
 			if (!is_sorted)
 				mapping.clear();
-			//若为排序模式则清空所有排序信息
-			else
-			{
-				//重置为哈希定位模式
-				is_sorted = false;
-				//重置比较方式(默认升序)
-				compare = std::ranges::less();
-			}
 		}
 
 		//对象池槽位预分配
@@ -344,9 +359,9 @@ namespace engine
 					//构建新对象槽位
 					objects.push_back({});
 					//设置无效ID
-					objects.back().ID_set(min_ID - 1);
+					objects.back().object_ID = min_ID - 1;
 					//设置对象非法
-					objects.back().valid_set(false);
+					objects.back().is_valid = false;
 				}
 				//将预留槽位划入无效区
 				min_valid_index = num;
@@ -373,7 +388,8 @@ namespace engine
 		//有效元素首迭代器获取 —— 常量重载
 		typename std::vector<T>::const_iterator begin(void) const
 		{
-			return objects.begin() + min_valid_index;
+			//转调非常量重载获取有效元素首迭代器
+			return const_cast<Object_Pool*>(this)->begin();
 		}
 		//超尾迭代器获取 —— 非常量重载
 		typename std::vector<T>::iterator end(void)
@@ -386,48 +402,5 @@ namespace engine
 			return objects.end();
 		}
 
-		//迭代器转换索引 —— 非常量迭代器重载
-		uint64_t index(const typename std::vector<T>::iterator& iterator)
-		{
-			return iterator - begin();
-		}
-		//迭代器转换索引 —— 常量迭代器重载
-		uint64_t index(const typename std::vector<T>::const_iterator& iterator) const
-		{
-			return iterator - begin();
-		}
-
-		//[]运算符重载 —— 定位键重载
-		T& operator[](const Key& key)
-		{
-			//获取目标对象迭代器
-			auto it = find(key);
-			//调用方须保证目标对象存在
-			assert(it != objects.end());
-			return *it;
-		}
-		//[]运算符重载 —— 定位键重载（常量版本）
-		const T& operator[](const Key& key) const
-		{
-			//获取目标对象迭代器
-			auto it = find(key);
-			//调用方须保证目标对象存在
-			assert(it != objects.end());
-			return *it;
-		}
-		//相对偏移访问 —— 非常量重载
-		T& object_at(uint64_t offset)
-		{
-			//调用方须保证偏移在有效区内
-			assert(offset < size());
-			return *(begin() + offset);
-		}
-		//相对偏移访问 —— 常量重载
-		const T& object_at(uint64_t offset) const
-		{
-			//调用方须保证偏移在有效区内
-			assert(offset < size());
-			return *(begin() + offset);
-		}
 	};
 }

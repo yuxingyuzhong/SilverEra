@@ -30,24 +30,31 @@ namespace engine
 		uint64_t block_size = 0;
 	};
 
-	//节点数据结构体
+	//区块信息结构体
 	template<typename T>
 	struct Tree_Chunk_Data
 	{
 		//默认构造函数
-		Tree_Chunk_Data() {}
-		//列表构造函数：直接接收坐标和 T shared_ptr
-		Tree_Chunk_Data(float x, float y, std::shared_ptr<T> ptr)
+		Tree_Chunk_Data() = default;
+		//列表构造函数：直接接收坐标和数据
+		Tree_Chunk_Data(double x, double y, std::shared_ptr<T> ptr)
 		{
-			node.X = x;
-			node.Y = y;
-			data = ptr;
+			center.X = x;
+			center.Y = y;
+			data = std::move(ptr);
+		}
+		//列表构造函数：直接接收中心坐标和数据
+		Tree_Chunk_Data(const Point2d& point, std::shared_ptr<T> ptr)
+		{
+			center = point;
+			data = std::move(ptr);
 		}
 		//默认析构函数
-		~Tree_Chunk_Data() {}
+		~Tree_Chunk_Data() = default;
 
-		Point2d node = { 0.5f, 0.5f };  // 使用 0.5f 强调 float 类型
-		//数据
+		//区块中心坐标
+		Point2d center = { 0.5,0.5 };
+		//区块挂载数据
 		std::shared_ptr<T> data = nullptr;
 	};
 }

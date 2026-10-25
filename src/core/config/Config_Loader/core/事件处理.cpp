@@ -62,8 +62,8 @@ namespace engine
             { "Believed_Root", "Unload" },
             { "Route", "Load" },
             { "Route", "Unload" },
-            { "Config", "Load" },
-            { "Config", "Unload" },
+            { "Config_File", "Load" },
+            { "Config_File", "Unload" },
         };
         //返回预定义事件标识表
         return reserved_events;
@@ -228,7 +228,7 @@ namespace engine
         }
 
         //对象配置加载
-        if (evt->category == "Config" && evt->tag == "Load")
+        if (evt->category == "Config_File" && evt->tag == "Load")
         {
             //若载荷缺少对象字段
             if (!detail::field_check<string>(evt->config,"object"))
@@ -244,7 +244,7 @@ namespace engine
         }
 
         //对象配置卸载
-        if (evt->category == "Config" && evt->tag == "Unload")
+        if (evt->category == "Config_File" && evt->tag == "Unload")
         {
             //若载荷缺少对象字段
             if (!detail::field_check<string>(evt->config, "object"))

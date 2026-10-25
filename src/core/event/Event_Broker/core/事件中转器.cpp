@@ -51,6 +51,13 @@ namespace engine
     //事件接收 —— 单事件重载
     void Event_Broker::receive(shared_ptr<Event> evt)
     {
+        //若事件为空
+        if (!evt)
+        {
+            logger.warn("Event_Broker::事件为空\n已略过该事件处理");
+            return;
+        }
+
         //简化表示路径
         auto& sender = evt->sender;
         auto& receiver = evt->receiver;
@@ -74,13 +81,17 @@ namespace engine
             return;
         }
 
-        //若为定向发送且目标存在
-        if (!receiver.empty() && mapping.count(receiver))
+        //若为定向发送
+        if (!receiver.empty())
         {
-            //获取目标权限密钥
-            uint64_t target_key = mapping[receiver];
-            //使用密钥映射事件接收端口定向发送事件
-            receivers[target_key](evt);
+            //若目标存在
+            if(mapping.count(receiver))
+            {
+                //获取目标权限密钥
+                uint64_t target_key = mapping[receiver];
+                //使用密钥映射事件接收端口定向发送事件
+                receivers[target_key](evt);
+            }
             //处理下一事件
             return;
         }
@@ -121,7 +132,10 @@ namespace engine
     {
         //若事件为空
         if (!evt)
+        {
             logger.warn("Event_Broker::当前事件未分配内存\n已略过该事件");
+            return;
+        }
 
         //简化表示路径
         auto& config = evt->config;

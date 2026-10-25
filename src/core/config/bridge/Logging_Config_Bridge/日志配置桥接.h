@@ -48,6 +48,10 @@ namespace engine
 
         //根目录配置应用（root 字段 → 日志根目录作用域）
         void root_apply(const nlohmann::json& config);
+        //规则优先级配置应用（priority 字段 → 级别与归属的判定先后）
+        void priority_apply(const nlohmann::json& config);
+        //全局取反配置应用（verdict_invert 字段 → 是否对许可判定最终结果取反）
+        void verdict_apply(const nlohmann::json& config);
         //输出流配置应用（streams 数组 → 路径节点绑定文件输出流）
         void streams_apply(const nlohmann::json& config);
         //文件许可配置应用（files 对象 → 文件输出白/黑名单）

@@ -3,7 +3,7 @@
 #include "Engine/EngineCore/common/前置头文件包含.h"
 //获取预定义坐标类型
 #include "../../common/core/坐标类型.h"
-//获取预定义通信结构体(用于函数返回值)
+//获取预定义数据结构(用于函数返回值)
 #include "数据结构.h"
 
 namespace engine
@@ -13,13 +13,13 @@ namespace engine
 	class Quadtree
 	{
 	private:
-		//节点类型枚举
-		enum Node_Type
+		//节点种类枚举
+		enum class Node_Kind
 		{
 			//中间节点
-			MIDDLE,
+			Middle,
 			//叶子节点
-			LEAF
+			Leaf
 		};
 		//节点结构体
 		struct Node
@@ -28,40 +28,39 @@ namespace engine
 			//中间节点存放四个子节点指针，叶子节点存放区块数据
 			std::variant<std::array<std::shared_ptr<Node>, 4>, std::shared_ptr<T>> data;
 
-			//按参数类型构造(默认为中间节点)
-			explicit Node(Node_Type mode = Node_Type::MIDDLE,std::shared_ptr<T> external_data = nullptr)
+			//按节点种类构造(默认为中间节点)
+			explicit Node(Node_Kind kind = Node_Kind::Middle, std::shared_ptr<T> external_data = nullptr)
 			{
 				//若为中间节点
-				if (mode == Node_Type::MIDDLE)
+				if (kind == Node_Kind::Middle)
 					//子节点指针一律置空
 					data.template emplace<0>(std::array<std::shared_ptr<Node>, 4>{ nullptr, nullptr, nullptr, nullptr });
 				//若为叶子节点且外界传入数据
-				else if(external_data)
-					//分配区块数据存储
-					data.template emplace<1>(external_data);
+				else if (external_data)
+					//挂载外界数据
+					data.template emplace<1>(std::move(external_data));
+				//若为叶子节点且外界未传入数据
 				else
-					//分配区块数据存储
+					//分配默认区块数据
 					data.template emplace<1>(std::shared_ptr<T>(new(std::nothrow) T()));
 			}
 		};
-		//节点操作模式枚举
-		enum class Operate_Mode
+		//区块操作模式枚举
+		enum class Chunk_Mode
 		{
+			//构建
 			Build,
+			//查找
 			Seek,
+			//获取
 			Get,
+			//卸载
 			Unload
 		};
-		//查找区域分布情况枚举
-		enum Range_Relation
-		{
-			PART_IN,
-			NONE_IN
-		};
 		//节点递归方向枚举
-		enum Recur_Direct { NW, NE, SW, SE };
+		enum Quadrant { NW, NE, SW, SE };
 
-		//四叉树跟几点
+		//四叉树根节点
 		Node root;
 		//四叉树状态记录
 		Tree_State state;
@@ -71,12 +70,12 @@ namespace engine
 
 	public:
 		//构造函数
-		Quadtree(const uint64_t& size = 256, const Point2d& root = { 0.5,0.5 });
+		explicit Quadtree(const uint64_t& size = 256, const Point2d& root = { 0.5,0.5 });
 		//析构函数
-		~Quadtree(void);
+		~Quadtree(void) = default;
 
 		// ---- 设置 ----
-		
+
 		//最小区块单元大小设置
 		bool set_block_size(const uint64_t& size);
 		//四叉树边长上限设置
@@ -86,23 +85,21 @@ namespace engine
 		(const std::function<bool(Point2d root, Point2l target)>& cb);
 
 		// ---- 区块操作 ----
-	 
+
 		//区块构建 —— 单区块重载(可直接挂载数据)
-		void build(const Point2l& target,const std::shared_ptr<T>& data = nullptr);
+		void build(const Point2l& target, const std::shared_ptr<T>& data = nullptr);
 		//区块构建 —— 范围重载(不可直接挂载数据)
 		void build(const Rect2l& target_range);
 
-		//区块查找 —— 单区块重载
-		void seek(const Point2l& target, std::shared_ptr<Tree_Chunk_Data<T>>& receiver) ;
+		//区块查找 —— 单区块重载(命中返回 true)
+		bool seek(const Point2l& target, Tree_Chunk_Data<T>& receiver);
 		//区块查找 —— 范围重载
-		void seek(const Rect2l& target_range,
-			std::vector<std::shared_ptr<Tree_Chunk_Data<T>>>& receiver) ;
+		void seek(const Rect2l& target_range, std::vector<Tree_Chunk_Data<T>>& receiver);
 
-		//区块获取 —— 单区块重载
-		void get(const Point2l& target, std::shared_ptr<Tree_Chunk_Data<T>>& receiver);
+		//区块获取 —— 单区块重载(命中或新建返回 true)
+		bool get(const Point2l& target, Tree_Chunk_Data<T>& receiver);
 		//区块获取 —— 范围重载
-		void get(const Rect2l& target_range,
-			std::vector<std::shared_ptr<Tree_Chunk_Data<T>>>& receiver);
+		void get(const Rect2l& target_range, std::vector<Tree_Chunk_Data<T>>& receiver);
 
 		//区块卸载 —— 单区块重载
 		void unload(const Point2l& target);
@@ -115,56 +112,64 @@ namespace engine
 		//四叉树扩大
 		bool tree_expand(void);
 
-		// ———— 底层计算工具 ————
-	private:
-		//递归级数计算
-		void recur_level_calcu(int& address_series) const;
+		// ———— 几何计算工具（管理器复用） ————
 	public:
 		//点属区块范围计算
-		void inclusion_range_calcu(Rect2l& receiver, const Point2l& target);
+		Rect2l chunk_range_calcu(const Point2l& target) const;
 
 		//子节点范围计算
-		void child_node_range_calcu(const int& recur_direct, Rect2l& child_range,
-			const Rect2l& parent_range) const;
+		Rect2l child_range_calcu(const int& quadrant, const Rect2l& parent_range) const;
 
-		//四叉树管理范围计算
-		void manage_range_calcu(Rect2l& receiver,const Point2d& root,const uint64_t tree_size) const;
+		//范围中心计算
+		Point2d center_calcu(const Rect2l& range) const;
 
-		//待查询范围格式化
-		void target_range_format(Rect2l& target_range,const Point2d& root, const uint64_t block_size) const;
+		//矩形范围计算
+		Rect2l rect_range_calcu(const Point2d& root, const uint64_t& size) const;
 
-		//可查询范围计算
-		Point2d seekable_range_calcu(const Rect2l& target_range, Rect2l& seekable_range) const;
+		//待查询范围格式化(对齐到区块网格)
+		void range_align(Rect2l& target_range, const Point2d& root, const uint64_t& block_size) const;
+
+		//可查询范围求交(返回越界标记)
+		Point2d range_intersect(const Rect2l& target_range, Rect2l& reachable_range) const;
+
 	private:
-		//查询范围关系获取
-		bool range_relation_get(const Rect2l& target_range, const Rect2l& node_range) const;
+		//递归级数计算
+		int depth_calcu(void) const;
+
+		//范围相交判定
+		bool range_overlap_check(const Rect2l& target_range, const Rect2l& node_range) const;
 
 		// ———— 结构维护 ————
 	private:
-		//子节点递归
-		bool child_node_recur(Node*& this_node, const int& direct, const Node_Type& type,bool read_only, const std::shared_ptr<T>& external_data = nullptr);
+		//子节点推进
+		bool child_step(Node*& this_node, const int& quadrant, const Node_Kind& kind,
+			bool read_only, const std::shared_ptr<T>& external_data = nullptr);
 
-		//递归叶子
-		void leaf_recur(const Rect2l& target_range, const Rect2l& parent_range, Operate_Mode mode,
-			int now_level, const int& max_level,Node* parent_node,
-			std::vector<std::shared_ptr<Tree_Chunk_Data<T>>>& receiver,
-			const std::shared_ptr<T>& data = nullptr);
+		//区块递归
+		void chunk_recur(Node* node, const Rect2l& node_range, const Rect2l& target_range,
+			int now_level, const int& max_level, bool read_only,
+			const Chunk_Mode& mode, std::vector<Tree_Chunk_Data<T>>& receiver,
+			const std::shared_ptr<T>& data);
+
+		//叶子槽操作
+		void leaf_slot_apply(Node* node, const Rect2l& node_range, const Rect2l& target_range,
+			const Chunk_Mode& mode, bool read_only,
+			std::vector<Tree_Chunk_Data<T>>& receiver,
+			const std::shared_ptr<T>& data);
 
 		//区块操作 —— 单区块重载
-		void chunk_operate(const Point2l& target,Operate_Mode mode, 
-			std::shared_ptr<Tree_Chunk_Data<T>>& receiver,
+		void chunk_dispatch(const Point2l& target, const Chunk_Mode& mode,
+			std::vector<Tree_Chunk_Data<T>>& receiver,
 			const std::shared_ptr<T>& data = nullptr);
 
-		//区块操作 —— 范围区块重载
-		void chunk_operate(const Rect2l& target_range, Operate_Mode mode, 
-			std::vector<std::shared_ptr<Tree_Chunk_Data<T>>>& receiver,
+		//区块操作 —— 范围重载
+		void chunk_dispatch(const Rect2l& target_range, const Chunk_Mode& mode,
+			std::vector<Tree_Chunk_Data<T>>& receiver,
 			const std::shared_ptr<T>& data = nullptr);
 
 		// ———— 查询前置支撑 ————
 	private:
-
-		//范围查询可行性分析
-		void seekable_analyse(const Rect2l& format_range, Rect2l& seekable_range, bool read_only);
-
+		//扩大可行性分析
+		void expand_analyse(const Rect2l& target_range, Rect2l& reachable_range, bool read_only);
 	};
 }
