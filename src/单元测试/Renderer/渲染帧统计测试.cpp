@@ -1,4 +1,4 @@
-﻿/*
+/*
 渲染帧统计测试（L2 隐藏窗口）
 覆盖：未初始化取帧统计为零；空帧（无绘制项）的帧数推进与帧时间；
       绘制项数与实例数累计与登记项一致（逐次绘制 / 实例化绘制混合）；
@@ -173,6 +173,8 @@ TEST_F(Renderer_Stats_Test, 实际绘制量等于登记量)
 	ASSERT_TRUE(renderer.init(hidden_config()));
 	engine::Mesh_Handle mesh = 0;
 	ASSERT_TRUE(renderer.mesh_load(mesh, triangle_data()));
+	//本用例验证「登记项完整性」，故关闭静态合批（合批会让相邻等价项合并为一次实例化绘制）
+	renderer.static_batching_set(false);
 	//三帧：分别登记 1 / 2 / 0 个绘制项
 	for (uint32_t index = 0; index < 2; ++index)
 		ASSERT_TRUE(renderer.mesh_draw(mesh, nullptr));
