@@ -517,3 +517,67 @@ TEST_F(Renderer_Stats_Test, 离屏路径无呈现段)
 	renderer.mesh_unload(mesh);
 	renderer.render_target_destroy(target);
 }
+
+/*
+主机侧分段累计口径（第一百三十四轮）
+连续 4 帧后：录制累计 > 0，三段累计之和 ≤ frame_total_ms；清零后三段累计归零。
+*/
+TEST_F(Renderer_Stats_Test, 主机侧分段累计)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, triangle_data()));
+	for (uint32_t index = 0; index < 4; ++index)
+	{
+		ASSERT_TRUE(renderer.mesh_draw(mesh, nullptr));
+		ASSERT_TRUE(renderer.frame_render());
+	}
+	engine::Frame_Stats stats = renderer.frame_stats_get();
+	RecordProperty("host_record_total_ms", stats.host_record_total_ms);
+	RecordProperty("frame_total_ms", stats.frame_total_ms);
+	EXPECT_GT(stats.host_record_total_ms, 0.0) << "录制累计未累加";
+	EXPECT_GE(stats.host_submit_total_ms, 0.0);
+	EXPECT_GE(stats.host_present_total_ms, 0.0);
+	EXPECT_LE(stats.host_record_total_ms + stats.host_submit_total_ms + stats.host_present_total_ms,
+		stats.frame_total_ms + 0.01) << "三段累计之和超出主机侧累计";
+
+	//清零：三段累计归零，即时量保持
+	const double record_last = stats.host_record_ms;
+	renderer.frame_stats_reset();
+	engine::Frame_Stats cleared = renderer.frame_stats_get();
+	EXPECT_EQ(cleared.frame_total_ms, 0.0);
+	EXPECT_EQ(cleared.host_record_total_ms, 0.0);
+	EXPECT_EQ(cleared.host_submit_total_ms, 0.0);
+	EXPECT_EQ(cleared.host_present_total_ms, 0.0);
+	EXPECT_EQ(cleared.host_record_ms, record_last);
+
+	renderer.mesh_unload(mesh);
+}
+
+/*
+离屏累计不含呈现段（第一百三十四轮）
+渲染到离屏目标两帧：host_present_total_ms 恒 0，录制 ＋ 提交累计 ≤ frame_total_ms。
+*/
+TEST_F(Renderer_Stats_Test, 离屏累计不含呈现段)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	uint64_t target = 0;
+	ASSERT_TRUE(renderer.render_target_create(target, renderer.extent_width(), renderer.extent_height()));
+	renderer.render_target_set(target);
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, triangle_data()));
+	for (uint32_t index = 0; index < 2; ++index)
+	{
+		ASSERT_TRUE(renderer.mesh_draw(mesh, nullptr));
+		ASSERT_TRUE(renderer.frame_render());
+	}
+	engine::Frame_Stats stats = renderer.frame_stats_get();
+	EXPECT_GT(stats.host_record_total_ms, 0.0);
+	EXPECT_EQ(stats.host_present_total_ms, 0.0) << "离屏帧不应累计呈现段";
+	EXPECT_LE(stats.host_record_total_ms + stats.host_submit_total_ms, stats.frame_total_ms + 0.01);
+
+	renderer.mesh_unload(mesh);
+	renderer.render_target_destroy(target);
+}
