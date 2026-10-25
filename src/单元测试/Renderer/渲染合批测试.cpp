@@ -352,3 +352,38 @@ TEST_F(Renderer_Scene_Test, 透明档几何不参与合批)
 
 	renderer.mesh_unload(mesh);
 }
+
+/*
+合批收益可观测（第一百三十五轮）
+同一渲染器：关闭合批时 5 次同状态绘制不产生合并；开启后 5 次合并为 1 项（本帧合并 4、累计 4），
+且实例数不变（5）。
+*/
+TEST_F(Renderer_Scene_Test, 合批收益可观测)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, quad_data_with_normal(0.0f, 0.0f, 1.0f)));
+
+	//关闭合批：不产生合并
+	renderer.static_batching_set(false);
+	for (uint32_t index = 0; index < 5; ++index)
+		ASSERT_TRUE(renderer.mesh_draw(mesh, nullptr));
+	ASSERT_TRUE(renderer.frame_render());
+	engine::Frame_Stats plain = renderer.frame_stats_get();
+	EXPECT_EQ(plain.last_merged_items, 0u) << "关闭合批时不应有合并";
+	EXPECT_EQ(plain.merged_items, 0u);
+
+	//开启合批：5 项合并为 1 项
+	renderer.static_batching_set(true);
+	for (uint32_t index = 0; index < 5; ++index)
+		ASSERT_TRUE(renderer.mesh_draw(mesh, nullptr));
+	ASSERT_TRUE(renderer.frame_render());
+	engine::Frame_Stats batched = renderer.frame_stats_get();
+	RecordProperty("merged_last_frame", static_cast<int>(batched.last_merged_items));
+	EXPECT_EQ(batched.last_merged_items, 4u) << "本帧合并项数不符";
+	EXPECT_EQ(batched.merged_items, 4u) << "累计合并项数不符";
+	EXPECT_EQ(batched.last_instances, 5u) << "合并后实例数应保持";
+
+	renderer.mesh_unload(mesh);
+}
