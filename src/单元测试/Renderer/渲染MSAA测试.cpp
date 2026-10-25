@@ -275,6 +275,69 @@ TEST_F(Renderer_Msaa_Test, 后处理链在MSAA下可用)
 	renderer.mesh_unload(plane);
 }
 
+//SSAA 与 MSAA 叠加：超采样目标随采样数建立多重采样附件，降采样仍可输出
+TEST_F(Renderer_Msaa_Test, SSAA与MSAA叠加)
+{
+	engine::Renderer renderer;
+	engine::Renderer_Config config = hidden_config(4);
+	config.ssaa_factor = 2;
+	ASSERT_TRUE(renderer.init(config));
+	if (renderer.msaa_samples() <= 1)
+		GTEST_SKIP() << "当前设备不支持 MSAA";
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	EXPECT_EQ(renderer.ssaa_factor(), 2u);
+
+	engine::Mesh_Handle plane = 0;
+	ASSERT_TRUE(renderer.mesh_plane_load(plane, 1.0f, 1.0f));
+	ASSERT_FALSE(render_diamond(renderer, plane).empty());
+	//帧统计应报告 MSAA 采样数（SSAA 不替代 MSAA）
+	EXPECT_EQ(renderer.frame_stats_get().msaa_samples, renderer.msaa_samples());
+	renderer.mesh_unload(plane);
+}
+
+//MSAA 下两级后处理链（两个中间目标 ping-pong）可正常完成
+TEST_F(Renderer_Msaa_Test, 两级后处理链在MSAA下可用)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config(4)));
+	if (renderer.msaa_samples() <= 1)
+		GTEST_SKIP() << "当前设备不支持 MSAA";
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+
+	//两个同尺寸中间目标
+	uint64_t targets[2] = { 0, 0 };
+	ASSERT_TRUE(renderer.render_target_create(targets[0], renderer.extent_width(), renderer.extent_height()));
+	ASSERT_TRUE(renderer.render_target_create(targets[1], renderer.extent_width(), renderer.extent_height()));
+	ASSERT_TRUE(renderer.render_target_present_chain_set(targets, 2));
+
+	//两级管线（反色 → 反色，画面回到原样）
+	uint64_t invert_a = 0;
+	uint64_t invert_b = 0;
+	ASSERT_TRUE(renderer.pipeline_load(invert_a, "后处理.vert.spv", "反色.frag.spv"));
+	ASSERT_TRUE(renderer.pipeline_load(invert_b, "后处理.vert.spv", "反色.frag.spv"));
+	uint64_t chain[2] = { invert_a, invert_b };
+	ASSERT_TRUE(renderer.post_chain_set(chain, 2));
+
+	engine::Mesh_Handle plane = 0;
+	ASSERT_TRUE(renderer.mesh_plane_load(plane, 1.0f, 1.0f));
+	float transform[16] = {};
+	diamond_transform(transform);
+	renderer.mesh_draw(plane, transform);
+	std::vector<uint8_t> pixels(static_cast<std::size_t>(renderer.extent_width()) * renderer.extent_height() * 4, 0);
+	ASSERT_TRUE(renderer.frame_render(pixels.data(), static_cast<uint32_t>(pixels.size())));
+	//两级均实际执行
+	EXPECT_EQ(renderer.frame_stats_get().post_stages, 2u);
+
+	renderer.render_target_present_chain_set(nullptr, 0);
+	renderer.pipeline_unload(invert_a);
+	renderer.pipeline_unload(invert_b);
+	renderer.render_target_destroy(targets[1]);
+	renderer.render_target_destroy(targets[0]);
+	renderer.mesh_unload(plane);
+}
+
 //阴影与 MSAA 共存：阴影 pass 保持单采样，主 pass 多重采样，均正常出帧
 TEST_F(Renderer_Msaa_Test, 阴影与MSAA共存)
 {
