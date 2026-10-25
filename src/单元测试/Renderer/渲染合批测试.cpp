@@ -387,3 +387,32 @@ TEST_F(Renderer_Scene_Test, 合批收益可观测)
 
 	renderer.mesh_unload(mesh);
 }
+
+/*
+合批缓冲跨帧复用无残留（第一百三十六轮）
+连续 16 帧各登记 3 次同状态绘制：每帧合并 2 项，累计合并 32；
+登记项数（合批后）累计 16、实例数累计 48，且最近一帧合并量恒 2。
+*/
+TEST_F(Renderer_Scene_Test, 合批缓冲跨帧复用无残留)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, quad_data_with_normal(0.0f, 0.0f, 1.0f)));
+
+	for (uint32_t frame = 0; frame < 16; ++frame)
+	{
+		for (uint32_t index = 0; index < 3; ++index)
+			ASSERT_TRUE(renderer.mesh_draw(mesh, nullptr));
+		ASSERT_TRUE(renderer.frame_render());
+		//每帧合并量须恒为 2（复用缓冲不得带入上一帧残留）
+		ASSERT_EQ(renderer.frame_stats_get().last_merged_items, 2u) << "第 " << frame << " 帧合并量异常";
+	}
+	engine::Frame_Stats stats = renderer.frame_stats_get();
+	EXPECT_EQ(stats.merged_items, 32u);
+	EXPECT_EQ(stats.draw_items, 16u);
+	EXPECT_EQ(stats.instances, 48u);
+	EXPECT_EQ(stats.drawn_instances, 48u);
+
+	renderer.mesh_unload(mesh);
+}
