@@ -391,9 +391,10 @@ TEST_F(Renderer_Mipmap_Test, 细节层级偏置改变缩小采样)
 }
 
 /*
-采样器状态可读与钳制（第七十七轮）
+采样器状态可读与钳制（第七十七轮；第九十七轮改按设备上限钳制）
 口径：默认状态即既有行为；设置后 `texture_sampler_state_get` 返回生效值；
-      lod_bias 越界钳到 [-16, 16]、非数归 0；未初始化返回默认状态。
+      lod_bias 越界钳到设备上限 ±maxSamplerLodBias（可经 sampler_max_lod_bias 查询）、非数归 0；
+      未初始化返回默认状态。
 */
 TEST_F(Renderer_Mipmap_Test, 采样器状态可读与钳制)
 {
@@ -420,17 +421,21 @@ TEST_F(Renderer_Mipmap_Test, 采样器状态可读与钳制)
 	EXPECT_EQ(renderer.texture_sampler_state_get().lod_bias, -2.0f);
 	EXPECT_TRUE(renderer.texture_sampler_state_get().mip_filter);
 
+	//设备上限（第九十七轮：钳制上界随设备能力）
+	float lod_bias_limit = renderer.sampler_max_lod_bias();
+	ASSERT_GT(lod_bias_limit, 0.0f);
+
 	//上界钳制
 	engine::Texture_Sampler_State high;
 	high.lod_bias = 99.0f;
 	renderer.texture_sampler_state_set(high);
-	EXPECT_EQ(renderer.texture_sampler_state_get().lod_bias, 16.0f);
+	EXPECT_EQ(renderer.texture_sampler_state_get().lod_bias, lod_bias_limit);
 
 	//下界钳制
 	engine::Texture_Sampler_State low;
 	low.lod_bias = -99.0f;
 	renderer.texture_sampler_state_set(low);
-	EXPECT_EQ(renderer.texture_sampler_state_get().lod_bias, -16.0f);
+	EXPECT_EQ(renderer.texture_sampler_state_get().lod_bias, -lod_bias_limit);
 
 	//非数归 0
 	engine::Texture_Sampler_State not_a_number;
