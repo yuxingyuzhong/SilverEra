@@ -155,3 +155,90 @@ TEST_F(Renderer_Scene_Test, 合批开关运行时可切换)
 
 	renderer.mesh_unload(mesh);
 }
+
+/*
+阴影列表同样参与合批（第一百二十九轮）
+同一遮挡面连续两次 ＋ 接收面：开合批时主 pass 与阴影 pass 的绘制项均减少，
+两配置整帧像素逐字节一致（阴影图与主画面不变）。
+*/
+TEST_F(Renderer_Scene_Test, 阴影列表同样合批)
+{
+	//开合批
+	std::vector<uint8_t> batched_pixels;
+	engine::Frame_Stats batched_stats{};
+	{
+		engine::Renderer renderer;
+		ASSERT_TRUE(renderer.init(hidden_config()));
+		if (!renderer.readback_supported())
+			GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+		engine::Mesh_Handle receiver = 0;
+		engine::Mesh_Handle occluder = 0;
+		ASSERT_TRUE(renderer.mesh_load(receiver, quad_data_with_normal(0.0f, 0.0f, -1.0f)));
+		ASSERT_TRUE(renderer.mesh_load(occluder, quad_data_with_normal(0.0f, 0.0f, -1.0f)));
+		//场景：方向光沿 +Z、强度 1
+		engine::Camera_Data camera{};
+		engine::Light_Data light{};
+		light.direction[2] = 1.0f;
+		light.intensity = 1.0f;
+		light.ambient = 0.0f;
+		engine::Fog_Data fog{};
+		renderer.scene_apply(camera, light, fog);
+		renderer.shadow_enable_set(true);
+		//遮挡面缩放 0.6、平移到 z = -0.5（同一变换连续两次）
+		float transform[16] = {};
+		transform[0] = 0.6f;
+		transform[5] = 0.6f;
+		transform[10] = 0.6f;
+		transform[14] = -0.5f;
+		transform[15] = 1.0f;
+		ASSERT_TRUE(renderer.mesh_draw(occluder, transform));
+		ASSERT_TRUE(renderer.mesh_draw(occluder, transform));
+		ASSERT_TRUE(renderer.mesh_draw(receiver, nullptr));
+		batched_pixels.resize(pixel_bytes());
+		ASSERT_TRUE(renderer.frame_render(batched_pixels.data(), static_cast<uint32_t>(batched_pixels.size())));
+		batched_stats = renderer.frame_stats_get();
+		renderer.mesh_unload(receiver);
+		renderer.mesh_unload(occluder);
+	}
+	//关合批（对照）
+	std::vector<uint8_t> plain_pixels;
+	engine::Frame_Stats plain_stats{};
+	{
+		engine::Renderer renderer;
+		engine::Renderer_Config config = hidden_config();
+		config.static_batching = false;
+		ASSERT_TRUE(renderer.init(config));
+		engine::Mesh_Handle receiver = 0;
+		engine::Mesh_Handle occluder = 0;
+		ASSERT_TRUE(renderer.mesh_load(receiver, quad_data_with_normal(0.0f, 0.0f, -1.0f)));
+		ASSERT_TRUE(renderer.mesh_load(occluder, quad_data_with_normal(0.0f, 0.0f, -1.0f)));
+		engine::Camera_Data camera{};
+		engine::Light_Data light{};
+		light.direction[2] = 1.0f;
+		light.intensity = 1.0f;
+		light.ambient = 0.0f;
+		engine::Fog_Data fog{};
+		renderer.scene_apply(camera, light, fog);
+		renderer.shadow_enable_set(true);
+		float transform[16] = {};
+		transform[0] = 0.6f;
+		transform[5] = 0.6f;
+		transform[10] = 0.6f;
+		transform[14] = -0.5f;
+		transform[15] = 1.0f;
+		ASSERT_TRUE(renderer.mesh_draw(occluder, transform));
+		ASSERT_TRUE(renderer.mesh_draw(occluder, transform));
+		ASSERT_TRUE(renderer.mesh_draw(receiver, nullptr));
+		plain_pixels.resize(pixel_bytes());
+		ASSERT_TRUE(renderer.frame_render(plain_pixels.data(), static_cast<uint32_t>(plain_pixels.size())));
+		plain_stats = renderer.frame_stats_get();
+		renderer.mesh_unload(receiver);
+		renderer.mesh_unload(occluder);
+	}
+
+	RecordProperty("shadow_batching_drawn", static_cast<int>(batched_stats.drawn_items));
+	RecordProperty("shadow_plain_drawn", static_cast<int>(plain_stats.drawn_items));
+	//阴影 pass 三项 → 合批后两项；主 pass 同理
+	EXPECT_LT(batched_stats.drawn_items, plain_stats.drawn_items) << "阴影列表未参与合批";
+	EXPECT_EQ(batched_pixels, plain_pixels) << "阴影合批改变了画面";
+}
