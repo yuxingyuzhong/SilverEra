@@ -1,4 +1,4 @@
-﻿/*
+/*
 渲染层资源计数与链查询测试（第一百一十三～一百一十六轮）
 覆盖：资源计数（网格 / 纹理 / 管线 / 字体 / 目标 / 材质）、聚光灯数量、后处理链各级采样数查询。
 */
@@ -53,9 +53,9 @@ TEST_F(Renderer_Resource_Test, 资源计数随加载卸载变化)
 
 	ASSERT_TRUE(renderer.init(hidden_config()));
 	engine::Renderer_Resource_Counts initial = renderer.resource_counts();
-	//初始化后：默认白纹理、默认场景管线、阴影目标各一
+	//初始化后：默认白纹理 ＋ 默认天空盒立方体、默认场景管线、阴影目标各一（第一百二十五轮）
 	EXPECT_EQ(initial.meshes, 0u);
-	EXPECT_EQ(initial.textures, 1u);
+	EXPECT_EQ(initial.textures, 2u);
 	EXPECT_EQ(initial.pipelines, 1u);
 	EXPECT_EQ(initial.fonts, 0u);
 	EXPECT_EQ(initial.render_targets, 1u);
@@ -78,8 +78,8 @@ TEST_F(Renderer_Resource_Test, 资源计数随加载卸载变化)
 
 	engine::Renderer_Resource_Counts loaded = renderer.resource_counts();
 	EXPECT_EQ(loaded.meshes, 1u);
-	//默认白纹理 ＋ 测试纹理 ＋ 字体图集
-	EXPECT_EQ(loaded.textures, 3u);
+	//默认白纹理 ＋ 默认天空盒立方体 ＋ 测试纹理 ＋ 字体图集
+	EXPECT_EQ(loaded.textures, 4u);
 	EXPECT_EQ(loaded.pipelines, 2u);
 	EXPECT_EQ(loaded.fonts, 1u);
 	EXPECT_EQ(loaded.render_targets, 2u);
@@ -94,7 +94,7 @@ TEST_F(Renderer_Resource_Test, 资源计数随加载卸载变化)
 	renderer.mesh_unload(mesh);
 	engine::Renderer_Resource_Counts unloaded = renderer.resource_counts();
 	EXPECT_EQ(unloaded.meshes, 0u);
-	EXPECT_EQ(unloaded.textures, 1u);
+	EXPECT_EQ(unloaded.textures, 2u);
 	EXPECT_EQ(unloaded.pipelines, 1u);
 	EXPECT_EQ(unloaded.fonts, 0u);
 	EXPECT_EQ(unloaded.render_targets, 1u);
