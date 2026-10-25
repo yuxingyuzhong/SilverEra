@@ -3,9 +3,10 @@
 # =============================================================================
 # 位置：白银纪元/Application/Test
 # 依赖：Engine 聚合层（对外转发 EngineSystem.lib + EngineCore.lib）—— 一律链接「已经构建好的」静态库
+#       渲染层 RendererCore.lib（图形操作界面经其 UI 通道绘制；本层不引入 Vulkan/SDL 类型到用例）
 # 产物：TestCore 静态库（src/ 下的功能测试器集合，当前为空）
-#       TestLauncher 静态库（src/主调/ 下的测试选择模型与控制台菜单）
-#       TestGui 静态库（external/Dear_ImGui + external/glad，供图形选择窗口使用）
+#       TestLauncher 静态库（src/主调/ 下的测试选择模型、控制台菜单与引擎日志屏蔽）
+#       TestGui 静态库（external/Dear_ImGui 核心 + SDL3/Vulkan 后端，供图形操作界面使用）
 #       EngineTests.exe（本层唯一可执行文件，main 由 src/主调/主程序.cpp 提供）
 # 用法（本层独立配置与构建）：
 #     cmake -S <本目录> -B <本目录>/out/build/x64-Debug -G Ninja
@@ -156,13 +157,15 @@ set(BYJY_NO_SOURCES "")
 
 # 任务<1>：把被 GLOB 的目录登记为配置依赖 —— 目录内容变化（增删文件）时，
 # 生成系统自动重跑配置并重扫 GLOB，不必手动「重新生成缓存」才刷新目录视图。
-# 说明：GLOB_RECURSE 覆盖子目录，但 CMAKE_CONFIGURE_DEPENDS 要逐个目录登记，
-#       故这里登记三个 GLOB 基点目录（src / src/单元测试 / src/主调）。
-set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
-    "${PROJECT_ROOT_DIR}/src"
-    "${PROJECT_ROOT_DIR}/src/单元测试"
-    "${PROJECT_ROOT_DIR}/src/主调"
-)
+# 说明：GLOB_RECURSE 覆盖子目录，但 CMAKE_CONFIGURE_DEPENDS 要逐个目录登记；
+#       故递归登记 src 下全部子目录（含 src/单元测试/EngineCore/工具、EngineCore/核心、Renderer、Test 等），
+#       避免在深层目录新增文件时模型感知不到。
+file(GLOB_RECURSE BYJY_SRC_DIRS LIST_DIRECTORIES true "${PROJECT_ROOT_DIR}/src/*")
+foreach(_BYJY_DIR IN LISTS BYJY_SRC_DIRS)
+    if(IS_DIRECTORY "${_BYJY_DIR}")
+        set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_BYJY_DIR}")
+    endif()
+endforeach()
 
 if(TEST_SOURCES)
     # 排除构建目录下的文件（防止把生成的临时文件误编译进去）
@@ -183,7 +186,11 @@ list(FILTER TEST_HEADERS EXCLUDE REGEX "/src/单元测试/")
 list(FILTER TEST_HEADERS EXCLUDE REGEX "/src/主调/")
 
 # src/ 下暂无源文件时不视为错误：分阶段开发中测试代码尚未落位属正常状态，
-# 此时不产出 TestCore，EngineTests 仍可只靠下层静态库独立生成
+# 此时不产出 TestCore，EngineTests 仍可只靠下层静态库独立生成。
+# 说明：当前全部实现文件都在 src/单元测试/ 与 src/主调/ 下（已被上面的 FILTER 排除），
+#       故 TEST_SOURCES 恒空、下方 TestCore 条件块不会进入；这是**有意的条件目标**，
+#       不是残留引用 —— 若将来在 src/ 根或其它子目录新增功能测试代码，该块会自动生效，
+#       并由 byjy_source_list_sync 在配置期生成 源文件列表_TestCore.cmake。
 if(NOT TEST_SOURCES)
     message(STATUS "测试层 src/ 下暂无源文件，跳过 TestCore 静态库")
 endif()
@@ -231,7 +238,7 @@ endif()
 # =============================================================================
 # 3.5 GUI 第三方接入（Dear ImGui；平台后端 SDL3 + 渲染后端 Vulkan）
 # =============================================================================
-# 供主调的图形选择窗口使用。与 external/googletest 同构：第三方源码以副本形式
+# 供主调的图形操作界面使用。与 external/googletest 同构：第三方源码以副本形式
 # 放在本层 external/ 下，由本层自行编译，不改动下层的构建与对外接口。
 # 说明：
 #   - 不编 imgui_demo.cpp（示例窗口，本层用不到）
@@ -269,7 +276,7 @@ if(EXISTS "${PROJECT_ROOT_DIR}/external/Dear_ImGui/imgui/imgui.cpp"
         LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
     )
 else()
-    message(FATAL_ERROR "未找到 external/Dear_ImGui 或 external/glad：图形选择窗口依赖它们，请先还原第三方副本")
+    message(FATAL_ERROR "未找到 external/Dear_ImGui（imgui 核心或 imgui_impl_sdl3 / imgui_impl_vulkan 后端）：图形操作界面依赖它们，请先还原第三方副本")
 endif()
 
 # =============================================================================
@@ -327,12 +334,13 @@ else()
     add_library(TestLauncher STATIC
         "${PROJECT_ROOT_DIR}/src/主调/测试选择模型.cpp"
         "${PROJECT_ROOT_DIR}/src/主调/控制台选择菜单.cpp"
+        "${PROJECT_ROOT_DIR}/src/主调/引擎日志屏蔽.cpp"
     )
     include("${PROJECT_ROOT_DIR}/源文件列表_TestLauncher.cmake")
-    # 主调实现文件以本层根相对（src/主调/...）包含本层头，故包含根 = 项目根 + 本层根
-    #（与 EngineCore 本轮确立的「头写项目根相对、.cpp 写本层根相对」双基准约定一致）
-    target_include_directories(TestLauncher PUBLIC "${BYJY_PROJECT_ROOT}" "${PROJECT_ROOT_DIR}")
-    target_link_libraries(TestLauncher PUBLIC GTest::gtest)
+    # 主调实现文件以本层根相对（src/主调/...）包含本层头；主调与用例共用的日志屏蔽
+    # 需要引擎日志系统与引擎环境，故包含根取 BYJY_APP_INC（下层快照在前、项目根在后）
+    target_include_directories(TestLauncher PUBLIC ${BYJY_APP_INC})
+    target_link_libraries(TestLauncher PUBLIC GTest::gtest EngineCore)
     if(MSVC)
         target_compile_options(TestLauncher PRIVATE /MP /utf-8)
         target_compile_definitions(TestLauncher PRIVATE _CRT_SECURE_NO_WARNINGS)
@@ -375,7 +383,7 @@ else()
     # 5. 独立测试可执行文件（本层唯一的可执行产物）
     # =========================================================================
     # main 由本层主调提供（src/主调/主程序.cpp），不再链接 GTest::gtest_main；
-    # 图形选择窗口（依赖 ImGui）只编进本可执行文件。
+    # 图形操作界面（依赖 ImGui）只编进本可执行文件。
     # 产物落在本层根目录，与 assets/ 同级
     #（Engine_Env 以「可执行文件所在目录」为基准解析资源路径，这是硬性要求）
     # 主调头文件（MAIN_HEADERS）经 源文件列表_EngineTests.cmake 的 target_sources
@@ -392,10 +400,10 @@ else()
         $<TARGET_OBJECTS:EngineTestObjects>
         "${PROJECT_ROOT_DIR}/src/主调/主程序.cpp"
         "${PROJECT_ROOT_DIR}/src/主调/图形操作界面.cpp"
+        "${PROJECT_ROOT_DIR}/src/主调/能力展示场景.cpp"
         "${PROJECT_ROOT_DIR}/src/主调/测试界面.cpp"
         "${PROJECT_ROOT_DIR}/src/主调/测试运行器.cpp"
         "${PROJECT_ROOT_DIR}/src/主调/gtest输出镜像.cpp"
-        "${PROJECT_ROOT_DIR}/src/主调/引擎日志屏蔽.cpp"
     )
     include("${PROJECT_ROOT_DIR}/源文件列表_EngineTests.cmake")
     target_include_directories(EngineTests PRIVATE ${BYJY_APP_INC})

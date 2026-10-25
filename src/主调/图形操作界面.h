@@ -16,5 +16,6 @@ namespace engine
 {
     //运行图形操作界面（界面驱动多轮测试，退出界面时返回 true）
     //窗口创建失败返回 false
-    bool 图形操作界面_运行(Test_Selection_Model& 模型);
+    //直接进入展示：为真时启动即进入「渲染能力展示场景」（命令行 --selector=showcase 用）
+    bool 图形操作界面_运行(Test_Selection_Model& 模型, bool 直接进入展示 = false);
 }

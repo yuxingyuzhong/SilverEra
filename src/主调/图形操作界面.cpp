@@ -8,12 +8,16 @@
 //测试运行器与测试界面
 #include "src/主调/测试运行器.h"
 #include "src/主调/测试界面.h"
+//能力展示场景（测试层入口：单场景集中呈现渲染层能力，相机可漫游）
+#include "src/主调/能力展示场景.h"
 
 //Dear ImGui 与两条后端（平台后端用 SDL3、渲染后端用 Vulkan）
 #include "imgui.h"
 #include "imgui_impl_sdl3.h"
 #include "imgui_impl_vulkan.h"
 
+#include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
@@ -174,7 +178,74 @@ namespace engine
             Test_Runner* 运行器 = nullptr;
             //界面请求退出（由界面按钮置位，主循环检查）
             bool 退出请求 = false;
+            //渲染器帧统计（主循环每帧刷新，界面只读）
+            Ui_Runtime_Stats 运行状态{};
+            //是否处于能力展示模式（本帧界面只画展示叠加层）
+            bool 展示模式 = false;
+            //界面请求进入 / 退出展示模式（主循环执行资源搭建与释放）
+            bool 请求进入展示 = false;
+            bool 请求退出展示 = false;
+            //展示模式的相机输入（界面采集，主循环消费）
+            展示输入 输入{};
+            //能力展示场景（非空即表示已搭建）
+            能力展示场景* 展示场景 = nullptr;
         };
+
+        //展示模式的叠加层（能力清单 ＋ 相机与帧统计 ＋ 操作提示 ＋ 返回按钮）
+        void 绘制展示叠加层(Ui_会话上下文& 上下文, const 能力展示场景& 场景)
+        {
+            //左上角信息面板
+            const ImGuiViewport* 视口 = ImGui::GetMainViewport();
+            ImGui::SetNextWindowPos(ImVec2(视口->WorkPos.x + 16.0f, 视口->WorkPos.y + 16.0f));
+            ImGui::SetNextWindowSize(ImVec2(430.0f, 0.0f));
+            ImGui::Begin("##能力展示信息", nullptr,
+                ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings
+                | ImGuiWindowFlags_NoFocusOnAppearing);
+            ImGui::TextUnformatted("渲染能力展示 · 可漫游场景");
+            ImGui::Separator();
+            ImGui::TextUnformatted("本场景同时呈现：");
+            ImGui::Bullet(); ImGui::TextUnformatted("八种程序化网格 ＋ 棋盘 / 法线 / 粗糙度纹理");
+            ImGui::Bullet(); ImGui::TextUnformatted("方向光 / 补光 / 三盏彩色点光 / 聚光灯 / 半球环境光");
+            ImGui::Bullet(); ImGui::TextUnformatted("PBR-lite：金属度 / 粗糙度 / 法线贴图 / 自发光 / 色调");
+            ImGui::Bullet(); ImGui::TextUnformatted("方向光阴影 ＋ 软边 ＋ 两级级联");
+            ImGui::Bullet(); ImGui::TextUnformatted("实例化绘制 ＋ 静态合批 ＋ 视锥剔除");
+            ImGui::Bullet(); ImGui::TextUnformatted("立方体天空盒 / 简易 IBL ＋ 距离雾");
+            ImGui::Bullet(); ImGui::TextUnformatted("后处理链：亮部提取 → 模糊 → 暗角");
+            ImGui::Bullet(); ImGui::TextUnformatted("文字渲染（中文标题与区域标注）");
+            ImGui::Separator();
+            float 位置[3] = { 0.0f, 0.0f, 0.0f };
+            场景.相机位置(位置);
+            ImGui::Text("相机：%.1f, %.1f, %.1f   偏航 %.2f / 俯仰 %.2f", 位置[0], 位置[1], 位置[2],
+                场景.偏航(), 场景.俯仰());
+            ImGui::Text("帧数 %llu   绘制 %llu   合并 %llu   剔除 %llu   %.2f ms",
+                static_cast<unsigned long long>(上下文.运行状态.frames),
+                static_cast<unsigned long long>(上下文.运行状态.drawn_items),
+                static_cast<unsigned long long>(0),
+                static_cast<unsigned long long>(0),
+                上下文.运行状态.frame_ms);
+            ImGui::Separator();
+            ImGui::TextUnformatted("操作：WASD 移动 · Q/E 升降 · 右键拖拽看向 · 滚轮调速 · ESC 返回");
+            if (ImGui::Button("返回测试界面", ImVec2(150.0f, 30.0f)))
+                上下文.请求退出展示 = true;
+            ImGui::SameLine();
+            if (ImGui::Button("退出程序", ImVec2(110.0f, 30.0f)))
+                上下文.退出请求 = true;
+            ImGui::End();
+        }
+
+        //测试界面的展示入口按钮（右上角悬浮）
+        void 绘制展示入口(Ui_会话上下文& 上下文)
+        {
+            const ImGuiViewport* 视口 = ImGui::GetMainViewport();
+            ImGui::SetNextWindowPos(ImVec2(视口->WorkPos.x + 视口->WorkSize.x - 232.0f, 视口->WorkPos.y + 12.0f));
+            ImGui::SetNextWindowSize(ImVec2(220.0f, 0.0f));
+            ImGui::Begin("##展示入口", nullptr,
+                ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings
+                | ImGuiWindowFlags_NoFocusOnAppearing);
+            if (ImGui::Button("进入渲染能力展示", ImVec2(-1.0f, 34.0f)))
+                上下文.请求进入展示 = true;
+            ImGui::End();
+        }
 
         //每帧 UI 绘制回调（渲染层帧链路在场景通道内、呈现转换前调用）
         void ui_绘制回调(VkCommandBuffer 命令缓冲, void* 用户数据)
@@ -182,25 +253,59 @@ namespace engine
             Ui_会话上下文& 上下文 = *static_cast<Ui_会话上下文*>(用户数据);
 
             //本帧 ImGui 帧开始（界面在场景通道内构建并提交绘制）
-            ImGui_ImplVulkan_NewFrame();
+            //次序按后端文档：平台后端先更新显示尺寸与输入，渲染后端再取帧信息
             ImGui_ImplSDL3_NewFrame();
+            ImGui_ImplVulkan_NewFrame();
             ImGui::NewFrame();
 
             //先铺蓝色渐变，再画操作界面
-            绘制蓝色渐变背景();
+            if (上下文.展示模式)
+            {
+                //展示模式：场景由渲染层绘制，本层只画叠加层并采集相机输入
+                绘制展示叠加层(上下文, *上下文.展示场景);
+                //ESC 返回测试界面
+                if (ImGui::IsKeyPressed(ImGuiKey_Escape, false))
+                    上下文.请求退出展示 = true;
+                //采集移动键（WASD ＋ Q/E 升降）
+                展示输入& 输入 = 上下文.输入;
+                输入.前后 = (ImGui::IsKeyDown(ImGuiKey_W) ? 1.0f : 0.0f) - (ImGui::IsKeyDown(ImGuiKey_S) ? 1.0f : 0.0f);
+                输入.左右 = (ImGui::IsKeyDown(ImGuiKey_D) ? 1.0f : 0.0f) - (ImGui::IsKeyDown(ImGuiKey_A) ? 1.0f : 0.0f);
+                输入.上下 = (ImGui::IsKeyDown(ImGuiKey_E) ? 1.0f : 0.0f) - (ImGui::IsKeyDown(ImGuiKey_Q) ? 1.0f : 0.0f);
+                //右键按住拖拽 → 偏航 / 俯仰增量
+                if (ImGui::IsMouseDown(ImGuiMouseButton_Right))
+                {
+                    输入.偏航增量 += ImGui::GetIO().MouseDelta.x * 0.0025f;
+                    输入.俯仰增量 -= ImGui::GetIO().MouseDelta.y * 0.0025f;
+                }
+                //滚轮调节速度倍率（0.25..4）
+                const float 滚轮 = ImGui::GetIO().MouseWheel;
+                if (滚轮 != 0.0f)
+                    输入.速度倍率 *= std::pow(1.15f, 滚轮);
+                if (输入.速度倍率 < 0.25f)
+                    输入.速度倍率 = 0.25f;
+                if (输入.速度倍率 > 4.0f)
+                    输入.速度倍率 = 4.0f;
+            }
+            else
+            {
+                绘制蓝色渐变背景();
 
-            //铺满整个窗口的无标题面板
-            const ImGuiViewport* 视口 = ImGui::GetMainViewport();
-            ImGui::SetNextWindowPos(视口->WorkPos);
-            ImGui::SetNextWindowSize(视口->WorkSize);
-            ImGui::Begin("##测试操作界面", nullptr,
-                ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
+                //铺满整个窗口的无标题面板
+                const ImGuiViewport* 视口 = ImGui::GetMainViewport();
+                ImGui::SetNextWindowPos(视口->WorkPos);
+                ImGui::SetNextWindowSize(视口->WorkSize);
+                ImGui::Begin("##测试操作界面", nullptr,
+                    ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
 
-            //绘制测试操作界面（树 / 控制 / 结果 / 输出镜像 / 轮次 / 日志）
-            //注意：必须在面板窗口内绘制，控件才有有效窗口可放置与命中
-            测试界面_绘制(*上下文.运行器, *上下文.模型, 上下文.退出请求);
+                //绘制测试操作界面（树 / 控制 / 结果 / 输出镜像 / 轮次 / 日志）
+                //注意：必须在面板窗口内绘制，控件才有有效窗口可放置与命中
+                测试界面_绘制(*上下文.运行器, *上下文.模型, 上下文.退出请求, &上下文.运行状态);
 
-            ImGui::End();
+                ImGui::End();
+
+                //右上角悬浮「进入渲染能力展示」入口
+                绘制展示入口(上下文);
+            }
 
             //提交绘制：交给渲染层帧链路命令缓冲（后端画在已开启的动态渲染通道内）
             ImGui::Render();
@@ -218,7 +323,7 @@ namespace engine
     //========================================================================
     // 图形操作界面
     //========================================================================
-    bool 图形操作界面_运行(Test_Selection_Model& 模型)
+    bool 图形操作界面_运行(Test_Selection_Model& 模型, bool 直接进入展示)
     {
         //—— 渲染器初始化（可见窗口；Vulkan 不可用则返回 false） ——
         Renderer_Config 配置{};
@@ -296,12 +401,95 @@ namespace engine
         通道->draw_callback_set(ui_绘制回调, &上下文);
         通道->event_callback_set(ui_事件回调, nullptr);
 
-        //—— 主循环：推进渲染层帧链路，界面驱动多轮测试 ——
-        while (渲染器.frame_render())
+        //—— 主循环：测试界面推进渲染层帧链路；展示模式改为推进可漫游场景 ——
+        //测试界面清屏色取渐变背景的深蓝基色，使窗口未覆盖处与界面背景衔接
+        auto 恢复测试界面场景 = [&渲染器]()
         {
+            Scene_Data 场景{};
+            场景.clear_color[0] = 0.035f;
+            场景.clear_color[1] = 0.050f;
+            场景.clear_color[2] = 0.105f;
+            场景.clear_color[3] = 1.0f;
+            渲染器.scene_apply(场景);
+        };
+        恢复测试界面场景();
+
+        //能力展示场景（进入时搭建、返回时释放）
+        能力展示场景 展示;
+        bool 展示已搭建 = false;
+        //命令行直达展示模式
+        if (直接进入展示)
+            上下文.请求进入展示 = true;
+
+        std::chrono::steady_clock::time_point 上帧时刻 = std::chrono::steady_clock::now();
+        while (true)
+        {
+            //处理「进入展示」请求
+            if (上下文.请求进入展示 && !上下文.展示模式)
+            {
+                上下文.请求进入展示 = false;
+                if (展示.init(渲染器))
+                {
+                    展示已搭建 = true;
+                    上下文.展示场景 = &展示;
+                    上下文.展示模式 = true;
+                }
+            }
+            //处理「退出展示」请求（返回测试界面）
+            if (上下文.请求退出展示)
+            {
+                上下文.请求退出展示 = false;
+                if (展示已搭建)
+                {
+                    展示.shutdown(渲染器);
+                    展示已搭建 = false;
+                }
+                上下文.展示场景 = nullptr;
+                上下文.展示模式 = false;
+                恢复测试界面场景();
+            }
+
+            //帧间隔（限制上限，避免卡顿后瞬移）
+            const std::chrono::steady_clock::time_point 现时刻 = std::chrono::steady_clock::now();
+            float 秒 = std::chrono::duration<float>(现时刻 - 上帧时刻).count();
+            上帧时刻 = 现时刻;
+            if (秒 > 0.1f)
+                秒 = 0.1f;
+
+            //展示模式：推进相机并登记本帧绘制项
+            if (上下文.展示模式 && 展示已搭建)
+            {
+                展示.update(渲染器, 上下文.输入, 秒);
+                展示.frame_draw(渲染器);
+                //本帧鼠标增量已消费
+                上下文.输入.偏航增量 = 0.0f;
+                上下文.输入.俯仰增量 = 0.0f;
+            }
+
+            //取上一帧统计供本帧界面显示（界面回调在 frame_render 内部执行）
+            const Frame_Stats 统计 = 渲染器.frame_stats_get();
+            上下文.运行状态.frame_ms = 统计.frame_ms;
+            上下文.运行状态.gpu_ms = 统计.gpu_frame_ms;
+            上下文.运行状态.frames = 统计.frames;
+            上下文.运行状态.draw_items = 统计.draw_items;
+            上下文.运行状态.drawn_items = 统计.drawn_items;
+            上下文.运行状态.instances = 统计.instances;
+            上下文.运行状态.post_stages = 统计.post_stages;
+            上下文.运行状态.gpu_supported = 渲染器.gpu_timestamp_supported();
+
+            //推进一帧
+            if (!渲染器.frame_render())
+                break;
             //窗口被直接关闭或界面请求退出
             if (渲染器.close_requested() || 上下文.退出请求)
                 break;
+        }
+
+        //退出前释放展示资源
+        if (展示已搭建)
+        {
+            展示.shutdown(渲染器);
+            展示已搭建 = false;
         }
 
         //—— 清理：先解接线，再停运行器，最后销毁 UI 后端与渲染器 ——
