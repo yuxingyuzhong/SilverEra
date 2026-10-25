@@ -275,6 +275,65 @@ TEST_F(Renderer_Msaa_Test, 后处理链在MSAA下可用)
 	renderer.mesh_unload(plane);
 }
 
+//阴影与 MSAA 共存：阴影 pass 保持单采样，主 pass 多重采样，均正常出帧
+TEST_F(Renderer_Msaa_Test, 阴影与MSAA共存)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config(4)));
+	if (renderer.msaa_samples() <= 1)
+		GTEST_SKIP() << "当前设备不支持 MSAA";
+
+	engine::Mesh_Handle plane = 0;
+	ASSERT_TRUE(renderer.mesh_plane_load(plane, 1.0f, 1.0f));
+	renderer.shadow_enable_set(true);
+	ASSERT_TRUE(renderer.shadow_enabled());
+	//开启阴影后至少执行一次阴影 pass
+	EXPECT_FALSE(render_diamond(renderer, plane).empty());
+	uint64_t shadow_before = renderer.shadow_pass_count();
+	EXPECT_GE(shadow_before, 1u);
+	//切回单采样后阴影仍可继续工作
+	renderer.msaa_samples_set(1);
+	EXPECT_FALSE(render_diamond(renderer, plane).empty());
+	EXPECT_GE(renderer.shadow_pass_count(), shadow_before);
+	renderer.shadow_enable_set(false);
+	renderer.mesh_unload(plane);
+}
+
+//帧统计反映最近一帧实际采样数（交换链直通与离屏路径）
+TEST_F(Renderer_Msaa_Test, 帧统计反映采样数)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config(1)));
+	engine::Mesh_Handle plane = 0;
+	ASSERT_TRUE(renderer.mesh_plane_load(plane, 1.0f, 1.0f));
+
+	//单采样一帧
+	ASSERT_FALSE(render_diamond(renderer, plane).empty());
+	EXPECT_EQ(renderer.frame_stats_get().msaa_samples, 1u);
+
+	//若设备支持则开 4× 再测
+	uint32_t maximum = renderer.msaa_max_samples();
+	if (maximum <= 1)
+		GTEST_SKIP() << "当前设备不支持 MSAA";
+	uint32_t tier = maximum >= 4 ? 4 : maximum;
+	renderer.msaa_samples_set(tier);
+	ASSERT_FALSE(render_diamond(renderer, plane).empty());
+	EXPECT_EQ(renderer.frame_stats_get().msaa_samples, tier);
+
+	//离屏目标路径同样反映采样数
+	uint64_t target = 0;
+	ASSERT_TRUE(renderer.render_target_create(target, 64, 64));
+	renderer.render_target_set(target);
+	float transform[16] = {};
+	diamond_transform(transform);
+	renderer.mesh_draw(plane, transform);
+	ASSERT_TRUE(renderer.frame_render());
+	EXPECT_EQ(renderer.frame_stats_get().msaa_samples, tier);
+	renderer.render_target_set(0);
+	renderer.render_target_destroy(target);
+	renderer.mesh_unload(plane);
+}
+
 //渲染目标随采样数重建（句柄不变）；MSAA 下深度读回被拒绝，关闭后恢复
 TEST_F(Renderer_Msaa_Test, 渲染目标随采样数重建且深度读回降级)
 {
