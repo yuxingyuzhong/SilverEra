@@ -197,6 +197,39 @@ TEST_F(Renderer_Msaa_Test, 运行时反复切换)
 	renderer.mesh_unload(plane);
 }
 
+//能力查询与各档位切换：按设备支持逐档设置并出帧
+TEST_F(Renderer_Msaa_Test, 能力查询与各档位切换)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config(1)));
+	uint32_t maximum = renderer.msaa_max_samples();
+	EXPECT_GE(maximum, 1u);
+	EXPECT_LE(maximum, 8u);
+
+	engine::Mesh_Handle plane = 0;
+	ASSERT_TRUE(renderer.mesh_plane_load(plane, 1.0f, 1.0f));
+	//逐档尝试（2 / 4 / 8），不支持则跳过该档
+	const uint32_t tiers[3] = { 2, 4, 8 };
+	for (uint32_t tier : tiers)
+	{
+		//超过设备上限则跳过
+		if (tier > maximum)
+			continue;
+		renderer.msaa_samples_set(tier);
+		EXPECT_EQ(renderer.msaa_samples(), tier);
+		EXPECT_FALSE(render_diamond(renderer, plane).empty()) << "档位 " << tier << " 渲染失败";
+	}
+	//非法请求（3 / 5 / 6）按 1 处理
+	for (uint32_t invalid : { 3u, 5u, 6u })
+	{
+		renderer.msaa_samples_set(invalid);
+		EXPECT_EQ(renderer.msaa_samples(), 1u);
+	}
+	renderer.msaa_samples_set(1);
+	EXPECT_EQ(renderer.msaa_samples(), 1u);
+	renderer.mesh_unload(plane);
+}
+
 //MSAA 下同帧后处理链仍可用（内置后处理管线固定单采样，场景仍多重采样）
 TEST_F(Renderer_Msaa_Test, 后处理链在MSAA下可用)
 {
