@@ -197,6 +197,51 @@ TEST_F(Renderer_Msaa_Test, 运行时反复切换)
 	renderer.mesh_unload(plane);
 }
 
+//MSAA 下同帧后处理链仍可用（内置后处理管线固定单采样，场景仍多重采样）
+TEST_F(Renderer_Msaa_Test, 后处理链在MSAA下可用)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config(4)));
+	//设备不支持多重采样则跳过
+	if (renderer.msaa_samples() <= 1)
+		GTEST_SKIP() << "当前设备不支持 MSAA";
+	//无回读能力则跳过
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+
+	//场景目标（与交换链同尺寸）＋ 旋转平面
+	engine::Mesh_Handle plane = 0;
+	uint64_t scene_target = 0;
+	ASSERT_TRUE(renderer.mesh_plane_load(plane, 1.0f, 1.0f));
+	ASSERT_TRUE(renderer.render_target_create(scene_target, renderer.extent_width(), renderer.extent_height()));
+	renderer.render_target_present_set(scene_target);
+	float transform[16] = {};
+	diamond_transform(transform);
+	renderer.mesh_draw(plane, transform);
+
+	//一帧内完成「场景 MSAA → 解析 → 单采样后处理 → 交换链」
+	std::vector<uint8_t> pixels(static_cast<std::size_t>(renderer.extent_width()) * renderer.extent_height() * 4, 0);
+	uint32_t width = 0;
+	uint32_t height = 0;
+	ASSERT_TRUE(renderer.frame_render(pixels.data(), static_cast<uint32_t>(pixels.size()), &width, &height));
+	EXPECT_EQ(width, renderer.extent_width());
+	EXPECT_EQ(height, renderer.extent_height());
+	//画面应包含被照亮的平面（非纯清屏色）
+	bool lit = false;
+	for (std::size_t index = 0; index + 3 < pixels.size() && !lit; index += 4)
+	{
+		int maximum = pixels[index];
+		if (pixels[index + 1] > maximum) maximum = pixels[index + 1];
+		if (pixels[index + 2] > maximum) maximum = pixels[index + 2];
+		if (maximum > 40)
+			lit = true;
+	}
+	EXPECT_TRUE(lit) << "后处理链输出为空画面";
+
+	renderer.render_target_destroy(scene_target);
+	renderer.mesh_unload(plane);
+}
+
 //渲染目标随采样数重建（句柄不变）；MSAA 下深度读回被拒绝，关闭后恢复
 TEST_F(Renderer_Msaa_Test, 渲染目标随采样数重建且深度读回降级)
 {
