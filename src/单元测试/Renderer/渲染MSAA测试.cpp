@@ -338,6 +338,67 @@ TEST_F(Renderer_Msaa_Test, 两级后处理链在MSAA下可用)
 	renderer.mesh_unload(plane);
 }
 
+//文字在 MSAA 下可绘制（文字管线随主 pass 采样数）
+TEST_F(Renderer_Msaa_Test, 文字在MSAA下可绘制)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config(4)));
+	if (renderer.msaa_samples() <= 1)
+		GTEST_SKIP() << "当前设备不支持 MSAA";
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+
+	//加载系统等宽字体（缺失则跳过）
+	uint64_t font = 0;
+	if (!renderer.font_load_file(font, "C:\\Windows\\Fonts\\consola.ttf", 16))
+		GTEST_SKIP() << "本机缺少 consola.ttf";
+
+	//绘制一段文本并统计有墨迹像素
+	engine::Text_Layout layout{};
+	renderer.text_draw_layout(font, "MSAA", 20.0f, 40.0f, layout);
+	std::vector<uint8_t> pixels(static_cast<std::size_t>(renderer.extent_width()) * renderer.extent_height() * 4, 0);
+	ASSERT_TRUE(renderer.frame_render(pixels.data(), static_cast<uint32_t>(pixels.size())));
+	std::size_t inked = 0;
+	for (std::size_t index = 0; index + 3 < pixels.size(); index += 4)
+	{
+		int maximum = pixels[index];
+		if (pixels[index + 1] > maximum) maximum = pixels[index + 1];
+		if (pixels[index + 2] > maximum) maximum = pixels[index + 2];
+		if (maximum > 100)
+			++inked;
+	}
+	EXPECT_GT(inked, 0u) << "MSAA 下文字未产生墨迹";
+
+	renderer.font_unload(font);
+}
+
+//关闭 MSAA 后画面恢复到与初始单采样逐字节一致（零副作用）
+TEST_F(Renderer_Msaa_Test, 关闭MSAA后画面与初始一致)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config(1)));
+	if (renderer.msaa_max_samples() <= 1)
+		GTEST_SKIP() << "当前设备不支持 MSAA";
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+
+	engine::Mesh_Handle plane = 0;
+	ASSERT_TRUE(renderer.mesh_plane_load(plane, 1.0f, 1.0f));
+	//初始单采样帧
+	std::vector<uint8_t> baseline = render_diamond(renderer, plane);
+	ASSERT_FALSE(baseline.empty());
+	//开启再关闭
+	renderer.msaa_samples_set(4);
+	ASSERT_FALSE(render_diamond(renderer, plane).empty());
+	renderer.msaa_samples_set(1);
+	std::vector<uint8_t> restored = render_diamond(renderer, plane);
+	ASSERT_FALSE(restored.empty());
+	//两帧内容应逐字节一致
+	EXPECT_EQ(baseline, restored) << "关闭 MSAA 后画面未回到初始单采样结果";
+
+	renderer.mesh_unload(plane);
+}
+
 //阴影与 MSAA 共存：阴影 pass 保持单采样，主 pass 多重采样，均正常出帧
 TEST_F(Renderer_Msaa_Test, 阴影与MSAA共存)
 {
