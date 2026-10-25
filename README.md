@@ -2,11 +2,11 @@
 
 Test 是「白银纪元」分层工程中的**验证与启动层**。工程按依赖方向分层：`Engine/EngineCore` → `Engine/EngineSystem` → `Engine`（聚合层）→ `Application/{Game,Test}`；每一层都是一个独立的 git 仓库，各推各的分支；本层对应的分支是 `test`，向远端 `sliverera/test` 推送。顶层 `main` 仓库只记录各层目录指针（不再做源码快照），作总览与合并线。
 
-本层在依赖链中处于**最上层**：它**只接 Engine 聚合层一次**——只链接两个**已经构建好的静态库**（`EngineCore.lib`、`EngineSystem.lib`，由聚合面一并转交），绝不通过 `add_subdirectory` 把下层源码拉进本构建树重复编译，也没有任何源码回退路径。这条「层间一律链接已构建静态库」的契约由每层的 `cmake/对外接口.cmake` 与 `cmake/接入下层.cmake` 共同保证。
+本层在依赖链中处于**最上层**：它**接 Engine 聚合层一次**——链接两个**已经构建好的静态库**（`EngineCore.lib`、`EngineSystem.lib`，由聚合面一并转交）；另单独接入渲染层 `RendererCore.lib` 供图形操作界面使用。绝不通过 `add_subdirectory` 把下层源码拉进本构建树重复编译，也没有任何源码回退路径。这条「层间一律链接已构建静态库」的契约由每层的 `cmake/对外接口.cmake` 与 `cmake/接入下层.cmake` 共同保证。
 
 本层是**全项目唯一产出可执行文件的层**：`EngineTests.exe` 既是单元测试入口，也是整套工程的启动项。「宿主机制」（把下层组件按由浅到深的范围接在一起、各自产出启动项）已经取消，各层不再各自维护运行入口，可执行文件只由本层产生。
 
-本层承载两件事：一是 **googletest 单元测试体系**（27 个套件 / 625 个用例，覆盖 EngineCore 与 EngineSystem 的核心模块，以及本层主调自身的逻辑）；二是**测试模块选择器**（图形窗口 / 控制台菜单 / 命令行开关三种交互形态），让同一份可执行文件同时服务「开发期按模块精准复跑」与「CI 一键全量回归」两类场景。
+本层承载两件事：一是 **googletest 单元测试体系**（61 个套件 / 960 个用例，覆盖 EngineCore 与 EngineSystem 的核心模块、渲染层用例，以及本层主调自身的逻辑）；二是**测试模块选择器**（图形操作界面 / 控制台菜单 / 命令行开关三种交互形态），让同一份可执行文件同时服务「开发期按模块精准复跑」与「CI 一键全量回归」两类场景。
 
 ---
 
@@ -35,12 +35,14 @@ EngineCore（EngineCore.lib，已构建） ──▶ EngineSystem（EngineSystem
                      ▲                                    ▲
                      └──────── Engine（聚合层，无产物）────┘
                                         │
+                     Application/Renderer（RendererCore.lib，已构建）
+                                        │
                                         ▼
                     Application/Test ──▶ EngineTests.exe（全项目唯一可执行产物）
 ```
 
 - 本层不产出供上层链接的库（对外面里的 `BYJY_TEST_OUT_LIB` 仅声明 `TestCore`，而 `TestCore` 当前无源文件、不产出）；`EngineTests.exe` 是运行产物，不写进对外面。
-- 本层对下层只做「消费」：经 Engine 聚合层拿到两个子层的静态库与公共头文件路径，编译用例并链接。
+- 本层对下层只做「消费」：经 Engine 聚合层拿到两个子层的静态库与公共头文件路径；另单独接入渲染层 `RendererCore.lib`（图形操作界面经其 UI 通道绘制），编译用例并链接。
 
 ### 1.3 仓库内布局与产物
 
@@ -65,6 +67,7 @@ EngineCore（EngineCore.lib，已构建） ──▶ EngineSystem（EngineSystem
 | EngineCore | 本层链接其已构建的 `EngineCore.lib`；用例直接 include 其头文件（事件、对象、空间分区、碰撞、工具集）验证真实现 |
 | EngineSystem | 本层链接其已构建的 `EngineSystem.lib`；两个库均由 Engine 聚合面一并转交 |
 | Engine（聚合层） | 本层**只接这一次**：`byjy_jieru_xiaceng(Engine/cmake/对外接口.cmake, ...)`，两个导入目标随即可用 |
+| Application/Renderer | 本层另接一次 `byjy_jieru_xiaceng(Renderer/cmake/对外接口.cmake, ...)`，取得 `RendererCore.lib`、渲染层头快照、Vulkan SDK / SDL3 公共面；图形操作界面经其 UI 通道绘制 |
 | Application/Game | 当前无源码、不参与本层构建；本层通过 `assets/`（指向 `Application/Game/assets` 的目录联接）共用资产 |
 | 顶层 `main` | 只记录各层目录指针与总览，不参与本层构建 |
 
@@ -75,9 +78,9 @@ EngineCore（EngineCore.lib，已构建） ──▶ EngineSystem（EngineSystem
 | 特性 | 说明 |
 | --- | --- |
 | 唯一可执行入口 | 全项目只此一份 `EngineTests.exe`；`main` 由本层主调提供，不链接 googletest 自带的 `gtest_main` |
-| 全量单元测试 | 27 个套件 / 625 个用例，覆盖EngineCore 层与EngineSystem 层核心模块，外加本层主调逻辑自测 |
+| 全量单元测试 | 61 个套件 / 960 个用例，覆盖 EngineCore 层、EngineSystem 层核心模块、渲染层用例，外加本层主调逻辑自测 |
 | 反射驱动的选择树 | 通过 googletest 反射枚举已注册的套件与用例，运行时建立「套件 → 用例」两层选择树，新增用例自动可见，无需维护名单 |
-| 三种交互形态 | 图形窗口（GLFW + OpenGL3 + Dear ImGui）、控制台编号菜单、命令行开关全跑；无图形环境时自动降级 |
+| 三种交互形态 | 图形操作界面（SDL3 + Vulkan + Dear ImGui，常驻窗口、同进程多轮跑测）、控制台编号菜单、命令行开关全跑；无图形环境时自动降级 |
 | 所见即所测 | 勾选结果压缩成 googletest 原生 `--gtest_filter` 过滤串执行；执行前打印过滤串与复跑命令 |
 | 自动化友好 | 已带 `--gtest_*` 参数即透传、不弹窗、不等按键；`--selector=off` 不开窗直接全量回归（ctest 走这条） |
 | 中文可读 | 套件名与用例名全中文；控制台强制切 UTF-8 代码页；图形窗口加载中文字体候选链 |
@@ -102,8 +105,8 @@ EngineCore（EngineCore.lib，已构建） ──▶ EngineSystem（EngineSystem
 | 库 | 用途 | 引入方式 |
 | --- | --- | --- |
 | googletest | 单元测试框架 | `external/googletest/` 源码副本；`EXCLUDE_FROM_ALL` 接入，`INSTALL_GTEST OFF`、`BUILD_GMOCK OFF`、`gtest_force_shared_crt ON`（强制共享运行时库，避免与下层 CRT 设置冲突产生 LNK2038）；不使用 `GTest::gtest_main` |
-| Dear ImGui | 图形选择窗口的即时模式界面 | `external/Dear_ImGui/` 源码副本；编 imgui 核心 4 文件（`imgui.cpp`/`imgui_draw.cpp`/`imgui_tables.cpp`/`imgui_widgets.cpp`）+ 后端（`imgui_impl_glfw.cpp`/`imgui_impl_opengl3.cpp`）；**不编 `imgui_demo.cpp`**（示例窗口用不到） |
-| glad | OpenGL 函数加载器 | `external/glad/` 源码副本；编 `src/gl.c`，供图形窗口自身的 `glViewport`/`glClearColor`/`glClear` 调用 |
+| Dear ImGui | 图形操作界面的即时模式界面 | `external/Dear_ImGui/` 源码副本；编 imgui 核心 4 文件（`imgui.cpp`/`imgui_draw.cpp`/`imgui_tables.cpp`/`imgui_widgets.cpp`）+ 后端（`imgui_impl_sdl3.cpp`/`imgui_impl_vulkan.cpp`）；**不编 `imgui_demo.cpp`**（示例窗口用不到） |
+| glad | 改造前遗留（当前不参与编译） | `external/glad/` 源码副本仍留在树内；图形后端改用 SDL3 + Vulkan 后本层不再引用 glad，构建脚本也不再收编 `src/gl.c` |
 
 EngineCore / EngineSystem 层的第三方库（GLFW、nlohmann::json、bullet3、glm 等）**不在本层重复**，随下层的导入目标与对外面一并传递。
 
@@ -116,6 +119,7 @@ EngineCore / EngineSystem 层的第三方库（GLFW、nlohmann::json、bullet3�
 | 编译器 | MSVC（当前只在 Windows / x64 / MSVC 上验证；脚本对 GCC/Clang 亦有分支） |
 | 配置 | Visual Studio「CMake 配置」：`x64-Debug`，继承 `msvc_x64_x64` 环境 |
 | 库输出目录 | `out/build/<配置>/lib/` |
+| 用例门控 | 可见窗口用例（`Renderer_Visible_Test`）默认运行，会弹出真实窗口；无人值守环境设环境变量 `BYJY_RUN_L3=0` 跳过。当前只有 L3 这一级门控，L1/L2 未实现（有意取舍） |
 
 ---
 
@@ -145,12 +149,19 @@ Application/Test/
 │   │   ├── 主程序.cpp
 │   │   ├── 测试选择模型.h / .cpp
 │   │   ├── 控制台选择菜单.h / .cpp
-│   │   ├── 图形选择窗口.h / .cpp
+│   │   ├── 引擎日志屏蔽.h / .cpp
+│   │   ├── 图形操作界面.h / .cpp   # SDL3 + Vulkan 常驻操作界面
+│   │   ├── 测试界面.h / .cpp       # 选择树 / 运行控制 / 结果 / 输出镜像 / 日志
+│   │   ├── 测试运行器.h / .cpp     # 工作线程跑轮 + 只读快照
+│   │   ├── 测试运行记录.h
+│   │   ├── gtest输出镜像.h / .cpp  # 监听器采集 + 控制台风格输出行
 │   │   └── 退出等待判定.h
-│   └── 单元测试/                  # 用例源文件（主调 / 工具 / 核心 三棵子树）
-│       ├── 主调/                  # 2 文件
-│       ├── 工具/                  # 9 文件
-│       └── 核心/                  # 9 文件
+│   └── 单元测试/                  # 按层级分组：EngineCore / Renderer / Test
+│       ├── EngineCore/            # EngineCore 层用例
+│       │   ├── 工具/              # 12 文件
+│       │   └── 核心/              # 14 文件
+│       ├── Renderer/              # 51 文件
+│       └── Test/                  # 2 文件（本层主调自测）
 ├── assets/                        # 目录联接 → Application/Game/assets（不入库）
 └── out/build/                     # 构建输出目录（不入库）
 ```
@@ -172,7 +183,7 @@ Application/Test/
          │   ├── main()            分流 / 过滤串 / 收尾等待  │
          │   ├── 测试选择模型        反射 gtest 注册表建树    │
          │   ├── 控制台选择菜单      编号菜单（回退入口）      │
-         │   ├── 图形选择窗口        GLFW + ImGui 勾选界面    │
+         │   ├── 图形操作界面        SDL3 + Vulkan 常驻操作界面 │
          │   └── RUN_ALL_TESTS()    执行选中的用例           │
          └───────┬──────────────────────────────┬───────────┘
                  │ 链接已构建静态库               │ 反射 / 过滤
@@ -206,7 +217,7 @@ Application/Test/
 [构建] EngineCore.lib → EngineSystem.lib → 本层 EngineTests.exe
 [启动] EngineTests.exe（可带 --selector=... / --gtest_*）
    ├─ 交互路径（默认 window / console）：
-   │     建立选择模型 → 反射 27 套件 / 625 用例 → 用户勾选 → 生成过滤串
+   │     建立选择模型 → 反射 61 套件 / 960 用例 → 用户勾选 → 生成过滤串
    └─ 自动化路径（--gtest_* 透传 / --selector=off）：不建模型、不开窗
 [执行] GTEST_FLAG(filter) = 过滤串 → RUN_ALL_TESTS() → 逐用例 SetUp / 用例体 / TearDown
 [收尾] 交互运行打印提示并等待按键；自动化运行立即返回退出码（0 全过 / 非 0 有失败）
@@ -216,7 +227,7 @@ Application/Test/
 
 ## 六、主调与测试模块选择器详解
 
-主调模块位于 `src/主调/`，由六个源文件组成。
+主调模块位于 `src/主调/`，由入口、选择逻辑、引擎日志屏蔽与图形操作界面四部分共 8 个实现文件组成。
 
 ### 6.1 主程序（`src/主调/主程序.cpp`）
 
@@ -224,14 +235,14 @@ Application/Test/
 - **对外接口**：`int main(int argc, char** argv);`
 - **实现要点**：
   - 参数摘取循环：凡以 `--selector=` 开头的参数被摘出为选择模式并标记「显式选择器」，不进入保留参数（否则 gtest 会报未知 flag）；凡以 `--gtest_` 开头的参数只做「命令行带过滤」标记，**原样保留**给 gtest；其余参数原样保留。`argv[0]` 做空指针兜底。
-  - 四步分流：① 未显式指定选择器且带 `--gtest_*` → 直接透传执行；② `--selector=off` → 不开窗全量运行；③ `--selector=console` → 控制台菜单；④ 默认或 `--selector=window` → 图形窗口，窗口创建失败则打印提示并降级为控制台菜单。
+  - 四步分流：① 未显式指定选择器且带 `--gtest_*` → 直接透传执行；② `--selector=off` → 不开窗全量运行；③ `--selector=console` → 控制台菜单；④ 默认或 `--selector=window` → 图形操作界面（多轮跑测，界面退出即会话结束），窗口创建失败则打印提示并降级为控制台菜单。
   - 过滤串落地：执行前打印实际过滤串与 `--gtest_filter=` 复跑命令，再写入 `GTEST_FLAG(filter)`，只调用一次 `RUN_ALL_TESTS()`。
   - 收尾：`return 测试结果` 直接透传 `RUN_ALL_TESTS()` 的退出码供 CI 判级。
-- **涉及文件**：`主程序.cpp`；依赖 `测试选择模型.h`、`控制台选择菜单.h`、`图形选择窗口.h`、`退出等待判定.h`。
+- **涉及文件**：`主程序.cpp`；依赖 `测试选择模型.h`、`控制台选择菜单.h`、`图形操作界面.h`、`退出等待判定.h`、`引擎日志屏蔽.h`。
 
 ### 6.2 测试选择模型（`src/主调/测试选择模型.h` / `.cpp`）
 
-- **功能**：纯逻辑层，不依赖任何图形库。通过 googletest 反射枚举当前已注册的套件与用例，建立两层选择树；维护勾选态（全选 / 半选 / 单条）；生成 `--gtest_filter` 过滤串；解析控制台编号输入。图形窗口、控制台菜单与单元测试共用同一模型。
+- **功能**：纯逻辑层，不依赖任何图形库。通过 googletest 反射枚举当前已注册的套件与用例，建立两层选择树；维护勾选态（全选 / 半选 / 单条）；生成 `--gtest_filter` 过滤串；解析控制台编号输入。图形操作界面、控制台菜单与单元测试共用同一模型。
 - **对外接口**：
 
 ```cpp
@@ -270,18 +281,25 @@ namespace engine
 - **实现要点**：
   - 打印标题与逐条编号列表（`N) 套件名（M 个用例）`）。
   - 最多接受三次非法输入，其后兜底全跑；输入流结束（管道/重定向）与空输入（直接回车）均按全选处理。
-  - 控制台菜单按**套件粒度**勾选；用例粒度是图形窗口的专属能力。
+  - 控制台菜单按**套件粒度**勾选；用例粒度是图形操作界面的专属能力（有意取舍，非缺陷）。
 - **涉及文件**：`控制台选择菜单.h` / `.cpp`。
 
-### 6.4 图形选择窗口（`src/主调/图形选择窗口.h` / `.cpp`）
+### 6.4 图形操作界面（`src/主调/图形操作界面.h` / `.cpp`）
 
-- **功能**：默认交互入口，GLFW + OpenGL3 + Dear ImGui 的树形勾选窗口：展示套件与用例、支持搜索过滤与批量勾选、Esc / 关窗视为全跑。
-- **对外接口**：`bool engine::图形选择窗口_运行(Test_Selection_Model& 模型, std::string& 过滤串);`（窗口创建失败返回 `false`，调用方退控制台菜单）
+- **功能**：默认交互入口。经渲染层 UI 通道（SDL3 窗口 + Vulkan 交换链 + Dear ImGui）常驻一个操作界面：套件/用例勾选、按轮运行、实时进度、结果表、失败详情、gtest 输出镜像与引擎日志面板；同进程内可连续多轮跑测，退出界面即结束会话。
+- **对外接口**：`bool engine::图形操作界面_运行(Test_Selection_Model& 模型);`（窗口创建失败返回 `false`，调用方退控制台菜单）
 - **实现要点**：
-  - 初始化时序：`glfwInit` → 请求 OpenGL 3.3 核心上下文建窗 → `gladLoadGL` → 创建 ImGui 上下文 → 应用蓝色渐变主题 → 加载中文字体 → 主循环；三处失败点（GLFW 初始化、建窗、glad 加载）均返回 `false` 触发降级。
-  - 界面：铺满视口的无标题面板；工具条含全选 / 清空 / 反选、搜索框与「已选 N / M」计数；选择树为「套件节点 + 用例复选」；底部为「开始测试」（或 Enter）与「取消（全跑）」（或 Esc）。
-  - 细节：不写 `imgui.ini`（保持工作区整洁）；套件展开态由模型持有，避免每帧复位；搜索是「隐藏」而非「删除」，隐藏项勾选态保留；中文字体按候选链（微软雅黑 → 等线 → 黑体 → 宋体 → 楷体；非 Windows 另有一组）逐个探测，全部失败时界面仍可运行（中文显示为方块）。
-- **涉及文件**：`图形选择窗口.h` / `.cpp`；第三方 `external/Dear_ImGui`、`external/glad`；GLFW 头文件与 `glfw3.lib` 由EngineCore 层对外面传递。
+  - 初始化时序：`Renderer::init`（渲染层自建 SDL3 窗口与交换链）→ 取 `ui_channel()` → `ImGui::CreateContext` → `ImGui_ImplSDL3_InitForVulkan` → `ImGui_ImplVulkan_Init` → 加载中文字体 → 安装测试运行器 → 注册 `draw_callback` 与 `event_callback`；任一步失败即清理并返回 `false`。
+  - 绘制时序：`ImGui_ImplSDL3_NewFrame` → `ImGui_ImplVulkan_NewFrame` → `ImGui::NewFrame` → **在铺满视口的 `ImGui::Begin` 面板内**绘制界面 → `ImGui::Render` → `ImGui_ImplVulkan_RenderDrawData`（命令缓冲由渲染层帧链路给出）。
+  - 输入：渲染层事件泵逐事件转发到 `ui_事件回调`，再交 `ImGui_ImplSDL3_ProcessEvent`；界面因此可交互。
+  - 多轮：测试在**工作线程**执行（`Test_Runner`），界面线程只读加锁快照，跑测期间界面不冻结；停止语义为「跑完当前轮后不再排队」。
+  - 不写 `imgui.ini`；中文字体按候选链（微软雅黑 → 等线 → 黑体 → 宋体 → 楷体；非 Windows 另有一组）逐个探测，全部失败时界面仍可运行（中文显示为方块）。
+- **配套模块**：
+  - `测试界面.h/.cpp`：界面绘制（选择树、运行控制、进度、结果表/失败详情、输出镜像、轮次历史、引擎日志尾部）。
+  - `测试运行器.h/.cpp`：运行状态机 + 工作线程 + 只读快照；界面模式安装输出镜像并释放默认打印器，退出时摘除监听器。
+  - `gtest输出镜像.h/.cpp`：自实现 `TestEventListener`，把 gtest 事件采成用例结果并按控制台风格格式化为输出行。
+  - `测试运行记录.h`：`Case_Result` / `Round_Summary` / `Output_Line` 数据结构。
+- **涉及文件**：`图形操作界面.h/.cpp`、`测试界面.h/.cpp`、`测试运行器.h/.cpp`、`gtest输出镜像.h/.cpp`、`测试运行记录.h`；第三方 `external/Dear_ImGui`（SDL3 + Vulkan 后端）；Vulkan SDK / SDL3 头与链接库由渲染层对外面传递。
 
 ### 6.5 退出等待判定（`src/主调/退出等待判定.h`）
 
@@ -307,42 +325,44 @@ namespace engine
 
 ## 七、单元测试体系
 
-用例统一放在 `src/单元测试/` 下，按被测层分**三棵子树**，共 **25 个用例源文件**、**27 个套件**、**625 个用例**。套件名 = googletest 夹具类名。
+用例统一放在 `src/单元测试/` 下，**按被测层级分目录**（与项目导航的层划分一致）：`EngineCore/`（内含 `工具/` 与 `核心/`）、`Renderer/`、`Test/`。共 **79 个用例源文件**（.cpp）、**61 个套件**、**960 个用例**。套件名 = googletest 夹具类名。
 
 ### 7.1 规模统计
 
-| 子树 | 路径 | 文件数 | 套件数 | 用例数 |
+| 层级 | 路径 | 文件数 | 套件数 | 用例数 |
 | --- | --- | --- | --- | --- |
-| 主调 | `src/单元测试/主调/` | 2 | 2 | 24 |
-| 工具 | `src/单元测试/工具/` | 9 | 9 | 120 |
-| 核心 | `src/单元测试/核心/` | 9 | 11 | 205 |
-| **合计** | — | **25** | **27** | **625**（619 通过 / 2 跳过 / 4 失败） |
+| 测试层（主调自测） | `src/单元测试/Test/` | 2 | 2 | 38 |
+| EngineCore · 工具 | `src/单元测试/EngineCore/工具/` | 12 | 12 | 273 |
+| EngineCore · 核心 | `src/单元测试/EngineCore/核心/` | 14 | 13 | 324 |
+| Renderer | `src/单元测试/Renderer/` | 51 | 34 | 320 |
+| **合计** | — | **79** | **61** | **960** |
 
-全量回归结果：**625 例 / 619 通过 / 2 跳过 / 4 失败**（2 例跳过为既有引擎缺陷；4 例失败全在 `Config_Loader_Test`，属在建功能缺口，与本版构建改造无关）。
+全量回归结果随引擎与渲染层的在建状态而变化；最近一次（四叉树两套件已修复并纳入）为 **960 例 / 959 通过 / 1 跳过 / 0 失败**（跳过项为需人眼验收的「交互巡览」，设 `BYJY_SHOWCASE=1` 才运行）。
 
 ### 7.2 覆盖内容
 
-| 子树 | 套件（夹具类名） | 被测对象 |
+| 层级 | 套件（夹具类名） | 被测对象 |
 | --- | --- | --- |
-| 主调 | `测试选择模型测试`（16 例）、`退出暂停判定测试`（8 例） | 本层 `Test_Selection_Model`、`需要等待退出` |
-| 工具 | `Binary_Search_Test`、`Engine_Env_Test`、`Number_Allocator_Test`、`Data_Validator_Test`、`Log_Test`、`Mesh_Loader_Test`、`Timer_Test`、`Path_String_Test`、`Random_Generator_Test` | EngineCore 工具模块组：二分查找、引擎环境、数值分配器、数据校验器、日志系统、网格加载器、计时器、路径字符串转换、随机数生成器 |
-| 核心 | `Event_Test`、`Event_Broker_Test`、`Event_Terminal_Test`、`Quadtree_Test`、`Quadtree_Manager_Test`、`Coord_Type_Test`、`Object_Pool_Test`、`Object_Test`、`Collider_Test`、`Collision_Region_Test`、`Collision_Proxy_Test` | EngineCore 核心模块：事件结构体、事件中转器、事件终端、四叉树、四叉树管理器、坐标类型、对象池、对象基类、碰撞系统三件套 |
+| 测试层（主调） | `测试选择模型测试`（24 例）、`退出暂停判定测试`（14 例） | 本层 `Test_Selection_Model`、`需要等待退出` |
+| EngineCore · 工具 | `Binary_Search_Test`、`Engine_Env_Test`、`Number_Allocator_Test`、`Data_Validator_Test`、`Field_Check_Test`、`Hash_Combine_Test`、`Log_Test`、`Mesh_Loader_Test`、`Timer_Test`、`Path_String_Test`、`Path_Check_Test`、`Random_Generator_Test` | EngineCore 工具模块组：二分查找、引擎环境、数值分配器、数据校验器、字段校验、哈希组合、日志系统、网格加载器、计时器、路径字符串转换、路径检查、随机数生成器 |
+| EngineCore · 核心 | `Event_Test`、`Event_Broker_Test`、`Event_Terminal_Test`、`Quadtree_Test`、`Quadtree_Manager_Test`、`Coord_Type_Test`、`Object_Pool_Test`、`Object_Test`、`Collider_Test`、`Collider_Move_Test`、`Collision_Region_Test`、`Collision_Proxy_Test`、`Config_Loader_Test` | EngineCore 核心模块：事件结构体、事件中转器、事件终端、四叉树、四叉树管理器、坐标类型、对象池、对象基类、碰撞系统、配置加载器 |
+| Renderer | `Renderer_*` 共 26 个套件（初始化、交换链重建、帧、GPU 统计、网格、纹理、采样器、着色器、管线、场景、相机、文字、后处理链、可见窗口等） | 渲染层公共面：设备/平台/交换链/帧/内存/管线/网格/纹理/场景/文字/后处理 |
 
-> 核心子树 9 个文件却含 11 个套件，因为 `碰撞测试.cpp` 一个文件里注册了三个套件（`Collider_Test` / `Collision_Region_Test` / `Collision_Proxy_Test`）。
+> EngineCore · 核心 15 个文件含 13 个套件；`碰撞测试.cpp` 一个文件里注册了三个套件（`Collider_Test` / `Collision_Region_Test` / `Collision_Proxy_Test`）。
 
 ### 7.3 构建目标
 
 | 目标 | 类型 | 说明 |
 | --- | --- | --- |
 | `TestCore` | STATIC | `src/` 下功能测试代码（排除 `单元测试/`、`主调/`）；当前为空，跳过产出 |
-| `TestGui` | STATIC | Dear ImGui 核心 4 文件 + glfw/opengl3 后端 + glad，仅供图形窗口使用 |
-| `TestLauncher` | STATIC | 纯逻辑的测试选择模型 + 控制台菜单，供主程序与用例共用 |
+| `TestGui` | STATIC | Dear ImGui 核心 4 文件 + SDL3/Vulkan 后端，仅供图形操作界面使用 |
+| `TestLauncher` | STATIC | 测试选择模型 + 控制台菜单 + 引擎日志屏蔽，供主程序与用例共用 |
 | `EngineTestObjects` | OBJECT | 全部用例 `.obj`；用 OBJECT 库而非 STATIC，避免未引用 `.obj` 被链接器丢弃导致用例静默不跑 |
-| `EngineTests` | 可执行文件 | 用例 `.obj` + 主程序 + 图形窗口，链接下层静态库与 gtest，输出到层根目录 |
+| `EngineTests` | 可执行文件 | 用例 `.obj` + 主程序 + 图形操作界面，链接下层静态库与 gtest，输出到层根目录 |
 
 设计要点：
 
-- `TestLauncher` 与 `TestGui` 按**依赖方向**切开：图形窗口依赖 ImGui，单独编进 `EngineTests`，使用例不必拖上图形库；纯逻辑部分则被用例目标直接链接，用例可 include `测试选择模型.h` 验证选择逻辑。
+- `TestLauncher` 与 `TestGui` 按**依赖方向**切开：图形操作界面依赖 ImGui，单独编进 `EngineTests`，使用例不必拖上图形库；纯逻辑部分与引擎日志屏蔽则编进 `TestLauncher`，供用例目标直接链接。
 - `EngineTestObjects` 用 OBJECT 库是本体系的关键决策：静态库里未被引用的 `.obj` 会被链接器丢弃，`TEST_F` 宏的静态注册随之丢失，用例便**静默不跑**（不报错，只是数量变少）。改回 STATIC 库是最危险的「优化」。
 - 不链接 `GTest::gtest_main`：`main` 由本层 `主程序.cpp` 提供。
 
@@ -466,7 +486,7 @@ cmake -S . -B out/build/x64-Debug -G Ninja \
 
 - 四步分流固化：透传 / `off` / `console` / `window` 四条路径与失败降级均已实现并有回归。
 - 过滤串三态压缩与退出等待三参数判定均有专门用例覆盖。
-- 单元测试体系 27 套件 / 625 用例（619 通过 / 2 跳过 / 4 失败，失败项属 `Config_Loader_Test` 在建功能缺口），`ctest` 1/1 通过。
+- 单元测试体系 61 套件 / 960 用例（最近一次全量：960 例 / 959 通过 / 1 跳过 / 0 失败，含四叉树两套件；跳过项为需人眼验收的「交互巡览」），`ctest` 1/1 通过。
 - 产物落层根目录，资源相对路径解析与Game 层一致。
 - 层间契约就位：只链接两层已构建静态库，无源码回退路径。
 
@@ -479,10 +499,36 @@ cmake -S . -B out/build/x64-Debug -G Ninja \
 
 | 位置 | 现象 |
 | --- | --- |
-| 图形选择窗口 | 鼠标点选交互尚未自动化，回归只覆盖「窗口创建失败降级」路径，点选本身依赖人工验证；字体候选链全部失败时界面仍可运行，但中文显示为方块（仅影响观感） |
-| 四叉树 | 超大树上（`1ull<<33` 量级边长上限）的范围查询尚未专项验证；已有单点检索次数的缺陷回归用例 |
+| 图形操作界面 | 鼠标点选交互尚未自动化，回归只覆盖「窗口创建失败降级」与「窗口存活」路径，点选本身依赖人工验证；字体候选链全部失败时界面仍可运行，但中文显示为方块（仅影响观感） |
+| 四叉树 | 超大树上（`1ull<<33` 量级边长上限）的范围查询尚未专项验证；`退化树单点查找` 因引擎对中间节点取区块数据抛 `std::bad_variant_access` 而 `GTEST_SKIP`；`退化树创建被拒绝` 因引擎已移除退化解拦截而 `GTEST_SKIP`。两处跳过均为引擎侧在建缺陷，待引擎修复后取消跳过 |
 | 过滤串生成 | 用例名/套件名若含 `:`、`*`、`?` 等 gtest 过滤串特殊字符，直接拼接会导致过滤串断裂；当前依赖命名规范规避，属已知边界 |
 | 控制台输出捕获 | 日志系统用例不能用 gtest 自带的 `CaptureStdout`（其临时文件路径含中文时会 FATAL），改用自研 `Console_Capture`；新增需要捕获输出的用例须沿用该做法 |
+
+### 10.4 设计取舍（答疑结论）
+
+以下为历次「待答疑」中属于**有意取舍**的条目，按当前实现定案，不再作为缺陷处理：
+
+| 主题 | 结论 |
+| --- | --- |
+| 控制台菜单粒度 | 仅支持套件粒度；用例粒度是图形操作界面的能力（有意取舍） |
+| 选择树是否纳入被禁用/跳过用例 | 纳入。建树登记全部用例，实际执行与跳过由 gtest 决定 |
+| 空白输入 | 控制台菜单拦截为全选；模型解析层把空串判为非法输入 |
+| 过滤串阈值 | `1000000` 为输入编号上限，防止超长输入；边界按当前实现固定 |
+| 分级门控 L1/L2/L3 | 只实现 L3（可跳过可见窗口用例）；L1/L2 未实现 |
+| `Test_Object` 同名类型 | `对象测试.cpp` 与 `对象池测试.cpp` 各自定义、成员完全相同，属**有意隔离**（两棵树互不共享夹具） |
+| `Collider_Test` / `Collider_Move_Test` | 覆盖角度不同（基础行为 vs 位移链路），保留两套 |
+| 夹具分散、无共享头 | 有意取舍：用例文件自包含，避免用例间耦合 |
+| 中文夹具名/用例名 | 遵循工程中文命名约定 |
+| `Mesh_Loader` 不做顶点去重 | 有意简化，加载器只负责解析与索引重建 |
+| 对象池 `capacity/size` | 以实现为准：`size` 为已分配记录数，`capacity` 为记录容器容量 |
+| 数值分配器回绕/哨兵 | 以实现为准：到达最大值后回绕，`0` 为非法哨兵 |
+| `Timer::elapsed(name, true)` | 以实现为准：读取后重置该计时项 |
+| 随机数生成器 | 缺省构造以随机设备为种子；无参取值区间以实现为准 |
+| 二分查找子区间索引 | 以实现为准：子区间索引相对整段起点 |
+| 定向投递判定主体 | 由事件中转器的 ACL 键登记决定；用例按当前实现断言 |
+| 位移持续/作废时序 | 按引擎当前时序语义断言 |
+| `quadtree_merge` | 合并条件与未配对树的处理按当前实现断言 |
+| 渲染用例的像素判定 | 一律采用**结构性/相对断言 + 诊断记录**，不硬编码换机敏感的绝对值；容差与几何前提写在用例文件头 |
 
 ---
 
@@ -514,7 +560,7 @@ cmake -S . -B out/build/x64-Debug -G Ninja \
 ## 十二、路线图
 
 - [ ] 补足 `src/` 下的功能测试代码，让 `TestCore` 目标真正产出静态库
-- [ ] 图形选择窗口的鼠标点选交互自动化，把「选择 → 过滤串 → 执行」全链路纳入回归
+- [ ] 图形操作界面的鼠标点选交互自动化，把「选择 → 过滤串 → 执行」全链路纳入回归
 - [ ] 扩大用例覆盖面至EngineSystem 层的实体/属性/效应模块
 - [ ] 四叉树超大树上范围查询的专项验证
 - [ ] 过滤串对特殊字符的转义或校验，消除命名相关边界
