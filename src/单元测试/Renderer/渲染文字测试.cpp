@@ -537,3 +537,41 @@ TEST_F(Renderer_Text_Test, 文本网格缓存淘汰后仍可重画)
 
 	renderer.font_unload(font);
 }
+
+/*
+文字覆盖率写入（第一百二十六轮）
+MSAA ＋ `text_alpha_to_coverage` 开启时文字仍能正常绘制（管线创建通过、校验层无消息）；
+覆盖率会改变边缘采样，故只做「有墨迹」的粗断言，不与关闭路径逐字节比对。
+*/
+TEST_F(Renderer_Text_Test, 覆盖率写入下文字仍可绘制)
+{
+	//若本机没有测试用系统字体则跳过
+	if (!font_available())
+		GTEST_SKIP() << "本机无 " << FONT_PATH;
+	engine::Renderer renderer;
+	engine::Renderer_Config config = hidden_config();
+	config.msaa_samples = 4;
+	config.text_alpha_to_coverage = true;
+	ASSERT_TRUE(renderer.init(config));
+	//若本机不支持像素回读则跳过
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	//设备不支持多重采样则跳过（覆盖率写入仅在 > 1× 生效）
+	if (renderer.msaa_samples() < 2)
+		GTEST_SKIP() << "本机不支持多重采样";
+
+	//加载字体并绘制
+	uint64_t font = 0;
+	ASSERT_TRUE(renderer.font_load_file(font, FONT_PATH, FONT_PIXEL_HEIGHT));
+	ASSERT_TRUE(renderer.text_draw(font, "AB", 4.0f, 4.0f));
+	//渲染并回读
+	std::vector<uint8_t> pixels(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(pixels.data(), static_cast<uint32_t>(pixels.size())));
+	const uint32_t ink = ink_count(pixels, 0, 0, WINDOW_WIDTH, WINDOW_HEIGHT);
+
+	RecordProperty("text_coverage_ink", static_cast<int>(ink));
+	RecordProperty("text_coverage_samples", static_cast<int>(renderer.msaa_samples()));
+	EXPECT_GT(ink, 0u) << "开启覆盖率写入后文字消失";
+
+	renderer.font_unload(font);
+}
