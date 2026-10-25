@@ -310,3 +310,128 @@ TEST_F(Renderer_Gpu_Test, 阴影pass独立计时)
 	renderer.mesh_unload(receiver);
 	renderer.mesh_unload(occluder);
 }
+
+/*
+GPU 分解累计口径（第一百三十一轮）
+直通路径渲染 4 帧后：场景累计与总累计同一读回口径（样本数一致）；
+支持时「场景累计 ＋ 后处理累计 ≤ 总累计」；阴影未启用时阴影累计与样本数恒 0。
+不支持时间戳时四项恒 0（不跳过）。
+*/
+TEST_F(Renderer_Gpu_Test, GPU分解累计口径)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, triangle_data()));
+	for (uint32_t index = 0; index < 4; ++index)
+	{
+		ASSERT_TRUE(renderer.mesh_draw(mesh, nullptr));
+		ASSERT_TRUE(renderer.frame_render());
+	}
+	engine::Frame_Stats stats = renderer.frame_stats_get();
+	RecordProperty("gpu_scene_total_ms", stats.gpu_scene_total_ms);
+	RecordProperty("gpu_total_ms", stats.gpu_total_ms);
+	if (renderer.gpu_timestamp_supported())
+	{
+		//场景累计随每次读回累加，故与总累计同为正且不超过总累计
+		EXPECT_GT(stats.gpu_scene_total_ms, 0.0) << "场景累计未随读回累加";
+		EXPECT_LE(stats.gpu_post_total_ms, 0.05) << "直通路径不应有后处理累计";
+		EXPECT_LE(stats.gpu_scene_total_ms + stats.gpu_post_total_ms, stats.gpu_total_ms + 0.01)
+			<< "分段累计超过总累计";
+		//样本数口径与总累计一致（两帧可读回）
+		EXPECT_EQ(stats.gpu_samples, 2u);
+	}
+	else
+	{
+		EXPECT_EQ(stats.gpu_scene_total_ms, 0.0);
+		EXPECT_EQ(stats.gpu_post_total_ms, 0.0);
+	}
+	//未启用阴影：阴影累计与样本数恒 0
+	EXPECT_EQ(stats.gpu_shadow_total_ms, 0.0);
+	EXPECT_EQ(stats.gpu_shadow_samples, 0u);
+
+	renderer.mesh_unload(mesh);
+}
+
+/*
+GPU 分解累计随阴影按需重绘递增（第一百三十一轮）
+固定场景连续 4 帧：阴影只在首帧按需重绘，故阴影样本数应为 1，阴影累计等于该次耗时且 > 0。
+*/
+TEST_F(Renderer_Gpu_Test, 阴影累计随按需重绘递增)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	engine::Mesh_Handle receiver = 0;
+	engine::Mesh_Handle occluder = 0;
+	ASSERT_TRUE(renderer.mesh_load(receiver, normal_quad()));
+	ASSERT_TRUE(renderer.mesh_load(occluder, normal_quad()));
+	engine::Camera_Data camera{};
+	engine::Light_Data light{};
+	light.direction[2] = 1.0f;
+	light.intensity = 1.0f;
+	light.ambient = 0.0f;
+	engine::Fog_Data fog{};
+	renderer.scene_apply(camera, light, fog);
+	renderer.shadow_enable_set(true);
+	float transform[16] = {};
+	transform[0] = 0.6f;
+	transform[5] = 0.6f;
+	transform[10] = 0.6f;
+	transform[14] = -0.5f;
+	transform[15] = 1.0f;
+	//场景与变换完全不变 → 阴影签名不变 → 仅首帧重绘
+	for (uint32_t index = 0; index < 4; ++index)
+	{
+		ASSERT_TRUE(renderer.mesh_draw(occluder, transform));
+		ASSERT_TRUE(renderer.mesh_draw(receiver, nullptr));
+		ASSERT_TRUE(renderer.frame_render());
+	}
+	engine::Frame_Stats stats = renderer.frame_stats_get();
+	RecordProperty("gpu_shadow_samples", static_cast<int>(stats.gpu_shadow_samples));
+	if (renderer.gpu_timestamp_supported())
+	{
+		EXPECT_EQ(stats.gpu_shadow_samples, 1u) << "按需重绘之外的帧不应产生阴影样本";
+		EXPECT_GT(stats.gpu_shadow_total_ms, 0.0) << "阴影累计未随读回累加";
+	}
+	else
+	{
+		EXPECT_EQ(stats.gpu_shadow_samples, 0u);
+		EXPECT_EQ(stats.gpu_shadow_total_ms, 0.0);
+	}
+
+	renderer.shadow_enable_set(false);
+	renderer.mesh_unload(receiver);
+	renderer.mesh_unload(occluder);
+}
+
+/*
+帧统计清零含分段累计（第一百三十一轮）
+渲染若干帧后清零：分段累计与阴影样本归零，最近一帧即时量保持不变。
+*/
+TEST_F(Renderer_Gpu_Test, 清零含分段累计)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, triangle_data()));
+	for (uint32_t index = 0; index < 4; ++index)
+	{
+		ASSERT_TRUE(renderer.mesh_draw(mesh, nullptr));
+		ASSERT_TRUE(renderer.frame_render());
+	}
+	const double last_scene_ms = renderer.frame_stats_get().gpu_scene_ms;
+
+	renderer.frame_stats_reset();
+	engine::Frame_Stats stats = renderer.frame_stats_get();
+	EXPECT_EQ(stats.frames, 0u);
+	EXPECT_EQ(stats.gpu_total_ms, 0.0);
+	EXPECT_EQ(stats.gpu_samples, 0u);
+	EXPECT_EQ(stats.gpu_scene_total_ms, 0.0);
+	EXPECT_EQ(stats.gpu_post_total_ms, 0.0);
+	EXPECT_EQ(stats.gpu_shadow_total_ms, 0.0);
+	EXPECT_EQ(stats.gpu_shadow_samples, 0u);
+	//最近一帧即时量不受清零影响
+	EXPECT_EQ(stats.gpu_scene_ms, last_scene_ms);
+
+	renderer.mesh_unload(mesh);
+}
