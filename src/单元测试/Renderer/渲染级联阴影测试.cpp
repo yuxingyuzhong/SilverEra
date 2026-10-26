@@ -304,6 +304,70 @@ TEST_F(Renderer_Scene_Test, 三级级联覆盖中距并切回单级恢复)
 }
 
 /*
+级联接缝淡化（第一百四十八轮）
+口径：接收面与遮挡面位于 z = -9.5（与相机距离约 12.5，恰在第 1 个阈值 12 附近）；
+      三级、split 12 / 倍数 3：硬切换（淡化 0）时片元归第 2 片（半径 36）→ 中心被遮蔽；
+      淡化 0.3 时带内与第 1 片（半径 12，覆盖不到该处 → 受光）混合 → 中心明显变亮；
+      淡化归零后画面与最初硬切换帧逐字节一致。
+*/
+TEST_F(Renderer_Scene_Test, 级联接缝淡化)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	uint64_t texture = 0;
+	std::vector<uint8_t> texels = solid_white();
+	ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 2, 2));
+	engine::Mesh_Handle receiver = 0;
+	engine::Mesh_Handle occluder = 0;
+	ASSERT_TRUE(renderer.mesh_load(receiver, quad_data_with_normal(0.0f, 0.0f, -1.0f)));
+	ASSERT_TRUE(renderer.mesh_load(occluder, quad_data_with_normal(0.0f, 0.0f, -1.0f)));
+	renderer.texture_bind_set(texture);
+
+	//默认相机（z = 3）；接收面与遮挡面位于 z = -9.5
+	engine::Camera_Data camera{};
+	camera.far_plane = 200.0f;
+	lights_apply(renderer, camera, positive_z_light());
+	renderer.shadow_enable_set(true);
+	const std::array<float, 16> receiver_transform = translate_matrix(0.0f, 0.0f, -9.5f);
+	const std::array<float, 16> occluder_transform = occluder_matrix(0.0f, 0.0f, -10.0f);
+
+	//三级 + 硬切换
+	renderer.shadow_cascade_set(3, 3.0f, 12.0f);
+	ASSERT_FLOAT_EQ(renderer.shadow_cascade_blend(), 0.0f) << "淡化默认值应为 0";
+	ASSERT_TRUE(renderer.mesh_draw(occluder, occluder_transform.data()));
+	ASSERT_TRUE(renderer.mesh_draw(receiver, receiver_transform.data()));
+	std::vector<uint8_t> hard_pixels = render_once(renderer);
+
+	//淡化 0.3：带内混合 → 中心变亮
+	renderer.shadow_cascade_blend_set(0.3f);
+	EXPECT_FLOAT_EQ(renderer.shadow_cascade_blend(), 0.3f);
+	ASSERT_TRUE(renderer.mesh_draw(occluder, occluder_transform.data()));
+	ASSERT_TRUE(renderer.mesh_draw(receiver, receiver_transform.data()));
+	std::vector<uint8_t> blended_pixels = render_once(renderer);
+
+	//归零：逐字节回到硬切换
+	renderer.shadow_cascade_blend_set(0.0f);
+	ASSERT_TRUE(renderer.mesh_draw(occluder, occluder_transform.data()));
+	ASSERT_TRUE(renderer.mesh_draw(receiver, receiver_transform.data()));
+	std::vector<uint8_t> restored_pixels = render_once(renderer);
+
+	const uint32_t hard_brightness = center_brightness(hard_pixels);
+	const uint32_t blended_brightness = center_brightness(blended_pixels);
+	RecordProperty("cascade_blend_hard", hard_brightness);
+	RecordProperty("cascade_blend_mixed", blended_brightness);
+	EXPECT_LT(hard_brightness, 60u) << "硬切换下中心未被第 2 片遮蔽";
+	EXPECT_GT(blended_brightness, hard_brightness + 30u) << "淡化未在阈值附近混合（"
+		<< hard_brightness << " → " << blended_brightness << "）";
+	EXPECT_TRUE(pixels_equal(hard_pixels, restored_pixels)) << "淡化归零后画面未恢复";
+
+	renderer.mesh_unload(receiver);
+	renderer.mesh_unload(occluder);
+	renderer.texture_unload(texture);
+}
+
+/*
 级联参数非法忽略（第一百二十一轮；第一百四十六轮级联数上限扩为 3）
 口径：级联数只接受 1 / 2 / 3，远区倍数须 > 1，切换距离须 > 0；
      四类非法调用都应整次忽略，配置保持调用前的值。
