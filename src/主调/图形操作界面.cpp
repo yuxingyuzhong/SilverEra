@@ -238,7 +238,7 @@ namespace engine
                 static_cast<unsigned long long>(0),
                 上下文.运行状态.frame_ms);
             ImGui::Separator();
-            ImGui::TextUnformatted("操作：WASD 移动 · Q/E 升降 · 右键拖拽看向 · 滚轮调速 · ESC 返回");
+            ImGui::TextUnformatted("操作：WASD 移动 · E / 空格 上升 · Q / Shift 下降 · 右键拖拽看向 · 滚轮调速 · ESC 返回");
             if (ImGui::Button("返回测试界面", ImVec2(150.0f, 30.0f)))
                 上下文.请求退出展示 = true;
             ImGui::SameLine();
@@ -346,6 +346,10 @@ namespace engine
                 case SDL_SCANCODE_D: 上下文.键右 = 按下; break;
                 case SDL_SCANCODE_Q: 上下文.键降 = 按下; break;
                 case SDL_SCANCODE_E: 上下文.键升 = 按下; break;
+                //备用升降键：空格上升、Shift 下降（与 Q/E 并存）
+                case SDL_SCANCODE_SPACE: 上下文.键升 = 按下; break;
+                case SDL_SCANCODE_LSHIFT:
+                case SDL_SCANCODE_RSHIFT: 上下文.键降 = 按下; break;
                 case SDL_SCANCODE_ESCAPE:
                     //ESC：展示模式下返回测试界面
                     if (按下 && 上下文.展示模式)
