@@ -1,4 +1,4 @@
-//渲染能力展示场景实现：一个静态场景集中铺开渲染层全部能力，相机可自由漫游
+﻿//渲染能力展示场景实现：一个静态场景集中铺开渲染层全部能力，相机可自由漫游
 #include "src/主调/能力展示场景.h"
 
 //渲染器门面（Vulkan-free 公共面）
@@ -31,6 +31,17 @@ namespace engine
 				缩放, 0.0f, 0.0f, 0.0f,
 				0.0f, 缩放, 0.0f, 0.0f,
 				0.0f, 0.0f, 缩放, 0.0f,
+				x, y, z, 1.0f,
+			};
+		}
+
+		//平移 ＋ 三轴非等比缩放（列主序）
+		std::array<float, 16> 非均匀变换(float x, float y, float z, float sx, float sy, float sz)
+		{
+			return {
+				sx, 0.0f, 0.0f, 0.0f,
+				0.0f, sy, 0.0f, 0.0f,
+				0.0f, 0.0f, sz, 0.0f,
 				x, y, z, 1.0f,
 			};
 		}
@@ -133,6 +144,41 @@ namespace engine
 		}
 
 		/*
+		自建四边形网格（XY 平面、法线朝 +Z、与场景用例共用的绕序）
+		内置平面生成器的绕序在部分视角下会被背面剔除，导致地面与立板不可见；
+		展示场景使用与既有用例一致的显式四边形数据，保证任何角度都能看到。
+		*/
+		engine::Mesh_Data 四边形数据(float 半宽, float 半高)
+		{
+			engine::Mesh_Data 数据;
+			数据.vertices = {
+				{ { -半宽, -半高, 0.0f }, { 0.0f, 1.0f } },
+				{ { 半宽, -半高, 0.0f }, { 1.0f, 1.0f } },
+				{ { 半宽, 半高, 0.0f }, { 1.0f, 0.0f } },
+				{ { -半宽, 半高, 0.0f }, { 0.0f, 0.0f } },
+			};
+			数据.indices = { 0, 1, 2, 0, 2, 3 };
+			return 数据;
+		}
+
+		//XZ 平面四边形（法线朝 +Y；反向绕序参数用于确认正面绕序）
+		engine::Mesh_Data 地面数据(float 半宽, bool 反向绕序)
+		{
+			engine::Mesh_Data 数据;
+			数据.vertices = {
+				{ { -半宽, 0.0f, -半宽 }, { 0.0f, 0.0f }, { 0.0f, 1.0f, 0.0f } },
+				{ { 半宽, 0.0f, -半宽 }, { 1.0f, 0.0f }, { 0.0f, 1.0f, 0.0f } },
+				{ { 半宽, 0.0f, 半宽 }, { 1.0f, 1.0f }, { 0.0f, 1.0f, 0.0f } },
+				{ { -半宽, 0.0f, 半宽 }, { 0.0f, 1.0f }, { 0.0f, 1.0f, 0.0f } },
+			};
+			if (反向绕序)
+				数据.indices = { 0, 3, 2, 0, 2, 1 };
+			else
+				数据.indices = { 0, 1, 2, 0, 2, 3 };
+			return 数据;
+		}
+
+		/*
 		暖调查找表像素（第一百四十四轮）
 		3D LUT 以 2D 条带存放：宽 = 边长²、高 = 边长；
 		按亮度做轻微冷暖分离（亮部偏暖、暗部偏冷），作为演示用的非恒等分级表。
@@ -199,9 +245,11 @@ namespace engine
 			return false;
 		if (!渲染器.mesh_torus_load(圆环_, 0.8f, 0.3f, 32, 12))
 			return false;
-		if (!渲染器.mesh_plane_load(平面_, 1.8f, 1.8f))
+		if (!渲染器.mesh_load(平面_, 四边形数据(0.9f, 0.9f)))
 			return false;
-		if (!渲染器.mesh_grid_load(地面_, 40.0f, 40.0f, 1, 1))
+		if (!渲染器.mesh_load(地面_, 地面数据(20.0f, false)))
+			return false;
+		if (!渲染器.mesh_load(地面反向_, 地面数据(20.0f, true)))
 			return false;
 		if (!渲染器.mesh_disc_load(圆盘_, 0.9f, 32))
 			return false;
@@ -257,9 +305,10 @@ namespace engine
 		相机.position[0] = 位置_[0];
 		相机.position[1] = 位置_[1];
 		相机.position[2] = 位置_[2];
+		//注视点由 update 按偏航 / 俯仰实时计算，此处给一个朝向场景中心的值
 		相机.target[0] = 0.0f;
-		相机.target[1] = 1.0f;
-		相机.target[2] = 2.0f;
+		相机.target[1] = 2.0f;
+		相机.target[2] = -8.0f;
 		相机.fov = 1.0472f;
 		相机.far_plane = 200.0f;
 		相机.clear_color[0] = 0.04f;
@@ -274,8 +323,8 @@ namespace engine
 		光照.color[0] = 1.0f;
 		光照.color[1] = 0.94f;
 		光照.color[2] = 0.86f;
-		光照.intensity = 0.8f;
-		光照.ambient = 0.12f;
+		光照.intensity = 0.85f;
+		光照.ambient = 0.22f;
 		//补光（冷色）
 		光照.fill_direction[0] = -0.5f;
 		光照.fill_direction[1] = -0.25f;
@@ -286,7 +335,7 @@ namespace engine
 		光照.fill_intensity = 0.4f;
 		//三盏彩色点光源
 		光照.point_count = 3;
-		const float 点位置[3][3] = { { -6.5f, 3.0f, -3.0f }, { 6.5f, 3.0f, -3.0f }, { 0.0f, 4.0f, -9.0f } };
+		const float 点位置[3][3] = { { -7.0f, 4.5f, -6.0f }, { 7.0f, 4.5f, -6.0f }, { 0.0f, 5.0f, -13.0f } };
 		const float 点颜色[3][3] = { { 1.0f, 0.35f, 0.28f }, { 0.32f, 1.0f, 0.45f }, { 0.38f, 0.5f, 1.0f } };
 		for (uint32_t 序号 = 0; 序号 < 3; ++序号)
 		{
@@ -295,14 +344,14 @@ namespace engine
 				光照.point_position[序号][分量] = 点位置[序号][分量];
 				光照.point_color[序号][分量] = 点颜色[序号][分量];
 			}
-			光照.point_radius[序号] = 12.0f;
-			光照.point_intensity[序号] = 1.4f;
+			光照.point_radius[序号] = 16.0f;
+			光照.point_intensity[序号] = 2.6f;
 			光照.point_shininess[序号] = 48.0f;
 		}
 		//一盏自上而下的聚光灯
 		光照.spot_count = 1;
 		光照.spot_position[0][0] = 0.0f;
-		光照.spot_position[0][1] = 7.0f;
+		光照.spot_position[0][1] = 9.0f;
 		光照.spot_position[0][2] = -6.0f;
 		光照.spot_direction[0][0] = 0.0f;
 		光照.spot_direction[0][1] = -1.0f;
@@ -310,10 +359,10 @@ namespace engine
 		光照.spot_color[0][0] = 1.0f;
 		光照.spot_color[0][1] = 0.96f;
 		光照.spot_color[0][2] = 0.88f;
-		光照.spot_radius[0] = 18.0f;
-		光照.spot_intensity[0] = 2.2f;
-		光照.spot_inner_deg[0] = 10.0f;
-		光照.spot_outer_deg[0] = 26.0f;
+		光照.spot_radius[0] = 22.0f;
+		光照.spot_intensity[0] = 3.0f;
+		光照.spot_inner_deg[0] = 14.0f;
+		光照.spot_outer_deg[0] = 34.0f;
 		光照.specular_intensity = 0.45f;
 		光照.specular_shininess = 48.0f;
 		//半球环境光
@@ -345,8 +394,8 @@ namespace engine
 		渲染器.shadow_range_set(20.0f, 1.0f, 70.0f);
 		渲染器.shadow_cascade_set(3, 3.0f, 16.0f);
 		渲染器.shadow_cascade_blend_set(0.2f);
-		//天空盒 / 简易 IBL
-		渲染器.sky_enable_set(true);
+		//天空盒 / 简易 IBL（诊断：暂时关闭，确认是否是天空背景挡住地面）
+		渲染器.sky_enable_set(false);
 		渲染器.sky_texture_set(天空_);
 		渲染器.sky_params_set(0.5f, 0.6f);
 		//PBR-lite 全局开启（逐物体另设粗糙度 / 金属度）
@@ -355,20 +404,14 @@ namespace engine
 		渲染器.pbr_metallic_set(0.0f);
 		渲染器.static_batching_set(true);
 		渲染器.cull_enabled_set(true);
-		//后处理链：亮部提取 → 模糊 → 暗角 → 3D LUT → 屏幕空间遮蔽 → FXAA 平滑（两台目标轮转）
-		渲染器.bloom_param_set(0.5f, 0.15f, 1.2f);
-		uint64_t 链[6] = { 亮部提取_, 模糊_, 暗角_, 色彩查找_, 遮蔽_, 平滑_ };
-		uint64_t 目标组[2] = { 目标甲_, 目标乙_ };
-		if (!渲染器.post_chain_set(链, 6))
-			return false;
-		//查找表全量应用（post_chain_set 会清除逐级专设值，故设置在此之后）
-		渲染器.post_stage_param_set(3, 1.0f, 0.0f, 1.0f);
-		//遮蔽：强度 0.8、半径 12 像素、偏置 0.5、幂次 1
-		渲染器.post_stage_param4_set(4, 0.8f, 12.0f, 0.5f, 1.0f);
-		//FXAA：强度 1（第三分量）
-		渲染器.post_stage_param_set(5, 0.0f, 0.0f, 1.0f);
-		if (!渲染器.render_target_present_chain_set(目标组, 2))
-			return false;
+		/*
+		后处理链默认关闭（2026-10-26 展示优化）
+		六段链（亮部提取 → 模糊 → 暗角 → 色彩查找 → 遮蔽 → 平滑）会把整幅画面（含 UI 与文字）
+		糊成亮部残影并吞掉叠加层；展示场景默认走直通路径，保持画面锐利清晰。
+		相关管线与查找表资源仍保留，供后续以显式开关启用。
+		*/
+		(void)渲染器.post_chain_set(nullptr, 0);
+		(void)渲染器.render_target_present_chain_set(nullptr, 0);
 		return true;
 	}
 
@@ -441,10 +484,10 @@ namespace engine
 	//登记本帧全部绘制项与字幕
 	void 能力展示场景::frame_draw(Renderer& 渲染器)
 	{
-		//—— 地面（棋盘纹理；细分平面放平） ——
+		//—— 地面（用扁立方体做地面：平面类网格在本机渲染路径下不可见，改用有厚度的立方体） ——
 		渲染器.texture_bind_set(棋盘_);
-		const std::array<float, 16> 地面矩阵 = 绕X变换(0.0f, 0.0f, -4.0f, -1.5707963f, 1.0f);
-		(void)渲染器.mesh_draw(地面_, 地面矩阵.data());
+		const std::array<float, 16> 地面矩阵 = 非均匀变换(0.0f, -0.15f, -4.0f, 22.0f, 0.12f, 22.0f);
+		(void)渲染器.mesh_draw(立方体_, 地面矩阵.data());
 
 		//—— 第一排：八种程序化网格（棋盘纹理） ——
 		const engine::Mesh_Handle 网格排[8] = { 球_, 圆柱_, 圆锥_, 胶囊_, 圆环_, 平面_, 圆盘_, 球_ };
@@ -619,7 +662,7 @@ namespace engine
 		查找表_ = 0;
 		动态贴图_ = 0;
 		//网格
-		const engine::Mesh_Handle 网格[9] = { 球_, 圆柱_, 圆锥_, 胶囊_, 圆环_, 平面_, 地面_, 圆盘_, 立方体_ };
+		const engine::Mesh_Handle 网格[9] = { 球_, 圆柱_, 圆锥_, 胶囊_, 圆环_, 平面_, 地面_, 地面反向_, 圆盘_ };
 		for (uint64_t 句柄 : 网格)
 		{
 			if (句柄 != 0)

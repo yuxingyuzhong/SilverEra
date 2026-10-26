@@ -187,8 +187,20 @@ namespace engine
             bool 请求退出展示 = false;
             //展示模式的相机输入（界面采集，主循环消费）
             展示输入 输入{};
-            //能力展示场景（非空即表示已搭建）
-            能力展示场景* 展示场景 = nullptr;
+			//能力展示场景（非空即表示已搭建）
+			能力展示场景* 展示场景 = nullptr;
+			//展示模式的原生输入状态（SDL 事件直采；不依赖 ImGui 焦点与面板可见性）
+			bool 键前 = false;
+			bool 键后 = false;
+			bool 键左 = false;
+			bool 键右 = false;
+			bool 键升 = false;
+			bool 键降 = false;
+			bool 右键按下 = false;
+			//本帧累计的鼠标相对位移与滚轮（消费后归零）
+			float 鼠标差x = 0.0f;
+			float 鼠标差y = 0.0f;
+			float 滚轮差 = 0.0f;
         };
 
         //展示模式的叠加层（能力清单 ＋ 相机与帧统计 ＋ 操作提示 ＋ 返回按钮）
@@ -198,6 +210,8 @@ namespace engine
             const ImGuiViewport* 视口 = ImGui::GetMainViewport();
             ImGui::SetNextWindowPos(ImVec2(视口->WorkPos.x + 16.0f, 视口->WorkPos.y + 16.0f));
             ImGui::SetNextWindowSize(ImVec2(430.0f, 0.0f));
+            //展示模式下没有蓝色渐变背景，本面板必须自带不透明底色，否则整个面板不可见
+            ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.04f, 0.07f, 0.14f, 0.92f));
             ImGui::Begin("##能力展示信息", nullptr,
                 ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings
                 | ImGuiWindowFlags_NoFocusOnAppearing);
@@ -231,6 +245,7 @@ namespace engine
             if (ImGui::Button("退出程序", ImVec2(110.0f, 30.0f)))
                 上下文.退出请求 = true;
             ImGui::End();
+            ImGui::PopStyleColor();
         }
 
         //测试界面的展示入口按钮（右上角悬浮）
@@ -263,24 +278,25 @@ namespace engine
             {
                 //展示模式：场景由渲染层绘制，本层只画叠加层并采集相机输入
                 绘制展示叠加层(上下文, *上下文.展示场景);
-                //ESC 返回测试界面
-                if (ImGui::IsKeyPressed(ImGuiKey_Escape, false))
-                    上下文.请求退出展示 = true;
-                //采集移动键（WASD ＋ Q/E 升降）
+                //相机输入取自 SDL 事件直采状态（ImGui 仅负责叠加层绘制）
                 展示输入& 输入 = 上下文.输入;
-                输入.前后 = (ImGui::IsKeyDown(ImGuiKey_W) ? 1.0f : 0.0f) - (ImGui::IsKeyDown(ImGuiKey_S) ? 1.0f : 0.0f);
-                输入.左右 = (ImGui::IsKeyDown(ImGuiKey_D) ? 1.0f : 0.0f) - (ImGui::IsKeyDown(ImGuiKey_A) ? 1.0f : 0.0f);
-                输入.上下 = (ImGui::IsKeyDown(ImGuiKey_E) ? 1.0f : 0.0f) - (ImGui::IsKeyDown(ImGuiKey_Q) ? 1.0f : 0.0f);
-                //右键按住拖拽 → 偏航 / 俯仰增量
-                if (ImGui::IsMouseDown(ImGuiMouseButton_Right))
+                输入.前后 = (上下文.键前 ? 1.0f : 0.0f) - (上下文.键后 ? 1.0f : 0.0f);
+                输入.左右 = (上下文.键右 ? 1.0f : 0.0f) - (上下文.键左 ? 1.0f : 0.0f);
+                输入.上下 = (上下文.键升 ? 1.0f : 0.0f) - (上下文.键降 ? 1.0f : 0.0f);
+                //右键按住拖拽 → 偏航 / 俯仰增量（消费后清零）
+                if (上下文.右键按下)
                 {
-                    输入.偏航增量 += ImGui::GetIO().MouseDelta.x * 0.0025f;
-                    输入.俯仰增量 -= ImGui::GetIO().MouseDelta.y * 0.0025f;
+                    输入.偏航增量 += 上下文.鼠标差x * 0.0025f;
+                    输入.俯仰增量 -= 上下文.鼠标差y * 0.0025f;
                 }
+                上下文.鼠标差x = 0.0f;
+                上下文.鼠标差y = 0.0f;
                 //滚轮调节速度倍率（0.25..4）
-                const float 滚轮 = ImGui::GetIO().MouseWheel;
-                if (滚轮 != 0.0f)
-                    输入.速度倍率 *= std::pow(1.15f, 滚轮);
+                if (上下文.滚轮差 != 0.0f)
+                {
+                    输入.速度倍率 *= std::pow(1.15f, 上下文.滚轮差);
+                    上下文.滚轮差 = 0.0f;
+                }
                 if (输入.速度倍率 < 0.25f)
                     输入.速度倍率 = 0.25f;
                 if (输入.速度倍率 > 4.0f)
@@ -312,11 +328,54 @@ namespace engine
             ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), 命令缓冲);
         }
 
-        //SDL 事件转发回调（渲染层事件泵逐个事件转发；交给 ImGui 的 SDL3 后端处理输入）
+        //SDL 事件转发回调（渲染层事件泵逐个事件转发）
+        //职责：① 交给 ImGui 平台后端（叠加层输入）；② 直采展示模式的键鼠状态
         void ui_事件回调(const SDL_Event* 事件, void* 用户数据)
         {
-            (void)用户数据;
+            Ui_会话上下文& 上下文 = *static_cast<Ui_会话上下文*>(用户数据);
             ImGui_ImplSDL3_ProcessEvent(事件);
+            //按键按下 / 抬起（按物理键位，避免输入法 / 布局差异）
+            if (事件->type == SDL_EVENT_KEY_DOWN || 事件->type == SDL_EVENT_KEY_UP)
+            {
+                const bool 按下 = 事件->type == SDL_EVENT_KEY_DOWN;
+                switch (事件->key.scancode)
+                {
+                case SDL_SCANCODE_W: 上下文.键前 = 按下; break;
+                case SDL_SCANCODE_S: 上下文.键后 = 按下; break;
+                case SDL_SCANCODE_A: 上下文.键左 = 按下; break;
+                case SDL_SCANCODE_D: 上下文.键右 = 按下; break;
+                case SDL_SCANCODE_Q: 上下文.键降 = 按下; break;
+                case SDL_SCANCODE_E: 上下文.键升 = 按下; break;
+                case SDL_SCANCODE_ESCAPE:
+                    //ESC：展示模式下返回测试界面
+                    if (按下 && 上下文.展示模式)
+                        上下文.请求退出展示 = true;
+                    break;
+                default:
+                    break;
+                }
+                return;
+            }
+            //右键按下 / 抬起（拖拽看向用）
+            if (事件->type == SDL_EVENT_MOUSE_BUTTON_DOWN || 事件->type == SDL_EVENT_MOUSE_BUTTON_UP)
+            {
+                if (事件->button.button == SDL_BUTTON_RIGHT)
+                    上下文.右键按下 = 事件->type == SDL_EVENT_MOUSE_BUTTON_DOWN;
+                return;
+            }
+            //鼠标相对位移（仅右键按住时累计）
+            if (事件->type == SDL_EVENT_MOUSE_MOTION)
+            {
+                if (上下文.右键按下)
+                {
+                    上下文.鼠标差x += 事件->motion.xrel;
+                    上下文.鼠标差y += 事件->motion.yrel;
+                }
+                return;
+            }
+            //滚轮
+            if (事件->type == SDL_EVENT_MOUSE_WHEEL)
+                上下文.滚轮差 += 事件->wheel.y;
         }
     }
 
@@ -399,7 +458,7 @@ namespace engine
         上下文.模型 = &模型;
         上下文.运行器 = &运行器;
         通道->draw_callback_set(ui_绘制回调, &上下文);
-        通道->event_callback_set(ui_事件回调, nullptr);
+        通道->event_callback_set(ui_事件回调, &上下文);
 
         //—— 主循环：测试界面推进渲染层帧链路；展示模式改为推进可漫游场景 ——
         //测试界面清屏色取渐变背景的深蓝基色，使窗口未覆盖处与界面背景衔接
