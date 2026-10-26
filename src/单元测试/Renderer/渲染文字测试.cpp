@@ -621,3 +621,47 @@ TEST_F(Renderer_Text_Test, 文字描边扩大墨迹且关闭后还原)
 
 	renderer.font_unload(font);
 }
+
+/*
+宽描边墨迹随宽度单调增加（第一百四十五轮）
+口径：同一文本，UV 半宽 0.004 → 0.012（八方向采样可连续成环）：
+      墨迹像素数应随宽度严格增加；宽度归零后仍与默认逐像素一致。
+*/
+TEST_F(Renderer_Text_Test, 宽描边墨迹单调增加)
+{
+	//若本机没有测试用系统字体则跳过
+	if (!font_available())
+		GTEST_SKIP() << "本机无 " << FONT_PATH;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	//若本机不支持像素回读则跳过
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	uint64_t font = 0;
+	ASSERT_TRUE(renderer.font_load_file(font, FONT_PATH, FONT_PIXEL_HEIGHT));
+
+	//渲染一帧并返回墨迹像素数（lambda 内用 EXPECT：ASSERT 不允许出现在有返回值的函数中）
+	const float outline[3] = { 0.0f, 0.0f, 1.0f };
+	auto render_ink = [&](float 宽度)
+	{
+		renderer.text_outline_set(宽度, outline);
+		EXPECT_TRUE(renderer.text_draw(font, "AB", 4.0f, 4.0f));
+		std::vector<uint8_t> pixels(pixel_bytes());
+		EXPECT_TRUE(renderer.frame_render(pixels.data(), static_cast<std::uint32_t>(pixels.size())));
+		return ink_count(pixels, 0, 0, WINDOW_WIDTH, WINDOW_HEIGHT);
+	};
+
+	//无描边基线
+	const uint32_t plain_ink = render_ink(0.0f);
+	//窄描边
+	const uint32_t narrow_ink = render_ink(0.004f);
+	//宽描边
+	const uint32_t wide_ink = render_ink(0.012f);
+	RecordProperty("text_outline_plain_ink", static_cast<int>(plain_ink));
+	RecordProperty("text_outline_narrow_ink", static_cast<int>(narrow_ink));
+	RecordProperty("text_outline_wide_ink", static_cast<int>(wide_ink));
+	EXPECT_GT(narrow_ink, plain_ink) << "窄描边未扩大墨迹";
+	EXPECT_GT(wide_ink, narrow_ink) << "宽描边未比窄描边更厚（" << narrow_ink << " → " << wide_ink << "）";
+
+	renderer.font_unload(font);
+}

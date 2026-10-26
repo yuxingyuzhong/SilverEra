@@ -581,3 +581,66 @@ TEST_F(Renderer_Stats_Test, 离屏累计不含呈现段)
 	renderer.mesh_unload(mesh);
 	renderer.render_target_destroy(target);
 }
+
+/*
+阴影重绘与复用计数（第一百四十五轮）
+口径：同一静态场景连续两帧——第二帧签名一致，阴影图复用；
+      第三帧改变模型矩阵后签名变化，必须重绘。断言累计次数与最近一帧标志。
+      清零后两个累计次数归零，最近一次绘制项数保持不变。
+*/
+TEST_F(Renderer_Stats_Test, 阴影重绘与复用计数)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	//方向光沿 +Z、强度 1、环境光 0，并开启阴影
+	engine::Camera_Data camera{};
+	engine::Light_Data light{};
+	light.direction[2] = 1.0f;
+	light.intensity = 1.0f;
+	light.ambient = 0.0f;
+	engine::Fog_Data fog{};
+	renderer.scene_apply(camera, light, fog);
+	renderer.shadow_enable_set(true);
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, triangle_data()));
+
+	//第一帧：必须重绘
+	ASSERT_TRUE(renderer.mesh_draw(mesh, nullptr));
+	ASSERT_TRUE(renderer.frame_render());
+	engine::Frame_Stats first = renderer.frame_stats_get();
+	EXPECT_EQ(first.shadow_redraws, 1u) << "首帧未重绘阴影图";
+	EXPECT_EQ(first.shadow_reuses, 0u);
+	EXPECT_GE(first.last_shadow_items, 1u) << "重绘项数未记录";
+	EXPECT_EQ(first.shadow_last_redrawn, 1u);
+
+	//第二帧：输入一致 → 复用
+	ASSERT_TRUE(renderer.mesh_draw(mesh, nullptr));
+	ASSERT_TRUE(renderer.frame_render());
+	engine::Frame_Stats second = renderer.frame_stats_get();
+	EXPECT_EQ(second.shadow_redraws, 1u) << "输入未变却重绘了阴影图";
+	EXPECT_EQ(second.shadow_reuses, 1u) << "输入未变却未记为复用";
+	EXPECT_EQ(second.shadow_last_redrawn, 0u);
+
+	//第三帧：改变模型矩阵 → 必须重绘
+	float scaled[16] = {};
+	scaled[0] = 0.5f;
+	scaled[5] = 0.5f;
+	scaled[10] = 0.5f;
+	scaled[15] = 1.0f;
+	ASSERT_TRUE(renderer.mesh_draw(mesh, scaled));
+	ASSERT_TRUE(renderer.frame_render());
+	engine::Frame_Stats third = renderer.frame_stats_get();
+	EXPECT_EQ(third.shadow_redraws, 2u) << "输入变化后未重绘阴影图";
+	EXPECT_EQ(third.shadow_reuses, 1u);
+	EXPECT_EQ(third.shadow_last_redrawn, 1u);
+
+	//清零：累计归零，最近一次量保持
+	const uint32_t last_items = third.last_shadow_items;
+	renderer.frame_stats_reset();
+	engine::Frame_Stats cleared = renderer.frame_stats_get();
+	EXPECT_EQ(cleared.shadow_redraws, 0u);
+	EXPECT_EQ(cleared.shadow_reuses, 0u);
+	EXPECT_EQ(cleared.last_shadow_items, last_items);
+
+	renderer.mesh_unload(mesh);
+}
