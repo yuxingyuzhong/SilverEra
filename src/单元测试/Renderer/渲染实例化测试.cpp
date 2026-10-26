@@ -343,5 +343,40 @@ TEST_F(Renderer_Instanced_Test, 实例化绘制共享同一材质)
 	EXPECT_LT(metallized, 5u) << "逐物体金属度未作用于整批实例（" << metallized << "）";
 	EXPECT_EQ(restored, baseline) << "清除逐物体材质后实例画面未恢复";
 
+        renderer.mesh_unload(handle);
+}
+
+/*
+实例级视锥剔除（第一百五十三轮）
+口径：4 个实例中 2 个在视口内、2 个在 x = ±1000（视锥外）：
+      登记实例数应为 2，累计与最近一帧的实例级剔除数均为 2；清零累计量后即时量保持。
+*/
+TEST_F(Renderer_Instanced_Test, 实例级视锥剔除)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	engine::Mesh_Handle handle = 0;
+	ASSERT_TRUE(renderer.mesh_load(handle, quad_data(QUAD_HALF)));
+	renderer.cull_enabled_set(true);
+	//两个可见 + 两个远在视锥外
+	std::array<float, 16> transforms[4] = {
+		translation(0.0f, 0.0f, 0.0f),
+		translation(0.0f, 0.9f, 0.0f),
+		translation(1000.0f, 0.0f, 0.0f),
+		translation(-1000.0f, 0.0f, 0.0f),
+	};
+	ASSERT_TRUE(renderer.mesh_draw_instanced(handle, transforms[0].data(), 4));
+	ASSERT_TRUE(renderer.frame_render());
+	engine::Frame_Stats stats = renderer.frame_stats_get();
+	RecordProperty("instanced_registered", static_cast<int>(stats.instances));
+	RecordProperty("instanced_culled", static_cast<int>(stats.culled_instances));
+	EXPECT_EQ(stats.instances, 2u) << "不可见实例未被剔除";
+	EXPECT_EQ(stats.culled_instances, 2u) << "实例级剔除累计不符";
+	EXPECT_EQ(stats.last_culled_instances, 2u) << "最近一帧实例级剔除不符";
+	//清零：累计归零，即时量保持
+	renderer.frame_stats_reset();
+	engine::Frame_Stats cleared = renderer.frame_stats_get();
+	EXPECT_EQ(cleared.culled_instances, 0u);
+	EXPECT_EQ(cleared.last_culled_instances, 2u);
 	renderer.mesh_unload(handle);
 }
