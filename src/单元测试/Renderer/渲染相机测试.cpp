@@ -82,12 +82,61 @@ TEST_F(Renderer_Camera_Test, 极端视场角不崩溃)
 //未初始化时各相机设置接口为安全无操作
 TEST_F(Renderer_Camera_Test, 未初始化设置相机无副作用)
 {
+        engine::Renderer renderer;
+        //未初始化时逐个调用各设置接口
+        renderer.camera_position_set(1.0f, 2.0f, 3.0f);
+        renderer.camera_target_set(0.0f, 0.0f, 0.0f);
+        renderer.camera_fov_set(1.0f);
+        renderer.camera_near_far_set(0.1f, 100.0f);
+        //仍处于未初始化
+        EXPECT_FALSE(renderer.valid());
+}
+
+/*
+相机屏幕投影与反投影（第一百四十九轮）
+口径：默认相机（位于 +Z 3、注视原点）：原点落在屏幕中心（0.5 / 0.5）且深度在 (0,1)；
+      x = 1 的点落在右半（u > 0.5）；相机背后（z = 10）返回假且不改出参；
+      unproject / project 往返误差 ≤ 1e-3；未初始化返回假。
+*/
+TEST_F(Renderer_Camera_Test, 相机屏幕投影与反投影)
+{
 	engine::Renderer renderer;
-	//未初始化时逐个调用各设置接口
-	renderer.camera_position_set(1.0f, 2.0f, 3.0f);
-	renderer.camera_target_set(0.0f, 0.0f, 0.0f);
-	renderer.camera_fov_set(1.0f);
-	renderer.camera_near_far_set(0.1f, 100.0f);
-	//仍处于未初始化
-	EXPECT_FALSE(renderer.valid());
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	//原点 → 屏幕中心
+	const float origin[3] = { 0.0f, 0.0f, 0.0f };
+	float u = -1.0f;
+	float v = -1.0f;
+	float depth = -1.0f;
+	ASSERT_TRUE(renderer.camera_project(origin, &u, &v, &depth));
+	EXPECT_NEAR(u, 0.5f, 1e-3f) << "原点未落在屏幕中心";
+	EXPECT_NEAR(v, 0.5f, 1e-3f) << "原点未落在屏幕中心";
+	EXPECT_GT(depth, 0.0f);
+	EXPECT_LT(depth, 1.0f);
+	//右侧点 → u > 0.5 且 v 仍居中
+	const float right[3] = { 1.0f, 0.0f, 0.0f };
+	ASSERT_TRUE(renderer.camera_project(right, &u, &v, nullptr));
+	EXPECT_GT(u, 0.5f) << "右侧点未落在右半屏";
+	EXPECT_NEAR(v, 0.5f, 1e-3f);
+	//相机背后 → 假且出参不变
+	const float behind[3] = { 0.0f, 0.0f, 10.0f };
+	float untouched = 0.25f;
+	EXPECT_FALSE(renderer.camera_project(behind, &untouched, nullptr, nullptr));
+	EXPECT_FLOAT_EQ(untouched, 0.25f) << "失败时不应改写出参";
+	//往返（屏幕 → 世界 → 屏幕）
+	const float screen_u = 0.25f;
+	const float screen_v = 0.75f;
+	const float screen_depth = 0.6f;
+	float world[3] = {};
+	ASSERT_TRUE(renderer.camera_unproject(screen_u, screen_v, screen_depth, world));
+	float round_u = 0.0f;
+	float round_v = 0.0f;
+	float round_depth = 0.0f;
+	ASSERT_TRUE(renderer.camera_project(world, &round_u, &round_v, &round_depth));
+	EXPECT_NEAR(round_u, screen_u, 1e-3f);
+	EXPECT_NEAR(round_v, screen_v, 1e-3f);
+	EXPECT_NEAR(round_depth, screen_depth, 1e-3f);
+	//未初始化：两入口均返回假
+	engine::Renderer uninitialized;
+	EXPECT_FALSE(uninitialized.camera_project(origin, &u, &v, &depth));
+	EXPECT_FALSE(uninitialized.camera_unproject(0.5f, 0.5f, 0.5f, world));
 }
