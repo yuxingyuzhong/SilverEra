@@ -238,6 +238,9 @@ namespace engine
 		if (!渲染器.texture_load(查找表_, 查找像素.data(), 17 * 17, 17))
 			return false;
 		渲染器.post_lut_bind(查找表_);
+		//屏幕空间遮蔽（第一百四十七轮）
+		if (!渲染器.pipeline_load(遮蔽_, "后处理.vert.spv", "屏幕空间遮蔽.frag.spv"))
+			return false;
 		//—— 中间目标（与交换链同尺寸，后处理 1:1 取源） ——
 		目标宽_ = 渲染器.extent_width();
 		目标高_ = 渲染器.extent_height();
@@ -348,14 +351,16 @@ namespace engine
 		渲染器.pbr_metallic_set(0.0f);
 		渲染器.static_batching_set(true);
 		渲染器.cull_enabled_set(true);
-		//后处理链：亮部提取 → 模糊 → 暗角 → 3D LUT → FXAA 平滑（两台目标轮转）
+		//后处理链：亮部提取 → 模糊 → 暗角 → 3D LUT → 屏幕空间遮蔽 → FXAA 平滑（两台目标轮转）
 		渲染器.bloom_param_set(0.5f, 0.15f, 1.2f);
-		uint64_t 链[5] = { 亮部提取_, 模糊_, 暗角_, 色彩查找_, 平滑_ };
+		uint64_t 链[6] = { 亮部提取_, 模糊_, 暗角_, 色彩查找_, 遮蔽_, 平滑_ };
 		uint64_t 目标组[2] = { 目标甲_, 目标乙_ };
-		if (!渲染器.post_chain_set(链, 5))
+		if (!渲染器.post_chain_set(链, 6))
 			return false;
-		//查找表级全量应用（post_chain_set 会清除逐级专设值，故设置在此之后）
+		//查找表全量应用（post_chain_set 会清除逐级专设值，故设置在此之后）
 		渲染器.post_stage_param_set(3, 1.0f, 0.0f, 1.0f);
+		//遮蔽：强度 0.8、半径 12 像素、偏置 0.5、幂次 1
+		渲染器.post_stage_param4_set(4, 0.8f, 12.0f, 0.5f, 1.0f);
 		if (!渲染器.render_target_present_chain_set(目标组, 2))
 			return false;
 		return true;
@@ -386,11 +391,12 @@ namespace engine
 					目标乙_ = 新乙;
 					目标宽_ = 宽;
 					目标高_ = 高;
-					uint64_t 链[5] = { 亮部提取_, 模糊_, 暗角_, 色彩查找_, 平滑_ };
+					uint64_t 链[6] = { 亮部提取_, 模糊_, 暗角_, 色彩查找_, 遮蔽_, 平滑_ };
 					uint64_t 目标组[2] = { 目标甲_, 目标乙_ };
-					(void)渲染器.post_chain_set(链, 5);
-					//链变更会清除逐级专设值，重建后重新全量应用查找表
+					(void)渲染器.post_chain_set(链, 6);
+					//链变更会清除逐级专设值，重建后重新应用查找表与遮蔽参数
 					渲染器.post_stage_param_set(3, 1.0f, 0.0f, 1.0f);
+					渲染器.post_stage_param4_set(4, 0.8f, 12.0f, 0.5f, 1.0f);
 					(void)渲染器.render_target_present_chain_set(目标组, 2);
 				}
 			}
@@ -554,7 +560,7 @@ namespace engine
 		目标乙_ = 0;
 		目标甲_ = 0;
 		//后处理管线
-		const uint64_t 管线[5] = { 亮部提取_, 模糊_, 暗角_, 色彩查找_, 平滑_ };
+		const uint64_t 管线[6] = { 亮部提取_, 模糊_, 暗角_, 色彩查找_, 遮蔽_, 平滑_ };
 		for (uint64_t 句柄 : 管线)
 		{
 			if (句柄 != 0)
@@ -564,6 +570,7 @@ namespace engine
 		模糊_ = 0;
 		暗角_ = 0;
 		色彩查找_ = 0;
+		遮蔽_ = 0;
 		平滑_ = 0;
 		//字体与纹理
 		if (字体_ != 0)
