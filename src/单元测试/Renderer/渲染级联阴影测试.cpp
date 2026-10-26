@@ -235,9 +235,78 @@ TEST_F(Renderer_Scene_Test, 级联阴影切回单级恢复)
 }
 
 /*
-级联参数非法忽略（第一百二十一轮）
-口径：级联数只接受 1 / 2，远区倍数须 > 1，切换距离须 > 0；
-     三类非法调用都应整次忽略，配置保持调用前的值。
+三级级联覆盖中距并切回单级恢复（第一百四十六轮）
+口径：接收面与遮挡面移到 z = -20（与相机距离约 23）；级联配置 3 级 / 远区倍数 3 / 切换 12：
+      第 2 片半径为 36，故中距应被遮蔽；单级视锥以原点为中心、深度覆盖不到该处 → 受光；
+      切回单级后画面与最初单级帧逐字节一致。
+*/
+TEST_F(Renderer_Scene_Test, 三级级联覆盖中距并切回单级恢复)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	uint64_t texture = 0;
+	std::vector<uint8_t> texels = solid_white();
+	ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 2, 2));
+	engine::Mesh_Handle receiver = 0;
+	engine::Mesh_Handle occluder = 0;
+	ASSERT_TRUE(renderer.mesh_load(receiver, quad_data_with_normal(0.0f, 0.0f, -1.0f)));
+	ASSERT_TRUE(renderer.mesh_load(occluder, quad_data_with_normal(0.0f, 0.0f, -1.0f)));
+	renderer.texture_bind_set(texture);
+
+	//相机注视 z = -20 处，远平面放宽以覆盖中距
+	engine::Camera_Data camera{};
+	camera.position[2] = 3.0f;
+	camera.target[2] = -20.0f;
+	camera.far_plane = 200.0f;
+	lights_apply(renderer, camera, positive_z_light());
+	renderer.shadow_enable_set(true);
+
+	//接收面与遮挡面均位于 z = -20（遮挡面再退 0.5）
+	const std::array<float, 16> receiver_transform = translate_matrix(0.0f, 0.0f, -20.0f);
+	const std::array<float, 16> occluder_transform = occluder_matrix(0.0f, 0.0f, -20.5f);
+
+	//单级：光源视锥以原点为中心，深度覆盖不到 z = -20 → 受光
+	ASSERT_TRUE(renderer.mesh_draw(occluder, occluder_transform.data()));
+	ASSERT_TRUE(renderer.mesh_draw(receiver, receiver_transform.data()));
+	std::vector<uint8_t> single_pixels = render_once(renderer);
+
+	//三级：阈值 12 / 36，距离 23 落入第 2 片（半径 36）→ 遮蔽
+	renderer.shadow_cascade_set(3, 3.0f, 12.0f);
+	uint32_t cascade_count = 0;
+	float far_scale = 0.0f;
+	float split_distance = 0.0f;
+	renderer.shadow_cascade_get(&cascade_count, &far_scale, &split_distance);
+	EXPECT_EQ(cascade_count, 3u) << "三级配置未生效";
+	ASSERT_TRUE(renderer.mesh_draw(occluder, occluder_transform.data()));
+	ASSERT_TRUE(renderer.mesh_draw(receiver, receiver_transform.data()));
+	std::vector<uint8_t> triple_pixels = render_once(renderer);
+
+	//切回单级：画面应与最初单级帧一致
+	renderer.shadow_cascade_set(1, 3.0f, 12.0f);
+	ASSERT_TRUE(renderer.mesh_draw(occluder, occluder_transform.data()));
+	ASSERT_TRUE(renderer.mesh_draw(receiver, receiver_transform.data()));
+	std::vector<uint8_t> restored_pixels = render_once(renderer);
+
+	RecordProperty("cascade3_single", center_brightness(single_pixels));
+	RecordProperty("cascade3_triple", center_brightness(triple_pixels));
+	RecordProperty("cascade3_restored", center_brightness(restored_pixels));
+
+	EXPECT_GE(center_brightness(single_pixels), 150u) << "单级视锥外的接收面被意外遮蔽";
+	EXPECT_LT(center_brightness(triple_pixels), 80u) << "三级中距未被第 2 片覆盖（"
+		<< center_brightness(triple_pixels) << "）";
+	EXPECT_TRUE(pixels_equal(single_pixels, restored_pixels)) << "切回单级后画面未恢复";
+
+	renderer.mesh_unload(receiver);
+	renderer.mesh_unload(occluder);
+	renderer.texture_unload(texture);
+}
+
+/*
+级联参数非法忽略（第一百二十一轮；第一百四十六轮级联数上限扩为 3）
+口径：级联数只接受 1 / 2 / 3，远区倍数须 > 1，切换距离须 > 0；
+     四类非法调用都应整次忽略，配置保持调用前的值。
 */
 TEST_F(Renderer_Scene_Test, 级联参数非法忽略)
 {
@@ -251,8 +320,11 @@ TEST_F(Renderer_Scene_Test, 级联参数非法忽略)
 	renderer.shadow_cascade_get(&cascade_count, &far_scale, &split_distance);
 	EXPECT_EQ(cascade_count, 1u);
 
-	//非法级联数
-	renderer.shadow_cascade_set(3, 3.0f, 12.0f);
+	//非法级联数（0 与超过上限的 4）
+	renderer.shadow_cascade_set(0, 3.0f, 12.0f);
+	renderer.shadow_cascade_get(&cascade_count, &far_scale, &split_distance);
+	EXPECT_EQ(cascade_count, 1u) << "级联数 0 未被忽略";
+	renderer.shadow_cascade_set(4, 3.0f, 12.0f);
 	renderer.shadow_cascade_get(&cascade_count, &far_scale, &split_distance);
 	EXPECT_EQ(cascade_count, 1u) << "非法级联数未被忽略";
 

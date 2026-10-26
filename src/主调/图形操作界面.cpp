@@ -207,7 +207,7 @@ namespace engine
             ImGui::Bullet(); ImGui::TextUnformatted("十种程序化网格入口（含立方体 / 三角形）＋ 棋盘 / 法线 / 粗糙度纹理");
             ImGui::Bullet(); ImGui::TextUnformatted("方向光 / 补光 / 三盏彩色点光 / 聚光灯 / 半球环境光");
             ImGui::Bullet(); ImGui::TextUnformatted("PBR-lite：金属度 / 粗糙度 / 法线贴图 / 自发光 / 色调");
-            ImGui::Bullet(); ImGui::TextUnformatted("方向光阴影 ＋ 软边 ＋ 两级级联");
+            ImGui::Bullet(); ImGui::TextUnformatted("方向光阴影 ＋ 软边 ＋ 三级级联");
             ImGui::Bullet(); ImGui::TextUnformatted("实例化绘制 ＋ 静态合批 ＋ 视锥剔除");
             ImGui::Bullet(); ImGui::TextUnformatted("立方体天空盒 / 简易 IBL ＋ 距离雾（线性区间 / 指数平方双模式）");
             ImGui::Bullet(); ImGui::TextUnformatted("后处理链：亮部提取 → 模糊 → 暗角 → 3D LUT → FXAA 平滑");

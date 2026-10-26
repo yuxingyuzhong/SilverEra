@@ -335,9 +335,9 @@ namespace engine
 		//高度衰减（第一百四十三轮）：高处物体比贴地物体更通透
 		雾.height_falloff = 0.012f;
 		渲染器.scene_apply(相机, 光照, 雾);
-		//阴影范围与级联
+		//阴影范围与级联（第一百四十六轮扩为三级）
 		渲染器.shadow_range_set(20.0f, 1.0f, 70.0f);
-		渲染器.shadow_cascade_set(2, 3.0f, 16.0f);
+		渲染器.shadow_cascade_set(3, 3.0f, 16.0f);
 		//天空盒 / 简易 IBL
 		渲染器.sky_enable_set(true);
 		渲染器.sky_texture_set(天空_);

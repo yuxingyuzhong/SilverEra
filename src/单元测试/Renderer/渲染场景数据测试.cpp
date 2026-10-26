@@ -444,8 +444,8 @@ TEST_F(Renderer_Scene_Test, 场景UBO按需写入)
 		ASSERT_TRUE(renderer.frame_render());
 		uint64_t current = renderer.scene_upload_bytes();
 		uint64_t delta = current - previous;
-		//单帧上传不得超过整块大小（第一百二十五轮起 1088 字节）
-		EXPECT_LE(delta, 1088u) << "第 " << frame + 1 << " 帧上传超出整块";
+		//单帧上传不得超过整块大小（第一百四十六轮起 1168 字节）
+		EXPECT_LE(delta, 1168u) << "第 " << frame + 1 << " 帧上传超出整块";
 		deltas.push_back(delta);
 		previous = current;
 	}
@@ -454,7 +454,7 @@ TEST_F(Renderer_Scene_Test, 场景UBO按需写入)
 	RecordProperty("scene_upload_frame3", static_cast<int>(deltas[2]));
 	RecordProperty("scene_upload_frame4", static_cast<int>(deltas[3]));
 	//首帧必整块写入
-	EXPECT_EQ(deltas[0], 1088u) << "首帧未整块写入场景 UBO";
+	EXPECT_EQ(deltas[0], 1168u) << "首帧未整块写入场景 UBO";
 	//静止场景下应出现 0 字节上传（各帧槽预热完成后）
 	EXPECT_EQ(*std::min_element(deltas.begin(), deltas.end()), 0u) << "静止场景仍整块上传";
 
@@ -471,7 +471,7 @@ TEST_F(Renderer_Scene_Test, 场景UBO按需写入)
 		uint64_t current = renderer.scene_upload_bytes();
 		last_delta = current - previous;
 		previous = current;
-		EXPECT_LE(last_delta, 1088u) << "变化后第 " << frame + 1 << " 帧上传超出整块";
+		EXPECT_LE(last_delta, 1168u) << "变化后第 " << frame + 1 << " 帧上传超出整块";
 		changed_total += last_delta;
 	}
 	RecordProperty("scene_upload_changed", static_cast<int>(changed_total));
