@@ -169,15 +169,65 @@ TEST_F(Renderer_Post_Extra_Test, FXAA平滑斜边)
 	std::vector<uint8_t> reference = render_direct(renderer);
 	const uint32_t plain_mid = mid_count(reference);
 
-	//单级 FXAA
-	ASSERT_TRUE(renderer.mesh_draw(quad, transform));
-	std::vector<uint8_t> smoothed = render_stage(renderer, "FXAA.frag.spv", 0.0f, 0.0f, 0.0f);
-	const uint32_t fxaa_mid = mid_count(smoothed);
+	//单级 FXAA（强度 1）
+        ASSERT_TRUE(renderer.mesh_draw(quad, transform));
+        std::vector<uint8_t> smoothed = render_stage(renderer, "FXAA.frag.spv", 0.0f, 0.0f, 1.0f);
+        const uint32_t fxaa_mid = mid_count(smoothed);
 
-	RecordProperty("fxaa_plain_mid", static_cast<int>(plain_mid));
-	RecordProperty("fxaa_smoothed_mid", static_cast<int>(fxaa_mid));
-	EXPECT_GT(fxaa_mid, plain_mid) << "FXAA 未产生中间亮度过渡";
-	EXPECT_GT(max_channel_diff(reference, smoothed), 5) << "FXAA 未改变画面";
+        RecordProperty("fxaa_plain_mid", static_cast<int>(plain_mid));
+        RecordProperty("fxaa_smoothed_mid", static_cast<int>(fxaa_mid));
+        EXPECT_GT(fxaa_mid, plain_mid) << "FXAA 未产生中间亮度过渡";
+        EXPECT_GT(max_channel_diff(reference, smoothed), 5) << "FXAA 未改变画面";
 
-	renderer.mesh_unload(quad);
+        renderer.mesh_unload(quad);
+}
+
+/*
+FXAA 强度为零原样输出（第一百五十轮）
+口径：同一 45° 斜边场景；FXAA 强度取 0（第三分量）时整段旁路，
+      与直通画面的逐通道差不超过 2。
+*/
+TEST_F(Renderer_Post_Extra_Test, FXAA强度为零原样输出)
+{
+        engine::Renderer renderer;
+        ASSERT_TRUE(renderer.init(hidden_config()));
+        if (!renderer.readback_supported())
+                GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+
+        engine::Mesh_Handle quad = 0;
+        ASSERT_TRUE(renderer.mesh_load(quad, quad_data()));
+        //绕 Z 轴 45°（列主序）
+        const float cosine = 0.70710678f;
+        const float sine = 0.70710678f;
+        float transform[16] = {};
+        transform[0] = cosine;
+        transform[1] = sine;
+        transform[4] = -sine;
+        transform[5] = cosine;
+        transform[10] = 1.0f;
+        transform[15] = 1.0f;
+
+        //参考帧（直通）
+        ASSERT_TRUE(renderer.mesh_draw(quad, transform));
+        std::vector<uint8_t> reference = render_direct(renderer);
+
+        //单级 FXAA（强度 0：用四参入口，避免三参入口的「强度须 > 0」校验）
+        ASSERT_TRUE(renderer.mesh_draw(quad, transform));
+        uint64_t target = 0;
+        ASSERT_TRUE(renderer.render_target_create(target, WINDOW_WIDTH, WINDOW_HEIGHT));
+        uint64_t pipeline = post_pipeline_register(renderer, "FXAA.frag.spv");
+        ASSERT_NE(pipeline, 0u);
+        ASSERT_TRUE(renderer.post_chain_set(&pipeline, 1));
+        renderer.post_stage_param4_set(0, 0.0f, 0.01f, 0.0f, 0.0f);
+        renderer.render_target_present_set(target);
+        std::vector<uint8_t> disabled(pixel_bytes(), 0);
+        ASSERT_TRUE(renderer.frame_render(disabled.data(), static_cast<uint32_t>(disabled.size())));
+        int difference = max_channel_diff(reference, disabled);
+        RecordProperty("fxaa_disabled_max_diff", difference);
+        EXPECT_LE(difference, 2) << "强度 0 未原样输出（最大差 " << difference << "）";
+        renderer.render_target_present_set(0);
+        renderer.pipeline_unload(pipeline);
+        renderer.render_target_destroy(target);
+
+        renderer.mesh_unload(quad);
 }

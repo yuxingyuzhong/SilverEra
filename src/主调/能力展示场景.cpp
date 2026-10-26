@@ -362,6 +362,8 @@ namespace engine
 		渲染器.post_stage_param_set(3, 1.0f, 0.0f, 1.0f);
 		//遮蔽：强度 0.8、半径 12 像素、偏置 0.5、幂次 1
 		渲染器.post_stage_param4_set(4, 0.8f, 12.0f, 0.5f, 1.0f);
+		//FXAA：强度 1（第三分量）
+		渲染器.post_stage_param_set(5, 0.0f, 0.0f, 1.0f);
 		if (!渲染器.render_target_present_chain_set(目标组, 2))
 			return false;
 		return true;
@@ -395,9 +397,10 @@ namespace engine
 					uint64_t 链[6] = { 亮部提取_, 模糊_, 暗角_, 色彩查找_, 遮蔽_, 平滑_ };
 					uint64_t 目标组[2] = { 目标甲_, 目标乙_ };
 					(void)渲染器.post_chain_set(链, 6);
-					//链变更会清除逐级专设值，重建后重新应用查找表与遮蔽参数
+					//链变更会清除逐级专设值，重建后重新应用查找表、遮蔽与 FXAA 参数
 					渲染器.post_stage_param_set(3, 1.0f, 0.0f, 1.0f);
 					渲染器.post_stage_param4_set(4, 0.8f, 12.0f, 0.5f, 1.0f);
+					渲染器.post_stage_param_set(5, 0.0f, 0.0f, 1.0f);
 					(void)渲染器.render_target_present_chain_set(目标组, 2);
 				}
 			}
