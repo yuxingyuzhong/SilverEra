@@ -131,6 +131,58 @@ namespace engine
 			}
 			return 0;
 		}
+
+		/*
+		暖调查找表像素（第一百四十四轮）
+		3D LUT 以 2D 条带存放：宽 = 边长²、高 = 边长；
+		按亮度做轻微冷暖分离（亮部偏暖、暗部偏冷），作为演示用的非恒等分级表。
+		*/
+		std::vector<uint8_t> 暖调查找像素(uint32_t 边长)
+		{
+			//条带尺寸（宽 = 边长²）
+			const uint32_t 宽 = 边长 * 边长;
+			const float 归一 = 边长 > 1 ? 1.0f / static_cast<float>(边长 - 1) : 0.0f;
+			std::vector<uint8_t> 像素(static_cast<std::size_t>(宽) * 边长 * 4);
+			for (uint32_t 层 = 0; 层 < 边长; ++层)
+			{
+				for (uint32_t 绿 = 0; 绿 < 边长; ++绿)
+				{
+					for (uint32_t 红 = 0; 红 < 边长; ++红)
+					{
+						//输入颜色（0..1）
+						float r = static_cast<float>(红) * 归一;
+						float g = static_cast<float>(绿) * 归一;
+						float b = static_cast<float>(层) * 归一;
+						//亮度与冷暖偏移（亮部偏暖、暗部偏冷）
+						float 亮度 = 0.2126f * r + 0.7152f * g + 0.0722f * b;
+						float 偏移 = (亮度 - 0.5f) * 0.04f;
+						r += 偏移;
+						b -= 偏移;
+						//钳制到 0..1
+						r = r < 0.0f ? 0.0f : (r > 1.0f ? 1.0f : r);
+						g = g < 0.0f ? 0.0f : (g > 1.0f ? 1.0f : g);
+						b = b < 0.0f ? 0.0f : (b > 1.0f ? 1.0f : b);
+						/*
+						线性 → sRGB 编码后存储
+						纹理格式为 R8G8B8A8_SRGB，采样时自动解码回线性，
+						故表内必须存编码值，否则分级会叠加一次错误的伽马。
+						*/
+						auto 编码 = [](float 线性)
+						{
+							float 值 = 线性 <= 0.0031308f ? 线性 * 12.92f
+								: 1.055f * std::pow(线性, 1.0f / 2.4f) - 0.055f;
+							return static_cast<uint8_t>(值 * 255.0f + 0.5f);
+						};
+						std::size_t 偏移字节 = (static_cast<std::size_t>(绿) * 宽 + 层 * 边长 + 红) * 4;
+						像素[偏移字节] = 编码(r);
+						像素[偏移字节 + 1] = 编码(g);
+						像素[偏移字节 + 2] = 编码(b);
+						像素[偏移字节 + 3] = 255;
+					}
+				}
+			}
+			return 像素;
+		}
 	}
 
 	//搭建场景与全部资源
@@ -179,6 +231,13 @@ namespace engine
 		//FXAA 平滑（第一百四十一轮）
 		if (!渲染器.pipeline_load(平滑_, "后处理.vert.spv", "FXAA.frag.spv"))
 			return false;
+		//3D LUT 色彩查找（第一百四十四轮；暖调表）
+		if (!渲染器.pipeline_load(色彩查找_, "后处理.vert.spv", "色彩查找.frag.spv"))
+			return false;
+		const std::vector<uint8_t> 查找像素 = 暖调查找像素(17);
+		if (!渲染器.texture_load(查找表_, 查找像素.data(), 17 * 17, 17))
+			return false;
+		渲染器.post_lut_bind(查找表_);
 		//—— 中间目标（与交换链同尺寸，后处理 1:1 取源） ——
 		目标宽_ = 渲染器.extent_width();
 		目标高_ = 渲染器.extent_height();
@@ -289,12 +348,14 @@ namespace engine
 		渲染器.pbr_metallic_set(0.0f);
 		渲染器.static_batching_set(true);
 		渲染器.cull_enabled_set(true);
-		//后处理链：亮部提取 → 模糊 → 暗角 → FXAA 平滑（两台目标轮转）
+		//后处理链：亮部提取 → 模糊 → 暗角 → 3D LUT → FXAA 平滑（两台目标轮转）
 		渲染器.bloom_param_set(0.5f, 0.15f, 1.2f);
-		uint64_t 链[4] = { 亮部提取_, 模糊_, 暗角_, 平滑_ };
+		uint64_t 链[5] = { 亮部提取_, 模糊_, 暗角_, 色彩查找_, 平滑_ };
 		uint64_t 目标组[2] = { 目标甲_, 目标乙_ };
-		if (!渲染器.post_chain_set(链, 4))
+		if (!渲染器.post_chain_set(链, 5))
 			return false;
+		//查找表级全量应用（post_chain_set 会清除逐级专设值，故设置在此之后）
+		渲染器.post_stage_param_set(3, 1.0f, 0.0f, 1.0f);
 		if (!渲染器.render_target_present_chain_set(目标组, 2))
 			return false;
 		return true;
@@ -325,9 +386,11 @@ namespace engine
 					目标乙_ = 新乙;
 					目标宽_ = 宽;
 					目标高_ = 高;
-					uint64_t 链[4] = { 亮部提取_, 模糊_, 暗角_, 平滑_ };
+					uint64_t 链[5] = { 亮部提取_, 模糊_, 暗角_, 色彩查找_, 平滑_ };
 					uint64_t 目标组[2] = { 目标甲_, 目标乙_ };
-					(void)渲染器.post_chain_set(链, 4);
+					(void)渲染器.post_chain_set(链, 5);
+					//链变更会清除逐级专设值，重建后重新全量应用查找表
+					渲染器.post_stage_param_set(3, 1.0f, 0.0f, 1.0f);
 					(void)渲染器.render_target_present_chain_set(目标组, 2);
 				}
 			}
@@ -491,7 +554,7 @@ namespace engine
 		目标乙_ = 0;
 		目标甲_ = 0;
 		//后处理管线
-		const uint64_t 管线[4] = { 亮部提取_, 模糊_, 暗角_, 平滑_ };
+		const uint64_t 管线[5] = { 亮部提取_, 模糊_, 暗角_, 色彩查找_, 平滑_ };
 		for (uint64_t 句柄 : 管线)
 		{
 			if (句柄 != 0)
@@ -500,11 +563,12 @@ namespace engine
 		亮部提取_ = 0;
 		模糊_ = 0;
 		暗角_ = 0;
+		色彩查找_ = 0;
 		平滑_ = 0;
 		//字体与纹理
 		if (字体_ != 0)
 			渲染器.font_unload(字体_);
-		const uint64_t 纹理[4] = { 棋盘_, 法线贴图_, 粗糙贴图_, 天空_ };
+		const uint64_t 纹理[5] = { 棋盘_, 法线贴图_, 粗糙贴图_, 天空_, 查找表_ };
 		for (uint64_t 句柄 : 纹理)
 		{
 			if (句柄 != 0)
@@ -515,6 +579,7 @@ namespace engine
 		法线贴图_ = 0;
 		粗糙贴图_ = 0;
 		天空_ = 0;
+		查找表_ = 0;
 		//网格
 		const engine::Mesh_Handle 网格[9] = { 球_, 圆柱_, 圆锥_, 胶囊_, 圆环_, 平面_, 地面_, 圆盘_, 立方体_ };
 		for (uint64_t 句柄 : 网格)
