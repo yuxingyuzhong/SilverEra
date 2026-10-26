@@ -234,9 +234,11 @@ namespace engine
             ImGui::Text("帧数 %llu   绘制 %llu   合并 %llu   剔除 %llu   %.2f ms",
                 static_cast<unsigned long long>(上下文.运行状态.frames),
                 static_cast<unsigned long long>(上下文.运行状态.drawn_items),
-                static_cast<unsigned long long>(0),
-                static_cast<unsigned long long>(0),
+                static_cast<unsigned long long>(上下文.运行状态.last_merged_items),
+                static_cast<unsigned long long>(上下文.运行状态.last_culled_items),
                 上下文.运行状态.frame_ms);
+            ImGui::Text("最近一帧交给录制 %llu 项（若为 0 说明绘制项被跳过）",
+                static_cast<unsigned long long>(上下文.运行状态.last_draw_items));
             ImGui::Separator();
             ImGui::TextUnformatted("操作：WASD 移动 · E / 空格 上升 · Q / Shift 下降 · 右键拖拽看向 · 滚轮调速 · ESC 返回");
             if (ImGui::Button("返回测试界面", ImVec2(150.0f, 30.0f)))
@@ -536,6 +538,9 @@ namespace engine
             上下文.运行状态.frames = 统计.frames;
             上下文.运行状态.draw_items = 统计.draw_items;
             上下文.运行状态.drawn_items = 统计.drawn_items;
+            上下文.运行状态.last_draw_items = 统计.last_draw_items;
+            上下文.运行状态.last_culled_items = 统计.last_culled_items;
+            上下文.运行状态.last_merged_items = 统计.last_merged_items;
             上下文.运行状态.instances = 统计.instances;
             上下文.运行状态.post_stages = 统计.post_stages;
             上下文.运行状态.gpu_supported = 渲染器.gpu_timestamp_supported();

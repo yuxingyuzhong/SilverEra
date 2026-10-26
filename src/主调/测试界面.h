@@ -1,6 +1,7 @@
 #pragma once
 //测试操作界面 —— 常驻 ImGui 界面：选择树 + 运行控制 + 结果表 + 输出镜像 + 轮次历史 + 引擎日志
 
+#include <cstdint>
 #include <string>
 
 #include "Application/Test/src/主调/测试选择模型.h"
@@ -10,9 +11,38 @@ namespace engine
     //测试运行器（前向声明，避免本头引入 gtest）
     class Test_Runner;
 
-    //测试操作界面绘制（每帧由图形选择窗口的 UI 绘制回调调用）
+    //界面运行状态（由图形操作界面从渲染器帧统计采集，避免本文件依赖渲染层头）
+    struct Ui_Runtime_Stats
+    {
+        //最近一帧主机侧耗时（毫秒）
+        double frame_ms = 0.0;
+        //最近一帧 GPU 侧耗时（毫秒；不支持时间戳时为 0）
+        double gpu_ms = 0.0;
+        //已推进帧数
+        uint64_t frames = 0;
+        //累计绘制项数（含被跳过项）
+        uint64_t draw_items = 0;
+        //累计实际绘制项数
+        uint64_t drawn_items = 0;
+        //最近一帧交给录制的绘制项数
+        uint64_t last_draw_items = 0;
+        //最近一帧被视锥剔除的项数
+        uint64_t last_culled_items = 0;
+        //最近一帧被合批合并掉的项数
+        uint64_t last_merged_items = 0;
+        //累计实例数
+        uint64_t instances = 0;
+        //最近一帧实际执行的后处理级数
+        uint32_t post_stages = 0;
+        //设备是否支持 GPU 时间戳
+        bool gpu_supported = false;
+    };
+
+    //测试操作界面绘制（每帧由图形操作界面的 UI 绘制回调调用）
     //runner：测试运行器（读快照 / 下发运行请求）
     //model：选择模型（套件 / 用例勾选态）
     //exit_requested：界面请求退出（由调用方主循环检查）
-    void 测试界面_绘制(Test_Runner& runner, Test_Selection_Model& model, bool& exit_requested);
+    //运行状态：可选的渲染器帧统计快照（缺省不显示性能条）
+    void 测试界面_绘制(Test_Runner& runner, Test_Selection_Model& model, bool& exit_requested,
+        const Ui_Runtime_Stats* 运行状态 = nullptr);
 }
