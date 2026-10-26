@@ -268,9 +268,13 @@ namespace engine
 		雾.color[0] = 0.52f;
 		雾.color[1] = 0.62f;
 		雾.color[2] = 0.78f;
-		雾.density = 0.5f;
-		雾.start = 16.0f;
+		//指数平方雾（第一百四十三轮）：近处通透、远处平滑压向雾色
+		雾.mode = 1;
+		雾.density = 0.022f;
+		雾.start = 6.0f;
 		雾.end = 48.0f;
+		//高度衰减（第一百四十三轮）：高处物体比贴地物体更通透
+		雾.height_falloff = 0.012f;
 		渲染器.scene_apply(相机, 光照, 雾);
 		//阴影范围与级联
 		渲染器.shadow_range_set(20.0f, 1.0f, 70.0f);
