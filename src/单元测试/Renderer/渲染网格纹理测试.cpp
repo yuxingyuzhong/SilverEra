@@ -281,6 +281,53 @@ TEST_F(Renderer_Texture_Test, 纹理读回与输入一致)
 }
 
 /*
+纹理区域更新（第一百五十一轮）
+口径：4×4 白色纹理，把 (1,1) 起 2×2 区域更新为纯红：
+      读回整幅后该区域四像素应为红、其余仍为白；越界区域与空指针均被拒绝且不改内容。
+*/
+TEST_F(Renderer_Texture_Test, 纹理区域更新)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	//4×4 全白（RGBA8 紧排）
+	std::vector<uint8_t> white(4 * 4 * 4, 255);
+	uint64_t texture = 0;
+	ASSERT_TRUE(renderer.texture_load(texture, white.data(), 4, 4));
+	//2×2 纯红
+	const unsigned char red[16] = {
+		255, 0, 0, 255,
+		255, 0, 0, 255,
+		255, 0, 0, 255,
+		255, 0, 0, 255,
+	};
+	ASSERT_TRUE(renderer.texture_update_region(texture, 1, 1, 2, 2, red));
+	//整幅读回
+	std::vector<uint8_t> pixels(4 * 4 * 4, 0);
+	ASSERT_TRUE(renderer.texture_readback(texture, pixels.data(), static_cast<uint32_t>(pixels.size()), nullptr, nullptr));
+	//区域内四像素为红
+	const uint32_t inside[4][2] = { { 1, 1 }, { 2, 1 }, { 1, 2 }, { 2, 2 } };
+	for (uint32_t index = 0; index < 4; ++index)
+	{
+		std::size_t offset = (static_cast<std::size_t>(inside[index][1]) * 4 + inside[index][0]) * 4;
+		EXPECT_EQ(pixels[offset], 255) << "区域红通道未更新";
+		EXPECT_EQ(pixels[offset + 1], 0) << "区域绿通道未更新";
+		EXPECT_EQ(pixels[offset + 2], 0) << "区域蓝通道未更新";
+	}
+	//区域外仍为白（取左上角与原右下角）
+	std::size_t corner = 0;
+	EXPECT_EQ(pixels[corner], 255);
+	EXPECT_EQ(pixels[corner + 1], 255);
+	EXPECT_EQ(pixels[corner + 2], 255);
+	std::size_t last = (static_cast<std::size_t>(3) * 4 + 3) * 4;
+	EXPECT_EQ(pixels[last], 255);
+	EXPECT_EQ(pixels[last + 1], 255);
+	//越界 / 空指针被拒绝
+	EXPECT_FALSE(renderer.texture_update_region(texture, 3, 3, 2, 2, red));
+	EXPECT_FALSE(renderer.texture_update_region(texture, 0, 0, 1, 1, nullptr));
+	renderer.texture_unload(texture);
+}
+
+/*
 纹理区域读回（第二十八轮）：分块读回拼接应与整幅读回逐字节一致；越界整次拒绝
 */
 TEST_F(Renderer_Texture_Test, 纹理区域读回与整幅一致)
