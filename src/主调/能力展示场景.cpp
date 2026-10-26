@@ -173,6 +173,9 @@ namespace engine
 			return false;
 		if (!渲染器.pipeline_load(暗角_, "后处理.vert.spv", "暗角.frag.spv"))
 			return false;
+		//FXAA 平滑（第一百四十一轮）
+		if (!渲染器.pipeline_load(平滑_, "后处理.vert.spv", "FXAA.frag.spv"))
+			return false;
 		//—— 中间目标（与交换链同尺寸，后处理 1:1 取源） ——
 		目标宽_ = 渲染器.extent_width();
 		目标高_ = 渲染器.extent_height();
@@ -279,11 +282,11 @@ namespace engine
 		渲染器.pbr_metallic_set(0.0f);
 		渲染器.static_batching_set(true);
 		渲染器.cull_enabled_set(true);
-		//后处理链：亮部提取 → 模糊 → 暗角（两台目标轮转）
+		//后处理链：亮部提取 → 模糊 → 暗角 → FXAA 平滑（两台目标轮转）
 		渲染器.bloom_param_set(0.5f, 0.15f, 1.2f);
-		uint64_t 链[3] = { 亮部提取_, 模糊_, 暗角_ };
+		uint64_t 链[4] = { 亮部提取_, 模糊_, 暗角_, 平滑_ };
 		uint64_t 目标组[2] = { 目标甲_, 目标乙_ };
-		if (!渲染器.post_chain_set(链, 3))
+		if (!渲染器.post_chain_set(链, 4))
 			return false;
 		if (!渲染器.render_target_present_chain_set(目标组, 2))
 			return false;
@@ -315,9 +318,9 @@ namespace engine
 					目标乙_ = 新乙;
 					目标宽_ = 宽;
 					目标高_ = 高;
-					uint64_t 链[3] = { 亮部提取_, 模糊_, 暗角_ };
+					uint64_t 链[4] = { 亮部提取_, 模糊_, 暗角_, 平滑_ };
 					uint64_t 目标组[2] = { 目标甲_, 目标乙_ };
-					(void)渲染器.post_chain_set(链, 3);
+					(void)渲染器.post_chain_set(链, 4);
 					(void)渲染器.render_target_present_chain_set(目标组, 2);
 				}
 			}
@@ -477,7 +480,7 @@ namespace engine
 		目标乙_ = 0;
 		目标甲_ = 0;
 		//后处理管线
-		const uint64_t 管线[3] = { 亮部提取_, 模糊_, 暗角_ };
+		const uint64_t 管线[4] = { 亮部提取_, 模糊_, 暗角_, 平滑_ };
 		for (uint64_t 句柄 : 管线)
 		{
 			if (句柄 != 0)
@@ -486,6 +489,7 @@ namespace engine
 		亮部提取_ = 0;
 		模糊_ = 0;
 		暗角_ = 0;
+		平滑_ = 0;
 		//字体与纹理
 		if (字体_ != 0)
 			渲染器.font_unload(字体_);
