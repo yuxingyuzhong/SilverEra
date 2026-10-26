@@ -1,4 +1,4 @@
-﻿/*
+/*
 渲染网格与纹理测试（L2 隐藏窗口）
 覆盖：未初始化守卫、三角形网格加载与绘制、同一帧多网格绘制、无效句柄绘制被拒、
       卸载后绘制被拒与重复卸载幂等、纹理加载（RGBA8 字节流 / 程序生成棋盘格）、
@@ -109,6 +109,43 @@ TEST_F(Renderer_Mesh_Test, 卸载后绘制失败)
 	EXPECT_FALSE(renderer.mesh_draw(handle, nullptr));
 	//重复卸载不报错
 	renderer.mesh_unload(handle);
+}
+
+//程序化三角形入口：3 顶点 / 3 索引，可绘制并推进一帧
+TEST_F(Renderer_Mesh_Test, 程序化三角形加载)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_triangle_load(mesh));
+	uint32_t vertices = 0;
+	uint32_t indices = 0;
+	ASSERT_TRUE(renderer.mesh_counts(mesh, &vertices, &indices));
+	EXPECT_EQ(vertices, 3u);
+	EXPECT_EQ(indices, 3u);
+	ASSERT_TRUE(renderer.mesh_draw(mesh, nullptr));
+	ASSERT_TRUE(renderer.frame_render());
+	renderer.mesh_unload(mesh);
+}
+
+//程序化立方体入口：24 顶点 / 36 索引；非法半边长被拒绝
+TEST_F(Renderer_Mesh_Test, 程序化立方体加载)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	engine::Mesh_Handle mesh = 12345;
+	//非法半边长（0）整次拒绝并把句柄复位为 0
+	EXPECT_FALSE(renderer.mesh_cube_load(mesh, 0.0f));
+	EXPECT_EQ(mesh, 0u);
+	ASSERT_TRUE(renderer.mesh_cube_load(mesh, 0.5f));
+	uint32_t vertices = 0;
+	uint32_t indices = 0;
+	ASSERT_TRUE(renderer.mesh_counts(mesh, &vertices, &indices));
+	EXPECT_EQ(vertices, 24u);
+	EXPECT_EQ(indices, 36u);
+	ASSERT_TRUE(renderer.mesh_draw(mesh, nullptr));
+	ASSERT_TRUE(renderer.frame_render());
+	renderer.mesh_unload(mesh);
 }
 
 //纹理测试夹具

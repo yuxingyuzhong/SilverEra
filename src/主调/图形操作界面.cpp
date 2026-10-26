@@ -204,7 +204,7 @@ namespace engine
             ImGui::TextUnformatted("渲染能力展示 · 可漫游场景");
             ImGui::Separator();
             ImGui::TextUnformatted("本场景同时呈现：");
-            ImGui::Bullet(); ImGui::TextUnformatted("八种程序化网格 ＋ 棋盘 / 法线 / 粗糙度纹理");
+            ImGui::Bullet(); ImGui::TextUnformatted("十种程序化网格入口（含立方体 / 三角形）＋ 棋盘 / 法线 / 粗糙度纹理");
             ImGui::Bullet(); ImGui::TextUnformatted("方向光 / 补光 / 三盏彩色点光 / 聚光灯 / 半球环境光");
             ImGui::Bullet(); ImGui::TextUnformatted("PBR-lite：金属度 / 粗糙度 / 法线贴图 / 自发光 / 色调");
             ImGui::Bullet(); ImGui::TextUnformatted("方向光阴影 ＋ 软边 ＋ 两级级联");

@@ -62,6 +62,8 @@ namespace engine
 		uint64_t 平面_ = 0;
 		uint64_t 地面_ = 0;
 		uint64_t 圆盘_ = 0;
+		//程序化立方体（第一百四十二轮新增入口）
+		uint64_t 立方体_ = 0;
 		//纹理
 		uint64_t 棋盘_ = 0;
 		uint64_t 法线贴图_ = 0;

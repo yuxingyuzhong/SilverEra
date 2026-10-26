@@ -153,6 +153,9 @@ namespace engine
 			return false;
 		if (!渲染器.mesh_disc_load(圆盘_, 0.9f, 32))
 			return false;
+		//程序化立方体（第一百四十二轮新增入口）
+		if (!渲染器.mesh_cube_load(立方体_, 0.8f))
+			return false;
 		//—— 纹理 ——
 		if (!渲染器.texture_load_checkerboard(棋盘_, 256, 256, 32))
 			return false;
@@ -448,6 +451,10 @@ namespace engine
 		const std::array<float, 16> 转环 = 绕Y变换(0.0f, 2.6f, -6.0f, 累计秒_ * 0.8f, 1.4f);
 		(void)渲染器.mesh_draw(圆环_, 转环.data());
 
+		//—— 程序化立方体（第一百四十二轮新增入口；独立摆位以不与既有阵列冲突） ——
+		const std::array<float, 16> 立方矩阵 = 绕Y变换(4.6f, 1.0f, -4.0f, 0.5f, 1.0f);
+		(void)渲染器.mesh_draw(立方体_, 立方矩阵.data());
+
 		//—— 文字：标题与区域标签（最后画，避免字体图集被后续网格覆盖） ——
 		if (字体_ != 0)
 		{
@@ -505,13 +512,13 @@ namespace engine
 		粗糙贴图_ = 0;
 		天空_ = 0;
 		//网格
-		const engine::Mesh_Handle 网格[8] = { 球_, 圆柱_, 圆锥_, 胶囊_, 圆环_, 平面_, 地面_, 圆盘_ };
-		for (engine::Mesh_Handle 句柄 : 网格)
+		const engine::Mesh_Handle 网格[9] = { 球_, 圆柱_, 圆锥_, 胶囊_, 圆环_, 平面_, 地面_, 圆盘_, 立方体_ };
+		for (uint64_t 句柄 : 网格)
 		{
 			if (句柄 != 0)
 				渲染器.mesh_unload(句柄);
 		}
-		球_ = 圆柱_ = 圆锥_ = 胶囊_ = 圆环_ = 平面_ = 地面_ = 圆盘_ = 0;
+		球_ = 圆柱_ = 圆锥_ = 胶囊_ = 圆环_ = 平面_ = 地面_ = 圆盘_ = 立方体_ = 0;
 		//复位展示用开关
 		渲染器.sky_enable_set(false);
 		渲染器.shadow_enable_set(false);
