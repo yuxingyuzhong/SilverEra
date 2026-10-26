@@ -211,7 +211,7 @@ namespace engine
             ImGui::Bullet(); ImGui::TextUnformatted("实例化绘制 ＋ 静态合批 ＋ 视锥剔除");
             ImGui::Bullet(); ImGui::TextUnformatted("立方体天空盒 / 简易 IBL ＋ 距离雾（线性区间 / 指数平方双模式）");
             ImGui::Bullet(); ImGui::TextUnformatted("后处理链：亮部提取 → 模糊 → 暗角 → 3D LUT → 屏幕空间遮蔽 → FXAA 平滑");
-            ImGui::Bullet(); ImGui::TextUnformatted("文字渲染（中文标题与区域标注）＋ 标题描边");
+            ImGui::Bullet(); ImGui::TextUnformatted("文字渲染（中文标题与区域标注）＋ 标题描边 ＋ 动态纹理区域更新");
             ImGui::Separator();
             float 位置[3] = { 0.0f, 0.0f, 0.0f };
             场景.相机位置(位置);

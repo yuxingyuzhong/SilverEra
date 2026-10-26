@@ -220,6 +220,9 @@ namespace engine
 		const std::vector<uint8_t> 天空 = 天空像素(64);
 		if (!渲染器.texture_cube_load(天空_, 天空.data(), 64, 64))
 			return false;
+		//动态贴图（第一百五十一轮；16×16 棋盘，每 0.1 秒更新一个移动色块）
+		if (!渲染器.texture_load_checkerboard(动态贴图_, 16, 16, 4))
+			return false;
 		//—— 字体与后处理管线 ——
 		字体_ = 加载字体(渲染器);
 		if (!渲染器.pipeline_load(亮部提取_, "后处理.vert.spv", "亮部提取.frag.spv"))
@@ -532,6 +535,29 @@ namespace engine
 		const std::array<float, 16> 立方矩阵 = 绕Y变换(4.6f, 1.0f, -4.0f, 0.5f, 1.0f);
 		(void)渲染器.mesh_draw(立方体_, 立方矩阵.data());
 
+		//—— 动态贴图（第一百五十一轮；每 0.1 秒更新一个 4×4 移动色块） ——
+		if (动态贴图_ != 0 && 累计秒_ - 上次更新时间_ > 0.1f)
+		{
+			上次更新时间_ = 累计秒_;
+			//色块左上角在 0..12 之间循环
+			const uint32_t 色块x = static_cast<uint32_t>(累计秒_ * 8.0f) % 13u;
+			const uint32_t 色块y = static_cast<uint32_t>(累计秒_ * 5.0f) % 13u;
+			//4×4 纯红（RGBA8 紧排）
+			std::vector<uint8_t> 色块(4 * 4 * 4, 0);
+			for (std::size_t 偏移 = 0; 偏移 < 色块.size(); 偏移 += 4)
+			{
+				色块[偏移] = 255;
+				色块[偏移 + 3] = 255;
+			}
+			(void)渲染器.texture_update_region(动态贴图_, 色块x, 色块y, 4, 4, 色块.data());
+		}
+		if (动态贴图_ != 0)
+		{
+			渲染器.texture_bind_set(动态贴图_);
+			const std::array<float, 16> 动态面 = 变换(-4.6f, 1.2f, -4.0f, 1.0f);
+			(void)渲染器.mesh_draw(平面_, 动态面.data());
+		}
+
 		//—— 文字：标题与区域标签（最后画，避免字体图集被后续网格覆盖） ——
 		if (字体_ != 0)
 		{
@@ -579,7 +605,7 @@ namespace engine
 		//字体与纹理
 		if (字体_ != 0)
 			渲染器.font_unload(字体_);
-		const uint64_t 纹理[5] = { 棋盘_, 法线贴图_, 粗糙贴图_, 天空_, 查找表_ };
+		const uint64_t 纹理[6] = { 棋盘_, 法线贴图_, 粗糙贴图_, 天空_, 查找表_, 动态贴图_ };
 		for (uint64_t 句柄 : 纹理)
 		{
 			if (句柄 != 0)
@@ -591,6 +617,7 @@ namespace engine
 		粗糙贴图_ = 0;
 		天空_ = 0;
 		查找表_ = 0;
+		动态贴图_ = 0;
 		//网格
 		const engine::Mesh_Handle 网格[9] = { 球_, 圆柱_, 圆锥_, 胶囊_, 圆环_, 平面_, 地面_, 圆盘_, 立方体_ };
 		for (uint64_t 句柄 : 网格)
