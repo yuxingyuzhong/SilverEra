@@ -573,5 +573,51 @@ TEST_F(Renderer_Text_Test, 覆盖率写入下文字仍可绘制)
 	RecordProperty("text_coverage_samples", static_cast<int>(renderer.msaa_samples()));
 	EXPECT_GT(ink, 0u) << "开启覆盖率写入后文字消失";
 
+        renderer.font_unload(font);
+}
+
+/*
+文字描边扩大墨迹、关闭后逐像素还原（第一百四十轮）
+同一文本：默认（无描边）→ 开启红色描边（墨迹增加、画面变化）→ 关闭描边（与默认逐像素一致）。
+*/
+TEST_F(Renderer_Text_Test, 文字描边扩大墨迹且关闭后还原)
+{
+	//若本机没有测试用系统字体则跳过
+	if (!font_available())
+		GTEST_SKIP() << "本机无 " << FONT_PATH;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	//若本机不支持像素回读则跳过
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	uint64_t font = 0;
+	ASSERT_TRUE(renderer.font_load_file(font, FONT_PATH, FONT_PIXEL_HEIGHT));
+
+	//① 无描边（默认）
+	ASSERT_TRUE(renderer.text_draw(font, "AB", 4.0f, 4.0f));
+	std::vector<uint8_t> plain(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(plain.data(), static_cast<uint32_t>(plain.size())));
+	const uint32_t plain_ink = ink_count(plain, 0, 0, WINDOW_WIDTH, WINDOW_HEIGHT);
+
+	//② 红色描边（UV 半宽 0.004）
+	const float outline[3] = { 1.0f, 0.0f, 0.0f };
+	renderer.text_outline_set(0.004f, outline);
+	ASSERT_TRUE(renderer.text_draw(font, "AB", 4.0f, 4.0f));
+	std::vector<uint8_t> outlined(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(outlined.data(), static_cast<uint32_t>(outlined.size())));
+	const uint32_t outlined_ink = ink_count(outlined, 0, 0, WINDOW_WIDTH, WINDOW_HEIGHT);
+
+	RecordProperty("text_plain_ink", static_cast<int>(plain_ink));
+	RecordProperty("text_outline_ink", static_cast<int>(outlined_ink));
+	EXPECT_GT(outlined_ink, plain_ink) << "描边未扩大墨迹";
+	EXPECT_NE(outlined, plain) << "描边未改变画面";
+
+	//③ 关闭描边（宽度 0）后与默认逐像素一致
+	renderer.text_outline_set(0.0f, outline);
+	ASSERT_TRUE(renderer.text_draw(font, "AB", 4.0f, 4.0f));
+	std::vector<uint8_t> restored(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(restored.data(), static_cast<uint32_t>(restored.size())));
+	EXPECT_EQ(restored, plain) << "关闭描边后画面未还原";
+
 	renderer.font_unload(font);
 }
