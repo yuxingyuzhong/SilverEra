@@ -178,3 +178,46 @@ TEST_F(Renderer_Texture_Level_Test, 分级尺寸查询)
 	renderer.texture_unload(texture);
 	EXPECT_FALSE(renderer.texture_size_level(texture, 0, nullptr, nullptr));
 }
+
+/*
+mip 级数查询（第一百六十二轮）
+口径：4×4 纹理级数 = 3（4 / 2 / 1）；8×2 非方形纹理级数 = 4（按最大边 log2 + 1）；
+      未初始化 / 无效句柄 / 卸载后返回假且出参归零。
+*/
+TEST_F(Renderer_Texture_Level_Test, mip级数查询)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	//4×4：级数 3
+	std::vector<uint8_t> square(4 * 4 * 4, 200);
+	uint64_t square_texture = 0;
+	ASSERT_TRUE(renderer.texture_load(square_texture, square.data(), 4, 4));
+	uint32_t levels = 0;
+	ASSERT_TRUE(renderer.texture_mip_levels(square_texture, &levels));
+	EXPECT_EQ(levels, 3u);
+
+	//8×2：按最大边 8 → 级数 4
+	std::vector<uint8_t> wide(8 * 2 * 4, 200);
+	uint64_t wide_texture = 0;
+	ASSERT_TRUE(renderer.texture_load(wide_texture, wide.data(), 8, 2));
+	ASSERT_TRUE(renderer.texture_mip_levels(wide_texture, &levels));
+	EXPECT_EQ(levels, 4u);
+
+	//出参可为空 / 无效句柄归零
+	EXPECT_TRUE(renderer.texture_mip_levels(square_texture, nullptr));
+	levels = 7;
+	EXPECT_FALSE(renderer.texture_mip_levels(9999u, &levels));
+	EXPECT_EQ(levels, 0u);
+	//未初始化
+	engine::Renderer cold;
+	levels = 7;
+	EXPECT_FALSE(cold.texture_mip_levels(square_texture, &levels));
+	EXPECT_EQ(levels, 0u);
+
+	renderer.texture_unload(square_texture);
+	renderer.texture_unload(wide_texture);
+	//卸载后
+	levels = 7;
+	EXPECT_FALSE(renderer.texture_mip_levels(square_texture, &levels));
+	EXPECT_EQ(levels, 0u);
+}
