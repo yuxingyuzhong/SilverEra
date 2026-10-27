@@ -272,3 +272,41 @@ TEST_F(Renderer_Camera_Test, 正交投影与状态查询)
 	//未初始化设置无副作用（不崩溃即可）
 	cold.camera_ortho_set(true, 2.0f);
 }
+
+/*
+视深可见高度查询（第一百六十五轮）
+口径：透视（fov ≈ 1.0472）下视深 3 的可见高度 ≈ 2·tan(30°)·3 ≈ 3.464，且随视深线性；
+      正交（高度 2.0）恒为 2.0；视深非正按 0；未初始化返回假。
+*/
+TEST_F(Renderer_Camera_Test, 视深可见高度查询)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	//透视：视深 3 → 约 3.464
+	float height = 0.0f;
+	ASSERT_TRUE(renderer.camera_world_height_at(3.0f, &height));
+	EXPECT_NEAR(height, 3.4641f, 1e-2f);
+	//透视：视深翻倍 → 高度翻倍
+	float doubled = 0.0f;
+	ASSERT_TRUE(renderer.camera_world_height_at(6.0f, &doubled));
+	EXPECT_NEAR(doubled, height * 2.0f, 1e-2f);
+	//视深非正按 0
+	float zero = -1.0f;
+	ASSERT_TRUE(renderer.camera_world_height_at(-2.0f, &zero));
+	EXPECT_NEAR(zero, 0.0f, 1e-4f);
+	//出参可为空（仅查询状态）
+	EXPECT_TRUE(renderer.camera_world_height_at(1.0f, nullptr));
+
+	//正交：恒为正交高度（与视深无关）
+	renderer.camera_ortho_set(true, 2.0f);
+	float near_height = 0.0f;
+	float far_height = 0.0f;
+	ASSERT_TRUE(renderer.camera_world_height_at(1.0f, &near_height));
+	ASSERT_TRUE(renderer.camera_world_height_at(50.0f, &far_height));
+	EXPECT_NEAR(near_height, 2.0f, 1e-3f);
+	EXPECT_NEAR(far_height, 2.0f, 1e-3f);
+
+	//未初始化
+	engine::Renderer cold;
+	EXPECT_FALSE(cold.camera_world_height_at(3.0f, &height));
+}
