@@ -1,8 +1,10 @@
 /*
-渲染材质贴图测试（第一百二十四轮：法线贴图 / 粗糙度贴图）
-覆盖：无贴图材质路径逐字节不变 / 法线贴图改变受光 / 粗糙度贴图改变高光。
+渲染材质贴图测试（第一百二十四轮：法线贴图 / 粗糙度贴图；第一百六十八轮：自发光贴图）
+覆盖：无贴图材质路径逐字节不变 / 法线贴图改变受光 / 粗糙度贴图改变高光 /
+     自发光贴图默认白逐字节不变 / 自发光贴图改变发光颜色。
 口径：白与中灰纹理四边形 ＋ 方向光沿 +Z、环境光 0；法线贴图取「切线空间 +X 倾斜」，
-     粗糙度贴图取红通道作乘子（默认白纹理 = 1，故无贴图路径不变）。
+     粗糙度贴图取红通道作乘子（默认白纹理 = 1，故无贴图路径不变）；
+     自发光贴图乘到自发光项上（默认白纹理 = 1，未配置时与引入前逐字节一致）。
 */
 #include "渲染场景测试辅助.h"
 
@@ -249,4 +251,161 @@ TEST_F(Renderer_Scene_Test, 粗糙度贴图改变高光)
 	renderer.texture_unload(albedo);
 	renderer.texture_unload(rough_low);
 	renderer.texture_unload(rough_white);
+}
+
+/*
+自发光贴图默认白逐字节不变（第一百六十八轮）
+口径：同一场景两次渲染，材质自发光强度均为 1，唯一区别是「不配贴图」与「配白贴图」；
+     白纹理采样恒为 1，故自发光项应为同一值，两帧逐字节一致。
+*/
+TEST_F(Renderer_Scene_Test, 自发光贴图默认白逐字节不变)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	uint64_t albedo = 0;
+	std::vector<uint8_t> white = solid_white();
+	ASSERT_TRUE(renderer.texture_load(albedo, white.data(), 2, 2));
+	uint64_t white_map = 0;
+	std::vector<uint8_t> white_texels = solid_white();
+	ASSERT_TRUE(renderer.texture_load(white_map, white_texels.data(), 2, 2));
+	//场景：关闭方向光与环境光，画面只剩自发光项，便于直接观察贴图乘子
+	engine::Camera_Data camera{};
+	engine::Light_Data light{};
+	light.intensity = 0.0f;
+	light.ambient = 0.0f;
+	engine::Fog_Data fog{};
+	renderer.scene_apply(camera, light, fog);
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, quad_data_with_normal(0.0f, 0.0f, -1.0f)));
+
+	//不配贴图（仅标量自发光）
+	engine::Material_Data plain{};
+	plain.texture = albedo;
+	plain.emissive = 1.0f;
+	engine::Material_Handle plain_handle = 0;
+	ASSERT_TRUE(renderer.material_load(plain_handle, plain));
+	renderer.material_bind_set(plain_handle);
+	ASSERT_TRUE(renderer.mesh_draw(mesh, nullptr));
+	std::vector<uint8_t> plain_pixels(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(plain_pixels.data(), static_cast<uint32_t>(plain_pixels.size())));
+
+	//配白贴图
+	engine::Material_Data mapped{};
+	mapped.texture = albedo;
+	mapped.emissive = 1.0f;
+	mapped.emissive_texture = white_map;
+	engine::Material_Handle mapped_handle = 0;
+	ASSERT_TRUE(renderer.material_load(mapped_handle, mapped));
+	renderer.material_bind_set(mapped_handle);
+	ASSERT_TRUE(renderer.mesh_draw(mesh, nullptr));
+	std::vector<uint8_t> mapped_pixels(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(mapped_pixels.data(), static_cast<uint32_t>(mapped_pixels.size())));
+
+	//逐字节最大差
+	int maximum = 0;
+	for (std::size_t index = 0; index < plain_pixels.size(); ++index)
+	{
+		int delta = static_cast<int>(plain_pixels[index]) - static_cast<int>(mapped_pixels[index]);
+		if (delta < 0)
+			delta = -delta;
+		if (delta > maximum)
+			maximum = delta;
+	}
+	RecordProperty("emissive_white_diff", maximum);
+	EXPECT_LE(maximum, 0) << "白自发光贴图改变了画面（差 " << maximum << "）";
+
+	renderer.mesh_unload(mesh);
+	renderer.material_unload(plain_handle);
+	renderer.material_unload(mapped_handle);
+	renderer.texture_unload(albedo);
+	renderer.texture_unload(white_map);
+}
+
+/*
+自发光贴图改变发光颜色（第一百六十八轮）
+口径：自发光强度 1、关闭光照，白贴图下中心接近纯白（通道间几乎无差），
+     纯红贴图下中心只剩一个亮通道（通道间差显著）；断言用「通道最大 − 最小」，
+     与回读通道序无关。
+*/
+TEST_F(Renderer_Scene_Test, 自发光贴图改变发光颜色)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	uint64_t albedo = 0;
+	std::vector<uint8_t> white = solid_white();
+	ASSERT_TRUE(renderer.texture_load(albedo, white.data(), 2, 2));
+	uint64_t white_map = 0;
+	std::vector<uint8_t> white_texels = solid_white();
+	ASSERT_TRUE(renderer.texture_load(white_map, white_texels.data(), 2, 2));
+	uint64_t red_map = 0;
+	std::vector<uint8_t> red_texels = solid_rgba(255, 0, 0);
+	ASSERT_TRUE(renderer.texture_load(red_map, red_texels.data(), 2, 2));
+	//场景：关闭方向光与环境光
+	engine::Camera_Data camera{};
+	engine::Light_Data light{};
+	light.intensity = 0.0f;
+	light.ambient = 0.0f;
+	engine::Fog_Data fog{};
+	renderer.scene_apply(camera, light, fog);
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, quad_data_with_normal(0.0f, 0.0f, -1.0f)));
+
+	//白贴图
+	engine::Material_Data white_material{};
+	white_material.texture = albedo;
+	white_material.emissive = 1.0f;
+	white_material.emissive_texture = white_map;
+	engine::Material_Handle white_handle = 0;
+	ASSERT_TRUE(renderer.material_load(white_handle, white_material));
+	renderer.material_bind_set(white_handle);
+	ASSERT_TRUE(renderer.mesh_draw(mesh, nullptr));
+	std::vector<uint8_t> white_pixels(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(white_pixels.data(), static_cast<uint32_t>(white_pixels.size())));
+
+	//纯红贴图
+	engine::Material_Data red_material{};
+	red_material.texture = albedo;
+	red_material.emissive = 1.0f;
+	red_material.emissive_texture = red_map;
+	engine::Material_Handle red_handle = 0;
+	ASSERT_TRUE(renderer.material_load(red_handle, red_material));
+	renderer.material_bind_set(red_handle);
+	ASSERT_TRUE(renderer.mesh_draw(mesh, nullptr));
+	std::vector<uint8_t> red_pixels(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(red_pixels.data(), static_cast<uint32_t>(red_pixels.size())));
+
+	//中心像素三通道极差（通道序无关）
+	const std::array<uint8_t, 4> white_center = pixel_get(white_pixels, WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2);
+	const std::array<uint8_t, 4> red_center = pixel_get(red_pixels, WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2);
+	auto channel_spread = [](const std::array<uint8_t, 4>& value)
+	{
+		uint8_t highest = value[0];
+		uint8_t lowest = value[0];
+		for (std::size_t index = 1; index < 3; ++index)
+		{
+			if (value[index] > highest)
+				highest = value[index];
+			if (value[index] < lowest)
+				lowest = value[index];
+		}
+		return static_cast<uint32_t>(highest) - static_cast<uint32_t>(lowest);
+	};
+	const uint32_t white_spread = channel_spread(white_center);
+	const uint32_t red_spread = channel_spread(red_center);
+	RecordProperty("emissive_white_spread", white_spread);
+	RecordProperty("emissive_red_spread", red_spread);
+
+	EXPECT_LE(white_spread, 20u) << "白自发光贴图下中心应为近白（" << pixel_text(white_center) << "）";
+	EXPECT_GE(red_spread, 120u) << "红自发光贴图未改变发光颜色（" << pixel_text(red_center) << "）";
+
+	renderer.mesh_unload(mesh);
+	renderer.material_unload(white_handle);
+	renderer.material_unload(red_handle);
+	renderer.texture_unload(albedo);
+	renderer.texture_unload(white_map);
+	renderer.texture_unload(red_map);
 }
