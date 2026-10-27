@@ -425,3 +425,65 @@ TEST_F(Renderer_Material_Test, 逐物体自发光字段)
 	renderer.material_unload(invalid_handle);
 	renderer.material_unload(handle);
 }
+
+/*
+双面渲染开关（第一百七十二轮）
+口径：四边形索引反转为背面；默认材质被背面剔除（中心为清屏色），
+     double_sided 材质关闭剔除后照常着色（中心为白色）。
+*/
+TEST_F(Renderer_Material_Test, 双面渲染使背面可见)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	uint64_t texture = 0;
+	std::vector<uint8_t> texels = solid_color(255, 255, 255);
+	ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 4, 4));
+	//背面网格（索引反转为顺时针，正面变背面）
+	engine::Mesh_Data data = quad_data();
+	data.indices = { 0, 2, 1, 0, 3, 2 };
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, data));
+	engine::Camera_Data camera{};
+	engine::Light_Data light{};
+	engine::Fog_Data fog{};
+	renderer.scene_apply(camera, light, fog);
+
+	//默认材质（背面剔除）
+	engine::Material_Data single{};
+	single.texture = texture;
+	engine::Material_Handle single_handle = 0;
+	ASSERT_TRUE(renderer.material_load(single_handle, single));
+	renderer.material_bind_set(single_handle);
+	ASSERT_TRUE(renderer.mesh_draw(mesh, nullptr));
+	std::vector<uint8_t> single_pixels(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(single_pixels.data(), static_cast<uint32_t>(single_pixels.size())));
+
+	//双面材质（关闭背面剔除）
+	engine::Material_Data double_sided{};
+	double_sided.texture = texture;
+	double_sided.double_sided = true;
+	engine::Material_Handle double_handle = 0;
+	ASSERT_TRUE(renderer.material_load(double_handle, double_sided));
+	renderer.material_bind_set(double_handle);
+	ASSERT_TRUE(renderer.mesh_draw(mesh, nullptr));
+	std::vector<uint8_t> double_pixels(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(double_pixels.data(), static_cast<uint32_t>(double_pixels.size())));
+
+	const std::array<uint8_t, 4> single_center = pixel_get(single_pixels, WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2);
+	const std::array<uint8_t, 4> double_center = pixel_get(double_pixels, WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2);
+	//外通道较大者（R 与 B；避开通道序）
+	const uint8_t single_outer = single_center[0] > single_center[2] ? single_center[0] : single_center[2];
+	const uint8_t double_outer = double_center[0] > double_center[2] ? double_center[0] : double_center[2];
+	RecordProperty("double_sided_single_outer", static_cast<uint32_t>(single_outer));
+	RecordProperty("double_sided_double_outer", static_cast<uint32_t>(double_outer));
+
+	EXPECT_LE(single_outer, 150u) << "背面未被剔除（" << pixel_text(single_center) << "）";
+	EXPECT_GE(double_outer, 200u) << "双面渲染未使背面可见（" << pixel_text(double_center) << "）";
+
+	renderer.mesh_unload(mesh);
+	renderer.material_unload(single_handle);
+	renderer.material_unload(double_handle);
+	renderer.texture_unload(texture);
+}
