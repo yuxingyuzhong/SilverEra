@@ -1,13 +1,15 @@
 /*
 渲染材质贴图测试（第一百二十四轮：法线贴图 / 粗糙度贴图；第一百六十八轮：自发光贴图；
-第一百六十九轮：环境光遮蔽贴图 / 金属度贴图）
+第一百六十九轮：环境光遮蔽贴图 / 金属度贴图；第一百七十一轮：贴图 UV 变换）
 覆盖：无贴图材质路径逐字节不变 / 法线贴图改变受光 / 粗糙度贴图改变高光 /
      自发光贴图默认白逐字节不变 / 自发光贴图改变发光颜色 /
-     环境光遮蔽贴图降低环境光 / 金属度贴图改变漫反射权重。
+     环境光遮蔽贴图降低环境光 / 金属度贴图改变漫反射权重 /
+     五张贴图同时生效 / 贴图 UV 缩放与偏移改变采样位置。
 口径：白与中灰纹理四边形 ＋ 方向光沿 +Z、环境光 0；法线贴图取「切线空间 +X 倾斜」，
      粗糙度贴图取红通道作乘子（默认白纹理 = 1，故无贴图路径不变）；
-     自发光贴图乘到自发光项上（默认白纹理 = 1，未配置时与引入前逐字节一致）；
-     遮蔽贴图乘到环境光基底上，金属度贴图乘到金属度上（两者默认白 = 1，未配置时逐字节一致）。
+     自发光贴图乘到自发光项上（默认白纹理 = 1）；
+     遮蔽贴图乘到环境光基底上，金属度贴图乘到金属度上（默认白 = 1）；
+     UV 变换默认 (1,1)/(0,0) 时与原 UV 一致。
 */
 #include "渲染场景测试辅助.h"
 
@@ -31,6 +33,24 @@ namespace
 	std::vector<uint8_t> tilted_normal_map(void)
 	{
 		return solid_rgba(217, 128, 217);
+	}
+
+	//构造 4×4 左右双色纹理（左两列红、右两列蓝；用于验证 UV 变换改变采样位置）
+	std::vector<uint8_t> left_right_rgba(void)
+	{
+		std::vector<uint8_t> pixels(4 * 4 * 4);
+		for (std::size_t y = 0; y < 4; ++y)
+			for (std::size_t x = 0; x < 4; ++x)
+			{
+				std::size_t offset = (y * 4 + x) * 4;
+				//左半红、右半蓝
+				if (x < 2)
+					pixels[offset] = 255;
+				else
+					pixels[offset + 2] = 255;
+				pixels[offset + 3] = 255;
+			}
+		return pixels;
 	}
 }
 
@@ -661,4 +681,89 @@ TEST_F(Renderer_Scene_Test, 五张材质贴图同时生效)
 	renderer.texture_unload(tilted_normal);
 	renderer.texture_unload(red_map);
 	renderer.texture_unload(dark_map);
+}
+
+/*
+贴图 UV 缩放与偏移改变采样位置（第一百七十一轮）
+口径：4×4 左右双色纹理（左红右蓝）、环境光 1、方向光关闭，画面即反照率；
+     默认 UV 的中心采样落在红蓝交界（混色），缩放 0.5 后中心落到左半（红），
+     偏移 0.25 后中心落到右半（蓝）；显式默认值 (1,1)/(0,0) 与原 UV 逐字节一致。
+*/
+TEST_F(Renderer_Scene_Test, 贴图UV变换改变采样位置)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	uint64_t albedo = 0;
+	std::vector<uint8_t> texels = left_right_rgba();
+	ASSERT_TRUE(renderer.texture_load(albedo, texels.data(), 4, 4));
+	//场景：环境光 1、方向光关闭（画面 = 反照率 × 色调）
+	engine::Camera_Data camera{};
+	engine::Light_Data light{};
+	light.intensity = 0.0f;
+	light.ambient = 1.0f;
+	engine::Fog_Data fog{};
+	renderer.scene_apply(camera, light, fog);
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, quad_data_with_normal(0.0f, 0.0f, -1.0f)));
+
+	//渲染一帧并返回中心像素
+	auto render_center = [&](const engine::Material_Data& data)
+	{
+		engine::Material_Handle handle = 0;
+		EXPECT_TRUE(renderer.material_load(handle, data));
+		renderer.material_bind_set(handle);
+		EXPECT_TRUE(renderer.mesh_draw(mesh, nullptr));
+		std::vector<uint8_t> pixels(pixel_bytes());
+		EXPECT_TRUE(renderer.frame_render(pixels.data(), static_cast<uint32_t>(pixels.size())));
+		renderer.material_unload(handle);
+		return pixel_get(pixels, WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2);
+	};
+	//两像素逐通道最大差
+	auto max_diff = [](const std::array<uint8_t, 4>& left, const std::array<uint8_t, 4>& right)
+	{
+		int maximum = 0;
+		for (std::size_t index = 0; index < 4; ++index)
+		{
+			int delta = static_cast<int>(left[index]) - static_cast<int>(right[index]);
+			if (delta < 0)
+				delta = -delta;
+			if (delta > maximum)
+				maximum = delta;
+		}
+		return maximum;
+	};
+
+	//默认 UV
+	engine::Material_Data plain{};
+	plain.texture = albedo;
+	const std::array<uint8_t, 4> plain_center = render_center(plain);
+	//显式默认值（1,1）/(0,0)：应与默认逐字节一致
+	engine::Material_Data explicit_default = plain;
+	explicit_default.uv_scale[0] = 1.0f;
+	explicit_default.uv_scale[1] = 1.0f;
+	const std::array<uint8_t, 4> explicit_center = render_center(explicit_default);
+	//缩放 0.5：中心落到左半（红）
+	engine::Material_Data scaled = plain;
+	scaled.uv_scale[0] = 0.5f;
+	const std::array<uint8_t, 4> scaled_center = render_center(scaled);
+	//偏移 0.25：中心落到右半（蓝）
+	engine::Material_Data shifted = plain;
+	shifted.uv_offset[0] = 0.25f;
+	const std::array<uint8_t, 4> shifted_center = render_center(shifted);
+
+	const int default_diff = max_diff(plain_center, explicit_center);
+	const int scale_diff = max_diff(plain_center, scaled_center);
+	const int offset_diff = max_diff(plain_center, shifted_center);
+	RecordProperty("uv_default_diff", default_diff);
+	RecordProperty("uv_scale_diff", scale_diff);
+	RecordProperty("uv_offset_diff", offset_diff);
+
+	EXPECT_LE(default_diff, 0) << "显式默认 UV 改变了画面（差 " << default_diff << "）";
+	EXPECT_GE(scale_diff, 40) << "UV 缩放未改变采样位置（" << pixel_text(plain_center) << " vs " << pixel_text(scaled_center) << "）";
+	EXPECT_GE(offset_diff, 40) << "UV 偏移未改变采样位置（" << pixel_text(plain_center) << " vs " << pixel_text(shifted_center) << "）";
+
+	renderer.mesh_unload(mesh);
+	renderer.texture_unload(albedo);
 }
