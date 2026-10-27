@@ -487,3 +487,110 @@ TEST_F(Renderer_Material_Test, 双面渲染使背面可见)
 	renderer.material_unload(double_handle);
 	renderer.texture_unload(texture);
 }
+
+/*
+关闭深度写入使后绘制者覆盖（第一百七十三轮）
+口径：近四边形（红，z = 0.2）先绘制、远四边形（灰，z = -0.5）后绘制；
+     近材质正常写深度时，远处灰面因深度测试失败被丢弃（中心外通道 ≥ 200，红）；
+     近材质关闭深度写入时，远处灰面通过测试并覆盖（中心外通道落在 100..170，灰）。
+*/
+TEST_F(Renderer_Material_Test, 关闭深度写入使后绘制者覆盖)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	/*
+	单一白纹理 ＋ 逐物体色调区分前后两层
+	同一帧内不同纹理无法共存（set1 为帧槽共享，后绑定会覆盖前绑定），故用推送常量里的色调区分。
+	*/
+	uint64_t albedo = 0;
+	std::vector<uint8_t> white_texels = solid_color(255, 255, 255);
+	ASSERT_TRUE(renderer.texture_load(albedo, white_texels.data(), 4, 4));
+	//近 / 远四边形（仅改顶点 z）
+	engine::Mesh_Data near_data = quad_data();
+	for (engine::Vertex& vertex : near_data.vertices)
+		vertex.position[2] = 0.2f;
+	engine::Mesh_Data far_data = quad_data();
+	for (engine::Vertex& vertex : far_data.vertices)
+		vertex.position[2] = -0.5f;
+	engine::Mesh_Handle near_mesh = 0;
+	engine::Mesh_Handle far_mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(near_mesh, near_data));
+	ASSERT_TRUE(renderer.mesh_load(far_mesh, far_data));
+	engine::Camera_Data camera{};
+	engine::Light_Data light{};
+	engine::Fog_Data fog{};
+	renderer.scene_apply(camera, light, fog);
+
+	//基线：仅绘制近红面，确认其本身可见（排除朝向 / 深度范围问题）
+	engine::Material_Data baseline{};
+	baseline.texture = albedo;
+	baseline.tint_override = true;
+	baseline.tint[0] = 1.0f;
+	baseline.tint[1] = 0.0f;
+	baseline.tint[2] = 0.0f;
+	baseline.tint[3] = 1.0f;
+	engine::Material_Handle baseline_handle = 0;
+	ASSERT_TRUE(renderer.material_load(baseline_handle, baseline));
+	renderer.material_bind_set(baseline_handle);
+	ASSERT_TRUE(renderer.mesh_draw(near_mesh, nullptr));
+	std::vector<uint8_t> baseline_pixels(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(baseline_pixels.data(), static_cast<uint32_t>(baseline_pixels.size())));
+	const std::array<uint8_t, 4> baseline_center = pixel_get(baseline_pixels, WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2);
+	const uint8_t baseline_outer = baseline_center[0] > baseline_center[2] ? baseline_center[0] : baseline_center[2];
+	RecordProperty("depth_write_baseline_outer", static_cast<uint32_t>(baseline_outer));
+	EXPECT_GE(baseline_outer, 200u) << "近红面基线不可见（" << pixel_text(baseline_center) << "）";
+	renderer.material_unload(baseline_handle);
+
+	//渲染「近红 + 远灰」并返回中心像素（由 near_depth_write 决定近材质是否写深度）
+	auto render_two_layers = [&](bool near_depth_write)
+	{
+		engine::Material_Data front_material{};
+		front_material.texture = albedo;
+		front_material.tint_override = true;
+		front_material.tint[0] = 1.0f;
+		front_material.tint[1] = 0.0f;
+		front_material.tint[2] = 0.0f;
+		front_material.tint[3] = 1.0f;
+		front_material.depth_write = near_depth_write;
+		engine::Material_Handle front_handle = 0;
+		EXPECT_TRUE(renderer.material_load(front_handle, front_material));
+		renderer.material_bind_set(front_handle);
+		EXPECT_TRUE(renderer.mesh_draw(near_mesh, nullptr));
+
+		engine::Material_Data back_material{};
+		back_material.texture = albedo;
+		back_material.tint_override = true;
+		back_material.tint[0] = 0.3f;
+		back_material.tint[1] = 0.3f;
+		back_material.tint[2] = 0.3f;
+		back_material.tint[3] = 1.0f;
+		engine::Material_Handle back_handle = 0;
+		EXPECT_TRUE(renderer.material_load(back_handle, back_material));
+		renderer.material_bind_set(back_handle);
+		EXPECT_TRUE(renderer.mesh_draw(far_mesh, nullptr));
+
+		std::vector<uint8_t> pixels(pixel_bytes());
+		EXPECT_TRUE(renderer.frame_render(pixels.data(), static_cast<uint32_t>(pixels.size())));
+		renderer.material_unload(front_handle);
+		renderer.material_unload(back_handle);
+		return pixel_get(pixels, WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2);
+	};
+
+	const std::array<uint8_t, 4> keep_center = render_two_layers(true);
+	const std::array<uint8_t, 4> skip_center = render_two_layers(false);
+	//外通道较大者（R 与 B；避开通道序）
+	const uint8_t keep_outer = keep_center[0] > keep_center[2] ? keep_center[0] : keep_center[2];
+	const uint8_t skip_outer = skip_center[0] > skip_center[2] ? skip_center[0] : skip_center[2];
+	RecordProperty("depth_write_keep_outer", static_cast<uint32_t>(keep_outer));
+	RecordProperty("depth_write_skip_outer", static_cast<uint32_t>(skip_outer));
+
+	EXPECT_GE(keep_outer, 200u) << "写深度时远处灰面未被正确遮挡（" << pixel_text(keep_center) << "）";
+	EXPECT_GE(skip_outer, 110u) << "关闭深度写入后未见覆盖（" << pixel_text(skip_center) << "）";
+	EXPECT_LE(skip_outer, 180u) << "关闭深度写入后远处灰面未覆盖近处红面（" << pixel_text(skip_center) << "）";
+
+	renderer.mesh_unload(near_mesh);
+	renderer.mesh_unload(far_mesh);
+	renderer.texture_unload(albedo);
+}
