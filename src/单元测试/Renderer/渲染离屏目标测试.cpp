@@ -1,4 +1,4 @@
-/*
+﻿/*
 渲染离屏目标测试（L2 隐藏窗口 + 像素回读）
 覆盖：渲染目标的创建 / 销毁；把场景渲染到离屏目标并回读目标内容；
       以目标作纹理采样做「离屏 → 采样合成」闭环；无效目标句柄回落交换链路径。
@@ -511,4 +511,74 @@ TEST_F(Renderer_Offscreen_Test, 目标尺寸可查询)
         renderer.render_target_destroy(target);
         EXPECT_FALSE(renderer.render_target_size(target, &invalid_width, &invalid_height));
         EXPECT_EQ(invalid_width, 0u);
+}
+
+/*
+深度子区域读回（第一百六十三轮）
+口径：全屏四边形渲染到离屏目标后，取中心 8×4 区域读回：
+      ① 区域尺寸正确；② 与整幅读回对应位置逐元素一致；③ 区域外像素不参与；
+      ④ 越界区域 / 容量不足 / 无效句柄均被拒绝且尺寸归零。
+*/
+TEST_F(Renderer_Offscreen_Test, 深度子区域读回)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	uint64_t target = 0;
+	ASSERT_TRUE(renderer.render_target_create(target, WINDOW_WIDTH, WINDOW_HEIGHT));
+	engine::Mesh_Handle handle = 0;
+	ASSERT_TRUE(renderer.mesh_load(handle, quad_data()));
+	//渲染一帧（四边形覆盖中心）
+	renderer.render_target_set(target);
+	renderer.texture_bind_set(0);
+	ASSERT_TRUE(renderer.mesh_draw(handle, nullptr));
+	ASSERT_TRUE(renderer.frame_render());
+
+	//整幅读回作为基准
+	std::vector<uint32_t> whole(static_cast<std::size_t>(WINDOW_WIDTH) * WINDOW_HEIGHT, 0);
+	uint32_t whole_width = 0;
+	uint32_t whole_height = 0;
+	ASSERT_TRUE(renderer.render_target_readback_depth(target, whole.data(),
+		static_cast<uint32_t>(whole.size()), &whole_width, &whole_height));
+
+	//中心 8×4 区域
+	const uint32_t region_x = WINDOW_WIDTH / 2 - 4;
+	const uint32_t region_y = WINDOW_HEIGHT / 2 - 2;
+	const uint32_t region_w = 8;
+	const uint32_t region_h = 4;
+	std::vector<uint32_t> region(region_w * region_h, 0);
+	uint32_t region_width = 0;
+	uint32_t region_height = 0;
+	ASSERT_TRUE(renderer.render_target_readback_depth_region(target, region_x, region_y,
+		region_w, region_h, region.data(), static_cast<uint32_t>(region.size()), &region_width, &region_height));
+	//① 区域尺寸
+	EXPECT_EQ(region_width, region_w);
+	EXPECT_EQ(region_height, region_h);
+	//② 与整幅对应位置逐元素一致
+	uint32_t mismatches = 0;
+	for (uint32_t row = 0; row < region_h; ++row)
+		for (uint32_t column = 0; column < region_w; ++column)
+		{
+			std::size_t whole_index = static_cast<std::size_t>(region_y + row) * WINDOW_WIDTH
+				+ region_x + column;
+			if (whole[whole_index] != region[static_cast<std::size_t>(row) * region_w + column])
+				++mismatches;
+		}
+	EXPECT_EQ(mismatches, 0u) << "子区域与整幅读回不一致";
+
+	//④ 越界 / 容量不足 / 无效句柄
+	uint32_t width = 9;
+	uint32_t height = 9;
+	EXPECT_FALSE(renderer.render_target_readback_depth_region(target, WINDOW_WIDTH - 2, 0,
+		region_w, region_h, region.data(), static_cast<uint32_t>(region.size()), &width, &height));
+	EXPECT_EQ(width, 0u);
+	EXPECT_EQ(height, 0u);
+	//容量不足（需要 32 个元素，仅给 16）
+	std::vector<uint32_t> tiny(16, 0);
+	EXPECT_FALSE(renderer.render_target_readback_depth_region(target, 0, 0,
+		region_w, region_h, tiny.data(), static_cast<uint32_t>(tiny.size()), nullptr, nullptr));
+	EXPECT_FALSE(renderer.render_target_readback_depth_region(9999u, 0, 0,
+		region_w, region_h, region.data(), static_cast<uint32_t>(region.size()), nullptr, nullptr));
+
+	renderer.mesh_unload(handle);
+	renderer.render_target_destroy(target);
 }
