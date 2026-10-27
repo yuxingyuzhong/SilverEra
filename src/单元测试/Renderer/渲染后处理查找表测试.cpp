@@ -223,13 +223,134 @@ TEST_F(Renderer_Post_Chain_Test, 查找表绑定可观测)
 	ASSERT_TRUE(renderer.texture_load_lut_identity(lut, 5));
 	renderer.post_lut_bind(lut);
 	EXPECT_EQ(renderer.post_lut_get(), lut);
-	//无效句柄（0 与未登记值）均不改变原绑定
-	renderer.post_lut_bind(0);
-	EXPECT_EQ(renderer.post_lut_get(), lut);
+	//未登记句柄不改变原绑定
 	renderer.post_lut_bind(12345);
 	EXPECT_EQ(renderer.post_lut_get(), lut);
+	//句柄 0 表示清除绑定（第一百五十七轮）
+	renderer.post_lut_bind(0);
+	EXPECT_EQ(renderer.post_lut_get(), 0u);
 	//未初始化查询为 0
 	engine::Renderer uninitialized;
 	EXPECT_EQ(uninitialized.post_lut_get(), 0u);
+	renderer.texture_unload(lut);
+}
+
+/*
+运行时切换两张查找表（第一百五十七轮）
+口径：同一渲染器、同一单级查找链：先绑恒等表取基线；改绑反色表（强度 1）中心应变黑；
+      再绑回恒等表后，画面与基线逐字节一致（切换不残留上一张表）。
+*/
+TEST_F(Renderer_Post_Chain_Test, 查找表运行时切换)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	//恒等表（边长 5）与反色表（边长 2）
+	uint64_t identity_lut = 0;
+	ASSERT_TRUE(renderer.texture_load_lut_identity(identity_lut, 5));
+	const std::vector<uint8_t> inverse_pixels = inverse_lut_pixels(2);
+	uint64_t inverse_lut = 0;
+	ASSERT_TRUE(renderer.texture_load(inverse_lut, inverse_pixels.data(), 4, 2));
+	uint64_t stage = post_pipeline_register(renderer, "色彩查找.frag.spv");
+	ASSERT_NE(stage, 0u);
+	ASSERT_TRUE(renderer.post_chain_set(&stage, 1));
+	renderer.post_stage_param_set(0, 1.0f, 0.0f, 1.0f);
+	uint64_t scene_target = 0;
+	ASSERT_TRUE(renderer.render_target_create(scene_target, renderer.extent_width(), renderer.extent_height()));
+	engine::Mesh_Handle handle = 0;
+	scene_register(renderer, handle);
+	renderer.render_target_present_set(scene_target);
+
+	//渲染一帧并返回像素（lambda 内用 EXPECT：ASSERT 不允许出现在有返回值的函数中）
+	auto render_frame = [&]()
+	{
+		EXPECT_TRUE(renderer.mesh_draw(handle, nullptr));
+		std::vector<uint8_t> pixels(pixel_bytes());
+		EXPECT_TRUE(renderer.frame_render(pixels.data(), static_cast<uint32_t>(pixels.size())));
+		return pixels;
+	};
+
+	//基线：恒等表
+	renderer.post_lut_bind(identity_lut);
+	std::vector<uint8_t> baseline = render_frame();
+	std::array<uint8_t, 4> baseline_center = pixel_get(baseline, WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2);
+	EXPECT_GE(*std::min_element(baseline_center.begin(), baseline_center.begin() + 3), SATURATION_THRESHOLD)
+		<< "恒等表下中心未保持亮白";
+
+	//切换到反色表：中心变黑
+	renderer.post_lut_bind(inverse_lut);
+	EXPECT_EQ(renderer.post_lut_get(), inverse_lut);
+	std::vector<uint8_t> inverted = render_frame();
+	std::array<uint8_t, 4> inverted_center = pixel_get(inverted, WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2);
+	EXPECT_LE(*std::max_element(inverted_center.begin(), inverted_center.begin() + 3), DARK_THRESHOLD)
+		<< "切换反色表后中心未变黑：" << pixel_text(inverted_center);
+
+	//切回恒等表：逐字节回到基线
+	renderer.post_lut_bind(identity_lut);
+	EXPECT_EQ(renderer.post_lut_get(), identity_lut);
+	std::vector<uint8_t> restored = render_frame();
+	EXPECT_EQ(max_channel_diff(restored, baseline), 0) << "切回恒等表后画面未还原";
+
+	renderer.mesh_unload(handle);
+	renderer.pipeline_unload(stage);
+	renderer.render_target_destroy(scene_target);
+	renderer.texture_unload(identity_lut);
+	renderer.texture_unload(inverse_lut);
+}
+
+/*
+清除查找表绑定（第一百五十七轮）
+口径：先绑反色表（强度 1）确认画面被反转；再以 post_lut_bind(0) 清除：
+      句柄归零，同一查找级退化为原样输出（与直通链逐通道差 ≤ 2）。
+*/
+TEST_F(Renderer_Post_Chain_Test, 清除查找表绑定)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	const std::vector<uint8_t> inverse_pixels = inverse_lut_pixels(2);
+	uint64_t lut = 0;
+	ASSERT_TRUE(renderer.texture_load(lut, inverse_pixels.data(), 4, 2));
+	uint64_t stage = post_pipeline_register(renderer, "色彩查找.frag.spv");
+	ASSERT_NE(stage, 0u);
+	ASSERT_TRUE(renderer.post_chain_set(&stage, 1));
+	renderer.post_stage_param_set(0, 1.0f, 0.0f, 1.0f);
+	uint64_t scene_target = 0;
+	ASSERT_TRUE(renderer.render_target_create(scene_target, renderer.extent_width(), renderer.extent_height()));
+	engine::Mesh_Handle handle = 0;
+	scene_register(renderer, handle);
+	renderer.render_target_present_set(scene_target);
+
+	//渲染一帧并返回像素（lambda 内用 EXPECT：ASSERT 不允许出现在有返回值的函数中）
+	auto render_frame = [&]()
+	{
+		EXPECT_TRUE(renderer.mesh_draw(handle, nullptr));
+		std::vector<uint8_t> pixels(pixel_bytes());
+		EXPECT_TRUE(renderer.frame_render(pixels.data(), static_cast<uint32_t>(pixels.size())));
+		return pixels;
+	};
+
+	//绑定反色表：中心变黑
+	renderer.post_lut_bind(lut);
+	std::vector<uint8_t> inverted = render_frame();
+	std::array<uint8_t, 4> inverted_center = pixel_get(inverted, WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2);
+	EXPECT_LE(*std::max_element(inverted_center.begin(), inverted_center.begin() + 3), DARK_THRESHOLD);
+
+	//清除绑定：句柄归零，查找级退化为原样输出
+	renderer.post_lut_bind(0);
+	EXPECT_EQ(renderer.post_lut_get(), 0u) << "清除后句柄未归零";
+	std::vector<uint8_t> cleared = render_frame();
+	std::array<uint8_t, 4> cleared_center = pixel_get(cleared, WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2);
+	EXPECT_GE(*std::min_element(cleared_center.begin(), cleared_center.begin() + 3), SATURATION_THRESHOLD)
+		<< "清除绑定后中心未恢复亮白：" << pixel_text(cleared_center);
+	//与清屏色（角落）的差异应与直通一致（间接验证「原样输出」）
+	std::array<uint8_t, 4> corner = pixel_get(cleared, 1, 1);
+	EXPECT_GT(cleared_center[2], static_cast<uint8_t>(corner[2] + 100)) << "清除后画面不再区分中心与背景";
+
+	renderer.mesh_unload(handle);
+	renderer.pipeline_unload(stage);
+	renderer.render_target_destroy(scene_target);
 	renderer.texture_unload(lut);
 }
