@@ -1,4 +1,4 @@
-/*
+﻿/*
 渲染相机测试（L2 隐藏窗口）
 覆盖：相机位置 / 注视点 / 视场角 / 近远平面设置后推进帧不报错；极端视场角不崩溃；
       未初始化时设置相机为安全无操作。
@@ -139,4 +139,40 @@ TEST_F(Renderer_Camera_Test, 相机屏幕投影与反投影)
 	engine::Renderer uninitialized;
 	EXPECT_FALSE(uninitialized.camera_project(origin, &u, &v, &depth));
 	EXPECT_FALSE(uninitialized.camera_unproject(0.5f, 0.5f, 0.5f, world));
+}
+
+/*
+世界空间 AABB 视锥可见性（第一百六十轮）
+口径：默认相机（0,0,3）朝 −Z、近 0.1 / 远 100、垂直视场 60°：
+      原点小盒可见；相机背后 / 远平面之外 / 横向视场之外不可见；未初始化与空入参返回假。
+*/
+TEST_F(Renderer_Camera_Test, 包围盒视锥可见性)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	//原点附近的小盒（可见）
+	const float center_min[3] = { -0.5f, -0.5f, -0.5f };
+	const float center_max[3] = { 0.5f, 0.5f, 0.5f };
+	EXPECT_TRUE(renderer.camera_aabb_visible(center_min, center_max));
+	//相机背后（z = 10 > 相机 z = 3）
+	const float behind_min[3] = { -0.5f, -0.5f, 9.5f };
+	const float behind_max[3] = { 0.5f, 0.5f, 10.5f };
+	EXPECT_FALSE(renderer.camera_aabb_visible(behind_min, behind_max));
+	//远平面之外（距相机约 150）
+	const float far_min[3] = { -0.5f, -0.5f, -150.5f };
+	const float far_max[3] = { 0.5f, 0.5f, -149.5f };
+	EXPECT_FALSE(renderer.camera_aabb_visible(far_min, far_max));
+	//横向视场之外（x = 50）
+	const float side_min[3] = { 49.5f, -0.5f, -1.0f };
+	const float side_max[3] = { 50.5f, 0.5f, 0.0f };
+	EXPECT_FALSE(renderer.camera_aabb_visible(side_min, side_max));
+	//远但仍在视锥内（z = −50）
+	const float inside_min[3] = { -0.5f, -0.5f, -50.5f };
+	const float inside_max[3] = { 0.5f, 0.5f, -49.5f };
+	EXPECT_TRUE(renderer.camera_aabb_visible(inside_min, inside_max));
+	//空入参 / 未初始化
+	EXPECT_FALSE(renderer.camera_aabb_visible(nullptr, center_max));
+	EXPECT_FALSE(renderer.camera_aabb_visible(center_min, nullptr));
+	engine::Renderer uninitialized;
+	EXPECT_FALSE(uninitialized.camera_aabb_visible(center_min, center_max));
 }

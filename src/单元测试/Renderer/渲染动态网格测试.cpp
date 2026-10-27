@@ -1,4 +1,4 @@
-/*
+﻿/*
 动态网格顶点更新测试（第一百五十九轮；L2 隐藏窗口 + 像素回读）
 覆盖：未初始化 / 无效句柄 / 区间越界 / 空指针拒绝；顶点整体平移后画面随之移动；
       局部包围盒只扩不缩（保守扩张）。
@@ -224,4 +224,53 @@ TEST_F(Renderer_Dynamic_Mesh_Test, 包围盒保守扩张)
 	EXPECT_FLOAT_EQ(updated_max[1], 0.5f + VERTEX_SHIFT_Y);
 
 	renderer.mesh_unload(handle);
+}
+
+/*
+索引区域更新（第一百六十轮）
+口径：三角形三个索引改成退化值 {0,0,0} 后不产生任何像素；再恢复 {0,1,2} 后覆盖面积回到基线；
+      索引越界 / 区间越界 / 空指针均被拒绝。
+*/
+TEST_F(Renderer_Dynamic_Mesh_Test, 索引区域更新改变覆盖)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	//回落内置默认白纹理
+	renderer.texture_bind_set(0);
+	engine::Mesh_Handle handle = 0;
+	ASSERT_TRUE(renderer.mesh_triangle_load(handle));
+
+	//基线：正常三角形
+	ASSERT_TRUE(renderer.mesh_draw(handle, nullptr));
+	std::vector<uint8_t> baseline(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(baseline.data(), static_cast<uint32_t>(baseline.size())));
+	uint32_t baseline_white = white_count(baseline);
+	ASSERT_GT(baseline_white, 0u) << "基线帧未出现纹理色像素";
+
+	//退化索引：三顶点同点，零面积（不产生像素）
+	const uint32_t degenerate[3] = { 0, 0, 0 };
+	ASSERT_TRUE(renderer.mesh_update_indices(handle, 0, 3, degenerate));
+	ASSERT_TRUE(renderer.mesh_draw(handle, nullptr));
+	std::vector<uint8_t> degenerated(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(degenerated.data(), static_cast<uint32_t>(degenerated.size())));
+	EXPECT_EQ(white_count(degenerated), 0u) << "退化索引仍产生覆盖：索引写入未生效";
+
+	//恢复原索引
+	const uint32_t restored[3] = { 0, 1, 2 };
+	ASSERT_TRUE(renderer.mesh_update_indices(handle, 0, 3, restored));
+	ASSERT_TRUE(renderer.mesh_draw(handle, nullptr));
+	std::vector<uint8_t> recovered(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(recovered.data(), static_cast<uint32_t>(recovered.size())));
+	EXPECT_EQ(white_count(recovered), baseline_white) << "恢复索引后覆盖面与基线不一致";
+
+	//索引越界（顶点只有 3 个）/ 区间越界 / 空指针均拒绝
+	const uint32_t out_of_range[3] = { 0, 1, 3 };
+	EXPECT_FALSE(renderer.mesh_update_indices(handle, 0, 3, out_of_range));
+	EXPECT_FALSE(renderer.mesh_update_indices(handle, 2, 2, restored));
+	EXPECT_FALSE(renderer.mesh_update_indices(handle, 0, 3, nullptr));
+	EXPECT_FALSE(renderer.mesh_update_indices(handle + 99, 0, 3, restored));
+	renderer.mesh_unload(handle);
+	EXPECT_FALSE(renderer.mesh_update_indices(handle, 0, 3, restored));
 }
