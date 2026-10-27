@@ -176,3 +176,43 @@ TEST_F(Renderer_Camera_Test, 包围盒视锥可见性)
 	engine::Renderer uninitialized;
 	EXPECT_FALSE(uninitialized.camera_aabb_visible(center_min, center_max));
 }
+
+/*
+相机矩阵导出（第一百六十一轮）
+口径：导出的「视图 × 投影」矩阵把世界原点投到屏幕中心（NDC 近零），且深度落在 0..1；
+      未初始化 / 空出参返回假。
+*/
+TEST_F(Renderer_Camera_Test, 相机矩阵导出)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	float matrix[16] = {};
+	ASSERT_TRUE(renderer.camera_view_proj(matrix));
+	//矩阵非零（存在有效投影）
+	float magnitude = 0.0f;
+	for (int index = 0; index < 16; ++index)
+		magnitude += matrix[index] < 0.0f ? -matrix[index] : matrix[index];
+	EXPECT_GT(magnitude, 0.1f) << "导出矩阵全零";
+
+	//手工变换世界原点（列主序乘法）
+	const float origin[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
+	float clip[4] = {};
+	for (int row = 0; row < 4; ++row)
+	{
+		float sum = 0.0f;
+		for (int column = 0; column < 4; ++column)
+			sum += matrix[column * 4 + row] * origin[column];
+		clip[row] = sum;
+	}
+	EXPECT_GT(clip[3], 0.0f) << "原点在相机背后";
+	EXPECT_NEAR(clip[0] / clip[3], 0.0f, 1e-3f) << "原点未投向屏幕中心";
+	EXPECT_NEAR(clip[1] / clip[3], 0.0f, 1e-3f) << "原点未投向屏幕中心";
+	float depth = clip[2] / clip[3];
+	EXPECT_GT(depth, 0.0f);
+	EXPECT_LT(depth, 1.0f);
+
+	//未初始化 / 空出参
+	engine::Renderer uninitialized;
+	EXPECT_FALSE(uninitialized.camera_view_proj(matrix));
+	EXPECT_FALSE(renderer.camera_view_proj(nullptr));
+}
