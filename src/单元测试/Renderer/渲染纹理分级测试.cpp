@@ -221,3 +221,52 @@ TEST_F(Renderer_Texture_Level_Test, mip级数查询)
 	EXPECT_FALSE(renderer.texture_mip_levels(square_texture, &levels));
 	EXPECT_EQ(levels, 0u);
 }
+
+/*
+分级区域读回（第一百六十六轮）
+口径：4×4 白纹理（3 级）第 1 级为 2×2；读回其 (1,1) 单纹素与整级读回对应像素逐字节一致；
+      级号越界 / 按级尺寸越界 / 容量不足 / 空指针均被拒绝且尺寸归零。
+*/
+TEST_F(Renderer_Texture_Level_Test, 分级区域读回)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	std::vector<uint8_t> white(4 * 4 * 4, 255);
+	uint64_t texture = 0;
+	ASSERT_TRUE(renderer.texture_load(texture, white.data(), 4, 4));
+
+	//整级读回（第 1 级 2×2）
+	std::vector<uint8_t> whole(2 * 2 * 4, 0);
+	ASSERT_TRUE(renderer.texture_readback_level(texture, 1, whole.data(),
+		static_cast<uint32_t>(whole.size()), nullptr, nullptr));
+
+	//区域读回：第 1 级 (1,1) 单纹素
+	uint8_t single[4] = {};
+	uint32_t region_width = 0;
+	uint32_t region_height = 0;
+	ASSERT_TRUE(renderer.texture_readback_region_level(texture, 1, 1, 1, 1, 1, single, 4,
+		&region_width, &region_height));
+	EXPECT_EQ(region_width, 1u);
+	EXPECT_EQ(region_height, 1u);
+	for (std::size_t index = 0; index < 4; ++index)
+		EXPECT_EQ(single[index], whole[(1 * 2 + 1) * 4 + index]) << "区域读回与整级读回不一致";
+
+	//拒绝路径
+	uint32_t width = 9;
+	uint32_t height = 9;
+	//级号越界（只有 3 级）
+	EXPECT_FALSE(renderer.texture_readback_region_level(texture, 3, 0, 0, 1, 1, single, 4, &width, &height));
+	EXPECT_EQ(width, 0u);
+	EXPECT_EQ(height, 0u);
+	//按级尺寸越界（第 1 级为 2×2，取 (1,1) 起 2×2）
+	EXPECT_FALSE(renderer.texture_readback_region_level(texture, 1, 1, 1, 2, 2, single, 4, nullptr, nullptr));
+	//容量不足（1×2 需 8 字节，仅给 4）
+	EXPECT_FALSE(renderer.texture_readback_region_level(texture, 1, 0, 0, 1, 2, single, 4, nullptr, nullptr));
+	//空指针
+	EXPECT_FALSE(renderer.texture_readback_region_level(texture, 1, 0, 0, 1, 1, nullptr, 4, nullptr, nullptr));
+	//未初始化
+	engine::Renderer cold;
+	EXPECT_FALSE(cold.texture_readback_region_level(texture, 1, 0, 0, 1, 1, single, 4, nullptr, nullptr));
+
+	renderer.texture_unload(texture);
+}
