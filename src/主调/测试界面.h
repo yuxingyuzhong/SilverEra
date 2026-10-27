@@ -34,6 +34,12 @@ namespace engine
         uint64_t instances = 0;
         //最近一帧实际执行的后处理级数
         uint32_t post_stages = 0;
+        //当前生效的 MSAA 采样数（1 = 关闭）
+        uint32_t msaa_samples = 1;
+        //最近一次阴影重绘的绘制项数
+        uint32_t last_shadow_items = 0;
+        //最近一帧是否重绘阴影图（1 / 0）
+        uint32_t shadow_last_redrawn = 0;
         //设备是否支持 GPU 时间戳
         bool gpu_supported = false;
     };

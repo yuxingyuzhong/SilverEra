@@ -105,6 +105,30 @@ namespace engine
 			return 像素;
 		}
 
+		/*
+		地板网格像素（深色底 ＋ 浅色细网格线）
+		大面积地面与展区地台共用：细线网格提供尺度参照，比高对比棋盘更耐看、不抢物体。
+		*/
+		std::vector<uint8_t> 地板像素(uint32_t 边长, uint32_t 格距)
+		{
+			std::vector<uint8_t> 像素(static_cast<std::size_t>(边长) * 边长 * 4);
+			for (uint32_t y = 0; y < 边长; ++y)
+			{
+				for (uint32_t x = 0; x < 边长; ++x)
+				{
+					//底色 96 / 网格线 168（线宽 2 像素）
+					const bool 线上 = (x % 格距) < 2 || (y % 格距) < 2;
+					const uint8_t 值 = 线上 ? 168 : 96;
+					const std::size_t 偏移 = (static_cast<std::size_t>(y) * 边长 + x) * 4;
+					像素[偏移] = 值;
+					像素[偏移 + 1] = 值;
+					像素[偏移 + 2] = 值;
+					像素[偏移 + 3] = 255;
+				}
+			}
+			return 像素;
+		}
+
 		//天空盒六面像素（自上而下的深蓝天光渐变）
 		std::vector<uint8_t> 天空像素(uint32_t 边长)
 		{
@@ -259,6 +283,10 @@ namespace engine
 		//—— 纹理 ——
 		if (!渲染器.texture_load_checkerboard(棋盘_, 256, 256, 32))
 			return false;
+		//地板网格纹理（细线格，供地面与地台共用）
+		const std::vector<uint8_t> 地板 = 地板像素(256, 64);
+		if (!渲染器.texture_load(地板_, 地板.data(), 256, 256))
+			return false;
 		const std::vector<uint8_t> 法线 = 法线像素(64);
 		if (!渲染器.texture_load(法线贴图_, 法线.data(), 64, 64))
 			return false;
@@ -270,6 +298,34 @@ namespace engine
 			return false;
 		//动态贴图（第一百五十一轮；16×16 棋盘，每 0.1 秒更新一个移动色块）
 		if (!渲染器.texture_load_checkerboard(动态贴图_, 16, 16, 4))
+			return false;
+		/*
+		地面材质（双面渲染）
+		地面用大面积平面铺设：若正面绕序与本机剔除方向不一致，单面材质会让整块地面消失；
+		双面材质关闭背面剔除，无论绕序如何都能看到，且把棋盘纹理与材质绑定合并为一次提交。
+		*/
+		Material_Data 地面描述;
+		地面描述.texture = 地板_;
+		地面描述.double_sided = true;
+		地面描述.pbr_override = true;
+		地面描述.pbr_roughness = 1.0f;
+		地面描述.pbr_metallic = 0.0f;
+		地面描述.uv_scale[0] = 6.0f;
+		地面描述.uv_scale[1] = 6.0f;
+		if (!渲染器.material_load(地面材质_, 地面描述))
+			return false;
+		/*
+		法线 / 粗糙度贴图材质（一次登记，逐帧复用）
+		此前每次绘制都登记并卸载材质，属于每帧重复分配；改为 init 登记、shutdown 卸载。
+		*/
+		Material_Data 贴图描述;
+		贴图描述.pbr_override = true;
+		贴图描述.pbr_roughness = 0.7f;
+		贴图描述.pbr_metallic = 0.35f;
+		贴图描述.normal_texture = 法线贴图_;
+		贴图描述.roughness_texture = 粗糙贴图_;
+		贴图描述.normal_strength = 1.5f;
+		if (!渲染器.material_load(贴图材质_, 贴图描述))
 			return false;
 		//—— 字体与后处理管线 ——
 		字体_ = 加载字体(渲染器);
@@ -305,26 +361,32 @@ namespace engine
 		相机.position[0] = 位置_[0];
 		相机.position[1] = 位置_[1];
 		相机.position[2] = 位置_[2];
-		//注视点由 update 按偏航 / 俯仰实时计算，此处给一个朝向场景中心的值
+		//注视点由 update 按偏航 / 俯仰实时计算，此处给一个朝向场景纵深的值
 		相机.target[0] = 0.0f;
-		相机.target[1] = 2.0f;
-		相机.target[2] = -8.0f;
-		相机.fov = 1.0472f;
+		相机.target[1] = 3.0f;
+		相机.target[2] = -20.0f;
+		相机.fov = 1.30f;
 		相机.far_plane = 200.0f;
-		相机.clear_color[0] = 0.04f;
-		相机.clear_color[1] = 0.06f;
-		相机.clear_color[2] = 0.12f;
+		相机.clear_color[0] = 0.03f;
+		相机.clear_color[1] = 0.05f;
+		相机.clear_color[2] = 0.09f;
 		相机.clear_color[3] = 1.0f;
 		Light_Data 光照;
 		//主方向光（暖色）
-		光照.direction[0] = 0.35f;
-		光照.direction[1] = -0.75f;
-		光照.direction[2] = -0.5f;
+		/*
+		主光方向
+		加大水平分量、减小纵深分量：让投影向画面右侧铺开而不是藏在物体背后，
+		使「阴影」在漫游视角下始终可见。
+		*/
+		光照.direction[0] = 0.62f;
+		光照.direction[1] = -0.62f;
+		光照.direction[2] = -0.24f;
 		光照.color[0] = 1.0f;
 		光照.color[1] = 0.94f;
 		光照.color[2] = 0.86f;
+		//主光强度（压低到不过曝；此前 0.85 ＋ 多盏补光把地面推到纯白）
 		光照.intensity = 0.85f;
-		光照.ambient = 0.22f;
+		光照.ambient = 0.06f;
 		//补光（冷色）
 		光照.fill_direction[0] = -0.5f;
 		光照.fill_direction[1] = -0.25f;
@@ -332,11 +394,11 @@ namespace engine
 		光照.fill_color[0] = 0.42f;
 		光照.fill_color[1] = 0.62f;
 		光照.fill_color[2] = 1.0f;
-		光照.fill_intensity = 0.4f;
-		//三盏彩色点光源
+		光照.fill_intensity = 0.18f;
+		//三盏彩色点光源（分布在材质区 / 拼接区 / 纹理区，制造冷暖层次）
 		光照.point_count = 3;
-		const float 点位置[3][3] = { { -7.0f, 4.5f, -6.0f }, { 7.0f, 4.5f, -6.0f }, { 0.0f, 5.0f, -13.0f } };
-		const float 点颜色[3][3] = { { 1.0f, 0.35f, 0.28f }, { 0.32f, 1.0f, 0.45f }, { 0.38f, 0.5f, 1.0f } };
+		const float 点位置[3][3] = { { 0.0f, 6.0f, -10.0f }, { -14.0f, 6.0f, -30.0f }, { 14.0f, 6.0f, -30.0f } };
+		const float 点颜色[3][3] = { { 1.0f, 0.42f, 0.30f }, { 0.34f, 0.78f, 1.0f }, { 1.0f, 0.86f, 0.52f } };
 		for (uint32_t 序号 = 0; 序号 < 3; ++序号)
 		{
 			for (uint32_t 分量 = 0; 分量 < 3; ++分量)
@@ -345,65 +407,74 @@ namespace engine
 				光照.point_color[序号][分量] = 点颜色[序号][分量];
 			}
 			光照.point_radius[序号] = 16.0f;
-			光照.point_intensity[序号] = 2.6f;
+			//点光强度压低，避免近处表面被推到纯白（纹理与色调全都看不见）
+			光照.point_intensity[序号] = 0.55f;
 			光照.point_shininess[序号] = 48.0f;
 		}
-		//一盏自上而下的聚光灯
+		//一盏自上而下的聚光灯（正对光照 / 阴影展示区）
 		光照.spot_count = 1;
-		光照.spot_position[0][0] = 0.0f;
+		光照.spot_position[0][0] = 14.0f;
 		光照.spot_position[0][1] = 9.0f;
-		光照.spot_position[0][2] = -6.0f;
+		光照.spot_position[0][2] = -10.0f;
 		光照.spot_direction[0][0] = 0.0f;
 		光照.spot_direction[0][1] = -1.0f;
 		光照.spot_direction[0][2] = 0.0f;
 		光照.spot_color[0][0] = 1.0f;
 		光照.spot_color[0][1] = 0.96f;
 		光照.spot_color[0][2] = 0.88f;
-		光照.spot_radius[0] = 22.0f;
-		光照.spot_intensity[0] = 3.0f;
-		光照.spot_inner_deg[0] = 14.0f;
-		光照.spot_outer_deg[0] = 34.0f;
-		光照.specular_intensity = 0.45f;
-		光照.specular_shininess = 48.0f;
-		//半球环境光
-		光照.ambient_color[0] = 0.42f;
-		光照.ambient_color[1] = 0.52f;
-		光照.ambient_color[2] = 0.72f;
-		光照.ambient_ground[0] = 0.5f;
-		光照.ambient_ground[1] = 0.38f;
-		光照.ambient_ground[2] = 0.24f;
-		光照.ambient_hemisphere = 0.6f;
+		光照.spot_radius[0] = 26.0f;
+		//聚光强度压低，避免整片地面过曝
+		光照.spot_intensity[0] = 1.3f;
+		光照.spot_inner_deg[0] = 16.0f;
+		光照.spot_outer_deg[0] = 38.0f;
+		光照.specular_intensity = 0.0f;
+		光照.specular_shininess = 96.0f;
+		//半球环境光（天光偏冷、地面反光偏暖；强度压到不参与过曝）
+		光照.ambient_color[0] = 0.32f;
+		光照.ambient_color[1] = 0.36f;
+		光照.ambient_color[2] = 0.44f;
+		光照.ambient_ground[0] = 0.28f;
+		光照.ambient_ground[1] = 0.24f;
+		光照.ambient_ground[2] = 0.20f;
+		光照.ambient_hemisphere = 0.15f;
 		//阴影（软边 ＋ 两级级联）
 		光照.shadow_enabled = 1;
 		光照.shadow_bias = 0.004f;
-		光照.shadow_softness = 0.65f;
-		光照.shadow_strength = 0.9f;
+		光照.shadow_softness = 0.35f;
+		光照.shadow_strength = 1.0f;
 		Fog_Data 雾;
 		雾.color[0] = 0.52f;
 		雾.color[1] = 0.62f;
 		雾.color[2] = 0.78f;
-		//指数平方雾（第一百四十三轮）：近处通透、远处平滑压向雾色
-		雾.mode = 1;
-		雾.density = 0.022f;
-		雾.start = 6.0f;
-		雾.end = 48.0f;
+		/*
+		线性雾（改为远距离才起效）
+		指数平方雾从 6 米就开始压暗，导致「越远越模糊、近远观感差别巨大」；
+		改为线性雾并把起雾距离推到 90 米，只给远景补一点空间层次，近处保持锐利。
+		*/
+		雾.mode = 0;
+		雾.density = 0.0f;
+		雾.start = 60.0f;
+		雾.end = 170.0f;
 		//高度衰减（第一百四十三轮）：高处物体比贴地物体更通透
 		雾.height_falloff = 0.012f;
 		渲染器.scene_apply(相机, 光照, 雾);
-		//阴影范围与级联（第一百四十六轮扩为三级；第一百四十八轮加接缝淡化）
-		渲染器.shadow_range_set(20.0f, 1.0f, 70.0f);
-		渲染器.shadow_cascade_set(3, 3.0f, 16.0f);
-		渲染器.shadow_cascade_blend_set(0.2f);
-		//天空盒 / 简易 IBL（诊断：暂时关闭，确认是否是天空背景挡住地面）
-		渲染器.sky_enable_set(false);
+		//阴影范围与级联（覆盖整条展廊：三片 × 远处倍增）
+		渲染器.shadow_range_set(30.0f, 1.0f, 130.0f);
+		渲染器.shadow_cascade_set(3, 18.0f, 2.2f);
+		渲染器.shadow_cascade_blend_set(0.18f);
+		//天空盒 / 简易 IBL（渐变天空提供背景层次与环境反射，不再是大块纯蓝）
+		渲染器.sky_enable_set(true);
 		渲染器.sky_texture_set(天空_);
-		渲染器.sky_params_set(0.5f, 0.6f);
+		//天空 IBL 强度压低：否则整幅画面被蓝色天光冲成单色
+		渲染器.sky_params_set(0.12f, 0.20f);
 		//PBR-lite 全局开启（逐物体另设粗糙度 / 金属度）
 		渲染器.pbr_enable_set(true);
 		渲染器.pbr_roughness_set(1.0f);
 		渲染器.pbr_metallic_set(0.0f);
 		渲染器.static_batching_set(true);
 		渲染器.cull_enabled_set(true);
+		//多重采样抗锯齿（4×；几何体边缘与棋盘格纹路的锯齿明显，SSAA 不再叠加）
+		渲染器.msaa_samples_set(4);
 		/*
 		后处理链默认关闭（2026-10-26 展示优化）
 		六段链（亮部提取 → 模糊 → 暗角 → 色彩查找 → 遮蔽 → 平滑）会把整幅画面（含 UI 与文字）
@@ -484,146 +555,338 @@ namespace engine
 	//登记本帧全部绘制项与字幕
 	void 能力展示场景::frame_draw(Renderer& 渲染器)
 	{
-		//—— 地面（用扁立方体做地面：平面类网格在本机渲染路径下不可见，改用有厚度的立方体） ——
-		渲染器.texture_bind_set(棋盘_);
-		const std::array<float, 16> 地面矩阵 = 非均匀变换(0.0f, -0.15f, -4.0f, 22.0f, 0.12f, 22.0f);
-		(void)渲染器.mesh_draw(立方体_, 地面矩阵.data());
-
-		//—— 第一排：八种程序化网格（棋盘纹理 ＋ 逐物体色调，提升色彩层次） ——
-		const engine::Mesh_Handle 网格排[8] = { 球_, 圆柱_, 圆锥_, 胶囊_, 圆环_, 平面_, 圆盘_, 球_ };
-		//逐物体色调（红 / 橙 / 黄 / 绿 / 青 / 蓝 / 紫 / 粉）
-		const float 色调表[8][3] = {
-			{ 1.0f, 0.45f, 0.40f }, { 1.0f, 0.65f, 0.30f }, { 1.0f, 0.92f, 0.45f }, { 0.45f, 0.95f, 0.55f },
-			{ 0.40f, 0.90f, 0.95f }, { 0.45f, 0.62f, 1.0f }, { 0.72f, 0.50f, 1.0f }, { 1.0f, 0.55f, 0.85f },
+		/*
+		展廊布局（两排三列的展区网格）
+		每个展区拥有独立地台色块、四角立柱与三维投影标签，
+		对应「展示区域有效分割」与「标明各区域展示的效果」两项要求。
+		*/
+		struct 展区
+		{
+			//中心 X
+			float x;
+			//中心 Z
+			float z;
+			//地台色
+			float 地色[3];
+			//区域标题
+			const char* 标题;
 		};
-		for (uint32_t 序号 = 0; 序号 < 8; ++序号)
-		{
-			渲染器.material_tint_set(色调表[序号][0], 色调表[序号][1], 色调表[序号][2], 1.0f);
-			const std::array<float, 16> 矩阵 = 变换(-7.0f + 2.0f * static_cast<float>(序号), 1.1f, -3.0f, 0.85f);
-			(void)渲染器.mesh_draw(网格排[序号], 矩阵.data());
-		}
+		/*
+		两排三列的展区网格（比单列长走廊更易在同一屏内看清全部展区）
+		第一排距离相机约 22 单位，第二排约 42 单位；每区 12×12 地台。
+		*/
+		const 展区 展区表[6] = {
+			{ -14.0f, -10.0f, { 0.46f, 0.52f, 0.70f }, "① 程序化网格" },
+			{ 0.0f,   -10.0f, { 0.74f, 0.52f, 0.40f }, "② PBR 材质" },
+			{ 14.0f,  -10.0f, { 0.40f, 0.66f, 0.60f }, "③ 光照与阴影" },
+			{ -14.0f, -30.0f, { 0.58f, 0.46f, 0.74f }, "④ 实例化合批" },
+			{ 0.0f,   -30.0f, { 0.76f, 0.60f, 0.34f }, "⑤ 几何拼接" },
+			{ 14.0f,  -30.0f, { 0.50f, 0.62f, 0.46f }, "⑥ 纹理与动态" },
+		};
+		//圆周常数（环形排布与环绕动画用）
+		const float 圆周率 = 3.14159265f;
+
+		//—— 基础地面（双面材质：绕序无关，杜绝大面积平面被背面剔除） ——
+		渲染器.material_bind_set(地面材质_);
+		//地面基调（冷灰，压暗以免抢走展区色彩）
+		渲染器.material_tint_set(0.24f, 0.26f, 0.31f, 1.0f);
+		const std::array<float, 16> 地面矩阵 = 变换(0.0f, -0.02f, 0.0f, 8.0f);
+		(void)渲染器.mesh_draw(地面_, 地面矩阵.data());
 		渲染器.material_tint_clear();
 
-		//—— 第二排：PBR 材质（粗糙度 / 金属度递增 ＋ 法线与粗糙度贴图） ——
-		渲染器.texture_bind_set(0);
-		const float 粗糙度[4] = { 0.15f, 0.4f, 0.7f, 0.95f };
-		for (uint32_t 序号 = 0; 序号 < 4; ++序号)
+		//—— 展区地台（每区一块彩色地砖，作为分区与地面参照） ——
+		for (const 展区& 区 : 展区表)
 		{
-			(void)渲染器.material_pbr_set(粗糙度[序号], 0.0f);
-			const std::array<float, 16> 矩阵 = 变换(-6.0f + 2.2f * static_cast<float>(序号), 1.2f, -8.0f, 0.95f);
-			(void)渲染器.mesh_draw(球_, 矩阵.data());
-		}
-		for (uint32_t 序号 = 0; 序号 < 4; ++序号)
-		{
-			(void)渲染器.material_pbr_set(0.25f, 0.2f + 0.26f * static_cast<float>(序号));
-			const std::array<float, 16> 矩阵 = 变换(-6.0f + 2.2f * static_cast<float>(序号), 1.2f, -10.0f, 0.95f);
-			(void)渲染器.mesh_draw(球_, 矩阵.data());
-		}
-		(void)渲染器.material_pbr_clear();
-		//带法线 / 粗糙度贴图的球
-		Material_Data 贴图材质;
-		贴图材质.pbr_override = true;
-		贴图材质.pbr_roughness = 0.7f;
-		贴图材质.pbr_metallic = 0.35f;
-		贴图材质.normal_texture = 法线贴图_;
-		贴图材质.roughness_texture = 粗糙贴图_;
-		贴图材质.normal_strength = 1.5f;
-		Material_Handle 贴图句柄 = 0;
-		if (渲染器.material_load(贴图句柄, 贴图材质))
-		{
-			渲染器.material_bind_set(贴图句柄);
-			const std::array<float, 16> 贴图球 = 变换(5.6f, 1.2f, -9.0f, 0.95f);
-			(void)渲染器.mesh_draw(球_, 贴图球.data());
-			渲染器.material_bind_set(0);
-			渲染器.material_unload(贴图句柄);
-		}
-		//逐物体色调与自发光
-		渲染器.material_tint_set(1.0f, 0.5f, 0.25f, 1.0f);
-		{
-			const std::array<float, 16> 矩阵 = 变换(-2.0f, 1.4f, -8.0f, 0.6f);
-			(void)渲染器.mesh_draw(圆环_, 矩阵.data());
+			渲染器.material_tint_set(区.地色[0], 区.地色[1], 区.地色[2], 1.0f);
+			const std::array<float, 16> 地台 = 变换(区.x, 0.02f, 区.z, 0.30f);
+			(void)渲染器.mesh_draw(地面_, 地台.data());
 		}
 		渲染器.material_tint_clear();
-		渲染器.material_emissive_set(2.5f);
-		渲染器.material_tint_set(0.45f, 0.85f, 1.0f, 1.0f);
-		{
-			const std::array<float, 16> 矩阵 = 变换(2.0f, 1.4f, -8.0f, 0.6f);
-			(void)渲染器.mesh_draw(胶囊_, 矩阵.data());
-		}
-		渲染器.material_emissive_clear();
-		渲染器.material_tint_clear();
+		渲染器.material_bind_set(0);
 
-		//—— 第三排：阴影展示（圆锥 / 圆柱 / 胶囊立在阴影范围中心附近） ——
-		渲染器.texture_bind_set(棋盘_);
-		const engine::Mesh_Handle 影排[3] = { 圆锥_, 圆柱_, 胶囊_ };
-		for (uint32_t 序号 = 0; 序号 < 3; ++序号)
+		//—— 展区角柱（每区四角一根，一次实例化提交，形成清晰边界） ——
 		{
-			const std::array<float, 16> 矩阵 = 变换(-2.2f + 2.2f * static_cast<float>(序号), 1.6f, -15.0f, 1.2f);
-			(void)渲染器.mesh_draw(影排[序号], 矩阵.data());
-		}
-
-		//—— 实例化与合批：右侧 8×8 球阵（一次实例化调用） ——
-		std::vector<float> 实例矩阵;
-		实例矩阵.reserve(64 * 16);
-		for (uint32_t 行号 = 0; 行号 < 8; ++行号)
-		{
-			for (uint32_t 列号 = 0; 列号 < 8; ++列号)
+			std::vector<float> 柱矩阵;
+			柱矩阵.reserve(24 * 16);
+			for (const 展区& 区 : 展区表)
 			{
-				const float x = 8.0f + (static_cast<float>(列号) - 3.5f) * 1.15f;
-				const float z = -9.0f + (static_cast<float>(行号) - 3.5f) * 1.15f;
-				const std::array<float, 16> 矩阵 = 变换(x, 0.45f, z, 0.32f);
-				实例矩阵.insert(实例矩阵.end(), 矩阵.begin(), 矩阵.end());
+				for (int 横 = -1; 横 <= 1; 横 += 2)
+				{
+					for (int 纵 = -1; 纵 <= 1; 纵 += 2)
+					{
+						const std::array<float, 16> 柱 = 非均匀变换(区.x + 5.7f * static_cast<float>(横), 0.36f,
+							区.z + 5.7f * static_cast<float>(纵), 0.16f, 0.45f, 0.16f);
+						柱矩阵.insert(柱矩阵.end(), 柱.begin(), 柱.end());
+					}
+				}
+			}
+			//石灰色角柱（与彩色地台形成对比）
+			渲染器.material_tint_set(0.42f, 0.44f, 0.48f, 1.0f);
+			(void)渲染器.mesh_draw_instanced(立方体_, 柱矩阵.data(), 24);
+			渲染器.material_tint_clear();
+		}
+
+		//—— 展区①：八种程序化网格（圆台 ＋ 环形排布） ——
+		{
+			//圆台底座
+			渲染器.material_tint_set(0.30f, 0.34f, 0.44f, 1.0f);
+			const std::array<float, 16> 圆台 = 非均匀变换(-14.0f, 0.25f, -10.0f, 2.4f, 0.25f, 2.4f);
+			(void)渲染器.mesh_draw(圆柱_, 圆台.data());
+			渲染器.material_tint_clear();
+			//八种图元环形排布（逐物体色调）
+			const engine::Mesh_Handle 网格排[8] = { 球_, 圆柱_, 圆锥_, 胶囊_, 圆环_, 平面_, 圆盘_, 立方体_ };
+			const float 色调表[8][3] = {
+				{ 1.0f, 0.45f, 0.40f }, { 1.0f, 0.65f, 0.30f }, { 1.0f, 0.92f, 0.45f }, { 0.45f, 0.95f, 0.55f },
+				{ 0.40f, 0.90f, 0.95f }, { 0.45f, 0.62f, 1.0f }, { 0.72f, 0.50f, 1.0f }, { 1.0f, 0.55f, 0.85f },
+			};
+			for (uint32_t 序号 = 0; 序号 < 8; ++序号)
+			{
+				const float 角度 = 圆周率 * 2.0f * static_cast<float>(序号) / 8.0f;
+				const float x = -14.0f + std::cos(角度) * 1.7f;
+				const float z = -10.0f + std::sin(角度) * 1.7f;
+				渲染器.material_tint_set(色调表[序号][0], 色调表[序号][1], 色调表[序号][2], 1.0f);
+				//竖立图元统一放在圆台上方
+				const std::array<float, 16> 矩阵 = 变换(x, 0.95f, z, 0.55f);
+				(void)渲染器.mesh_draw(网格排[序号], 矩阵.data());
+			}
+			渲染器.material_tint_clear();
+		}
+
+		//—— 展区②：PBR 材质（粗糙度 / 金属度递增 ＋ 法线与粗糙度贴图） ——
+		{
+			渲染器.texture_bind_set(0);
+			const float 粗糙度[4] = { 0.10f, 0.35f, 0.65f, 0.92f };
+			for (uint32_t 序号 = 0; 序号 < 4; ++序号)
+			{
+				(void)渲染器.material_pbr_set(粗糙度[序号], 0.0f);
+				const std::array<float, 16> 矩阵 = 变换(-4.5f + 2.2f * static_cast<float>(序号), 0.75f, -8.0f, 0.7f);
+				(void)渲染器.mesh_draw(球_, 矩阵.data());
+			}
+			//金属度递增（粗糙度固定 0.3）
+			for (uint32_t 序号 = 0; 序号 < 4; ++序号)
+			{
+				(void)渲染器.material_pbr_set(0.3f, 0.15f + 0.25f * static_cast<float>(序号));
+				const std::array<float, 16> 矩阵 = 变换(-4.5f + 2.2f * static_cast<float>(序号), 0.75f, -11.5f, 0.7f);
+				(void)渲染器.mesh_draw(球_, 矩阵.data());
+			}
+			(void)渲染器.material_pbr_clear();
+			//法线 / 粗糙度贴图球（一次登记的材质）
+			if (贴图材质_ != 0)
+			{
+				渲染器.material_bind_set(贴图材质_);
+				const std::array<float, 16> 贴图球 = 变换(4.4f, 0.9f, -9.8f, 0.85f);
+				(void)渲染器.mesh_draw(球_, 贴图球.data());
+				渲染器.material_bind_set(0);
+			}
+			//自发光标记（示意材质的 emissive 通道）
+			渲染器.material_emissive_set(3.0f);
+			渲染器.material_tint_set(0.45f, 0.85f, 1.0f, 1.0f);
+			const std::array<float, 16> 自发光 = 变换(4.6f, 2.0f, -11.8f, 0.5f);
+			(void)渲染器.mesh_draw(圆环_, 自发光.data());
+			渲染器.material_emissive_clear();
+			渲染器.material_tint_clear();
+		}
+
+		//—— 展区③：光照与阴影（四根立柱 ＋ 顶部聚光） ——
+		{
+			for (uint32_t 序号 = 0; 序号 < 4; ++序号)
+			{
+				const float x = 11.4f + 1.7f * static_cast<float>(序号);
+				//柱身（圆柱）
+				const std::array<float, 16> 柱身 = 非均匀变换(x, 1.0f, -10.0f, 0.4f, 1.2f, 0.4f);
+				(void)渲染器.mesh_draw(圆柱_, 柱身.data());
+				//柱头（立方体）
+				const std::array<float, 16> 柱头 = 变换(x, 2.2f, -10.0f, 0.4f);
+				(void)渲染器.mesh_draw(立方体_, 柱头.data());
+			}
+			/*
+			聚光灯自身在展区地面上形成光池，不再额外绘制自发光圆盘
+			（自发光圆盘贴近地面时会变成一块刺眼白斑，干扰「阴影」的观察）。
+			*/
+			//三盏点光源的可见光源球（与场景点光位置一一对应）
+			const float 光源位置[3][3] = { { 0.0f, 6.0f, -10.0f }, { -14.0f, 6.0f, -30.0f }, { 14.0f, 6.0f, -30.0f } };
+			const float 光源颜色[3][3] = { { 1.0f, 0.42f, 0.30f }, { 0.34f, 0.78f, 1.0f }, { 1.0f, 0.86f, 0.52f } };
+			for (uint32_t 序号 = 0; 序号 < 3; ++序号)
+			{
+				渲染器.material_emissive_set(4.0f);
+				渲染器.material_tint_set(光源颜色[序号][0], 光源颜色[序号][1], 光源颜色[序号][2], 1.0f);
+				const std::array<float, 16> 光源球 = 变换(光源位置[序号][0], 光源位置[序号][1], 光源位置[序号][2], 0.22f);
+				(void)渲染器.mesh_draw(球_, 光源球.data());
+			}
+			渲染器.material_emissive_clear();
+			渲染器.material_tint_clear();
+		}
+
+		//—— 展区④：实例化与合批（阶梯金字塔 ＋ 环形小球阵，两次实例化提交） ——
+		{
+			std::vector<float> 阶梯矩阵;
+			阶梯矩阵.reserve(55 * 16);
+			const uint32_t 层数表[5] = { 5, 4, 3, 2, 1 };
+			for (uint32_t 层 = 0; 层 < 5; ++层)
+			{
+				const uint32_t 边长 = 层数表[层];
+				const float 半 = (static_cast<float>(边长) - 1.0f) * 0.5f;
+				for (uint32_t 行 = 0; 行 < 边长; ++行)
+				{
+					for (uint32_t 列 = 0; 列 < 边长; ++列)
+					{
+						const float x = -14.0f + (static_cast<float>(列) - 半) * 1.15f;
+						const float z = -30.0f + (static_cast<float>(行) - 半) * 1.15f;
+						const float y = 0.36f + static_cast<float>(层) * 0.72f;
+						const std::array<float, 16> 块 = 变换(x, y, z, 0.45f);
+						阶梯矩阵.insert(阶梯矩阵.end(), 块.begin(), 块.end());
+					}
+				}
+			}
+			//阶梯色调（紫蓝）
+			渲染器.material_tint_set(0.58f, 0.52f, 0.92f, 1.0f);
+			(void)渲染器.mesh_draw_instanced(立方体_, 阶梯矩阵.data(), static_cast<uint32_t>(阶梯矩阵.size() / 16));
+			渲染器.material_tint_clear();
+			//环绕小球阵（第二类实例化）
+			std::vector<float> 球阵;
+			球阵.reserve(12 * 16);
+			for (uint32_t 序号 = 0; 序号 < 12; ++序号)
+			{
+				const float 角度 = 圆周率 * 2.0f * static_cast<float>(序号) / 12.0f;
+				const float x = -14.0f + std::cos(角度) * 4.6f;
+				const float z = -30.0f + std::sin(角度) * 4.6f;
+				const std::array<float, 16> 球 = 变换(x, 0.35f, z, 0.3f);
+				球阵.insert(球阵.end(), 球.begin(), 球.end());
+			}
+			渲染器.material_tint_set(1.0f, 0.78f, 0.36f, 1.0f);
+			(void)渲染器.mesh_draw_instanced(球_, 球阵.data(), 12);
+			渲染器.material_tint_clear();
+		}
+
+		//—— 展区⑤：复杂几何拼接（拱门 ＋ 晶塔 ＋ 环阵） ——
+		{
+			渲染器.material_tint_set(0.72f, 0.66f, 0.52f, 1.0f);
+			//拱门立柱
+			const std::array<float, 16> 左柱 = 非均匀变换(-4.4f, 2.2f, -30.0f, 0.28f, 2.4f, 0.28f);
+			const std::array<float, 16> 右柱 = 非均匀变换(-1.6f, 2.2f, -30.0f, 0.28f, 2.4f, 0.28f);
+			(void)渲染器.mesh_draw(立方体_, 左柱.data());
+			(void)渲染器.mesh_draw(立方体_, 右柱.data());
+			//拱门横梁
+			const std::array<float, 16> 横梁 = 非均匀变换(-3.0f, 4.5f, -30.0f, 1.9f, 0.2f, 0.28f);
+			(void)渲染器.mesh_draw(立方体_, 横梁.data());
+			//拱门顶环
+			const std::array<float, 16> 顶环 = 绕Y变换(-3.0f, 5.1f, -30.0f, 0.0f, 0.75f);
+			(void)渲染器.mesh_draw(圆环_, 顶环.data());
+			//晶塔基座 / 塔身 / 锥顶
+			const std::array<float, 16> 塔基 = 非均匀变换(2.4f, 0.55f, -30.0f, 1.6f, 0.42f, 1.6f);
+			const std::array<float, 16> 塔身 = 非均匀变换(2.4f, 1.5f, -30.0f, 1.1f, 0.6f, 1.1f);
+			const std::array<float, 16> 塔顶 = 非均匀变换(2.4f, 2.9f, -30.0f, 0.8f, 0.8f, 0.8f);
+			(void)渲染器.mesh_draw(圆柱_, 塔基.data());
+			(void)渲染器.mesh_draw(圆柱_, 塔身.data());
+			(void)渲染器.mesh_draw(圆锥_, 塔顶.data());
+			//晶塔能量球（自发光）
+			渲染器.material_emissive_set(2.5f);
+			渲染器.material_tint_set(0.55f, 0.85f, 1.0f, 1.0f);
+			const std::array<float, 16> 能量球 = 变换(2.4f, 3.75f, -30.0f, 0.3f);
+			(void)渲染器.mesh_draw(球_, 能量球.data());
+			//环绕晶塔的两道旋转环
+			渲染器.material_tint_set(0.72f, 0.66f, 0.52f, 1.0f);
+			const std::array<float, 16> 晶环甲 = 绕Y变换(2.4f, 2.2f, -30.0f, 累计秒_ * 0.7f, 1.2f);
+			const std::array<float, 16> 晶环乙 = 绕Y变换(2.4f, 1.3f, -30.0f, -累计秒_ * 1.1f, 1.0f);
+			(void)渲染器.mesh_draw(圆环_, 晶环甲.data());
+			(void)渲染器.mesh_draw(圆环_, 晶环乙.data());
+			//环阵（大环 ＋ 中心球 ＋ 环绕小球）
+			const std::array<float, 16> 大环 = 绕Y变换(4.6f, 1.8f, -33.0f, 累计秒_ * 0.35f, 1.5f);
+			(void)渲染器.mesh_draw(圆环_, 大环.data());
+			const std::array<float, 16> 中心球 = 变换(4.6f, 1.8f, -33.0f, 0.45f);
+			(void)渲染器.mesh_draw(球_, 中心球.data());
+			//绕环小球（实例化）
+			std::vector<float> 环珠;
+			环珠.reserve(8 * 16);
+			for (uint32_t 序号 = 0; 序号 < 8; ++序号)
+			{
+				const float 角度 = 圆周率 * 2.0f * static_cast<float>(序号) / 8.0f + 累计秒_ * 0.4f;
+				const float 珠x = 4.6f + std::cos(角度) * 1.9f;
+				const float 珠y = 1.8f + std::sin(角度) * 1.9f;
+				const std::array<float, 16> 珠 = 变换(珠x, 珠y, -33.0f, 0.18f);
+				环珠.insert(环珠.end(), 珠.begin(), 珠.end());
+			}
+			(void)渲染器.mesh_draw_instanced(球_, 环珠.data(), 8);
+			渲染器.material_emissive_clear();
+			渲染器.material_tint_clear();
+		}
+
+		//—— 展区⑥：纹理（棋盘面板 / 动态贴图面板 / UV 立方 / 贴图球） ——
+		{
+			//大棋盘面板（竖直）
+			渲染器.texture_bind_set(棋盘_);
+			const std::array<float, 16> 棋盘面 = 非均匀变换(10.4f, 2.0f, -34.4f, 3.0f, 2.0f, 1.0f);
+			(void)渲染器.mesh_draw(平面_, 棋盘面.data());
+			//逐帧动态更新面板（每 0.1 秒写入一个移动色块）
+			if (动态贴图_ != 0 && 累计秒_ - 上次更新时间_ > 0.1f)
+			{
+				上次更新时间_ = 累计秒_;
+				//色块左上角在 0..12 之间循环
+				const uint32_t 色块x = static_cast<uint32_t>(累计秒_ * 8.0f) % 13u;
+				const uint32_t 色块y = static_cast<uint32_t>(累计秒_ * 5.0f) % 13u;
+				//4×4 纯红（RGBA8 紧排）
+				std::vector<uint8_t> 色块(4 * 4 * 4, 0);
+				for (std::size_t 偏移 = 0; 偏移 < 色块.size(); 偏移 += 4)
+				{
+					色块[偏移] = 255;
+					色块[偏移 + 3] = 255;
+				}
+				(void)渲染器.texture_update_region(动态贴图_, 色块x, 色块y, 4, 4, 色块.data());
+			}
+			if (动态贴图_ != 0)
+			{
+				渲染器.texture_bind_set(动态贴图_);
+				const std::array<float, 16> 动态面 = 非均匀变换(14.0f, 1.8f, -34.4f, 1.8f, 1.8f, 1.0f);
+				(void)渲染器.mesh_draw(平面_, 动态面.data());
+			}
+			//棋盘立方（展示立方体六面 UV）
+			渲染器.texture_bind_set(棋盘_);
+			const std::array<float, 16> 纹理立方 = 绕Y变换(10.8f, 0.95f, -29.4f, 累计秒_ * 0.3f, 1.1f);
+			(void)渲染器.mesh_draw(立方体_, 纹理立方.data());
+			//法线 / 粗糙度贴图球
+			if (贴图材质_ != 0)
+			{
+				渲染器.material_bind_set(贴图材质_);
+				const std::array<float, 16> 贴图球 = 变换(17.2f, 0.9f, -30.6f, 0.9f);
+				(void)渲染器.mesh_draw(球_, 贴图球.data());
+				渲染器.material_bind_set(0);
 			}
 		}
-		(void)渲染器.mesh_draw_instanced(球_, 实例矩阵.data(), 64);
 
-		//—— 自转圆环（动画；证明逐帧重建绘制项） ——
-		const std::array<float, 16> 转环 = 绕Y变换(0.0f, 2.6f, -6.0f, 累计秒_ * 0.8f, 1.4f);
-		(void)渲染器.mesh_draw(圆环_, 转环.data());
-
-		//—— 程序化立方体（第一百四十二轮新增入口；独立摆位以不与既有阵列冲突） ——
-		const std::array<float, 16> 立方矩阵 = 绕Y变换(4.6f, 1.0f, -4.0f, 0.5f, 1.0f);
-		(void)渲染器.mesh_draw(立方体_, 立方矩阵.data());
-
-		//—— 动态贴图（第一百五十一轮；每 0.1 秒更新一个 4×4 移动色块） ——
-		if (动态贴图_ != 0 && 累计秒_ - 上次更新时间_ > 0.1f)
-		{
-			上次更新时间_ = 累计秒_;
-			//色块左上角在 0..12 之间循环
-			const uint32_t 色块x = static_cast<uint32_t>(累计秒_ * 8.0f) % 13u;
-			const uint32_t 色块y = static_cast<uint32_t>(累计秒_ * 5.0f) % 13u;
-			//4×4 纯红（RGBA8 紧排）
-			std::vector<uint8_t> 色块(4 * 4 * 4, 0);
-			for (std::size_t 偏移 = 0; 偏移 < 色块.size(); 偏移 += 4)
-			{
-				色块[偏移] = 255;
-				色块[偏移 + 3] = 255;
-			}
-			(void)渲染器.texture_update_region(动态贴图_, 色块x, 色块y, 4, 4, 色块.data());
-		}
-		if (动态贴图_ != 0)
-		{
-			渲染器.texture_bind_set(动态贴图_);
-			const std::array<float, 16> 动态面 = 变换(-4.6f, 1.2f, -4.0f, 1.0f);
-			(void)渲染器.mesh_draw(平面_, 动态面.data());
-		}
-
-		//—— 文字：标题与区域标签（最后画，避免字体图集被后续网格覆盖） ——
+		//—— 区域标签（三维投影：把世界坐标投到屏幕像素，再绘制文字） ——
 		if (字体_ != 0)
 		{
-			/*
-			标题带描边（第一百四十轮新增能力）
-			描边仅对标题生效：登记标题后立即把描边宽度归零，后续标签保持无描边。
-			*/
-			const float 描边色[3] = { 0.05f, 0.02f, 0.02f };
-			渲染器.text_outline_set(0.0035f, 描边色);
-			(void)渲染器.text_draw(字体_, "白银纪元 · 渲染能力展示", 24.0f, 24.0f);
-			//关闭描边，其余标签保持原样
+			const float 屏宽 = static_cast<float>(渲染器.extent_width());
+			const float 屏高 = static_cast<float>(渲染器.extent_height());
+			//标签描边（深色底描边，保证在亮色地台上仍清晰）
+			const float 描边色[3] = { 0.03f, 0.04f, 0.07f };
+			渲染器.text_outline_set(0.0025f, 描边色);
+			for (uint32_t 序号 = 0; 序号 < 6; ++序号)
+			{
+				/*
+				标签世界锚点（展区地台前缘，像展牌一样贴地）
+				贴地可避开左上角图例面板的遮挡，也让标签与所属展区在透视上更紧密。
+				*/
+				const float 锚点[3] = { 展区表[序号].x, 0.45f, 展区表[序号].z + 5.6f };
+				float u = 0.0f;
+				float v = 0.0f;
+				float 深度 = 0.0f;
+				//若锚点在相机前方
+				if (!渲染器.camera_project(锚点, &u, &v, &深度))
+					continue;
+				//屏幕像素坐标（左上角原点；越界标签直接跳过）
+				float 像素x = u * 屏宽;
+				const float 像素y = v * 屏高;
+				//按文本宽度居中
+				float 文本宽 = 0.0f;
+				float 文本高 = 0.0f;
+				if (渲染器.text_measure(字体_, 展区表[序号].标题, &文本宽, &文本高))
+					像素x -= 文本宽 * 0.5f;
+				if (像素x < -300.0f || 像素x > 屏宽 || 像素y < 0.0f || 像素y > 屏高)
+					continue;
+				(void)渲染器.text_draw(字体_, 展区表[序号].标题, 像素x, 像素y);
+			}
 			渲染器.text_outline_set(0.0f, 描边色);
-			(void)渲染器.text_draw(字体_, "程序化网格 / 纹理", 60.0f, 300.0f);
-			(void)渲染器.text_draw(字体_, "光照 / 阴影 / 级联", 60.0f, 340.0f);
-			(void)渲染器.text_draw(字体_, "PBR 材质 / 贴图 / 自发光", 60.0f, 380.0f);
-			(void)渲染器.text_draw(字体_, "实例化 / 合批 / 天空盒 / 雾 / 后处理 / 文字描边", 60.0f, 420.0f);
 		}
 	}
 
@@ -652,10 +915,17 @@ namespace engine
 		色彩查找_ = 0;
 		遮蔽_ = 0;
 		平滑_ = 0;
+		//材质
+		if (贴图材质_ != 0)
+			渲染器.material_unload(贴图材质_);
+		if (地面材质_ != 0)
+			渲染器.material_unload(地面材质_);
+		贴图材质_ = 0;
+		地面材质_ = 0;
 		//字体与纹理
 		if (字体_ != 0)
 			渲染器.font_unload(字体_);
-		const uint64_t 纹理[6] = { 棋盘_, 法线贴图_, 粗糙贴图_, 天空_, 查找表_, 动态贴图_ };
+		const uint64_t 纹理[7] = { 棋盘_, 地板_, 法线贴图_, 粗糙贴图_, 天空_, 查找表_, 动态贴图_ };
 		for (uint64_t 句柄 : 纹理)
 		{
 			if (句柄 != 0)
@@ -663,6 +933,7 @@ namespace engine
 		}
 		字体_ = 0;
 		棋盘_ = 0;
+		地板_ = 0;
 		法线贴图_ = 0;
 		粗糙贴图_ = 0;
 		天空_ = 0;

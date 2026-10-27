@@ -209,7 +209,7 @@ namespace engine
             //左上角信息面板
             const ImGuiViewport* 视口 = ImGui::GetMainViewport();
             ImGui::SetNextWindowPos(ImVec2(视口->WorkPos.x + 16.0f, 视口->WorkPos.y + 16.0f));
-            ImGui::SetNextWindowSize(ImVec2(430.0f, 0.0f));
+            ImGui::SetNextWindowSize(ImVec2(352.0f, 0.0f));
             //展示模式下没有蓝色渐变背景，本面板必须自带不透明底色，否则整个面板不可见
             ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.04f, 0.07f, 0.14f, 0.92f));
             ImGui::Begin("##能力展示信息", nullptr,
@@ -217,15 +217,14 @@ namespace engine
                 | ImGuiWindowFlags_NoFocusOnAppearing);
             ImGui::TextUnformatted("渲染能力展示 · 可漫游场景");
             ImGui::Separator();
-            ImGui::TextUnformatted("本场景同时呈现：");
-            ImGui::Bullet(); ImGui::TextUnformatted("十种程序化网格入口（含立方体 / 三角形）＋ 棋盘 / 法线 / 粗糙度纹理");
-            ImGui::Bullet(); ImGui::TextUnformatted("方向光 / 补光 / 三盏彩色点光 / 聚光灯 / 半球环境光");
-            ImGui::Bullet(); ImGui::TextUnformatted("PBR-lite：金属度 / 粗糙度 / 法线贴图 / 自发光 / 色调");
-            ImGui::Bullet(); ImGui::TextUnformatted("方向光阴影 ＋ 软边 ＋ 三级级联（接缝淡化）");
-            ImGui::Bullet(); ImGui::TextUnformatted("实例化绘制 ＋ 静态合批 ＋ 视锥剔除");
-            ImGui::Bullet(); ImGui::TextUnformatted("立方体天空盒 / 简易 IBL ＋ 距离雾（线性区间 / 指数平方双模式）");
-            ImGui::Bullet(); ImGui::TextUnformatted("后处理链：亮部提取 → 模糊 → 暗角 → 3D LUT → 屏幕空间遮蔽 → FXAA 平滑");
-            ImGui::Bullet(); ImGui::TextUnformatted("文字渲染（中文标题与区域标注）＋ 标题描边 ＋ 动态纹理区域更新");
+            //展区图例（与三维投影标签一一对应）
+            ImGui::TextUnformatted("六个展区（场景内有同名标签）：");
+            ImGui::Bullet(); ImGui::TextUnformatted("① 程序化网格：八种图元环形排布");
+            ImGui::Bullet(); ImGui::TextUnformatted("② PBR 材质：粗糙度 / 金属度 / 法线贴图 / 自发光");
+            ImGui::Bullet(); ImGui::TextUnformatted("③ 光照与阴影：方向光 / 点光 / 聚光 / 三级级联");
+            ImGui::Bullet(); ImGui::TextUnformatted("④ 实例化合批：阶梯金字塔一次提交");
+            ImGui::Bullet(); ImGui::TextUnformatted("⑤ 几何拼接：拱门 / 晶塔 / 环阵");
+            ImGui::Bullet(); ImGui::TextUnformatted("⑥ 纹理与动态：棋盘 / 动态更新 / UV 立方");
             ImGui::Separator();
             float 位置[3] = { 0.0f, 0.0f, 0.0f };
             场景.相机位置(位置);
@@ -239,6 +238,10 @@ namespace engine
                 上下文.运行状态.frame_ms);
             ImGui::Text("最近一帧交给录制 %llu 项（若为 0 说明绘制项被跳过）",
                 static_cast<unsigned long long>(上下文.运行状态.last_draw_items));
+            ImGui::Text("MSAA %u×   阴影 %u 项（最近一帧%s）",
+                上下文.运行状态.msaa_samples,
+                上下文.运行状态.last_shadow_items,
+                上下文.运行状态.shadow_last_redrawn != 0 ? "重绘" : "复用");
             ImGui::Separator();
             ImGui::TextUnformatted("操作：WASD 移动 · E / 空格 上升 · Q / Shift 下降 · 右键拖拽看向 · 滚轮调速 · ESC 返回");
             if (ImGui::Button("返回测试界面", ImVec2(150.0f, 30.0f)))
@@ -543,6 +546,9 @@ namespace engine
             上下文.运行状态.last_merged_items = 统计.last_merged_items;
             上下文.运行状态.instances = 统计.instances;
             上下文.运行状态.post_stages = 统计.post_stages;
+            上下文.运行状态.msaa_samples = 统计.msaa_samples;
+            上下文.运行状态.last_shadow_items = 统计.last_shadow_items;
+            上下文.运行状态.shadow_last_redrawn = 统计.shadow_last_redrawn;
             上下文.运行状态.gpu_supported = 渲染器.gpu_timestamp_supported();
 
             //推进一帧
