@@ -216,3 +216,59 @@ TEST_F(Renderer_Camera_Test, 相机矩阵导出)
 	EXPECT_FALSE(uninitialized.camera_view_proj(matrix));
 	EXPECT_FALSE(renderer.camera_view_proj(nullptr));
 }
+
+/*
+正交投影与相机状态查询（第一百六十四轮）
+口径：默认 fov ≈ 1.0472 弧度、透视模式、正交高度 2.0；
+      设置 fov / 正交后查询一致；正交高度非正时忽略本次设置；未初始化查询返回假。
+*/
+TEST_F(Renderer_Camera_Test, 正交投影与状态查询)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	//默认状态
+	float fov = 0.0f;
+	ASSERT_TRUE(renderer.camera_fov_get(&fov));
+	EXPECT_NEAR(fov, 1.0472f, 1e-3f);
+	bool ortho_enabled = true;
+	float ortho_height = 0.0f;
+	ASSERT_TRUE(renderer.camera_ortho_get(&ortho_enabled, &ortho_height));
+	EXPECT_FALSE(ortho_enabled);
+	EXPECT_NEAR(ortho_height, 2.0f, 1e-3f);
+
+	//设置 fov 后查询一致
+	renderer.camera_fov_set(0.8f);
+	ASSERT_TRUE(renderer.camera_fov_get(&fov));
+	EXPECT_NEAR(fov, 0.8f, 1e-3f);
+
+	//开启正交并设高度
+	renderer.camera_ortho_set(true, 3.0f);
+	ASSERT_TRUE(renderer.camera_ortho_get(&ortho_enabled, &ortho_height));
+	EXPECT_TRUE(ortho_enabled);
+	EXPECT_NEAR(ortho_height, 3.0f, 1e-3f);
+	//正交下世界原点仍投在屏幕中心
+	float u = -1.0f;
+	float v = -1.0f;
+	const float origin[3] = { 0.0f, 0.0f, 0.0f };
+	ASSERT_TRUE(renderer.camera_project(origin, &u, &v, nullptr));
+	EXPECT_NEAR(u, 0.5f, 1e-3f);
+	EXPECT_NEAR(v, 0.5f, 1e-3f);
+
+	//高度非正：忽略本次设置（保持 3.0 与开启）
+	renderer.camera_ortho_set(true, 0.0f);
+	ASSERT_TRUE(renderer.camera_ortho_get(&ortho_enabled, &ortho_height));
+	EXPECT_TRUE(ortho_enabled);
+	EXPECT_NEAR(ortho_height, 3.0f, 1e-3f);
+
+	//关闭正交回到透视
+	renderer.camera_ortho_set(false, 3.0f);
+	ASSERT_TRUE(renderer.camera_ortho_get(&ortho_enabled, nullptr));
+	EXPECT_FALSE(ortho_enabled);
+
+	//未初始化查询返回假
+	engine::Renderer cold;
+	EXPECT_FALSE(cold.camera_fov_get(&fov));
+	EXPECT_FALSE(cold.camera_ortho_get(&ortho_enabled, &ortho_height));
+	//未初始化设置无副作用（不崩溃即可）
+	cold.camera_ortho_set(true, 2.0f);
+}
