@@ -581,3 +581,84 @@ TEST_F(Renderer_Scene_Test, 金属度贴图改变漫反射权重)
 	renderer.texture_unload(white_map);
 	renderer.texture_unload(black_map);
 }
+
+/*
+五张材质贴图同时生效（第一百七十轮：批量绑定合并后的互不干扰验证）
+口径：同一材质同时配法线 / 粗糙度 / 自发光 / 遮蔽 / 金属度贴图，环境光 0.5、方向光关闭；
+     红自发光使中心只剩一个亮通道，灰遮蔽（0.2）把其余通道压到低值——
+     两者同时体现在同一像素上，说明五个绑定各就各位、批量写入未互相覆盖。
+*/
+TEST_F(Renderer_Scene_Test, 五张材质贴图同时生效)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	uint64_t albedo = 0;
+	std::vector<uint8_t> white = solid_white();
+	ASSERT_TRUE(renderer.texture_load(albedo, white.data(), 2, 2));
+	uint64_t white_map = 0;
+	std::vector<uint8_t> white_texels = solid_white();
+	ASSERT_TRUE(renderer.texture_load(white_map, white_texels.data(), 2, 2));
+	uint64_t tilted_normal = 0;
+	std::vector<uint8_t> normal_texels = tilted_normal_map();
+	ASSERT_TRUE(renderer.texture_load(tilted_normal, normal_texels.data(), 2, 2));
+	uint64_t red_map = 0;
+	std::vector<uint8_t> red_texels = solid_rgba(255, 0, 0);
+	ASSERT_TRUE(renderer.texture_load(red_map, red_texels.data(), 2, 2));
+	uint64_t dark_map = 0;
+	std::vector<uint8_t> dark_texels = solid_rgba(51, 51, 51);
+	ASSERT_TRUE(renderer.texture_load(dark_map, dark_texels.data(), 2, 2));
+	//场景：方向光关闭、环境光 0.5
+	engine::Camera_Data camera{};
+	engine::Light_Data light{};
+	light.intensity = 0.0f;
+	light.ambient = 0.5f;
+	engine::Fog_Data fog{};
+	renderer.scene_apply(camera, light, fog);
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, quad_data_with_normal(0.0f, 0.0f, -1.0f)));
+
+	//五张贴图同时挂到同一材质
+	engine::Material_Data mapped{};
+	mapped.texture = albedo;
+	mapped.normal_texture = tilted_normal;
+	mapped.normal_strength = 1.0f;
+	mapped.roughness_texture = white_map;
+	mapped.emissive = 1.0f;
+	mapped.emissive_texture = red_map;
+	mapped.ao_texture = dark_map;
+	mapped.metallic_texture = white_map;
+	engine::Material_Handle handle = 0;
+	ASSERT_TRUE(renderer.material_load(handle, mapped));
+	renderer.material_bind_set(handle);
+	ASSERT_TRUE(renderer.mesh_draw(mesh, nullptr));
+	std::vector<uint8_t> pixels(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(pixels.data(), static_cast<uint32_t>(pixels.size())));
+
+	//中心像素：红自发光使通道极差大，遮蔽把其余通道压低
+	const std::array<uint8_t, 4> center = pixel_get(pixels, WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2);
+	uint8_t highest = center[0];
+	uint8_t lowest = center[0];
+	for (std::size_t index = 1; index < 3; ++index)
+	{
+		if (center[index] > highest)
+			highest = center[index];
+		if (center[index] < lowest)
+			lowest = center[index];
+	}
+	const uint32_t spread = static_cast<uint32_t>(highest) - static_cast<uint32_t>(lowest);
+	RecordProperty("multi_map_spread", spread);
+	RecordProperty("multi_map_lowest", static_cast<uint32_t>(lowest));
+
+	EXPECT_GE(spread, 120u) << "自发光贴图未生效（" << pixel_text(center) << "）";
+	EXPECT_LE(lowest, 120u) << "遮蔽贴图未生效（" << pixel_text(center) << "）";
+
+	renderer.mesh_unload(mesh);
+	renderer.material_unload(handle);
+	renderer.texture_unload(albedo);
+	renderer.texture_unload(white_map);
+	renderer.texture_unload(tilted_normal);
+	renderer.texture_unload(red_map);
+	renderer.texture_unload(dark_map);
+}
