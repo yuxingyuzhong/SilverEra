@@ -1,10 +1,13 @@
 /*
-渲染材质贴图测试（第一百二十四轮：法线贴图 / 粗糙度贴图；第一百六十八轮：自发光贴图）
+渲染材质贴图测试（第一百二十四轮：法线贴图 / 粗糙度贴图；第一百六十八轮：自发光贴图；
+第一百六十九轮：环境光遮蔽贴图 / 金属度贴图）
 覆盖：无贴图材质路径逐字节不变 / 法线贴图改变受光 / 粗糙度贴图改变高光 /
-     自发光贴图默认白逐字节不变 / 自发光贴图改变发光颜色。
+     自发光贴图默认白逐字节不变 / 自发光贴图改变发光颜色 /
+     环境光遮蔽贴图降低环境光 / 金属度贴图改变漫反射权重。
 口径：白与中灰纹理四边形 ＋ 方向光沿 +Z、环境光 0；法线贴图取「切线空间 +X 倾斜」，
      粗糙度贴图取红通道作乘子（默认白纹理 = 1，故无贴图路径不变）；
-     自发光贴图乘到自发光项上（默认白纹理 = 1，未配置时与引入前逐字节一致）。
+     自发光贴图乘到自发光项上（默认白纹理 = 1，未配置时与引入前逐字节一致）；
+     遮蔽贴图乘到环境光基底上，金属度贴图乘到金属度上（两者默认白 = 1，未配置时逐字节一致）。
 */
 #include "渲染场景测试辅助.h"
 
@@ -408,4 +411,173 @@ TEST_F(Renderer_Scene_Test, 自发光贴图改变发光颜色)
 	renderer.texture_unload(albedo);
 	renderer.texture_unload(white_map);
 	renderer.texture_unload(red_map);
+}
+
+/*
+环境光遮蔽贴图降低环境光（第一百六十九轮）
+口径：方向光关闭、环境光 0.5，画面只剩「反照率 × 环境光 × 遮蔽」；
+     白遮蔽贴图与「不配遮蔽贴图」逐字节一致，中灰（0.2）遮蔽贴图使中心明显变暗。
+*/
+TEST_F(Renderer_Scene_Test, 环境光遮蔽贴图降低环境光)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	uint64_t albedo = 0;
+	std::vector<uint8_t> white = solid_white();
+	ASSERT_TRUE(renderer.texture_load(albedo, white.data(), 2, 2));
+	uint64_t white_map = 0;
+	std::vector<uint8_t> white_texels = solid_white();
+	ASSERT_TRUE(renderer.texture_load(white_map, white_texels.data(), 2, 2));
+	uint64_t dark_map = 0;
+	std::vector<uint8_t> dark_texels = solid_rgba(51, 51, 51);
+	ASSERT_TRUE(renderer.texture_load(dark_map, dark_texels.data(), 2, 2));
+	//场景：关闭方向光、环境光 0.5
+	engine::Camera_Data camera{};
+	engine::Light_Data light{};
+	light.intensity = 0.0f;
+	light.ambient = 0.5f;
+	engine::Fog_Data fog{};
+	renderer.scene_apply(camera, light, fog);
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, quad_data_with_normal(0.0f, 0.0f, -1.0f)));
+
+	//不配遮蔽贴图
+	engine::Material_Data plain{};
+	plain.texture = albedo;
+	engine::Material_Handle plain_handle = 0;
+	ASSERT_TRUE(renderer.material_load(plain_handle, plain));
+	renderer.material_bind_set(plain_handle);
+	ASSERT_TRUE(renderer.mesh_draw(mesh, nullptr));
+	std::vector<uint8_t> plain_pixels(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(plain_pixels.data(), static_cast<uint32_t>(plain_pixels.size())));
+
+	//白遮蔽贴图
+	engine::Material_Data white_material{};
+	white_material.texture = albedo;
+	white_material.ao_texture = white_map;
+	engine::Material_Handle white_handle = 0;
+	ASSERT_TRUE(renderer.material_load(white_handle, white_material));
+	renderer.material_bind_set(white_handle);
+	ASSERT_TRUE(renderer.mesh_draw(mesh, nullptr));
+	std::vector<uint8_t> white_pixels(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(white_pixels.data(), static_cast<uint32_t>(white_pixels.size())));
+
+	//中灰（0.2）遮蔽贴图
+	engine::Material_Data dark_material{};
+	dark_material.texture = albedo;
+	dark_material.ao_texture = dark_map;
+	engine::Material_Handle dark_handle = 0;
+	ASSERT_TRUE(renderer.material_load(dark_handle, dark_material));
+	renderer.material_bind_set(dark_handle);
+	ASSERT_TRUE(renderer.mesh_draw(mesh, nullptr));
+	std::vector<uint8_t> dark_pixels(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(dark_pixels.data(), static_cast<uint32_t>(dark_pixels.size())));
+
+	//白贴图与无贴图逐字节一致
+	int maximum = 0;
+	for (std::size_t index = 0; index < plain_pixels.size(); ++index)
+	{
+		int delta = static_cast<int>(plain_pixels[index]) - static_cast<int>(white_pixels[index]);
+		if (delta < 0)
+			delta = -delta;
+		if (delta > maximum)
+			maximum = delta;
+	}
+	const uint32_t plain_brightness = center_brightness(plain_pixels);
+	const uint32_t dark_brightness = center_brightness(dark_pixels);
+	RecordProperty("ao_white_diff", maximum);
+	RecordProperty("ao_plain_brightness", plain_brightness);
+	RecordProperty("ao_dark_brightness", dark_brightness);
+
+	EXPECT_LE(maximum, 0) << "白遮蔽贴图改变了画面（差 " << maximum << "）";
+	EXPECT_LE(dark_brightness, plain_brightness - 40u) << "遮蔽贴图未压暗环境光（"
+		<< dark_brightness << " vs " << plain_brightness << "）";
+
+	renderer.mesh_unload(mesh);
+	renderer.material_unload(plain_handle);
+	renderer.material_unload(white_handle);
+	renderer.material_unload(dark_handle);
+	renderer.texture_unload(albedo);
+	renderer.texture_unload(white_map);
+	renderer.texture_unload(dark_map);
+}
+
+/*
+金属度贴图改变漫反射权重（第一百六十九轮）
+口径：PBR 开启、逐物体金属度 1、方向光沿 -Z（法线 +Z，N·L = 1）、环境光 0、高光强度 0；
+     金属度贴图取红通道乘到金属度上：白贴图 → 金属度 1 → 漫反射权重 0（近黑），
+     黑贴图 → 金属度 0 → 漫反射权重 1（近满白）。
+*/
+TEST_F(Renderer_Scene_Test, 金属度贴图改变漫反射权重)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	uint64_t albedo = 0;
+	std::vector<uint8_t> white = solid_white();
+	ASSERT_TRUE(renderer.texture_load(albedo, white.data(), 2, 2));
+	uint64_t white_map = 0;
+	std::vector<uint8_t> white_texels = solid_white();
+	ASSERT_TRUE(renderer.texture_load(white_map, white_texels.data(), 2, 2));
+	uint64_t black_map = 0;
+	std::vector<uint8_t> black_texels = solid_rgba(0, 0, 0);
+	ASSERT_TRUE(renderer.texture_load(black_map, black_texels.data(), 2, 2));
+	//场景：PBR 开启、方向光沿 -Z、环境光 0、高光关闭
+	engine::Camera_Data camera{};
+	engine::Light_Data light{};
+	light.direction[2] = -1.0f;
+	light.intensity = 1.0f;
+	light.ambient = 0.0f;
+	engine::Fog_Data fog{};
+	renderer.scene_apply(camera, light, fog);
+	renderer.pbr_enable_set(true);
+	renderer.specular_set(0.0f, 16.0f);
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, quad_data_with_normal(0.0f, 0.0f, 1.0f)));
+
+	//白金属度贴图（金属度 1 → 漫反射权重 0）
+	engine::Material_Data metal{};
+	metal.texture = albedo;
+	metal.metallic_texture = white_map;
+	metal.pbr_override = true;
+	metal.pbr_roughness = 1.0f;
+	metal.pbr_metallic = 1.0f;
+	engine::Material_Handle metal_handle = 0;
+	ASSERT_TRUE(renderer.material_load(metal_handle, metal));
+	renderer.material_bind_set(metal_handle);
+	ASSERT_TRUE(renderer.mesh_draw(mesh, nullptr));
+	std::vector<uint8_t> metal_pixels(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(metal_pixels.data(), static_cast<uint32_t>(metal_pixels.size())));
+
+	//黑金属度贴图（金属度 0 → 漫反射权重 1）
+	engine::Material_Data dielectric{};
+	dielectric.texture = albedo;
+	dielectric.metallic_texture = black_map;
+	dielectric.pbr_override = true;
+	dielectric.pbr_roughness = 1.0f;
+	dielectric.pbr_metallic = 1.0f;
+	engine::Material_Handle dielectric_handle = 0;
+	ASSERT_TRUE(renderer.material_load(dielectric_handle, dielectric));
+	renderer.material_bind_set(dielectric_handle);
+	ASSERT_TRUE(renderer.mesh_draw(mesh, nullptr));
+	std::vector<uint8_t> dielectric_pixels(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(dielectric_pixels.data(), static_cast<uint32_t>(dielectric_pixels.size())));
+
+	const uint32_t metal_brightness = center_brightness(metal_pixels);
+	const uint32_t dielectric_brightness = center_brightness(dielectric_pixels);
+	RecordProperty("metallic_map_metal_brightness", metal_brightness);
+	RecordProperty("metallic_map_dielectric_brightness", dielectric_brightness);
+
+	EXPECT_LE(metal_brightness, 60u) << "白金属度贴图未把漫反射权重压到 0（" << metal_brightness << "）";
+	EXPECT_GE(dielectric_brightness, 180u) << "黑金属度贴图未把漫反射权重放开（" << dielectric_brightness << "）";
+
+	renderer.mesh_unload(mesh);
+	renderer.material_unload(metal_handle);
+	renderer.material_unload(dielectric_handle);
+	renderer.texture_unload(albedo);
+	renderer.texture_unload(white_map);
+	renderer.texture_unload(black_map);
 }
