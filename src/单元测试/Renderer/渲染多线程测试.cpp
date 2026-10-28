@@ -267,3 +267,83 @@ TEST_F(Renderer_Thread_Test, 实例容量钳制与大批量登记)
 
 	renderer.mesh_unload(handle);
 }
+
+/*
+场景 pass 并行录制与单线程一致（第一百九十七轮）
+口径：同帧后处理链路径（场景目标 → 单级后处理 → 交换链），场景登记 64 个绘制项
+      （≥ 32 项才启用并行录制；四线程下列出 4 段）；单线程与四线程的像素内容与绘制统计必须一致，
+      且四线程确实派发过并行任务。
+*/
+TEST_F(Renderer_Thread_Test, 并行录制场景通道与单线程一致)
+{
+	//单次渲染：按给定线程数跑「场景目标 ＋ 单级后处理链」一帧并读回
+	auto render_chain = [](uint32_t threads, std::vector<uint8_t>& pixels, engine::Frame_Stats& stats) {
+		engine::Renderer_Config config = hidden_config();
+		config.render_threads = threads;
+		engine::Renderer renderer;
+		if (!renderer.init(config))
+			return false;
+		if (!renderer.readback_supported())
+			return false;
+		//关闭静态合批：本用例要求 64 个独立绘制项（合批会把同管线的相邻项并成 1 项）
+		renderer.static_batching_set(false);
+		uint64_t scene_target = 0;
+		if (!renderer.render_target_create(scene_target, renderer.extent_width(), renderer.extent_height()))
+			return false;
+		uint64_t pass = 0;
+		if (!renderer.pipeline_load(pass, "后处理.vert.spv", "后处理.frag.spv"))
+			return false;
+		if (!renderer.post_chain_set(&pass, 1))
+			return false;
+		renderer.render_target_present_set(scene_target);
+		engine::Mesh_Handle quad = 0;
+		if (!renderer.mesh_load(quad, quad_data(QUAD_HALF)))
+			return false;
+		//64 个绘制项：8×8 网格排布（每项一个独立绘制项，便于切成 4 段）
+		for (uint32_t row = 0; row < 8; ++row)
+		{
+			for (uint32_t column = 0; column < 8; ++column)
+			{
+				const float x = -0.875f + 0.25f * static_cast<float>(column);
+				const float y = -0.875f + 0.25f * static_cast<float>(row);
+				const float matrix[16] = {
+					0.09f, 0.0f, 0.0f, 0.0f,
+					0.0f, 0.09f, 0.0f, 0.0f,
+					0.0f, 0.0f, 0.09f, 0.0f,
+					x, y, 0.0f, 1.0f,
+				};
+				if (!renderer.mesh_draw(quad, matrix))
+					return false;
+			}
+		}
+		bool ok = renderer.frame_render(pixels.data(), static_cast<uint32_t>(pixels.size()));
+		stats = renderer.frame_stats_get();
+		renderer.mesh_unload(quad);
+		renderer.post_chain_set(nullptr, 0);
+		renderer.render_target_present_set(0);
+		renderer.pipeline_unload(pass);
+		renderer.render_target_destroy(scene_target);
+		return ok;
+	};
+
+	//单线程基线
+	std::vector<uint8_t> single_pixels(pixel_bytes());
+	engine::Frame_Stats single_stats{};
+	ASSERT_TRUE(render_chain(0, single_pixels, single_stats));
+	ASSERT_EQ(single_stats.last_draw_items, 64u) << "单线程侧未登记 64 个绘制项";
+
+	//四线程（并行录制）
+	std::vector<uint8_t> parallel_pixels(pixel_bytes());
+	engine::Frame_Stats parallel_stats{};
+	ASSERT_TRUE(render_chain(4, parallel_pixels, parallel_stats));
+
+	//① 绘制项数与像素内容一致（并行只改变录制位置，不改变 GPU 执行顺序）
+	EXPECT_EQ(parallel_stats.last_draw_items, single_stats.last_draw_items);
+	EXPECT_EQ(parallel_stats.last_instances, single_stats.last_instances);
+	EXPECT_LE(max_channel_delta(parallel_pixels, single_pixels), PIXEL_TOLERANCE)
+		<< "并行录制的画面与单线程不一致";
+
+	//② 四线程确实派发过并行任务（含剔除 / 差异扫描 / 分段录制）
+	EXPECT_GT(parallel_stats.parallel_dispatches, 0u) << "四线程未派发任何并行任务";
+	EXPECT_EQ(single_stats.parallel_dispatches, 0u);
+}
