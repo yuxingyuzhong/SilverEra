@@ -8,8 +8,9 @@
 
 namespace
 {
-	//准备「目标组 ＋ 单级后处理 ＋ 立方体」并渲染一帧
-	std::vector<uint8_t> render_outline(const char* shader, const std::array<float, 4>& params)
+	//准备「目标组 ＋ 单级后处理 ＋ 立方体」并渲染一帧（可选描边色；第一百八十一轮）
+	std::vector<uint8_t> render_outline(const char* shader, const std::array<float, 4>& params,
+		const std::array<float, 3>& color = { 0.0f, 0.0f, 0.0f })
 	{
 		engine::Renderer renderer;
 		EXPECT_TRUE(renderer.init(hidden_config()));
@@ -20,6 +21,8 @@ namespace
 		//链先于 present_set 设置（与既有遮蔽 / 反射用例同序）
 		EXPECT_TRUE(renderer.post_chain_set(&pass, 1));
 		renderer.post_stage_param4_set(0, params[0], params[1], params[2], params[3]);
+		//描边色（默认黑 = 压暗轮廓）
+		renderer.post_stage_color_set(0, color[0], color[1], color[2]);
 		renderer.render_target_present_set(scene_target);
 		engine::Mesh_Handle cube = 0;
 		EXPECT_TRUE(renderer.mesh_cube_load(cube, 0.4f));
@@ -68,6 +71,32 @@ TEST_F(Renderer_Post_Chain_Test, 深度描边未初始化设置无副作用)
 {
 	engine::Renderer renderer;
 	renderer.post_stage_param4_set(0, 1.0f, 1.0f, 2.0f, 1.0f);
+	renderer.post_stage_color_set(0, 1.0f, 0.0f, 0.0f);
 	renderer.post_chain_set(nullptr, 0);
 	SUCCEED();
 }
+
+/*
+描边色可配（第一百八十一轮）
+口径：同一立方体 + 强度 1；默认黑与红 (1,0,0) 两帧对比——红色描边会把轮廓像素混向红，
+      故「外通道（R 或 B）较大者」应有一批像素明显抬升；黑描边只会压暗，不会抬升。
+*/
+TEST_F(Renderer_Post_Chain_Test, 深度描边描边色可配)
+{
+	std::vector<uint8_t> black = render_outline("深度描边.frag.spv", { 1.0f, 1.0f, 2.0f, 1.0f });
+	std::vector<uint8_t> red = render_outline("深度描边.frag.spv", { 1.0f, 1.0f, 2.0f, 1.0f },
+		std::array<float, 3>{ 1.0f, 0.0f, 0.0f });
+	//统计外通道被抬升的像素数（红描边应使轮廓像素外通道上升到 255 附近）
+	uint32_t raised = 0;
+	for (std::size_t index = 0; index + 3 < black.size(); index += 4)
+	{
+		//本像素的外通道（R 与 B 中较大者；避开回读通道序）
+		int black_outer = black[index] > black[index + 2] ? black[index] : black[index + 2];
+		int red_outer = red[index] > red[index + 2] ? red[index] : red[index + 2];
+		if (red_outer - black_outer >= 20)
+			++raised;
+	}
+	RecordProperty("outline_color_raised_pixels", static_cast<int>(raised));
+	EXPECT_GT(raised, 20u) << "描边色未生效（外通道抬升像素 " << raised << "）";
+}
+
