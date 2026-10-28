@@ -692,7 +692,7 @@ TEST_F(Renderer_Scene_Test, 多线程下阴影输出与单线程一致)
 TEST_F(Renderer_Scene_Test, 多线程下阴影pass分段录制画面一致)
 {
 	//以指定渲染线程数跑一帧含 40 枚遮挡面的阴影场景（返回整帧像素；失败返回空）
-	auto render_many = [&](uint32_t thread_count, uint32_t& segments_out)
+	auto render_many = [&](uint32_t thread_count, uint32_t& segments_out, uint32_t& shadow_segments_out)
 	{
 		//空像素表示初始化 / 回读 / 渲染失败
 		std::vector<uint8_t> pixels;
@@ -740,11 +740,13 @@ TEST_F(Renderer_Scene_Test, 多线程下阴影pass分段录制画面一致)
 		if (!renderer.mesh_draw(receiver, nullptr))
 			return pixels;
 
-		//渲染一帧并取并行段数
+		//渲染一帧并取并行段数（场景 pass 与阴影 pass 分列）
 		pixels.resize(pixel_bytes());
 		if (!renderer.frame_render(pixels.data(), static_cast<std::uint32_t>(pixels.size())))
 			pixels.clear();
-		segments_out = renderer.frame_stats_get().parallel_segments;
+		engine::Frame_Stats stats = renderer.frame_stats_get();
+		segments_out = stats.parallel_segments;
+		shadow_segments_out = stats.shadow_parallel_segments;
 
 		renderer.mesh_unload(occluder);
 		renderer.mesh_unload(receiver);
@@ -754,17 +756,23 @@ TEST_F(Renderer_Scene_Test, 多线程下阴影pass分段录制画面一致)
 
 	//单线程基线
 	uint32_t single_segments = 99;
-	std::vector<uint8_t> single_pixels = render_many(0, single_segments);
+	uint32_t single_shadow_segments = 99;
+	std::vector<uint8_t> single_pixels = render_many(0, single_segments, single_shadow_segments);
 	ASSERT_FALSE(single_pixels.empty()) << "单线程阴影帧渲染失败";
 	//四线程
 	uint32_t multi_segments = 0;
-	std::vector<uint8_t> multi_pixels = render_many(4, multi_segments);
+	uint32_t multi_shadow_segments = 0;
+	std::vector<uint8_t> multi_pixels = render_many(4, multi_segments, multi_shadow_segments);
 	ASSERT_FALSE(multi_pixels.empty()) << "四线程阴影帧渲染失败";
 
 	RecordProperty("shadow_many_single_segments", single_segments);
 	RecordProperty("shadow_many_multi_segments", multi_segments);
+	RecordProperty("shadow_many_single_shadow_segments", single_shadow_segments);
+	RecordProperty("shadow_many_multi_shadow_segments", multi_shadow_segments);
 	EXPECT_EQ(single_segments, 0u) << "单线程录制不应产生并行段";
 	EXPECT_GE(multi_segments, 2u) << "40 个投影项在 4 线程下应切出至少 2 段";
+	EXPECT_EQ(single_shadow_segments, 0u) << "单线程阴影 pass 不应分段";
+	EXPECT_GE(multi_shadow_segments, 2u) << "40 个投影项在 4 线程下阴影 pass 应切出至少 2 段";
 	ASSERT_EQ(single_pixels.size(), multi_pixels.size());
 	//逐字节一致
 	EXPECT_TRUE(single_pixels == multi_pixels) << "多线程下阴影画面与单线程不一致";
