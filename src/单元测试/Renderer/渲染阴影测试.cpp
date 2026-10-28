@@ -605,3 +605,81 @@ TEST_F(Renderer_Scene_Test, 斜法线不产生自阴影)
 	renderer.mesh_unload(receiver);
 	renderer.texture_unload(texture);
 }
+
+/*
+多线程下阴影输出与单线程一致（第二百零九轮）
+口径：同一阴影场景分别在「0 线程（单线程）」与「4 线程」下渲染一帧，整帧像素逐字节一致；
+      两绘制项的交换链直通路径不达并行阈值、阴影 pass 本身不并行，故两者 parallel_segments 均应为 0。
+*/
+TEST_F(Renderer_Scene_Test, 多线程下阴影输出与单线程一致)
+{
+	//以指定渲染线程数跑一帧固定阴影场景（返回整帧像素；失败返回空）
+	auto render_shadow = [&](uint32_t thread_count, uint32_t& segments_out)
+	{
+		//空像素表示初始化 / 回读 / 渲染失败
+		std::vector<uint8_t> pixels;
+		engine::Renderer renderer;
+		engine::Renderer_Config config = hidden_config();
+		config.render_threads = thread_count;
+		if (!renderer.init(config) || !renderer.readback_supported())
+			return pixels;
+		uint64_t texture = 0;
+		std::vector<uint8_t> texels = solid_white();
+		if (!renderer.texture_load(texture, texels.data(), 2, 2))
+			return pixels;
+		engine::Mesh_Handle receiver = 0;
+		engine::Mesh_Handle occluder = 0;
+		if (!renderer.mesh_load(receiver, quad_data_with_normal(0.0f, 0.0f, -1.0f))
+			|| !renderer.mesh_load(occluder, quad_data_with_normal(0.0f, 0.0f, -1.0f)))
+			return pixels;
+		renderer.texture_bind_set(texture);
+
+		//场景：方向光沿 +Z、强度 1、环境光 0，阴影开启
+		engine::Camera_Data camera{};
+		engine::Light_Data light{};
+		light.direction[2] = 1.0f;
+		light.intensity = 1.0f;
+		light.ambient = 0.0f;
+		engine::Fog_Data fog{};
+		renderer.scene_apply(camera, light, fog);
+		renderer.shadow_enable_set(true);
+
+		//遮挡面：缩放 0.6、平移到 z = -0.5（列主序模型矩阵）
+		float occluder_transform[16] = {};
+		occluder_transform[0] = 0.6f;
+		occluder_transform[5] = 0.6f;
+		occluder_transform[10] = 0.6f;
+		occluder_transform[14] = -0.5f;
+		occluder_transform[15] = 1.0f;
+		if (!renderer.mesh_draw(occluder, occluder_transform) || !renderer.mesh_draw(receiver, nullptr))
+			return pixels;
+
+		//渲染一帧并取并行段数
+		pixels.resize(pixel_bytes());
+		if (!renderer.frame_render(pixels.data(), static_cast<std::uint32_t>(pixels.size())))
+			pixels.clear();
+		segments_out = renderer.frame_stats_get().parallel_segments;
+
+		renderer.mesh_unload(occluder);
+		renderer.mesh_unload(receiver);
+		renderer.texture_unload(texture);
+		return pixels;
+	};
+
+	//单线程基线
+	uint32_t single_segments = 99;
+	std::vector<uint8_t> single_pixels = render_shadow(0, single_segments);
+	ASSERT_FALSE(single_pixels.empty()) << "单线程阴影帧渲染失败";
+	//四线程（线程数只影响并行录制，不应影响阴影 pass 的画面）
+	uint32_t multi_segments = 99;
+	std::vector<uint8_t> multi_pixels = render_shadow(4, multi_segments);
+	ASSERT_FALSE(multi_pixels.empty()) << "四线程阴影帧渲染失败";
+
+	RecordProperty("shadow_single_segments", single_segments);
+	RecordProperty("shadow_multi_segments", multi_segments);
+	EXPECT_EQ(single_segments, 0u) << "单线程录制不应产生并行段";
+	EXPECT_EQ(multi_segments, 0u) << "两绘制项未达并行阈值，且阴影 pass 不并行";
+	ASSERT_EQ(single_pixels.size(), multi_pixels.size());
+	//逐字节一致
+	EXPECT_TRUE(single_pixels == multi_pixels) << "多线程下阴影输出与单线程不一致";
+}
