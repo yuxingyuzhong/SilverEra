@@ -702,3 +702,56 @@ TEST_F(Renderer_Msaa_Test, MSAA深度解析供深度描边采样)
 	renderer.render_target_destroy(scene_target);
 	renderer.mesh_unload(plane);
 }
+
+/*
+MSAA 深度解析关闭路径（第二百零六轮）
+口径：4× MSAA ＋ 深度描边链；关闭 msaa_depth_resolve 时仍能正常出帧（深度退化为未定义内容，
+      仅要求不崩溃且输出非空），重新开启后同样正常——用于覆盖开关的关闭分支。
+*/
+TEST_F(Renderer_Msaa_Test, 关闭深度解析后仍可出帧)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config(4)));
+	if (renderer.msaa_samples() <= 1)
+		GTEST_SKIP() << "当前设备不支持 MSAA";
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+
+	engine::Mesh_Handle plane = 0;
+	uint64_t scene_target = 0;
+	uint64_t outline = 0;
+	ASSERT_TRUE(renderer.mesh_plane_load(plane, 1.0f, 1.0f));
+	ASSERT_TRUE(renderer.render_target_create(scene_target, renderer.extent_width(), renderer.extent_height()));
+	renderer.render_target_present_set(scene_target);
+	ASSERT_TRUE(renderer.pipeline_load(outline, "后处理.vert.spv", "深度描边.frag.spv"));
+	ASSERT_TRUE(renderer.post_chain_set(&outline, 1));
+	renderer.post_stage_param_set(0, 1.0f, 0.0f, 0.5f);
+
+	float transform[16] = {};
+	diamond_transform(transform);
+
+	//关闭深度解析：仍可出帧且输出非空
+	renderer.msaa_depth_resolve_set(false);
+	EXPECT_FALSE(renderer.msaa_depth_resolve());
+	std::vector<uint8_t> pixels_off(static_cast<std::size_t>(renderer.extent_width()) * renderer.extent_height() * 4, 0);
+	renderer.mesh_draw(plane, transform);
+	ASSERT_TRUE(renderer.frame_render(pixels_off.data(), static_cast<uint32_t>(pixels_off.size())));
+	bool has_content = false;
+	for (std::size_t index = 0; index + 3 < pixels_off.size() && !has_content; index += 4)
+		if (pixels_off[index] != 0 || pixels_off[index + 1] != 0 || pixels_off[index + 2] != 0)
+			has_content = true;
+	EXPECT_TRUE(has_content) << "关闭深度解析后输出为空画面";
+
+	//重新开启：同样正常出帧
+	renderer.msaa_depth_resolve_set(true);
+	EXPECT_TRUE(renderer.msaa_depth_resolve());
+	std::vector<uint8_t> pixels_on(static_cast<std::size_t>(renderer.extent_width()) * renderer.extent_height() * 4, 0);
+	renderer.mesh_draw(plane, transform);
+	ASSERT_TRUE(renderer.frame_render(pixels_on.data(), static_cast<uint32_t>(pixels_on.size())));
+
+	renderer.post_chain_set(nullptr, 0);
+	renderer.render_target_present_set(0);
+	renderer.pipeline_unload(outline);
+	renderer.render_target_destroy(scene_target);
+	renderer.mesh_unload(plane);
+}
