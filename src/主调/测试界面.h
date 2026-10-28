@@ -46,6 +46,8 @@ namespace engine
         uint64_t parallel_dispatches = 0;
         //最近一帧并行录制段数（第一百九十八轮；0 = 单线程录制）
         uint32_t parallel_segments = 0;
+        //最近一次阴影 pass 的并行段数（第二百一十三轮；0 = 单线程录制）
+        uint32_t shadow_parallel_segments = 0;
         //设备是否支持 GPU 时间戳
         bool gpu_supported = false;
     };

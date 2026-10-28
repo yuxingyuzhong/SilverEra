@@ -226,7 +226,7 @@ namespace engine
             ImGui::Bullet(); ImGui::TextUnformatted("⑤ 几何拼接：拱门 / 晶塔 / 环阵");
             ImGui::Bullet(); ImGui::TextUnformatted("⑥ 纹理与动态：棋盘 / 动态更新 / UV 立方");
             ImGui::Bullet(); ImGui::TextUnformatted("⑦ 卡通渲染：走近该区即切换为色阶量化 / 边缘光 / 暗部色调 / 卡通高光");
-            ImGui::Bullet(); ImGui::TextUnformatted("多线程：4 工作线程（并行剔除 / 差异扫描；后处理链路径下场景 pass 并行录制）");
+            ImGui::Bullet(); ImGui::TextUnformatted("多线程：4 工作线程（并行剔除 / 差异扫描；场景 pass 与阴影 pass 均按段并行录制）");
             ImGui::Separator();
             float 位置[3] = { 0.0f, 0.0f, 0.0f };
             场景.相机位置(位置);
@@ -244,10 +244,11 @@ namespace engine
                 上下文.运行状态.msaa_samples,
                 上下文.运行状态.last_shadow_items,
                 上下文.运行状态.shadow_last_redrawn != 0 ? "重绘" : "复用");
-            ImGui::Text("渲染线程 %u   并行派发 %llu   最近一帧并行段 %u",
+            ImGui::Text("渲染线程 %u   并行派发 %llu   最近一帧并行段 %u   阴影段 %u",
                 上下文.运行状态.render_threads,
                 static_cast<unsigned long long>(上下文.运行状态.parallel_dispatches),
-                上下文.运行状态.parallel_segments);
+                上下文.运行状态.parallel_segments,
+                上下文.运行状态.shadow_parallel_segments);
             ImGui::Separator();
             ImGui::TextUnformatted("操作：WASD 移动 · E / 空格 上升 · Q / Shift 下降 · 右键拖拽看向 · 滚轮调速 · ESC 返回");
             if (ImGui::Button("返回测试界面", ImVec2(150.0f, 30.0f)))
@@ -558,6 +559,8 @@ namespace engine
             上下文.运行状态.render_threads = 统计.render_threads;
             上下文.运行状态.parallel_dispatches = 统计.parallel_dispatches;
             上下文.运行状态.parallel_segments = 统计.parallel_segments;
+            //阴影 pass 的并行段数（第二百一十三轮）
+            上下文.运行状态.shadow_parallel_segments = 统计.shadow_parallel_segments;
             上下文.运行状态.gpu_supported = 渲染器.gpu_timestamp_supported();
 
             //推进一帧
