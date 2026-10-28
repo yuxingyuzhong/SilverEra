@@ -148,6 +148,60 @@ TEST_F(Renderer_Mesh_Test, 程序化立方体加载)
 	renderer.mesh_unload(mesh);
 }
 
+/*
+程序化正二十面体球（第一百八十九轮）
+口径：细分 0 → 12 顶点 / 60 索引（20 面）；细分 1 → 42 顶点 / 240 索引（80 面）；
+      包围盒应接近 ±半径；非法半径与越界细分整次拒绝。
+*/
+TEST_F(Renderer_Mesh_Test, 程序化正二十面体球加载)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+
+	//非法参数整次拒绝
+	engine::Mesh_Handle invalid = 12345;
+	EXPECT_FALSE(renderer.mesh_icosphere_load(invalid, 0.0f, 0));
+	EXPECT_EQ(invalid, 0u);
+	invalid = 12345;
+	EXPECT_FALSE(renderer.mesh_icosphere_load(invalid, 1.0f, 5));
+	EXPECT_EQ(invalid, 0u);
+
+	//细分 0：正二十面体
+	engine::Mesh_Handle level0 = 0;
+	ASSERT_TRUE(renderer.mesh_icosphere_load(level0, 0.8f, 0));
+	uint32_t vertices = 0;
+	uint32_t indices = 0;
+	ASSERT_TRUE(renderer.mesh_counts(level0, &vertices, &indices));
+	EXPECT_EQ(vertices, 12u);
+	EXPECT_EQ(indices, 60u);
+
+	//细分 1：每面拆四
+	engine::Mesh_Handle level1 = 0;
+	ASSERT_TRUE(renderer.mesh_icosphere_load(level1, 0.8f, 1));
+	ASSERT_TRUE(renderer.mesh_counts(level1, &vertices, &indices));
+	EXPECT_EQ(vertices, 42u);
+	EXPECT_EQ(indices, 240u);
+
+	//包围盒接近 ±半径（顶点在球面上）
+	float bounds_min[3] = {};
+	float bounds_max[3] = {};
+	ASSERT_TRUE(renderer.mesh_bounds(level1, bounds_min, bounds_max));
+	for (std::size_t axis = 0; axis < 3; ++axis)
+	{
+		EXPECT_GE(bounds_max[axis], 0.6f) << "第 " << axis << " 轴包围盒上界过小";
+		EXPECT_LE(bounds_max[axis], 0.8001f) << "第 " << axis << " 轴包围盒上界越界";
+		EXPECT_LE(bounds_min[axis], -0.6f) << "第 " << axis << " 轴包围盒下界过小";
+		EXPECT_GE(bounds_min[axis], -0.8001f) << "第 " << axis << " 轴包围盒下界越界";
+	}
+
+	//可正常绘制
+	ASSERT_TRUE(renderer.mesh_draw(level1, nullptr));
+	ASSERT_TRUE(renderer.frame_render());
+
+	renderer.mesh_unload(level0);
+	renderer.mesh_unload(level1);
+}
+
 //纹理测试夹具
 class Renderer_Texture_Test : public ::testing::Test
 {
