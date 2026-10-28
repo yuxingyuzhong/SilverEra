@@ -632,3 +632,63 @@ TEST_F(Renderer_Thread_Test, 并行录制阈值可配)
 	EXPECT_LE(max_channel_delta(high_pixels, low_pixels), PIXEL_TOLERANCE)
 		<< "并行与单线程的画面不一致";
 }
+
+/*
+并行录制段数上限可配（第二百零三轮）
+口径：四线程、64 个独立绘制项（按项数 / 16 可切 4 段）；段数上限设为 2 时
+      parallel_segments 应为 2（受上限约束），默认 8 时应为 4（受项数约束）。
+*/
+TEST_F(Renderer_Thread_Test, 并行录制段数上限可配)
+{
+	//按给定段数上限渲染一帧并读回
+	auto render_with_max_segments = [](uint32_t max_segments, std::vector<uint8_t>& pixels, engine::Frame_Stats& stats) {
+		engine::Renderer_Config config = hidden_config();
+		config.render_threads = 4;
+		config.parallel_max_segments = max_segments;
+		engine::Renderer renderer;
+		if (!renderer.init(config))
+			return false;
+		if (!renderer.readback_supported())
+			return false;
+		renderer.static_batching_set(false);
+		engine::Mesh_Handle quad = 0;
+		if (!renderer.mesh_load(quad, quad_data(QUAD_HALF)))
+			return false;
+		for (uint32_t row = 0; row < 8; ++row)
+		{
+			for (uint32_t column = 0; column < 8; ++column)
+			{
+				const float x = -0.875f + 0.25f * static_cast<float>(column);
+				const float y = -0.875f + 0.25f * static_cast<float>(row);
+				const float matrix[16] = {
+					0.09f, 0.0f, 0.0f, 0.0f,
+					0.0f, 0.09f, 0.0f, 0.0f,
+					0.0f, 0.0f, 0.09f, 0.0f,
+					x, y, 0.0f, 1.0f,
+				};
+				if (!renderer.mesh_draw(quad, matrix))
+					return false;
+			}
+		}
+		bool ok = renderer.frame_render(pixels.data(), static_cast<uint32_t>(pixels.size()));
+		stats = renderer.frame_stats_get();
+		renderer.mesh_unload(quad);
+		return ok;
+	};
+
+	//上限 2：段数被限制为 2
+	std::vector<uint8_t> limited_pixels(pixel_bytes());
+	engine::Frame_Stats limited_stats{};
+	ASSERT_TRUE(render_with_max_segments(2, limited_pixels, limited_stats));
+	EXPECT_EQ(limited_stats.parallel_segments, 2u) << "段数上限 2 未生效";
+
+	//默认上限 8：项数决定段数（64 / 16 = 4）
+	std::vector<uint8_t> default_pixels(pixel_bytes());
+	engine::Frame_Stats default_stats{};
+	ASSERT_TRUE(render_with_max_segments(8, default_pixels, default_stats));
+	EXPECT_EQ(default_stats.parallel_segments, 4u) << "默认上限下段数应由项数决定";
+
+	//两种段数的画面一致
+	EXPECT_LE(max_channel_delta(limited_pixels, default_pixels), PIXEL_TOLERANCE)
+		<< "不同段数下的画面不一致";
+}
