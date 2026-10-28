@@ -281,3 +281,100 @@ TEST_F(Renderer_Scene_Test, 暗部色调参数钳制与数据路径)
 	EXPECT_FLOAT_EQ(tint[1], 0.5f);
 	EXPECT_FLOAT_EQ(tint[2], 0.4f);
 }
+
+/*
+卡通高光阈值化抹除弱高光（第一百七十九轮）
+口径：球体 + 方向光 + 中等光泽度（高光覆盖较大一片）、环境光 0.1；
+     阈值 0（关闭）与 0.35（二值化）对比：弱高光像素应显著变暗，且不应出现任何变亮像素。
+*/
+TEST_F(Renderer_Scene_Test, 卡通高光阈值化抹除弱高光)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	uint64_t texture = 0;
+	//中灰纹理：避免白色纹理 + 满照时漫反射已饱和，使高光本身可见
+	std::vector<uint8_t> texels = solid_gray();
+	ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 2, 2));
+	renderer.texture_bind_set(texture);
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_sphere_load(mesh, 0.6f, 32, 16));
+	//场景：默认方向光 + 中等环境光；高光强度 3、光泽度 8（高光面较大）
+	engine::Camera_Data camera{};
+	engine::Light_Data light{};
+	light.intensity = 1.0f;
+	light.ambient = 0.1f;
+	engine::Fog_Data fog{};
+	renderer.scene_apply(camera, light, fog);
+	renderer.specular_set(3.0f, 8.0f);
+
+	//关闭阈值化
+	renderer.toon_specular_set(0.0f);
+	ASSERT_TRUE(renderer.mesh_draw(mesh, nullptr));
+	std::vector<uint8_t> plain(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(plain.data(), static_cast<uint32_t>(plain.size())));
+
+	//开启阈值化
+	renderer.toon_specular_set(0.35f);
+	ASSERT_TRUE(renderer.mesh_draw(mesh, nullptr));
+	std::vector<uint8_t> toon(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(toon.data(), static_cast<uint32_t>(toon.size())));
+
+	//逐像素比较：暗化像素数与被意外提亮的像素数
+	std::size_t darkened = 0;
+	std::size_t brightened = 0;
+	for (std::size_t index = 0; index < plain.size(); index += 4)
+	{
+		//本像素三通道亮度和
+		int plain_sum = static_cast<int>(plain[index]) + plain[index + 1] + plain[index + 2];
+		int toon_sum = static_cast<int>(toon[index]) + toon[index + 1] + toon[index + 2];
+		if (plain_sum - toon_sum >= 20)
+			++darkened;
+		if (toon_sum - plain_sum > 2)
+			++brightened;
+	}
+	RecordProperty("toon_specular_darkened_pixels", static_cast<uint32_t>(darkened));
+	RecordProperty("toon_specular_brightened_pixels", static_cast<uint32_t>(brightened));
+
+	EXPECT_GT(darkened, 20u) << "阈值化未抹除弱高光（暗化像素 " << darkened << "）";
+	EXPECT_EQ(brightened, 0u) << "阈值化意外提亮了像素（" << brightened << " 个）";
+
+	renderer.mesh_unload(mesh);
+	renderer.texture_unload(texture);
+}
+
+/*
+卡通高光参数归一与数据路径（第一百七十九轮）
+口径：阈值钳到 [0,1]、非有限值按 0（关闭）；`Scene_Data::toon_specular` 与
+     `Light_Data::toon_specular` 经 scene_apply 生效。
+*/
+TEST_F(Renderer_Scene_Test, 卡通高光参数归一与数据路径)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	//默认关闭
+	EXPECT_FLOAT_EQ(renderer.toon_specular(), 0.0f);
+
+	//越界与非有限值归一
+	renderer.toon_specular_set(2.0f);
+	EXPECT_FLOAT_EQ(renderer.toon_specular(), 1.0f);
+	renderer.toon_specular_set(-1.0f);
+	EXPECT_FLOAT_EQ(renderer.toon_specular(), 0.0f);
+	renderer.toon_specular_set(std::numeric_limits<float>::quiet_NaN());
+	EXPECT_FLOAT_EQ(renderer.toon_specular(), 0.0f);
+
+	//扁平 Scene_Data 路径
+	engine::Scene_Data scene{};
+	scene.toon_specular = 0.4f;
+	renderer.scene_apply(scene);
+	EXPECT_FLOAT_EQ(renderer.toon_specular(), 0.4f);
+
+	//三组数据路径（Light_Data）
+	engine::Light_Data light{};
+	light.toon_specular = 0.7f;
+	engine::Camera_Data camera{};
+	engine::Fog_Data fog{};
+	renderer.scene_apply(camera, light, fog);
+	EXPECT_FLOAT_EQ(renderer.toon_specular(), 0.7f);
+}
