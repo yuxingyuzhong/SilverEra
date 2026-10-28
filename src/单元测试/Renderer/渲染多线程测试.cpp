@@ -480,3 +480,95 @@ TEST_F(Renderer_Thread_Test, 并行录制离屏目标路径与单线程一致)
 		<< "离屏路径并行录制的画面与单线程不一致";
 	EXPECT_GT(parallel_stats.parallel_segments, 0u) << "离屏路径未启用并行录制";
 }
+
+/*
+MSAA 与并行录制的组合（第二百零一轮）
+口径：4× MSAA ＋ 单级「深度描边」链 ＋ 64 个独立绘制项；单线程与四线程逐像素一致，
+      且四线程报告并行段 > 0——验证「多重采样解析只在末段执行」在并行录制下正确
+      （若中间段也解析，末段的解析目标会被中间结果覆盖，画面与单线程不一致）。
+*/
+TEST_F(Renderer_Thread_Test, MSAA下并行录制与单线程一致)
+{
+	//设备能力预检
+	{
+		engine::Renderer probe;
+		engine::Renderer_Config probe_config = hidden_config();
+		probe_config.msaa_samples = 4;
+		ASSERT_TRUE(probe.init(probe_config));
+		if (probe.msaa_samples() <= 1)
+			GTEST_SKIP() << "当前设备不支持 MSAA";
+		if (!probe.readback_supported())
+			GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	}
+
+	//单次渲染：4× MSAA ＋ 深度描边链 ＋ 64 项（关闭合批）
+	auto render_msaa = [](uint32_t threads, std::vector<uint8_t>& pixels, engine::Frame_Stats& stats) {
+		engine::Renderer_Config config = hidden_config();
+		config.render_threads = threads;
+		config.msaa_samples = 4;
+		engine::Renderer renderer;
+		if (!renderer.init(config))
+			return false;
+		if (renderer.msaa_samples() <= 1)
+			return false;
+		renderer.static_batching_set(false);
+		uint64_t scene_target = 0;
+		if (!renderer.render_target_create(scene_target, renderer.extent_width(), renderer.extent_height()))
+			return false;
+		uint64_t pass = 0;
+		if (!renderer.pipeline_load(pass, "后处理.vert.spv", "深度描边.frag.spv"))
+			return false;
+		if (!renderer.post_chain_set(&pass, 1))
+			return false;
+		renderer.post_stage_param_set(0, 1.0f, 0.0f, 0.5f);
+		renderer.post_stage_color_set(0, 1.0f, 0.0f, 0.0f);
+		renderer.render_target_present_set(scene_target);
+		engine::Mesh_Handle quad = 0;
+		if (!renderer.mesh_load(quad, quad_data(QUAD_HALF)))
+			return false;
+		for (uint32_t row = 0; row < 8; ++row)
+		{
+			for (uint32_t column = 0; column < 8; ++column)
+			{
+				const float x = -0.875f + 0.25f * static_cast<float>(column);
+				const float y = -0.875f + 0.25f * static_cast<float>(row);
+				const float matrix[16] = {
+					0.09f, 0.0f, 0.0f, 0.0f,
+					0.0f, 0.09f, 0.0f, 0.0f,
+					0.0f, 0.0f, 0.09f, 0.0f,
+					x, y, 0.0f, 1.0f,
+				};
+				if (!renderer.mesh_draw(quad, matrix))
+					return false;
+			}
+		}
+		bool ok = renderer.frame_render(pixels.data(), static_cast<uint32_t>(pixels.size()));
+		stats = renderer.frame_stats_get();
+		renderer.mesh_unload(quad);
+		renderer.post_chain_set(nullptr, 0);
+		renderer.render_target_present_set(0);
+		renderer.pipeline_unload(pass);
+		renderer.render_target_destroy(scene_target);
+		return ok;
+	};
+
+	//单线程基线（4×）
+	std::vector<uint8_t> single_pixels(pixel_bytes());
+	engine::Frame_Stats single_stats{};
+	ASSERT_TRUE(render_msaa(0, single_pixels, single_stats));
+	ASSERT_EQ(single_stats.last_draw_items, 64u);
+	EXPECT_EQ(single_stats.msaa_samples, 4u);
+	EXPECT_EQ(single_stats.parallel_segments, 0u);
+
+	//四线程（4× + 并行录制）
+	std::vector<uint8_t> parallel_pixels(pixel_bytes());
+	engine::Frame_Stats parallel_stats{};
+	ASSERT_TRUE(render_msaa(4, parallel_pixels, parallel_stats));
+
+	EXPECT_EQ(parallel_stats.last_draw_items, single_stats.last_draw_items);
+	EXPECT_EQ(parallel_stats.last_instances, single_stats.last_instances);
+	EXPECT_EQ(parallel_stats.msaa_samples, 4u);
+	EXPECT_LE(max_channel_delta(parallel_pixels, single_pixels), PIXEL_TOLERANCE)
+		<< "MSAA 下并行录制的画面与单线程不一致（深度解析可能被中间段覆盖）";
+	EXPECT_GT(parallel_stats.parallel_segments, 0u) << "MSAA 下未启用并行录制";
+}
