@@ -486,6 +486,12 @@ namespace engine
 		渲染器.pbr_metallic_set(0.0f);
 		渲染器.static_batching_set(true);
 		渲染器.cull_enabled_set(true);
+		/*
+		多线程渲染演示（第一百九十八轮）
+		4 个工作线程：实例级剔除与实例缓冲差异扫描并行；若走到「场景目标 → 同帧后处理链」路径，
+		场景 pass 还会按段并行录制（面板「最近一帧并行段」显示段数，直通路径恒 0）。
+		*/
+		渲染器.render_threads_set(4);
 		//多重采样抗锯齿（4×；几何体边缘与棋盘格纹路的锯齿明显，SSAA 不再叠加）
 		渲染器.msaa_samples_set(4);
 		/*
@@ -1016,6 +1022,7 @@ namespace engine
 		}
 		球_ = 圆柱_ = 圆锥_ = 胶囊_ = 圆环_ = 平面_ = 地面_ = 圆盘_ = 立方体_ = 卡通球_ = 地形_ = 0;
 		//复位展示用开关
+		渲染器.render_threads_set(0);
 		渲染器.toon_set(0, 0.0f);
 		渲染器.toon_shadow_tint_set(0.0f, 0.0f, 0.0f);
 		渲染器.toon_specular_set(0.0f);

@@ -346,4 +346,7 @@ TEST_F(Renderer_Thread_Test, 并行录制场景通道与单线程一致)
 	//② 四线程确实派发过并行任务（含剔除 / 差异扫描 / 分段录制）
 	EXPECT_GT(parallel_stats.parallel_dispatches, 0u) << "四线程未派发任何并行任务";
 	EXPECT_EQ(single_stats.parallel_dispatches, 0u);
+	//③ 并行段数观测（第一百九十八轮）：四线程应报告 > 0 段，单线程恒 0
+	EXPECT_GT(parallel_stats.parallel_segments, 0u) << "四线程未报告并行录制段数";
+	EXPECT_EQ(single_stats.parallel_segments, 0u) << "单线程不应报告并行段";
 }

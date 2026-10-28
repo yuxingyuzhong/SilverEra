@@ -40,6 +40,12 @@ namespace engine
         uint32_t last_shadow_items = 0;
         //最近一帧是否重绘阴影图（1 / 0）
         uint32_t shadow_last_redrawn = 0;
+        //渲染工作线程数（第一百九十八轮；0 = 单线程）
+        uint32_t render_threads = 0;
+        //累计并行派发次数（第一百九十八轮）
+        uint64_t parallel_dispatches = 0;
+        //最近一帧并行录制段数（第一百九十八轮；0 = 单线程录制）
+        uint32_t parallel_segments = 0;
         //设备是否支持 GPU 时间戳
         bool gpu_supported = false;
     };
