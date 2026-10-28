@@ -581,3 +581,124 @@ TEST_F(Renderer_Msaa_Test, 高组合冒烟)
         renderer.render_target_destroy(second_target);
         renderer.render_target_destroy(scene_target);
 }
+
+/*
+MSAA 深度解析（第一百九十轮）
+口径：MSAA 下场景 pass 只写多重采样深度，深度类后处理（此处深度描边）必须读到解析后的单采样深度。
+做法：同一旋转平面各以 1× / 4× 运行「强度 0（等于直通）」与「强度 1（描边）」两帧，统计两者差异像素数；
+      4× 应与 1× 同量级（此前 4× 读到未定义深度，描边不改变任何像素，差异恒为 0）。
+*/
+TEST_F(Renderer_Msaa_Test, MSAA深度解析供深度描边采样)
+{
+	//1× 基线：单采样深度 + 深度描边
+	std::size_t changed_single = 0;
+	{
+		engine::Renderer renderer;
+		ASSERT_TRUE(renderer.init(hidden_config(1)));
+		if (!renderer.readback_supported())
+			GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+		engine::Mesh_Handle plane = 0;
+		uint64_t scene_target = 0;
+		uint64_t outline = 0;
+		ASSERT_TRUE(renderer.mesh_plane_load(plane, 1.0f, 1.0f));
+		ASSERT_TRUE(renderer.render_target_create(scene_target, renderer.extent_width(), renderer.extent_height()));
+		renderer.render_target_present_set(scene_target);
+		ASSERT_TRUE(renderer.pipeline_load(outline, "后处理.vert.spv", "深度描边.frag.spv"));
+		ASSERT_TRUE(renderer.post_chain_set(&outline, 1));
+		float transform[16] = {};
+		diamond_transform(transform);
+		//先以强度 0（等同直通）渲染一帧作为对照
+		renderer.post_stage_param_set(0, 0.0f, 0.0f, 0.5f);
+		renderer.post_stage_color_set(0, 1.0f, 0.0f, 0.0f);
+		std::vector<uint8_t> plain(static_cast<std::size_t>(renderer.extent_width()) * renderer.extent_height() * 4, 0);
+		renderer.mesh_draw(plane, transform);
+		ASSERT_TRUE(renderer.frame_render(plain.data(), static_cast<uint32_t>(plain.size())));
+		//再以强度 1、阈值 0.5、描边色纯红渲染一帧
+		renderer.post_stage_param_set(0, 1.0f, 0.0f, 0.5f);
+		std::vector<uint8_t> pixels(static_cast<std::size_t>(renderer.extent_width()) * renderer.extent_height() * 4, 0);
+		renderer.mesh_draw(plane, transform);
+		ASSERT_TRUE(renderer.frame_render(pixels.data(), static_cast<uint32_t>(pixels.size())));
+		//统计与直通版的差异像素数（深度描边确实作用于画面）
+		std::size_t changed = 0;
+		for (std::size_t index = 0; index + 3 < pixels.size(); index += 4)
+		{
+			int delta = std::abs(static_cast<int>(pixels[index]) - static_cast<int>(plain[index]));
+			int delta_g = std::abs(static_cast<int>(pixels[index + 1]) - static_cast<int>(plain[index + 1]));
+			if (delta_g > delta)
+				delta = delta_g;
+			int delta_b = std::abs(static_cast<int>(pixels[index + 2]) - static_cast<int>(plain[index + 2]));
+			if (delta_b > delta)
+				delta = delta_b;
+			if (delta > 20)
+				++changed;
+		}
+		ASSERT_GT(changed, 0u) << "单采样下深度描边未改变任何像素（基线无效）";
+		changed_single = changed;
+		renderer.post_chain_set(nullptr, 0);
+		renderer.render_target_present_set(0);
+		renderer.pipeline_unload(outline);
+		renderer.render_target_destroy(scene_target);
+		renderer.mesh_unload(plane);
+	}
+
+	//4×：默认开启深度解析，轮廓像素应与 1× 同量级
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config(4)));
+	if (renderer.msaa_samples() <= 1)
+		GTEST_SKIP() << "当前设备不支持 MSAA";
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	engine::Mesh_Handle plane = 0;
+	uint64_t scene_target = 0;
+	uint64_t outline = 0;
+	ASSERT_TRUE(renderer.mesh_plane_load(plane, 1.0f, 1.0f));
+	ASSERT_TRUE(renderer.render_target_create(scene_target, renderer.extent_width(), renderer.extent_height()));
+	renderer.render_target_present_set(scene_target);
+	ASSERT_TRUE(renderer.pipeline_load(outline, "后处理.vert.spv", "深度描边.frag.spv"));
+	ASSERT_TRUE(renderer.post_chain_set(&outline, 1));
+	float transform[16] = {};
+	diamond_transform(transform);
+	//先以强度 0（等同直通）渲染一帧作为对照
+	renderer.post_stage_param_set(0, 0.0f, 0.0f, 0.5f);
+	renderer.post_stage_color_set(0, 1.0f, 0.0f, 0.0f);
+	std::vector<uint8_t> plain_msaa(static_cast<std::size_t>(renderer.extent_width()) * renderer.extent_height() * 4, 0);
+	renderer.mesh_draw(plane, transform);
+	ASSERT_TRUE(renderer.frame_render(plain_msaa.data(), static_cast<uint32_t>(plain_msaa.size())));
+	//再以强度 1、阈值 0.5、描边色纯红渲染一帧
+	renderer.post_stage_param_set(0, 1.0f, 0.0f, 0.5f);
+	std::vector<uint8_t> pixels(static_cast<std::size_t>(renderer.extent_width()) * renderer.extent_height() * 4, 0);
+	renderer.mesh_draw(plane, transform);
+	ASSERT_TRUE(renderer.frame_render(pixels.data(), static_cast<uint32_t>(pixels.size())));
+	//统计与直通版的差异像素数（深度描边确实作用于画面）
+	std::size_t changed_msaa = 0;
+	for (std::size_t index = 0; index + 3 < pixels.size(); index += 4)
+	{
+		int delta = std::abs(static_cast<int>(pixels[index]) - static_cast<int>(plain_msaa[index]));
+		int delta_g = std::abs(static_cast<int>(pixels[index + 1]) - static_cast<int>(plain_msaa[index + 1]));
+		if (delta_g > delta)
+			delta = delta_g;
+		int delta_b = std::abs(static_cast<int>(pixels[index + 2]) - static_cast<int>(plain_msaa[index + 2]));
+		if (delta_b > delta)
+			delta = delta_b;
+		if (delta > 20)
+			++changed_msaa;
+	}
+	RecordProperty("changed_single", static_cast<int>(changed_single));
+	RecordProperty("changed_msaa", static_cast<int>(changed_msaa));
+	ASSERT_GT(changed_msaa, 0u) << "MSAA 下深度解析未生效：深度描边未改变任何像素";
+	//差异像素数应与单采样同量级（MSAA 只改变边缘覆盖率，不改变轮廓位置）
+	std::size_t difference = changed_single > changed_msaa ? changed_single - changed_msaa : changed_msaa - changed_single;
+	EXPECT_LE(difference * 2, changed_single) << "MSAA 下轮廓像素数与单采样差异过大";
+	//开关默认开启，且可运行时切换（不重建资源）
+	EXPECT_TRUE(renderer.msaa_depth_resolve());
+	renderer.msaa_depth_resolve_set(false);
+	EXPECT_FALSE(renderer.msaa_depth_resolve());
+	renderer.msaa_depth_resolve_set(true);
+	EXPECT_TRUE(renderer.msaa_depth_resolve());
+
+	renderer.post_chain_set(nullptr, 0);
+	renderer.render_target_present_set(0);
+	renderer.pipeline_unload(outline);
+	renderer.render_target_destroy(scene_target);
+	renderer.mesh_unload(plane);
+}
