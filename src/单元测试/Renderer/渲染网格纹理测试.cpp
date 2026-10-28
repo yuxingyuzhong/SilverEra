@@ -202,6 +202,53 @@ TEST_F(Renderer_Mesh_Test, 程序化正二十面体球加载)
 	renderer.mesh_unload(level1);
 }
 
+/*
+程序化 XZ 平面细分网格（第一百九十三轮）
+口径：3×2 分段 → 顶点 4×3 = 12、索引 3×2×6 = 36；包围盒 X 为 ±1.5、Z 为 ±1、Y 恒 0；
+     非法参数（宽 0 / 分段 0 / 分段越界）整次拒绝；可正常绘制。
+*/
+TEST_F(Renderer_Mesh_Test, 程序化水平细分平面加载)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+
+	//非法参数整次拒绝
+	engine::Mesh_Handle invalid = 12345;
+	EXPECT_FALSE(renderer.mesh_ground_grid_load(invalid, 0.0f, 2.0f, 3, 2));
+	EXPECT_EQ(invalid, 0u);
+	invalid = 12345;
+	EXPECT_FALSE(renderer.mesh_ground_grid_load(invalid, 3.0f, 2.0f, 0, 2));
+	EXPECT_EQ(invalid, 0u);
+	invalid = 12345;
+	EXPECT_FALSE(renderer.mesh_ground_grid_load(invalid, 3.0f, 2.0f, 513, 2));
+	EXPECT_EQ(invalid, 0u);
+
+	//合法参数：3×2 分段
+	engine::Mesh_Handle grid = 0;
+	ASSERT_TRUE(renderer.mesh_ground_grid_load(grid, 3.0f, 2.0f, 3, 2));
+	uint32_t vertices = 0;
+	uint32_t indices = 0;
+	ASSERT_TRUE(renderer.mesh_counts(grid, &vertices, &indices));
+	EXPECT_EQ(vertices, 12u);
+	EXPECT_EQ(indices, 36u);
+
+	//包围盒：X ±1.5、Z ±1、Y 恒 0
+	float bounds_min[3] = {};
+	float bounds_max[3] = {};
+	ASSERT_TRUE(renderer.mesh_bounds(grid, bounds_min, bounds_max));
+	EXPECT_NEAR(bounds_min[0], -1.5f, 0.0001f);
+	EXPECT_NEAR(bounds_max[0], 1.5f, 0.0001f);
+	EXPECT_NEAR(bounds_min[1], 0.0f, 0.0001f);
+	EXPECT_NEAR(bounds_max[1], 0.0f, 0.0001f);
+	EXPECT_NEAR(bounds_min[2], -1.0f, 0.0001f);
+	EXPECT_NEAR(bounds_max[2], 1.0f, 0.0001f);
+
+	//可正常绘制
+	ASSERT_TRUE(renderer.mesh_draw(grid, nullptr));
+	ASSERT_TRUE(renderer.frame_render());
+	renderer.mesh_unload(grid);
+}
+
 //纹理测试夹具
 class Renderer_Texture_Test : public ::testing::Test
 {
