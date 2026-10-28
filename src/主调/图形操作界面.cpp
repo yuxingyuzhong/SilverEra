@@ -218,13 +218,14 @@ namespace engine
             ImGui::TextUnformatted("渲染能力展示 · 可漫游场景");
             ImGui::Separator();
             //展区图例（与三维投影标签一一对应）
-            ImGui::TextUnformatted("六个展区（场景内有同名标签）：");
+            ImGui::TextUnformatted("七个展区（场景内有同名标签）：");
             ImGui::Bullet(); ImGui::TextUnformatted("① 程序化网格：八种图元环形排布");
             ImGui::Bullet(); ImGui::TextUnformatted("② PBR 材质：粗糙度 / 金属度 / 法线贴图 / 自发光");
             ImGui::Bullet(); ImGui::TextUnformatted("③ 光照与阴影：方向光 / 点光 / 聚光 / 三级级联");
             ImGui::Bullet(); ImGui::TextUnformatted("④ 实例化合批：阶梯金字塔一次提交");
             ImGui::Bullet(); ImGui::TextUnformatted("⑤ 几何拼接：拱门 / 晶塔 / 环阵");
             ImGui::Bullet(); ImGui::TextUnformatted("⑥ 纹理与动态：棋盘 / 动态更新 / UV 立方");
+            ImGui::Bullet(); ImGui::TextUnformatted("⑦ 卡通渲染：走近该区即切换为色阶量化 / 边缘光 / 暗部色调 / 卡通高光");
             ImGui::Separator();
             float 位置[3] = { 0.0f, 0.0f, 0.0f };
             场景.相机位置(位置);
