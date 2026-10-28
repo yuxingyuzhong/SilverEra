@@ -151,3 +151,133 @@ TEST_F(Renderer_Scene_Test, 风格化参数钳制与数据路径)
 	EXPECT_EQ(renderer.toon_steps(), 2u);
 	EXPECT_FLOAT_EQ(renderer.toon_rim(), 0.25f);
 }
+
+/*
+暗部色调化压暗未受光面（第一百七十八轮）
+口径：四边形法线 (0, 0.7071, 0.7071)、环境光 0.2（保证暗部仍有基底照度）；
+     方向光默认朝 -Z 时该面 ndotl ≈ 0.707（受光面，不应受色调影响）；
+     方向光改为 (0, 0.7071, 0.7071) 时 ndotl = 0（暗部，应整体乘上色调）。
+*/
+TEST_F(Renderer_Scene_Test, 暗部色调化只压暗未受光面)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	uint64_t texture = 0;
+	std::vector<uint8_t> texels = solid_white();
+	ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 2, 2));
+	renderer.texture_bind_set(texture);
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, quad_data_with_normal(0.0f, 0.7071f, 0.7071f)));
+	engine::Camera_Data camera{};
+	engine::Fog_Data fog{};
+
+	//① 受光面（默认方向光朝 -Z，N·L ≈ 0.707）：色调不应改变画面
+	engine::Light_Data lit_light{};
+	lit_light.intensity = 1.0f;
+	lit_light.ambient = 0.2f;
+	renderer.scene_apply(camera, lit_light, fog);
+	renderer.toon_shadow_tint_set(1.0f, 1.0f, 1.0f);
+	ASSERT_TRUE(renderer.mesh_draw(mesh, nullptr));
+	std::vector<uint8_t> lit_plain(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(lit_plain.data(), static_cast<uint32_t>(lit_plain.size())));
+
+	renderer.toon_shadow_tint_set(0.25f, 0.25f, 0.25f);
+	ASSERT_TRUE(renderer.mesh_draw(mesh, nullptr));
+	std::vector<uint8_t> lit_tinted(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(lit_tinted.data(), static_cast<uint32_t>(lit_tinted.size())));
+
+	//受光面最大通道差（色调权重为 0，应逐字节一致）
+	int lit_delta = 0;
+	for (std::size_t index = 0; index < lit_plain.size(); ++index)
+	{
+		int delta = static_cast<int>(lit_plain[index]) - static_cast<int>(lit_tinted[index]);
+		if (delta < 0)
+			delta = -delta;
+		if (delta > lit_delta)
+			lit_delta = delta;
+	}
+	RecordProperty("toon_shadow_lit_delta", static_cast<uint32_t>(lit_delta));
+	EXPECT_LE(lit_delta, 2) << "受光面被暗部色调影响（应完全不受影响）";
+
+	//② 暗部（方向光改为从面背后照来，N·L = 0）：色调应整体压暗
+	engine::Light_Data dark_light{};
+	dark_light.direction[0] = 0.0f;
+	dark_light.direction[1] = 0.7071f;
+	dark_light.direction[2] = 0.7071f;
+	dark_light.intensity = 1.0f;
+	dark_light.ambient = 0.2f;
+	renderer.scene_apply(camera, dark_light, fog);
+	renderer.toon_shadow_tint_set(1.0f, 1.0f, 1.0f);
+	ASSERT_TRUE(renderer.mesh_draw(mesh, nullptr));
+	std::vector<uint8_t> dark_plain(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(dark_plain.data(), static_cast<uint32_t>(dark_plain.size())));
+
+	renderer.toon_shadow_tint_set(0.25f, 0.25f, 0.25f);
+	ASSERT_TRUE(renderer.mesh_draw(mesh, nullptr));
+	std::vector<uint8_t> dark_tinted(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(dark_tinted.data(), static_cast<uint32_t>(dark_tinted.size())));
+
+	const uint32_t dark_plain_brightness = center_brightness(dark_plain);
+	const uint32_t dark_tinted_brightness = center_brightness(dark_tinted);
+	RecordProperty("toon_shadow_dark_plain", dark_plain_brightness);
+	RecordProperty("toon_shadow_dark_tinted", dark_tinted_brightness);
+
+	EXPECT_GE(dark_plain_brightness, 30u) << "暗部基准亮度异常（环境光未生效）："
+		<< pixel_text(pixel_get(dark_plain, WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2));
+	//压暗后不超过基准的 70%（线性空间乘 0.25，经 sRGB 编码后回读约降至 0.5 倍）
+	EXPECT_LE(dark_tinted_brightness * 10, dark_plain_brightness * 7)
+		<< "暗部未被色调压暗（" << dark_plain_brightness << " → " << dark_tinted_brightness << "）";
+
+	renderer.mesh_unload(mesh);
+	renderer.texture_unload(texture);
+}
+
+/*
+暗部色调参数钳制与数据路径（第一百七十八轮）
+口径：默认 (1,1,1) 为关闭；越界钳到 [0,1]、非有限值按 1；
+     `Scene_Data::toon_shadow_tint` 与 `Light_Data::toon_shadow_tint` 经 scene_apply 生效。
+*/
+TEST_F(Renderer_Scene_Test, 暗部色调参数钳制与数据路径)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+
+	//默认白（关闭）
+	float tint[3] = {};
+	renderer.toon_shadow_tint(tint);
+	for (std::size_t index = 0; index < 3; ++index)
+		EXPECT_FLOAT_EQ(tint[index], 1.0f);
+
+	//越界与非有限值归一
+	renderer.toon_shadow_tint_set(2.0f, -1.0f, std::numeric_limits<float>::quiet_NaN());
+	renderer.toon_shadow_tint(tint);
+	EXPECT_FLOAT_EQ(tint[0], 1.0f);
+	EXPECT_FLOAT_EQ(tint[1], 0.0f);
+	EXPECT_FLOAT_EQ(tint[2], 1.0f);
+
+	//扁平 Scene_Data 路径
+	engine::Scene_Data scene{};
+	scene.toon_shadow_tint[0] = 0.1f;
+	scene.toon_shadow_tint[1] = 0.2f;
+	scene.toon_shadow_tint[2] = 0.3f;
+	renderer.scene_apply(scene);
+	renderer.toon_shadow_tint(tint);
+	EXPECT_FLOAT_EQ(tint[0], 0.1f);
+	EXPECT_FLOAT_EQ(tint[1], 0.2f);
+	EXPECT_FLOAT_EQ(tint[2], 0.3f);
+
+	//三组数据路径（Light_Data）
+	engine::Light_Data light{};
+	light.toon_shadow_tint[0] = 0.6f;
+	light.toon_shadow_tint[1] = 0.5f;
+	light.toon_shadow_tint[2] = 0.4f;
+	engine::Camera_Data camera{};
+	engine::Fog_Data fog{};
+	renderer.scene_apply(camera, light, fog);
+	renderer.toon_shadow_tint(tint);
+	EXPECT_FLOAT_EQ(tint[0], 0.6f);
+	EXPECT_FLOAT_EQ(tint[1], 0.5f);
+	EXPECT_FLOAT_EQ(tint[2], 0.4f);
+}
