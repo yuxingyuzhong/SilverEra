@@ -1,4 +1,4 @@
-/*
+﻿/*
 渲染材质测试（L2 隐藏窗口 + 像素回读）
 覆盖：未初始化登记材质失败；登记 / 卸载材质幂等与句柄槽复用；无效句柄回落默认；
       非不透明混合档材质自动登记具名管线；
@@ -594,3 +594,166 @@ TEST_F(Renderer_Material_Test, 关闭深度写入使后绘制者覆盖)
 	renderer.mesh_unload(far_mesh);
 	renderer.texture_unload(albedo);
 }
+
+/*
+材质贴图 UV 旋转（第一百八十三轮）
+口径：四色象限纹理铺满视口；旋转 0（基准）与 90° 对比，图案整体旋转 → 应有一批像素显著变色。
+      旋转 0 的路径已由其余材质用例覆盖（默认不旋转，画面与引入前一致）。
+*/
+TEST_F(Renderer_Material_Test, 材质贴图旋转改变采样)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+
+	//四色象限纹理（左上红 / 右上绿 / 左下蓝 / 右下白；4×4）
+	std::vector<uint8_t> texels(4 * 4 * 4);
+	for (uint32_t y = 0; y < 4; ++y)
+		for (uint32_t x = 0; x < 4; ++x)
+		{
+			std::size_t offset = (static_cast<std::size_t>(y) * 4 + x) * 4;
+			const bool left = x < 2;
+			const bool top = y < 2;
+			texels[offset] = left ? 255 : (top ? 0 : 255);
+			texels[offset + 1] = left ? 0 : (top ? 255 : 255);
+			texels[offset + 2] = left ? 0 : (top ? 0 : 255);
+			texels[offset + 3] = 255;
+		}
+	uint64_t texture = 0;
+	ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 4, 4));
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, quad_data()));
+
+	//基准材质（不旋转）
+	engine::Material_Data plain{};
+	plain.texture = texture;
+	engine::Material_Handle plain_material = 0;
+	ASSERT_TRUE(renderer.material_load(plain_material, plain));
+	renderer.material_bind_set(plain_material);
+	ASSERT_TRUE(renderer.mesh_draw(mesh, full_screen_matrix().data()));
+	std::vector<uint8_t> base(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(base.data(), static_cast<uint32_t>(base.size())));
+
+	//旋转 90° 的同款材质
+	engine::Material_Data rotated = plain;
+	rotated.uv_rotation = 1.5708f;
+	engine::Material_Handle rotated_material = 0;
+	ASSERT_TRUE(renderer.material_load(rotated_material, rotated));
+	renderer.material_bind_set(rotated_material);
+	ASSERT_TRUE(renderer.mesh_draw(mesh, full_screen_matrix().data()));
+	std::vector<uint8_t> turned(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(turned.data(), static_cast<uint32_t>(turned.size())));
+
+	//图案旋转后应有大量像素改变（任一通道差 ≥ 30）
+	std::size_t changed = 0;
+	for (std::size_t index = 0; index + 3 < base.size(); index += 4)
+	{
+		int delta = 0;
+		for (std::size_t channel = 0; channel < 3; ++channel)
+		{
+			int difference = static_cast<int>(base[index + channel]) - static_cast<int>(turned[index + channel]);
+			if (difference < 0)
+				difference = -difference;
+			if (difference > delta)
+				delta = difference;
+		}
+		if (delta >= 30)
+			++changed;
+	}
+	RecordProperty("uv_rotation_changed_pixels", static_cast<uint32_t>(changed));
+	EXPECT_GT(changed, 100u) << "UV 旋转未改变贴图采样（变化像素 " << changed << "）";
+
+	renderer.material_unload(plain_material);
+	renderer.material_unload(rotated_material);
+	renderer.mesh_unload(mesh);
+	renderer.texture_unload(texture);
+}
+
+/*
+材质 Alpha 裁剪（第一百八十三轮）
+口径：左半红（alpha 255）/ 右半蓝（alpha 0）的 4×4 纹理；阈值 0.5 时右半片元被丢弃，
+      右半区域出现大量变化、左半区域保持逐字节不变。
+*/
+TEST_F(Renderer_Material_Test, 材质Alpha裁剪丢弃低不透明度区域)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+
+	//左半红（不透明）/ 右半蓝（alpha 0）
+	std::vector<uint8_t> texels(4 * 4 * 4);
+	for (uint32_t y = 0; y < 4; ++y)
+		for (uint32_t x = 0; x < 4; ++x)
+		{
+			std::size_t offset = (static_cast<std::size_t>(y) * 4 + x) * 4;
+			const bool left = x < 2;
+			texels[offset] = left ? 255 : 0;
+			texels[offset + 1] = 0;
+			texels[offset + 2] = left ? 0 : 255;
+			texels[offset + 3] = left ? 255 : 0;
+		}
+	uint64_t texture = 0;
+	ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 4, 4));
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, quad_data()));
+
+	//基准材质（不裁剪）
+	engine::Material_Data plain{};
+	plain.texture = texture;
+	engine::Material_Handle plain_material = 0;
+	ASSERT_TRUE(renderer.material_load(plain_material, plain));
+	renderer.material_bind_set(plain_material);
+	ASSERT_TRUE(renderer.mesh_draw(mesh, full_screen_matrix().data()));
+	std::vector<uint8_t> base(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(base.data(), static_cast<uint32_t>(base.size())));
+
+	//阈值 0.5 的材质
+	engine::Material_Data cutoff = plain;
+	cutoff.alpha_cutoff = 0.5f;
+	engine::Material_Handle cutoff_material = 0;
+	ASSERT_TRUE(renderer.material_load(cutoff_material, cutoff));
+	renderer.material_bind_set(cutoff_material);
+	ASSERT_TRUE(renderer.mesh_draw(mesh, full_screen_matrix().data()));
+	std::vector<uint8_t> clipped(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(clipped.data(), static_cast<uint32_t>(clipped.size())));
+
+	//左半（x < 宽度一半）应逐字节不变；右半应有大量像素被丢弃（露出清屏色）
+	int left_max_delta = 0;
+	std::size_t right_changed = 0;
+	for (uint32_t y = 0; y < WINDOW_HEIGHT; ++y)
+		for (uint32_t x = 0; x < WINDOW_WIDTH; ++x)
+		{
+			std::size_t offset = (static_cast<std::size_t>(y) * WINDOW_WIDTH + x) * 4;
+			int delta = 0;
+			for (std::size_t channel = 0; channel < 3; ++channel)
+			{
+				int difference = static_cast<int>(base[offset + channel]) - static_cast<int>(clipped[offset + channel]);
+				if (difference < 0)
+					difference = -difference;
+				if (difference > delta)
+					delta = difference;
+			}
+			//左半区域只看最大差
+			if (x < WINDOW_WIDTH / 2)
+			{
+				if (delta > left_max_delta)
+					left_max_delta = delta;
+			}
+			//右半区域统计变化像素
+			else if (delta >= 30)
+				++right_changed;
+		}
+	RecordProperty("alpha_cutoff_left_delta", static_cast<uint32_t>(left_max_delta));
+	RecordProperty("alpha_cutoff_right_changed", static_cast<uint32_t>(right_changed));
+
+	EXPECT_LE(left_max_delta, 2) << "不透明区域被 Alpha 裁剪影响（最大差 " << left_max_delta << "）";
+	EXPECT_GT(right_changed, 100u) << "低不透明度区域未按阈值被丢弃（变化像素 " << right_changed << "）";
+
+	renderer.material_unload(plain_material);
+	renderer.material_unload(cutoff_material);
+	renderer.mesh_unload(mesh);
+	renderer.texture_unload(texture);
+}
+
