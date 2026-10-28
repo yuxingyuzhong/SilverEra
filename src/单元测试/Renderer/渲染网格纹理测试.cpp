@@ -9,6 +9,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <vector>
 
 //获取渲染器门面与网格数据
@@ -247,6 +248,43 @@ TEST_F(Renderer_Mesh_Test, 程序化水平细分平面加载)
 	ASSERT_TRUE(renderer.mesh_draw(grid, nullptr));
 	ASSERT_TRUE(renderer.frame_render());
 	renderer.mesh_unload(grid);
+}
+
+/*
+程序化水平细分平面边界（第二百零五轮）
+口径：最小 1×1 分段 → 4 顶点 / 6 索引；负宽 / NaN 宽整次拒绝；较大分段（64×64）被接受。
+*/
+TEST_F(Renderer_Mesh_Test, 程序化水平细分平面边界)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+
+	//最小分段：单格两三角
+	engine::Mesh_Handle grid = 0;
+	ASSERT_TRUE(renderer.mesh_ground_grid_load(grid, 2.0f, 2.0f, 1, 1));
+	uint32_t vertices = 0;
+	uint32_t indices = 0;
+	ASSERT_TRUE(renderer.mesh_counts(grid, &vertices, &indices));
+	EXPECT_EQ(vertices, 4u);
+	EXPECT_EQ(indices, 6u);
+	renderer.mesh_unload(grid);
+
+	//负宽与 NaN 宽均整次拒绝（非数比较为假 → 拒绝）
+	const float nan_width = std::numeric_limits<float>::quiet_NaN();
+	engine::Mesh_Handle invalid = 12345;
+	EXPECT_FALSE(renderer.mesh_ground_grid_load(invalid, -1.0f, 2.0f, 2, 2));
+	EXPECT_EQ(invalid, 0u);
+	invalid = 12345;
+	EXPECT_FALSE(renderer.mesh_ground_grid_load(invalid, nan_width, 2.0f, 2, 2));
+	EXPECT_EQ(invalid, 0u);
+
+	//较大分段：64×64 → 65² 顶点 / 64² × 6 索引
+	engine::Mesh_Handle large = 0;
+	ASSERT_TRUE(renderer.mesh_ground_grid_load(large, 8.0f, 8.0f, 64, 64));
+	ASSERT_TRUE(renderer.mesh_counts(large, &vertices, &indices));
+	EXPECT_EQ(vertices, 65u * 65u);
+	EXPECT_EQ(indices, 64u * 64u * 6u);
+	renderer.mesh_unload(large);
 }
 
 //纹理测试夹具
