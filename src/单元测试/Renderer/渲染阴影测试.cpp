@@ -609,12 +609,12 @@ TEST_F(Renderer_Scene_Test, 斜法线不产生自阴影)
 /*
 多线程下阴影输出与单线程一致（第二百零九轮）
 口径：同一阴影场景分别在「0 线程（单线程）」与「4 线程」下渲染一帧，整帧像素逐字节一致；
-      两绘制项的交换链直通路径不达并行阈值、阴影 pass 本身不并行，故两者 parallel_segments 均应为 0。
+      两绘制项的交换链直通路径不达并行阈值（阴影 pass 自第二百一十轮起支持并行，但项数不足），故两者段数均应为 0。
 */
 TEST_F(Renderer_Scene_Test, 多线程下阴影输出与单线程一致)
 {
 	//以指定渲染线程数跑一帧固定阴影场景（返回整帧像素；失败返回空）
-	auto render_shadow = [&](uint32_t thread_count, uint32_t& segments_out)
+	auto render_shadow = [&](uint32_t thread_count, uint32_t& segments_out, uint32_t& shadow_segments_out)
 	{
 		//空像素表示初始化 / 回读 / 渲染失败
 		std::vector<uint8_t> pixels;
@@ -654,11 +654,13 @@ TEST_F(Renderer_Scene_Test, 多线程下阴影输出与单线程一致)
 		if (!renderer.mesh_draw(occluder, occluder_transform) || !renderer.mesh_draw(receiver, nullptr))
 			return pixels;
 
-		//渲染一帧并取并行段数
+		//渲染一帧并取并行段数（场景 pass 与阴影 pass 分列）
 		pixels.resize(pixel_bytes());
 		if (!renderer.frame_render(pixels.data(), static_cast<std::uint32_t>(pixels.size())))
 			pixels.clear();
-		segments_out = renderer.frame_stats_get().parallel_segments;
+		engine::Frame_Stats stats = renderer.frame_stats_get();
+		segments_out = stats.parallel_segments;
+		shadow_segments_out = stats.shadow_parallel_segments;
 
 		renderer.mesh_unload(occluder);
 		renderer.mesh_unload(receiver);
@@ -668,17 +670,23 @@ TEST_F(Renderer_Scene_Test, 多线程下阴影输出与单线程一致)
 
 	//单线程基线
 	uint32_t single_segments = 99;
-	std::vector<uint8_t> single_pixels = render_shadow(0, single_segments);
+	uint32_t single_shadow_segments = 99;
+	std::vector<uint8_t> single_pixels = render_shadow(0, single_segments, single_shadow_segments);
 	ASSERT_FALSE(single_pixels.empty()) << "单线程阴影帧渲染失败";
 	//四线程（线程数只影响并行录制，不应影响阴影 pass 的画面）
 	uint32_t multi_segments = 99;
-	std::vector<uint8_t> multi_pixels = render_shadow(4, multi_segments);
+	uint32_t multi_shadow_segments = 99;
+	std::vector<uint8_t> multi_pixels = render_shadow(4, multi_segments, multi_shadow_segments);
 	ASSERT_FALSE(multi_pixels.empty()) << "四线程阴影帧渲染失败";
 
 	RecordProperty("shadow_single_segments", single_segments);
 	RecordProperty("shadow_multi_segments", multi_segments);
+	RecordProperty("shadow_single_shadow_segments", single_shadow_segments);
+	RecordProperty("shadow_multi_shadow_segments", multi_shadow_segments);
 	EXPECT_EQ(single_segments, 0u) << "单线程录制不应产生并行段";
 	EXPECT_EQ(multi_segments, 0u) << "两绘制项未达并行阈值（阴影 pass 自第二百一十轮起支持并行，但项数不足）";
+	EXPECT_EQ(single_shadow_segments, 0u) << "单线程阴影 pass 不应分段";
+	EXPECT_EQ(multi_shadow_segments, 0u) << "两投影项未达阈值，阴影 pass 不应分段";
 	ASSERT_EQ(single_pixels.size(), multi_pixels.size());
 	//逐字节一致
 	EXPECT_TRUE(single_pixels == multi_pixels) << "多线程下阴影输出与单线程不一致";
