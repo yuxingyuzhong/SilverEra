@@ -539,3 +539,156 @@ TEST_F(Renderer_Scene_Test, 实例缓冲按需写入)
 	renderer.mesh_unload(mesh);
 	renderer.texture_unload(texture);
 }
+
+/*
+相机上方向（第一百八十六轮）
+口径：立方体 + 默认光照；上方向默认 (0,1,0) 为基准，改成 (1,0,0) 后视图矩阵绕视线滚转 90°，
+      画面应有一批像素显著变化；改回默认后与基准逐字节一致。
+*/
+TEST_F(Renderer_Scene_Test, 相机上方向改变画面)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	uint64_t texture = 0;
+	std::vector<uint8_t> texels = solid_white();
+	ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 2, 2));
+	renderer.texture_bind_set(texture);
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, cube_data(0.6f)));
+	//绕 Y 轴偏转的立方体（避免正面正视时的旋转对称性使滚转不可见）
+	const std::array<float, 16> tilted = rotation_y_matrix(0.6f);
+
+	//基准：默认上方向
+	engine::Camera_Data camera{};
+	engine::Light_Data light{};
+	engine::Fog_Data fog{};
+	renderer.scene_apply(camera, light, fog);
+	ASSERT_TRUE(renderer.mesh_draw(mesh, tilted.data()));
+	std::vector<uint8_t> base(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(base.data(), static_cast<uint32_t>(base.size())));
+
+	//上方向滚转 90°
+	camera.up[0] = 1.0f;
+	camera.up[1] = 0.0f;
+	renderer.scene_apply(camera, light, fog);
+	ASSERT_TRUE(renderer.mesh_draw(mesh, tilted.data()));
+	std::vector<uint8_t> rolled(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(rolled.data(), static_cast<uint32_t>(rolled.size())));
+
+	//统计显著变化像素
+	std::size_t changed = 0;
+	for (std::size_t index = 0; index + 3 < base.size(); index += 4)
+	{
+		int delta = 0;
+		for (std::size_t channel = 0; channel < 3; ++channel)
+		{
+			int difference = static_cast<int>(base[index + channel]) - static_cast<int>(rolled[index + channel]);
+			if (difference < 0)
+				difference = -difference;
+			if (difference > delta)
+				delta = difference;
+		}
+		if (delta >= 20)
+			++changed;
+	}
+	RecordProperty("camera_up_changed_pixels", static_cast<uint32_t>(changed));
+	EXPECT_GT(changed, 100u) << "上方向未改变视图（变化像素 " << changed << "）";
+
+	//改回默认后与基准一致
+	camera.up[0] = 0.0f;
+	camera.up[1] = 1.0f;
+	renderer.scene_apply(camera, light, fog);
+	ASSERT_TRUE(renderer.mesh_draw(mesh, tilted.data()));
+	std::vector<uint8_t> restored(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(restored.data(), static_cast<uint32_t>(restored.size())));
+	int restore_delta = 0;
+	for (std::size_t index = 0; index < base.size(); ++index)
+	{
+		int difference = static_cast<int>(base[index]) - static_cast<int>(restored[index]);
+		if (difference < 0)
+			difference = -difference;
+		if (difference > restore_delta)
+			restore_delta = difference;
+	}
+	EXPECT_LE(restore_delta, 2) << "恢复默认上方向后画面未复原（最大差 " << restore_delta << "）";
+
+	renderer.mesh_unload(mesh);
+	renderer.texture_unload(texture);
+}
+
+/*
+宽高比覆盖（第一百八十六轮）
+口径：立方体 + 默认光照；覆盖 1.0 时水平视野变窄（物体在横向上更宽），画面应显著变化；
+      覆盖 0（跟随窗口）后与基准逐字节一致。
+*/
+TEST_F(Renderer_Scene_Test, 相机宽高比覆盖)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	uint64_t texture = 0;
+	std::vector<uint8_t> texels = solid_white();
+	ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 2, 2));
+	renderer.texture_bind_set(texture);
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, cube_data(0.6f)));
+
+	engine::Camera_Data camera{};
+	engine::Light_Data light{};
+	engine::Fog_Data fog{};
+	renderer.scene_apply(camera, light, fog);
+	ASSERT_TRUE(renderer.mesh_draw(mesh, nullptr));
+	std::vector<uint8_t> base(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(base.data(), static_cast<uint32_t>(base.size())));
+
+	//覆盖为 1:1（窗口默认 64:36 ≈ 1.78）
+	camera.aspect = 1.0f;
+	renderer.scene_apply(camera, light, fog);
+	EXPECT_FLOAT_EQ(renderer.camera_aspect_get(), 1.0f);
+	ASSERT_TRUE(renderer.mesh_draw(mesh, nullptr));
+	std::vector<uint8_t> square(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(square.data(), static_cast<uint32_t>(square.size())));
+
+	//统计显著变化像素
+	std::size_t changed = 0;
+	for (std::size_t index = 0; index + 3 < base.size(); index += 4)
+	{
+		int delta = 0;
+		for (std::size_t channel = 0; channel < 3; ++channel)
+		{
+			int difference = static_cast<int>(base[index + channel]) - static_cast<int>(square[index + channel]);
+			if (difference < 0)
+				difference = -difference;
+			if (difference > delta)
+				delta = difference;
+		}
+		if (delta >= 20)
+			++changed;
+	}
+	RecordProperty("camera_aspect_changed_pixels", static_cast<uint32_t>(changed));
+	EXPECT_GT(changed, 30u) << "宽高比覆盖未改变投影（变化像素 " << changed << "）";
+
+	//恢复跟随窗口后与基准一致
+	camera.aspect = 0.0f;
+	renderer.scene_apply(camera, light, fog);
+	EXPECT_GT(renderer.camera_aspect_get(), 1.7f);
+	ASSERT_TRUE(renderer.mesh_draw(mesh, nullptr));
+	std::vector<uint8_t> restored(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(restored.data(), static_cast<uint32_t>(restored.size())));
+	int restore_delta = 0;
+	for (std::size_t index = 0; index < base.size(); ++index)
+	{
+		int difference = static_cast<int>(base[index]) - static_cast<int>(restored[index]);
+		if (difference < 0)
+			difference = -difference;
+		if (difference > restore_delta)
+			restore_delta = difference;
+	}
+	EXPECT_LE(restore_delta, 2) << "恢复跟随窗口后画面未复原（最大差 " << restore_delta << "）";
+
+	renderer.mesh_unload(mesh);
+	renderer.texture_unload(texture);
+}
