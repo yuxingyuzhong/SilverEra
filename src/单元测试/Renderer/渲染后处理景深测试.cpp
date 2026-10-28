@@ -205,3 +205,89 @@ TEST_F(Renderer_Post_Chain_Test, 景深最大模糊近零近似直通)
 	RecordProperty("dof_near_zero_blur_diff", difference);
 	EXPECT_LE(difference, 2) << "模糊半径近零时画面被改变（差 " << difference << "）";
 }
+
+/*
+MSAA 下景深仍能区分对焦与离焦（第一百九十一轮）
+口径：MSAA 4× 时场景深度由动态渲染深度解析写入单采样深度图（`msaa_depth_resolve` 默认开）；
+     同一场景分别以「对焦在物体（距离 3）」与「严重离焦（0.6）」渲染，统计两帧差异像素数；
+     4× 的差异像素数应与 1× 同量级（相差 ≤ 50%）。
+     若深度解析失效（深度全 0 或全 1），两帧画面接近一致，差异像素数会塌到接近 0。
+*/
+TEST_F(Renderer_Post_Chain_Test, 景深在MSAA下区分对焦与离焦)
+{
+	//单次渲染：按给定采样数与对焦距离跑一帧景深并读回
+	auto render_dof = [](uint32_t samples, float focus, std::vector<uint8_t>& pixels) {
+		engine::Renderer renderer;
+		if (!renderer.init(msaa_config(samples)))
+			return false;
+		if (!renderer.readback_supported())
+			return false;
+		uint64_t scene_target = 0;
+		if (!renderer.render_target_create(scene_target, renderer.extent_width(), renderer.extent_height()))
+			return false;
+		uint64_t pass = post_pipeline_register(renderer, "景深.frag.spv");
+		if (pass == 0)
+			return false;
+		if (!renderer.post_chain_set(&pass, 1))
+			return false;
+		renderer.post_stage_param_set(0, focus, 1.0f, 6.0f);
+		renderer.render_target_present_set(scene_target);
+		engine::Mesh_Handle handle = 0;
+		scene_register(renderer, handle);
+		bool ok = renderer.frame_render(pixels.data(), static_cast<uint32_t>(pixels.size()));
+		renderer.mesh_unload(handle);
+		renderer.pipeline_unload(pass);
+		renderer.render_target_destroy(scene_target);
+		return ok;
+	};
+	//差异像素统计（任一通道差 > 12 视为改变）
+	auto changed_count = [](const std::vector<uint8_t>& left, const std::vector<uint8_t>& right) {
+		std::size_t count = 0;
+		for (std::size_t index = 0; index + 3 < left.size(); index += 4)
+		{
+			int delta = std::abs(static_cast<int>(left[index]) - static_cast<int>(right[index]));
+			int delta_g = std::abs(static_cast<int>(left[index + 1]) - static_cast<int>(right[index + 1]));
+			if (delta_g > delta)
+				delta = delta_g;
+			int delta_b = std::abs(static_cast<int>(left[index + 2]) - static_cast<int>(right[index + 2]));
+			if (delta_b > delta)
+				delta = delta_b;
+			if (delta > 12)
+				++count;
+		}
+		return count;
+	};
+
+	//设备能力预检：本机交换链图像须可回读
+	{
+		engine::Renderer probe;
+		ASSERT_TRUE(probe.init(hidden_config()));
+		if (!probe.readback_supported())
+			GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	}
+	//支持多重采样才继续（本用例只验证 > 1× 的行为）
+	engine::Renderer msaa_probe;
+	ASSERT_TRUE(msaa_probe.init(msaa_config(4)));
+	if (msaa_probe.msaa_samples() <= 1)
+		GTEST_SKIP() << "当前设备不支持 MSAA";
+
+	//1× 基线
+	std::vector<uint8_t> focused_single(pixel_bytes());
+	std::vector<uint8_t> blurred_single(pixel_bytes());
+	ASSERT_TRUE(render_dof(1, 3.0f, focused_single));
+	ASSERT_TRUE(render_dof(1, 0.6f, blurred_single));
+	std::size_t changed_single = changed_count(focused_single, blurred_single);
+	ASSERT_GT(changed_single, 0u) << "1× 下对焦与离焦无差异（基线无效）";
+
+	//4×（深度解析默认开启）
+	std::vector<uint8_t> focused_msaa(pixel_bytes());
+	std::vector<uint8_t> blurred_msaa(pixel_bytes());
+	ASSERT_TRUE(render_dof(4, 3.0f, focused_msaa));
+	ASSERT_TRUE(render_dof(4, 0.6f, blurred_msaa));
+	std::size_t changed_msaa = changed_count(focused_msaa, blurred_msaa);
+	RecordProperty("dof_msaa_changed_single", static_cast<int>(changed_single));
+	RecordProperty("dof_msaa_changed_msaa", static_cast<int>(changed_msaa));
+	ASSERT_GT(changed_msaa, 0u) << "MSAA 下对焦与离焦无差异：深度解析未生效";
+	std::size_t difference = changed_single > changed_msaa ? changed_single - changed_msaa : changed_msaa - changed_single;
+	EXPECT_LE(difference * 2, changed_single) << "MSAA 下景深响应与单采样差异过大";
+}

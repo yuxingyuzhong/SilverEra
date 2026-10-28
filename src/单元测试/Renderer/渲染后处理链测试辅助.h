@@ -54,6 +54,14 @@ namespace
 		return config;
 	}
 
+	//构造多重采样配置（第一百九十一轮；尺寸与 hidden_config 相同，仅改采样数）
+	engine::Renderer_Config msaa_config(uint32_t samples)
+	{
+		engine::Renderer_Config config = hidden_config();
+		config.msaa_samples = samples;
+		return config;
+	}
+
 	//本帧像素字节数（RGBA8 紧排）
 	uint32_t pixel_bytes(void)
 	{
