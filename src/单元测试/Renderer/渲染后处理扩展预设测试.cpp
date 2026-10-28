@@ -231,3 +231,47 @@ TEST_F(Renderer_Post_Extra_Test, FXAA强度为零原样输出)
 
         renderer.mesh_unload(quad);
 }
+
+/*
+色调映射曲线家族（第一百八十五轮）
+口径：同一棋盘场景分别经 ACES / 指数 / Reinhard 三级预设；三条曲线在 x ∈ (0,1] 上满足
+      ACES(x) > 1−exp(−x) > x/(1+x)，故中心像素亮度应严格依次递减（各差 ≥ 5）。
+*/
+TEST_F(Renderer_Post_Extra_Test, 色调映射曲线亮度次序)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+
+	//亮暗分明且中心为亮格的棋盘纹理
+	uint64_t texture = 0;
+	ASSERT_TRUE(renderer.texture_load_checkerboard(texture, 32, 32, 4));
+	renderer.texture_bind_set(texture);
+	engine::Mesh_Handle quad = 0;
+
+	quad_register(renderer, quad);
+	std::vector<uint8_t> aces = render_stage(renderer, "色调映射.frag.spv", 0.0f, 0.0f, 0.0f);
+	quad_register(renderer, quad);
+	std::vector<uint8_t> exponential = render_stage(renderer, "指数色调映射.frag.spv", 0.0f, 0.0f, 0.0f);
+	quad_register(renderer, quad);
+	std::vector<uint8_t> reinhard = render_stage(renderer, "Reinhard色调映射.frag.spv", 0.0f, 0.0f, 0.0f);
+
+	//中心像素三通道亮度和
+	const std::array<uint8_t, 4> aces_center = pixel_get(aces, WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2);
+	const std::array<uint8_t, 4> exp_center = pixel_get(exponential, WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2);
+	const std::array<uint8_t, 4> reinhard_center = pixel_get(reinhard, WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2);
+	const int aces_sum = aces_center[0] + aces_center[1] + aces_center[2];
+	const int exp_sum = exp_center[0] + exp_center[1] + exp_center[2];
+	const int reinhard_sum = reinhard_center[0] + reinhard_center[1] + reinhard_center[2];
+	RecordProperty("tone_aces_sum", aces_sum);
+	RecordProperty("tone_exp_sum", exp_sum);
+	RecordProperty("tone_reinhard_sum", reinhard_sum);
+
+	EXPECT_GE(aces_sum - exp_sum, 5) << "ACES 未高于指数映射（" << aces_sum << " vs " << exp_sum << "）";
+	EXPECT_GE(exp_sum - reinhard_sum, 5) << "指数映射未高于 Reinhard（" << exp_sum << " vs " << reinhard_sum << "）";
+
+	renderer.mesh_unload(quad);
+	renderer.texture_unload(texture);
+}
+
