@@ -572,3 +572,63 @@ TEST_F(Renderer_Thread_Test, MSAA下并行录制与单线程一致)
 		<< "MSAA 下并行录制的画面与单线程不一致（深度解析可能被中间段覆盖）";
 	EXPECT_GT(parallel_stats.parallel_segments, 0u) << "MSAA 下未启用并行录制";
 }
+
+/*
+并行录制阈值可配（第二百零二轮）
+口径：同一场景（64 个独立绘制项、四线程）；阈值 100 时不应并行（parallel_segments == 0），
+      阈值 16 时应并行（parallel_segments > 0），且两次画面逐像素一致。
+*/
+TEST_F(Renderer_Thread_Test, 并行录制阈值可配)
+{
+	//按给定阈值渲染一帧并读回
+	auto render_with_threshold = [](uint32_t min_items, std::vector<uint8_t>& pixels, engine::Frame_Stats& stats) {
+		engine::Renderer_Config config = hidden_config();
+		config.render_threads = 4;
+		config.parallel_min_items = min_items;
+		engine::Renderer renderer;
+		if (!renderer.init(config))
+			return false;
+		if (!renderer.readback_supported())
+			return false;
+		renderer.static_batching_set(false);
+		engine::Mesh_Handle quad = 0;
+		if (!renderer.mesh_load(quad, quad_data(QUAD_HALF)))
+			return false;
+		for (uint32_t row = 0; row < 8; ++row)
+		{
+			for (uint32_t column = 0; column < 8; ++column)
+			{
+				const float x = -0.875f + 0.25f * static_cast<float>(column);
+				const float y = -0.875f + 0.25f * static_cast<float>(row);
+				const float matrix[16] = {
+					0.09f, 0.0f, 0.0f, 0.0f,
+					0.0f, 0.09f, 0.0f, 0.0f,
+					0.0f, 0.0f, 0.09f, 0.0f,
+					x, y, 0.0f, 1.0f,
+				};
+				if (!renderer.mesh_draw(quad, matrix))
+					return false;
+			}
+		}
+		bool ok = renderer.frame_render(pixels.data(), static_cast<uint32_t>(pixels.size()));
+		stats = renderer.frame_stats_get();
+		renderer.mesh_unload(quad);
+		return ok;
+	};
+
+	//阈值高于项数：不并行
+	std::vector<uint8_t> high_pixels(pixel_bytes());
+	engine::Frame_Stats high_stats{};
+	ASSERT_TRUE(render_with_threshold(100, high_pixels, high_stats));
+	EXPECT_EQ(high_stats.parallel_segments, 0u) << "阈值 100 时 64 项不应并行";
+
+	//阈值低于项数：并行
+	std::vector<uint8_t> low_pixels(pixel_bytes());
+	engine::Frame_Stats low_stats{};
+	ASSERT_TRUE(render_with_threshold(16, low_pixels, low_stats));
+	EXPECT_GT(low_stats.parallel_segments, 0u) << "阈值 16 时 64 项应并行";
+
+	//两条路径画面一致
+	EXPECT_LE(max_channel_delta(high_pixels, low_pixels), PIXEL_TOLERANCE)
+		<< "并行与单线程的画面不一致";
+}
