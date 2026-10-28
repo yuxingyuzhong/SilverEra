@@ -757,3 +757,96 @@ TEST_F(Renderer_Material_Test, 材质Alpha裁剪丢弃低不透明度区域)
 	renderer.texture_unload(texture);
 }
 
+/*
+实例化绘制的材质贴图参数一致性（第一百八十四轮）
+口径：同一材质（带法线贴图 + 法线强度 1）分别用 mesh_draw 与 mesh_draw_instanced（单位矩阵 1 个实例）绘制，
+      两帧应逐像素一致——实例化路径此前未写推送常量 offset 80 的 x / y，法线映射会丢失。
+*/
+TEST_F(Renderer_Material_Test, 实例化绘制保留法线贴图参数)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+
+	//反照率（白）与法线贴图（切线空间法线明显倾斜，使受光与几何法线不同）
+	uint64_t albedo = 0;
+	std::vector<uint8_t> albedo_texels = solid_color(255, 255, 255);
+	ASSERT_TRUE(renderer.texture_load(albedo, albedo_texels.data(), 4, 4));
+	uint64_t normal_texels = 0;
+	std::vector<uint8_t> normals(4 * 4 * 4);
+	for (std::size_t index = 0; index < normals.size(); index += 4)
+	{
+		normals[index] = 200;      //x = 0.784 → 切线方向倾斜
+		normals[index + 1] = 60;   //y = 0.235
+		normals[index + 2] = 200;  //z = 0.784
+		normals[index + 3] = 255;
+	}
+	ASSERT_TRUE(renderer.texture_load(normal_texels, normals.data(), 4, 4));
+
+	//带正面法线的四边形
+	engine::Mesh_Data quad = quad_data();
+	for (engine::Vertex& vertex : quad.vertices)
+	{
+		vertex.normal[0] = 0.0f;
+		vertex.normal[1] = 0.0f;
+		vertex.normal[2] = 1.0f;
+	}
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, quad));
+
+	//斜射方向光 + 少量环境光，使法线扰动产生可见明暗差异
+	engine::Camera_Data camera{};
+	engine::Light_Data light{};
+	light.direction[0] = 0.6f;
+	light.direction[1] = -0.6f;
+	light.direction[2] = -0.6f;
+	light.intensity = 1.0f;
+	light.ambient = 0.2f;
+	engine::Fog_Data fog{};
+	renderer.scene_apply(camera, light, fog);
+
+	//带法线贴图的材质
+	engine::Material_Data data{};
+	data.texture = albedo;
+	data.normal_texture = normal_texels;
+	data.normal_strength = 1.0f;
+	engine::Material_Handle material = 0;
+	ASSERT_TRUE(renderer.material_load(material, data));
+	renderer.material_bind_set(material);
+
+	//逐次绘制
+	ASSERT_TRUE(renderer.mesh_draw(mesh, nullptr));
+	std::vector<uint8_t> single(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(single.data(), static_cast<uint32_t>(single.size())));
+
+	//实例化绘制（单位矩阵 1 个实例）
+	const std::array<float, 16> identity = {
+		1.0f, 0.0f, 0.0f, 0.0f,
+		0.0f, 1.0f, 0.0f, 0.0f,
+		0.0f, 0.0f, 1.0f, 0.0f,
+		0.0f, 0.0f, 0.0f, 1.0f,
+	};
+	ASSERT_TRUE(renderer.mesh_draw_instanced(mesh, identity.data(), 1));
+	std::vector<uint8_t> instanced(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(instanced.data(), static_cast<uint32_t>(instanced.size())));
+
+	//两帧逐像素最大差（法线映射丢失时差异显著）
+	int maximum = 0;
+	for (std::size_t index = 0; index < single.size(); ++index)
+	{
+		int delta = static_cast<int>(single[index]) - static_cast<int>(instanced[index]);
+		if (delta < 0)
+			delta = -delta;
+		if (delta > maximum)
+			maximum = delta;
+	}
+	RecordProperty("instanced_normal_max_diff", maximum);
+	EXPECT_LE(maximum, 2) << "实例化绘制未保留法线贴图参数（最大差 " << maximum << "）";
+
+	renderer.material_unload(material);
+	renderer.mesh_unload(mesh);
+	renderer.texture_unload(albedo);
+	renderer.texture_unload(normal_texels);
+}
+
