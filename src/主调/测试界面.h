@@ -50,6 +50,10 @@ namespace engine
         uint32_t shadow_parallel_segments = 0;
         //实例剔除并行阈值（第二百二十二轮；默认 256）
         uint32_t cull_parallel_min_instances = 0;
+        //并行派发按用途拆分（第二百二十四轮；自 init 起累计）
+        uint64_t cull_parallel_dispatches = 0;
+        uint64_t scan_parallel_dispatches = 0;
+        uint64_t cache_parallel_dispatches = 0;
         //设备是否支持 GPU 时间戳
         bool gpu_supported = false;
     };
