@@ -692,3 +692,69 @@ TEST_F(Renderer_Thread_Test, 并行录制段数上限可配)
 	EXPECT_LE(max_channel_delta(limited_pixels, default_pixels), PIXEL_TOLERANCE)
 		<< "不同段数下的画面不一致";
 }
+
+/*
+实例剔除并行阈值可配（第二百二十二轮）
+口径：同一批 64 个实例（低于默认阈值 256），阈值设为 1 时走并行、保持默认时走单线程；
+      两者的剔除数 / 绘制实例数 / 像素内容必须一致，且仅前者派发过并行任务；
+      另验证配置默认值、运行时设置与钳制（0 → 1、超大 → 65536）。
+*/
+TEST_F(Renderer_Thread_Test, 实例剔除并行阈值可配)
+{
+	//强制并行：四线程 ＋ 阈值 1（实例容量需容纳 64 个实例）
+	engine::Renderer_Config force_config = hidden_config();
+	force_config.instance_capacity = 128;
+	force_config.render_threads = 4;
+	force_config.cull_parallel_min_instances = 1;
+	engine::Renderer forced;
+	ASSERT_TRUE(forced.init(force_config));
+	if (!forced.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	//保持默认阈值（256 > 64，同批实例走单线程）
+	engine::Renderer_Config fallback_config = force_config;
+	fallback_config.cull_parallel_min_instances = 256;
+	engine::Renderer fallback;
+	ASSERT_TRUE(fallback.init(fallback_config));
+
+	//配置默认值与运行时钳制
+	EXPECT_EQ(forced.cull_parallel_min_instances(), 1u);
+	EXPECT_EQ(fallback.cull_parallel_min_instances(), 256u);
+	forced.cull_parallel_min_instances_set(0);
+	EXPECT_EQ(forced.cull_parallel_min_instances(), 1u) << "0 应钳到 1";
+	forced.cull_parallel_min_instances_set(100000);
+	EXPECT_EQ(forced.cull_parallel_min_instances(), 65536u) << "超大值应钳到 65536";
+	//恢复强制并行
+	forced.cull_parallel_min_instances_set(1);
+
+	//同一批 64 个实例矩阵
+	const uint32_t small_count = 64;
+	std::vector<std::array<float, 16>> matrices = instance_matrices(small_count);
+
+	//强制并行侧
+	engine::Mesh_Handle forced_mesh = 0;
+	ASSERT_TRUE(forced.mesh_load(forced_mesh, quad_data(QUAD_HALF)));
+	ASSERT_TRUE(forced.mesh_draw_instanced(forced_mesh, matrices[0].data(), small_count));
+	std::vector<uint8_t> forced_pixels(pixel_bytes());
+	ASSERT_TRUE(forced.frame_render(forced_pixels.data(), static_cast<uint32_t>(forced_pixels.size())));
+	const engine::Frame_Stats forced_stats = forced.frame_stats_get();
+
+	//单线程侧
+	engine::Mesh_Handle fallback_mesh = 0;
+	ASSERT_TRUE(fallback.mesh_load(fallback_mesh, quad_data(QUAD_HALF)));
+	ASSERT_TRUE(fallback.mesh_draw_instanced(fallback_mesh, matrices[0].data(), small_count));
+	std::vector<uint8_t> fallback_pixels(pixel_bytes());
+	ASSERT_TRUE(fallback.frame_render(fallback_pixels.data(), static_cast<uint32_t>(fallback_pixels.size())));
+	const engine::Frame_Stats fallback_stats = fallback.frame_stats_get();
+
+	//统计与画面对齐（阈值只影响并行度，不影响结果）
+	EXPECT_EQ(forced_stats.culled_instances, fallback_stats.culled_instances);
+	EXPECT_EQ(forced_stats.drawn_instances, fallback_stats.drawn_instances);
+	EXPECT_LE(max_channel_delta(forced_pixels, fallback_pixels), PIXEL_TOLERANCE)
+		<< "不同阈值下的画面不一致";
+	//仅强制并行侧派发了任务（64 低于差异扫描阈值 512，不会额外派发）
+	EXPECT_GT(forced_stats.parallel_dispatches, 0u) << "阈值 1 未触发并行剔除";
+	EXPECT_EQ(fallback_stats.parallel_dispatches, 0u) << "默认阈值下 64 个实例不应派发并行任务";
+
+	forced.mesh_unload(forced_mesh);
+	fallback.mesh_unload(fallback_mesh);
+}
