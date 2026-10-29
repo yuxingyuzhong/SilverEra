@@ -349,6 +349,20 @@ namespace engine
 		光晕描述.blend = Blend_Mode::Additive;
 		if (!渲染器.material_load(光晕材质_, 光晕描述))
 			return false;
+		/*
+		清漆层材质（第二百三十五轮；材质展区对比专用）
+		与展区②里「全局 PBR 球」同粗糙度 / 同金属度，唯一差异是开启清漆层，
+		用于直观看到清漆叠出的第二层锐利反射；粗糙度取 1（本项目 D 项随 roughness 增大，
+		极小粗糙度反而近于零高光）。
+		*/
+		Material_Data 清漆描述;
+		清漆描述.pbr_override = true;
+		清漆描述.pbr_roughness = 0.5f;
+		清漆描述.pbr_metallic = 0.2f;
+		清漆描述.clear_coat = 1.0f;
+		清漆描述.clear_coat_roughness = 1.0f;
+		if (!渲染器.material_load(清漆材质_, 清漆描述))
+			return false;
 		//—— 字体与后处理管线 ——
 		字体_ = 加载字体(渲染器);
 		if (!渲染器.pipeline_load(亮部提取_, "后处理.vert.spv", "亮部提取.frag.spv"))
@@ -752,6 +766,22 @@ namespace engine
 			(void)渲染器.mesh_draw(圆环_, 自发光.data());
 			渲染器.material_emissive_clear();
 			渲染器.material_tint_clear();
+			/*
+			清漆层对比球（第二百三十五轮）
+			左侧走全局 PBR（无清漆），右侧绑定清漆材质，两者粗糙度 / 金属度 / 尺寸完全相同，
+			只有清漆层有无不同 —— 便于近距离直观比较第二层锐利反射。
+			*/
+			(void)渲染器.material_pbr_set(0.5f, 0.2f);
+			const std::array<float, 16> 素坯球 = 变换(2.1f, 0.85f, -13.2f, 0.55f);
+			(void)渲染器.mesh_draw(球_, 素坯球.data());
+			(void)渲染器.material_pbr_clear();
+			if (清漆材质_ != 0)
+			{
+				渲染器.material_bind_set(清漆材质_);
+				const std::array<float, 16> 清漆球 = 变换(3.8f, 0.85f, -13.2f, 0.55f);
+				(void)渲染器.mesh_draw(球_, 清漆球.data());
+				渲染器.material_bind_set(0);
+			}
 		}
 
 		//—— 展区③：光照与阴影（四根立柱 ＋ 顶部聚光） ——
@@ -1036,10 +1066,13 @@ namespace engine
 			渲染器.material_unload(贴图材质_);
 		if (光晕材质_ != 0)
 			渲染器.material_unload(光晕材质_);
+		if (清漆材质_ != 0)
+			渲染器.material_unload(清漆材质_);
 		if (地面材质_ != 0)
 			渲染器.material_unload(地面材质_);
 		贴图材质_ = 0;
 		光晕材质_ = 0;
+		清漆材质_ = 0;
 		地面材质_ = 0;
 		//字体与纹理
 		if (字体_ != 0)
