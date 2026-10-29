@@ -48,6 +48,8 @@ namespace engine
         uint32_t parallel_segments = 0;
         //最近一次阴影 pass 的并行段数（第二百一十三轮；0 = 单线程录制）
         uint32_t shadow_parallel_segments = 0;
+        //实例剔除并行阈值（第二百二十二轮；默认 256）
+        uint32_t cull_parallel_min_instances = 0;
         //设备是否支持 GPU 时间戳
         bool gpu_supported = false;
     };

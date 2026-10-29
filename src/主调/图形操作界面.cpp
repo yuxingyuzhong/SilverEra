@@ -251,6 +251,9 @@ namespace engine
                 static_cast<unsigned long long>(上下文.运行状态.parallel_dispatches),
                 上下文.运行状态.parallel_segments,
                 上下文.运行状态.shadow_parallel_segments);
+            //实例剔除并行阈值（第二百二十二轮；0 表示未初始化）
+            ImGui::TextWrapped("剔除并行阈值 %u（实例数达到该值才走并行剔除）",
+                上下文.运行状态.cull_parallel_min_instances);
             ImGui::Separator();
             ImGui::TextWrapped("操作：WASD 移动 · E / 空格 上升 · Q / Shift 下降 · 右键拖拽看向 · 滚轮调速 · ESC 返回");
             if (ImGui::Button("返回测试界面", ImVec2(150.0f, 30.0f)))
@@ -567,6 +570,8 @@ namespace engine
             上下文.运行状态.parallel_segments = 统计.parallel_segments;
             //阴影 pass 的并行段数（第二百一十三轮）
             上下文.运行状态.shadow_parallel_segments = 统计.shadow_parallel_segments;
+            //实例剔除并行阈值（第二百二十二轮；展示面板显示）
+            上下文.运行状态.cull_parallel_min_instances = 渲染器.cull_parallel_min_instances();
             上下文.运行状态.gpu_supported = 渲染器.gpu_timestamp_supported();
 
             //推进一帧
