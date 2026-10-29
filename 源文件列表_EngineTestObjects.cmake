@@ -79,6 +79,7 @@ target_sources(EngineTestObjects PRIVATE
     "src/单元测试/Renderer/渲染场景数据测试.cpp"
     "src/单元测试/Renderer/渲染多管线测试.cpp"
     "src/单元测试/Renderer/渲染多线程测试.cpp"
+    "src/单元测试/Renderer/渲染多线程阈值测试.cpp"
     "src/单元测试/Renderer/渲染天空盒测试.cpp"
     "src/单元测试/Renderer/渲染实例化测试.cpp"
     "src/单元测试/Renderer/渲染帧测试.cpp"
