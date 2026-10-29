@@ -66,6 +66,28 @@ namespace
 		}
 		return count;
 	}
+
+	//取指定行上「左侧连续纯红像素」的个数（描边环的横向厚度；第二百三十轮）
+	uint32_t red_run_left(const std::vector<uint8_t>& pixels, uint32_t y)
+	{
+		uint32_t run = 0;
+		//自左向右扫描，遇到首个纯红像素后开始计数，遇到非纯红即结束
+		bool started = false;
+		for (uint32_t x = 0; x < WINDOW_WIDTH; ++x)
+		{
+			std::array<uint8_t, 4> channels = pixel_get(pixels, x, y);
+			std::sort(channels.begin(), channels.end());
+			const bool is_red = channels[3] >= 200 && channels[1] <= 30;
+			if (is_red)
+			{
+				started = true;
+				++run;
+			}
+			else if (started)
+				break;
+		}
+		return run;
+	}
 }
 
 //反向外扩描边测试夹具
@@ -149,4 +171,46 @@ TEST_F(Renderer_Outline_Test, 宽度与颜色非法值归一)
 	EXPECT_NEAR(color[0], 1.0f, 1e-6f);
 	EXPECT_NEAR(color[1], 0.0f, 1e-6f);
 	EXPECT_NEAR(color[2], 0.5f, 1e-6f);
+}
+
+/*
+视距补偿（第二百三十轮）：同一宽度下，远处物体的轮廓像素厚度应与近处接近
+不做补偿时，宽度是固定世界单位，投影到屏幕的像素厚度会随距离成反比缩小（4 倍远处只剩 1/4）。
+*/
+TEST_F(Renderer_Outline_Test, 描边宽度按视距补偿)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	//加载球体（球面法线连续，外扩轮廓在各方向一致，便于测量厚度）与纯红描边
+	engine::Mesh_Handle sphere = 0;
+	ASSERT_TRUE(renderer.mesh_sphere_load(sphere, 0.5f, 24, 16));
+	const float red[3] = { 1.0f, 0.0f, 0.0f };
+	renderer.outline_set(1.0f, red);
+
+	//近处（相机距原点 3 单位，即补偿参考距离）
+	renderer.camera_position_set(0.0f, 0.0f, 3.0f);
+	renderer.camera_target_set(0.0f, 0.0f, 0.0f);
+	ASSERT_TRUE(renderer.mesh_draw(sphere, nullptr));
+	std::vector<uint8_t> near_pixels(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(near_pixels.data(), static_cast<uint32_t>(near_pixels.size())));
+	uint32_t near_thickness = red_run_left(near_pixels, WINDOW_HEIGHT / 2);
+
+	//远处（相机距原点 12 单位，补偿后屏幕厚度应与近处接近）
+	renderer.camera_position_set(0.0f, 0.0f, 12.0f);
+	renderer.camera_target_set(0.0f, 0.0f, 0.0f);
+	ASSERT_TRUE(renderer.mesh_draw(sphere, nullptr));
+	std::vector<uint8_t> far_pixels(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(far_pixels.data(), static_cast<uint32_t>(far_pixels.size())));
+	uint32_t far_thickness = red_run_left(far_pixels, WINDOW_HEIGHT / 2);
+
+	//近处厚度至少 2 像素（确认描边确实出现）
+	EXPECT_GE(near_thickness, 2u) << "近处未检出描边";
+	//远近厚度相差不超过 1.6 倍（补偿有效；未补偿时 4 倍距离会差约 4 倍）
+	EXPECT_GE(far_thickness, 2u) << "远处未检出描边（补偿可能失效）";
+	const float ratio = static_cast<float>(far_thickness) / static_cast<float>(near_thickness);
+	EXPECT_GT(ratio, 1.0f / 1.6f) << "远近描边厚度比过小：" << near_thickness << " vs " << far_thickness;
+	EXPECT_LT(ratio, 1.6f) << "远近描边厚度比过大：" << near_thickness << " vs " << far_thickness;
+	renderer.mesh_unload(sphere);
 }
