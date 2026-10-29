@@ -221,7 +221,7 @@ namespace engine
             ImGui::Separator();
             //展区图例（与三维投影标签一一对应；长行自动折行，避免右端被窗口裁剪）
             ImGui::TextUnformatted("七个展区（场景内有同名标签）：");
-            ImGui::Bullet(); ImGui::TextWrapped("① 程序化网格：八种图元环形排布（含细分地形底板）");
+            ImGui::Bullet(); ImGui::TextWrapped("① 程序化网格：九种图元环形排布（含四棱锥与细分地形底板）");
             ImGui::Bullet(); ImGui::TextWrapped("② PBR 材质：粗糙度 / 金属度 / 法线贴图 / 自发光 / 清漆层对比");
             ImGui::Bullet(); ImGui::TextWrapped("③ 光照与阴影：方向光 / 点光 / 聚光 / 三级级联");
             ImGui::Bullet(); ImGui::TextWrapped("④ 实例化合批：阶梯金字塔一次提交");
