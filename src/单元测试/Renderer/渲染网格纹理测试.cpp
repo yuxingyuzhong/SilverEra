@@ -597,6 +597,46 @@ TEST_F(Renderer_Mesh_Test, 程序化圆锥可绘制)
 }
 
 /*
+程序化四棱锥（第二百三十二轮）
+口径：底面半边长 0.8 / 高 1.6 时顶点 16、索引 18，包围盒 Y ∈ [-0.8, 0.8]；
+      可绘制出帧；零 / 负参数整次拒绝且句柄归零。
+*/
+TEST_F(Renderer_Mesh_Test, 程序化四棱锥可绘制)
+{
+        engine::Renderer renderer;
+        ASSERT_TRUE(renderer.init(hidden_config()));
+        engine::Mesh_Handle pyramid = 0;
+        ASSERT_TRUE(renderer.mesh_pyramid_load(pyramid, 0.8f, 1.6f));
+        EXPECT_NE(pyramid, 0u);
+
+        //顶点 / 索引计数（侧面 4 × 3 ＋ 底面 4；索引 4 × 3 ＋ 6）
+        uint32_t vertex_count = 0;
+        uint32_t index_count = 0;
+        ASSERT_TRUE(renderer.mesh_counts(pyramid, &vertex_count, &index_count));
+        EXPECT_EQ(vertex_count, 16u);
+        EXPECT_EQ(index_count, 18u);
+
+        //包围盒（高 1.6 居中 → Y ∈ [-0.8, 0.8]）
+        float bounds_min[3] = { 0.0f, 0.0f, 0.0f };
+        float bounds_max[3] = { 0.0f, 0.0f, 0.0f };
+        ASSERT_TRUE(renderer.mesh_bounds(pyramid, bounds_min, bounds_max));
+        EXPECT_NEAR(bounds_min[1], -0.8f, 1e-4f);
+        EXPECT_NEAR(bounds_max[1], 0.8f, 1e-4f);
+
+        EXPECT_TRUE(renderer.mesh_draw(pyramid, nullptr));
+        EXPECT_TRUE(renderer.frame_render());
+
+        //非法参数整次拒绝（句柄归零）
+        engine::Mesh_Handle invalid = 88;
+        EXPECT_FALSE(renderer.mesh_pyramid_load(invalid, 0.0f, 1.6f));
+        EXPECT_EQ(invalid, 0u);
+        EXPECT_FALSE(renderer.mesh_pyramid_load(invalid, 0.8f, -1.0f));
+        EXPECT_EQ(invalid, 0u);
+
+        renderer.mesh_unload(pyramid);
+}
+
+/*
 程序化胶囊（第六十九轮）
 口径：胶囊（半径 0.5 / 中段高 1 / 24 分段 / 8 纬圈）可加载并出帧；中段高 0 退化为球亦可加载；
       非法参数（半径 0、高度 -1、分段 2、纬圈 1）整次拒绝且句柄归零。
