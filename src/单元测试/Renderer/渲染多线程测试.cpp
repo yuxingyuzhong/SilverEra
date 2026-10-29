@@ -754,6 +754,14 @@ TEST_F(Renderer_Thread_Test, 实例剔除并行阈值可配)
 	//仅强制并行侧派发了任务（64 低于差异扫描阈值 512，不会额外派发）
 	EXPECT_GT(forced_stats.parallel_dispatches, 0u) << "阈值 1 未触发并行剔除";
 	EXPECT_EQ(fallback_stats.parallel_dispatches, 0u) << "默认阈值下 64 个实例不应派发并行任务";
+	/*
+	按用途拆分的派发计数（第二百二十四轮）
+	64 个实例低于差异扫描 / 缓存回写阈值（512），故只有剔除用途应有计数。
+	*/
+	EXPECT_GT(forced_stats.cull_parallel_dispatches, 0u) << "剔除用途派发未计数";
+	EXPECT_EQ(forced_stats.scan_parallel_dispatches, 0u) << "64 实例不应触发差异扫描并行";
+	EXPECT_EQ(forced_stats.cache_parallel_dispatches, 0u) << "64 实例不应触发缓存回写并行";
+	EXPECT_EQ(fallback_stats.cull_parallel_dispatches, 0u) << "默认阈值下单线程侧不应有剔除派发";
 
 	forced.mesh_unload(forced_mesh);
 	fallback.mesh_unload(fallback_mesh);
