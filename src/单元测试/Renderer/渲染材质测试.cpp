@@ -937,3 +937,87 @@ TEST_F(Renderer_Material_Test, 清漆层增强高光)
 	renderer.texture_unload(gray);
 }
 
+/*
+清漆层同样作用于点光源（第二百三十四轮）
+口径：关闭方向光，仅一盏点光源（位于球体与相机之间）；其余条件与「清漆层增强高光」一致，
+      开启清漆后整幅亮度应抬升 —— 证明清漆不局限于方向光分支。
+*/
+TEST_F(Renderer_Material_Test, 点光源清漆层增强高光)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	engine::Mesh_Handle sphere = 0;
+	ASSERT_TRUE(renderer.mesh_sphere_load(sphere, 0.6f, 32, 16));
+	//关闭方向光，只留一盏点光源
+	const float direction[3] = { 0.0f, 0.0f, -1.0f };
+	const float color[3] = { 1.0f, 1.0f, 1.0f };
+	renderer.light_set(direction, color, 0.0f, 0.05f);
+	const float point_position[3] = { 0.0f, 0.0f, 1.0f };
+	ASSERT_TRUE(renderer.light_add_point(point_position, color, 3.0f, 1.0f, 0.05f));
+	renderer.specular_set(1.0f, 32.0f);
+	renderer.pbr_enable_set(true);
+	renderer.pbr_roughness_set(0.5f);
+	//中性灰纹理（避免漫反射先饱和）
+	uint64_t gray = 0;
+	{
+		std::vector<uint8_t> gray_texels(4u * 4u * 4u, 100);
+		for (std::size_t index = 3; index < gray_texels.size(); index += 4)
+			gray_texels[index] = 255;
+		ASSERT_TRUE(renderer.texture_load(gray, gray_texels.data(), 4, 4));
+	}
+	//整幅三通道最小值累加（与方向光用例同一判据）
+	auto brightness_sum = [](const std::vector<uint8_t>& pixels)
+	{
+		uint64_t sum = 0;
+		for (std::size_t offset = 0; offset + 3 < pixels.size(); offset += 4)
+		{
+			uint8_t result = pixels[offset];
+			if (pixels[offset + 1] < result)
+				result = pixels[offset + 1];
+			if (pixels[offset + 2] < result)
+				result = pixels[offset + 2];
+			sum += result;
+		}
+		return sum;
+	};
+
+	//基准：不带清漆
+	engine::Material_Data plain_data;
+	plain_data.pbr_override = true;
+	plain_data.pbr_roughness = 0.5f;
+	plain_data.texture = gray;
+	engine::Material_Handle plain = 0;
+	ASSERT_TRUE(renderer.material_load(plain, plain_data));
+	renderer.material_bind_set(plain);
+	ASSERT_TRUE(renderer.mesh_draw(sphere, nullptr));
+	std::vector<uint8_t> base_pixels(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(base_pixels.data(), static_cast<uint32_t>(base_pixels.size())));
+	uint64_t base_sum = brightness_sum(base_pixels);
+
+	//对照：清漆强度 1、粗糙度 1
+	engine::Material_Data coat_data;
+	coat_data.pbr_override = true;
+	coat_data.pbr_roughness = 0.5f;
+	coat_data.clear_coat = 1.0f;
+	coat_data.clear_coat_roughness = 1.0f;
+	coat_data.texture = gray;
+	engine::Material_Handle coat = 0;
+	ASSERT_TRUE(renderer.material_load(coat, coat_data));
+	renderer.material_bind_set(coat);
+	ASSERT_TRUE(renderer.mesh_draw(sphere, nullptr));
+	std::vector<uint8_t> coat_pixels(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(coat_pixels.data(), static_cast<uint32_t>(coat_pixels.size())));
+	uint64_t coat_sum = brightness_sum(coat_pixels);
+
+	//点光源下开启清漆同样应抬升亮度
+	EXPECT_GT(coat_sum, base_sum + 100)
+		<< "点光源下的清漆层未抬升画面亮度：" << base_sum << " vs " << coat_sum;
+
+	renderer.material_unload(plain);
+	renderer.material_unload(coat);
+	renderer.mesh_unload(sphere);
+	renderer.texture_unload(gray);
+}
+
