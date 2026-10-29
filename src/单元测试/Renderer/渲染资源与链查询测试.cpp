@@ -53,10 +53,10 @@ TEST_F(Renderer_Resource_Test, 资源计数随加载卸载变化)
 
 	ASSERT_TRUE(renderer.init(hidden_config()));
 	engine::Renderer_Resource_Counts initial = renderer.resource_counts();
-	//初始化后：默认白纹理 ＋ 默认天空盒立方体、默认场景管线、阴影目标各一（第一百二十五轮）
+	//初始化后：默认白纹理 ＋ 默认天空盒立方体、默认场景管线 ＋ 外扩描边管线（第二百二十八轮）、阴影目标各一（第一百二十五轮）
 	EXPECT_EQ(initial.meshes, 0u);
 	EXPECT_EQ(initial.textures, 2u);
-	EXPECT_EQ(initial.pipelines, 1u);
+	EXPECT_EQ(initial.pipelines, 2u);
 	EXPECT_EQ(initial.fonts, 0u);
 	EXPECT_EQ(initial.render_targets, 1u);
 	EXPECT_EQ(initial.materials, 0u);
@@ -80,7 +80,7 @@ TEST_F(Renderer_Resource_Test, 资源计数随加载卸载变化)
 	EXPECT_EQ(loaded.meshes, 1u);
 	//默认白纹理 ＋ 默认天空盒立方体 ＋ 测试纹理 ＋ 字体图集
 	EXPECT_EQ(loaded.textures, 4u);
-	EXPECT_EQ(loaded.pipelines, 2u);
+	EXPECT_EQ(loaded.pipelines, 3u);
 	EXPECT_EQ(loaded.fonts, 1u);
 	EXPECT_EQ(loaded.render_targets, 2u);
 	EXPECT_EQ(loaded.materials, 1u);
@@ -95,7 +95,7 @@ TEST_F(Renderer_Resource_Test, 资源计数随加载卸载变化)
 	engine::Renderer_Resource_Counts unloaded = renderer.resource_counts();
 	EXPECT_EQ(unloaded.meshes, 0u);
 	EXPECT_EQ(unloaded.textures, 2u);
-	EXPECT_EQ(unloaded.pipelines, 1u);
+	EXPECT_EQ(unloaded.pipelines, 2u);
 	EXPECT_EQ(unloaded.fonts, 0u);
 	EXPECT_EQ(unloaded.render_targets, 1u);
 	EXPECT_EQ(unloaded.materials, 0u);

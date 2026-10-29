@@ -77,6 +77,7 @@ target_sources(EngineTestObjects PRIVATE
     "src/单元测试/Renderer/渲染后处理颗粒测试.cpp"
     "src/单元测试/Renderer/渲染场景效果测试.cpp"
     "src/单元测试/Renderer/渲染场景数据测试.cpp"
+    "src/单元测试/Renderer/渲染外扩描边测试.cpp"
     "src/单元测试/Renderer/渲染多管线测试.cpp"
     "src/单元测试/Renderer/渲染多线程测试.cpp"
     "src/单元测试/Renderer/渲染多线程阈值测试.cpp"
