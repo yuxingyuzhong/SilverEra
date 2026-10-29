@@ -1,7 +1,8 @@
 /*
 渲染混合态测试（L2 隐藏窗口 + 像素回读）
 覆盖：不透明档忽略源 alpha（alpha 原样写出）、切到 alpha 档后发生半透明叠加、
-      切回不透明档可恢复；断言一律「通道色三通道与 alpha 分离、通道序无关、容差判定」，
+      切回不透明档可恢复；加法档两层叠加亮度累加（第二百二十七轮）；
+      断言一律「通道色三通道与 alpha 分离、通道序无关、容差判定」，
       对 sRGB 与非 sRGB 附件、BGRA 与 RGBA 通道序均成立（半透明期望值随附件传输函数不同，
       故用区间而非定值）。
 */
@@ -128,6 +129,16 @@ namespace
 		return data;
 	}
 
+	//构造指定深度平面上的覆盖视口中央四边形（第二百二十七轮：加法叠加用例需要两个不同深度）
+	engine::Mesh_Data quad_data_at(float z)
+	{
+		engine::Mesh_Data data = quad_data();
+		//把四个顶点的 z 全部改写为目标深度（平面内平移，不改变覆盖范围）
+		for (engine::Vertex& vertex : data.vertices)
+			vertex.position[2] = z;
+		return data;
+	}
+
 	//构造半透明白纹理（RGBA8：rgb = 255，alpha = SOURCE_ALPHA）
 	std::vector<uint8_t> translucent_white(uint32_t width, uint32_t height)
 	{
@@ -138,6 +149,20 @@ namespace
 			pixels[index + 1] = 255;
 			pixels[index + 2] = 255;
 			pixels[index + 3] = SOURCE_ALPHA;
+		}
+		return pixels;
+	}
+
+	//构造中性灰不透明纹理（RGBA8：三通道 128，alpha 255；线性亮度约 0.5）
+	std::vector<uint8_t> solid_gray(uint32_t width, uint32_t height)
+	{
+		std::vector<uint8_t> pixels(static_cast<std::size_t>(width) * height * 4);
+		for (std::size_t index = 0; index < pixels.size(); index += 4)
+		{
+			pixels[index] = 128;
+			pixels[index + 1] = 128;
+			pixels[index + 2] = 128;
+			pixels[index + 3] = 255;
 		}
 		return pixels;
 	}
@@ -218,6 +243,57 @@ TEST_F(Renderer_Blend_Test, alpha档产生半透明叠加)
 	//角落未被四边形覆盖，仍为清屏色（混合只作用于被覆盖区域）
 	EXPECT_TRUE(pixel_is_clear(pixel_get(pixels, 1, 1))) << "角落被意外覆盖";
 	renderer.mesh_unload(handle);
+	renderer.texture_unload(texture);
+}
+
+/*
+加法档：颜色累加而非取代背景（第二百二十七轮）
+两层中性灰（线性亮度约 0.5）叠在同一像素上，第二层使亮度显著抬升（接近饱和），
+而单层只比清屏色略亮 —— 若走不透明挡，两层结果与单层相同，判据即失效。
+*/
+TEST_F(Renderer_Blend_Test, 加法档叠加两层亮度累加)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	//若本机不支持像素回读则跳过
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	//加载中性灰纹理并绑定
+	uint64_t texture = 0;
+	std::vector<uint8_t> texels = solid_gray(2, 2);
+	ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 2, 2));
+	renderer.texture_bind_set(texture);
+	//切到加法档（触发一次图形管线重建）
+	renderer.blend_mode_set(engine::Blend_Mode::Additive);
+	//两个不同深度的覆盖四边形（深度测试下先后通过，故两层都参与混合）
+	engine::Mesh_Handle far_handle = 0;
+	engine::Mesh_Handle near_handle = 0;
+	ASSERT_TRUE(renderer.mesh_load(far_handle, quad_data_at(-0.2f)));
+	ASSERT_TRUE(renderer.mesh_load(near_handle, quad_data_at(0.2f)));
+
+	//第一帧：只画远层，中心应比清屏色亮但明显未饱和
+	ASSERT_TRUE(renderer.mesh_draw(far_handle, nullptr));
+	std::vector<uint8_t> single_pixels(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(single_pixels.data(), static_cast<uint32_t>(single_pixels.size())));
+	std::array<uint8_t, 4> single_center = pixel_get(single_pixels, WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2);
+	uint8_t single_min = color_min(single_center);
+	EXPECT_GT(single_min, 60) << "加法单层结果未比清屏色更亮：" << pixel_text(single_center);
+	EXPECT_LT(single_min, 200) << "加法单层结果不应饱和：" << pixel_text(single_center);
+	//角落未被覆盖，仍为清屏色
+	EXPECT_TRUE(pixel_is_clear(pixel_get(single_pixels, 1, 1))) << "角落被意外覆盖";
+
+	//第二帧：先远后近各画一层，中心亮度应显著抬升
+	ASSERT_TRUE(renderer.mesh_draw(far_handle, nullptr));
+	ASSERT_TRUE(renderer.mesh_draw(near_handle, nullptr));
+	std::vector<uint8_t> double_pixels(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(double_pixels.data(), static_cast<uint32_t>(double_pixels.size())));
+	std::array<uint8_t, 4> double_center = pixel_get(double_pixels, WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2);
+	uint8_t double_min = color_min(double_center);
+	EXPECT_GT(double_min, single_min + 40) << "加法两层未发生亮度累加：" << pixel_text(double_center);
+	EXPECT_TRUE(pixel_is_clear(pixel_get(double_pixels, 1, 1))) << "角落被意外覆盖";
+
+	renderer.mesh_unload(far_handle);
+	renderer.mesh_unload(near_handle);
 	renderer.texture_unload(texture);
 }
 
