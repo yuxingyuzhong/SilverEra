@@ -42,6 +42,8 @@ imgui.ini
 # 日志系统用例的落盘探针：用例结束时会尝试删除，但活跃输出流仍持有文件句柄，
 # Windows 下删除可能失败而残留，故纳入忽略
 engine_log_probe.txt
+# 碰撞用例运行期写出的临时边界配置（同属「删除可能失败而残留」）
+src/单元测试/EngineCore/核心/碰撞测试临时边界.json
 
 # 渲染层着色器拷贝：构建期从渲染层构建树拷入，与所链 RendererCore.lib 同版次
 shaders/
