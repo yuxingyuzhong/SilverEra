@@ -12,6 +12,8 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+//非数参数构造（第二百三十八轮）
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -1017,6 +1019,83 @@ TEST_F(Renderer_Material_Test, 点光源清漆层增强高光)
 
 	renderer.material_unload(plain);
 	renderer.material_unload(coat);
+	renderer.mesh_unload(sphere);
+	renderer.texture_unload(gray);
+}
+
+/*
+清漆参数非法值归一（第二百三十八轮）
+口径：门面对非法值一律「回落默认」而非钳制 —— `clear_coat` 非数或不在 (0, 1] 时归一为 0（关闭），
+      `clear_coat_roughness` 非数或不在 [0.03, 1] 时归一为 0.15；
+      故「非数」与「越界（2.0 / 5.0）」两帧都应等同「不带清漆」的帧（逐字节一致）。
+*/
+TEST_F(Renderer_Material_Test, 清漆参数非法值归一)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	engine::Mesh_Handle sphere = 0;
+	ASSERT_TRUE(renderer.mesh_sphere_load(sphere, 0.6f, 32, 16));
+	const float direction[3] = { 0.0f, 0.0f, -1.0f };
+	const float color[3] = { 1.0f, 1.0f, 1.0f };
+	renderer.light_set(direction, color, 1.0f, 0.2f);
+	renderer.specular_set(1.0f, 32.0f);
+	renderer.pbr_enable_set(true);
+	renderer.pbr_roughness_set(0.5f);
+	uint64_t gray = 0;
+	{
+		std::vector<uint8_t> gray_texels(4u * 4u * 4u, 100);
+		for (std::size_t index = 3; index < gray_texels.size(); index += 4)
+			gray_texels[index] = 255;
+		ASSERT_TRUE(renderer.texture_load(gray, gray_texels.data(), 4, 4));
+	}
+	//渲染一帧并回读到调用方缓冲
+	auto render_frame = [&](engine::Material_Handle material, std::vector<uint8_t>& pixels)
+	{
+		renderer.material_bind_set(material);
+		EXPECT_TRUE(renderer.mesh_draw(sphere, nullptr));
+		pixels.resize(pixel_bytes());
+		EXPECT_TRUE(renderer.frame_render(pixels.data(), static_cast<uint32_t>(pixels.size())));
+	};
+
+	//基准材质：不带清漆
+	engine::Material_Data plain_data;
+	plain_data.pbr_override = true;
+	plain_data.pbr_roughness = 0.5f;
+	plain_data.texture = gray;
+	engine::Material_Handle plain = 0;
+	ASSERT_TRUE(renderer.material_load(plain, plain_data));
+
+	//非数强度 / 粗糙度（应归一到 0 / 1，等同于关闭）
+	engine::Material_Data nan_data = plain_data;
+	nan_data.clear_coat = std::numeric_limits<float>::quiet_NaN();
+	nan_data.clear_coat_roughness = std::numeric_limits<float>::quiet_NaN();
+	engine::Material_Handle nan_coat = 0;
+	ASSERT_TRUE(renderer.material_load(nan_coat, nan_data));
+
+	//越界强度 / 粗糙度（应回落默认：强度 0、粗糙度 0.15，等同于关闭）
+	engine::Material_Data over_data = plain_data;
+	over_data.clear_coat = 2.0f;
+	over_data.clear_coat_roughness = 5.0f;
+	engine::Material_Handle over_coat = 0;
+	ASSERT_TRUE(renderer.material_load(over_coat, over_data));
+
+	std::vector<uint8_t> plain_pixels;
+	std::vector<uint8_t> nan_pixels;
+	std::vector<uint8_t> over_pixels;
+	render_frame(plain, plain_pixels);
+	render_frame(nan_coat, nan_pixels);
+	render_frame(over_coat, over_pixels);
+
+	//非数参数归一到关闭：与不带清漆逐字节一致
+	EXPECT_EQ(nan_pixels, plain_pixels) << "非数清漆参数未归一为关闭";
+	//越界参数回落默认：与不带清漆逐字节一致
+	EXPECT_EQ(over_pixels, plain_pixels) << "越界清漆参数未回落默认";
+
+	renderer.material_unload(plain);
+	renderer.material_unload(nan_coat);
+	renderer.material_unload(over_coat);
 	renderer.mesh_unload(sphere);
 	renderer.texture_unload(gray);
 }
