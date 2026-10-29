@@ -47,7 +47,7 @@ static std::shared_ptr<engine::Event> make_event(const std::string& tag,
 }
 
 //临时网格文件（相对可执行文件目录）
-static const std::string temp_mesh_name = "src/单元测试/核心/碰撞测试临时网格.obj";
+static const std::string temp_mesh_name = "src/单元测试/EngineCore/核心/碰撞测试临时网格.obj";
 
 //写入手工立方体网格文件，返回可读取的相对路径
 static std::string temp_mesh_write(void)
@@ -81,7 +81,7 @@ static std::string temp_mesh_write(void)
 }
 
 //临时边界配置文件（相对可执行文件目录）
-static const std::string temp_boundary_name = "src/单元测试/核心/碰撞测试临时边界.json";
+static const std::string temp_boundary_name = "src/单元测试/EngineCore/核心/碰撞测试临时边界.json";
 
 //写入边界配置文件（登记空间的边界网格路径），返回可读取的相对路径
 static std::string temp_boundary_write(const std::string& region, const std::string& mesh_name)

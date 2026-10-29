@@ -9,7 +9,7 @@ class Quadtree_Test : public ::testing::Test
 {
 public:
 	//释放检索结果，避免用例内内存泄漏
-	static void chunk_clean(std::vector<std::shared_ptr<engine::Tree_Chunk_Data<int>>>& receiver)
+	static void chunk_clean(std::vector<engine::Tree_Chunk_Data<int>>& receiver)
 	{
 		receiver.clear();
 	}
@@ -100,7 +100,7 @@ TEST_F(Quadtree_Test, 管理范围计算256)
 	//范围接收器
 	engine::Rect2l range{};
 	//计算管理范围
-	tree.manage_range_calcu(range, { 0.5, 0.5 }, 256);
+	range = tree.rect_range_calcu({ 0.5, 0.5 }, 256);
 	//左右边界覆盖 256 个整数单位
 	EXPECT_EQ(range.left, -127);
 	EXPECT_EQ(range.right, 128);
@@ -117,7 +117,7 @@ TEST_F(Quadtree_Test, 管理范围计算16)
 	//范围接收器
 	engine::Rect2l range{};
 	//计算管理范围
-	tree.manage_range_calcu(range, { 0.5, 0.5 }, 16);
+	range = tree.rect_range_calcu({ 0.5, 0.5 }, 16);
 	//四个边界
 	EXPECT_EQ(range.left, -7);
 	EXPECT_EQ(range.right, 8);
@@ -133,7 +133,7 @@ TEST_F(Quadtree_Test, 管理范围随根坐标平移)
 	//范围接收器
 	engine::Rect2l range{};
 	//以根坐标 8.5 计算管理范围
-	tree.manage_range_calcu(range, { 8.5, 8.5 }, 16);
+	range = tree.rect_range_calcu({ 8.5, 8.5 }, 16);
 	//四个边界
 	EXPECT_EQ(range.left, 1);
 	EXPECT_EQ(range.right, 16);
@@ -158,7 +158,7 @@ TEST_F(Quadtree_Test, Point2l与Rect2l边界值承载)
 	EXPECT_EQ(rect.right, 1LL << 40);
 	//超大边长的管理范围计算
 	engine::Rect2l range{};
-	tree.manage_range_calcu(range, { 0.5, 0.5 }, 1ull << 40);
+	range = tree.rect_range_calcu({ 0.5, 0.5 }, 1ull << 40);
 	//半跨度取 2 的 39 次方减一，边界不溢出
 	EXPECT_EQ(range.left, -(1LL << 39) + 1);
 	EXPECT_EQ(range.right, 1LL << 39);
@@ -174,7 +174,7 @@ TEST_F(Quadtree_Test, 待查询范围向外对齐)
 	//待对齐的范围
 	engine::Rect2l range{ -1, 6, 6, -1 };
 	//执行格式化
-	tree.target_range_format(range, { 0.5, 0.5 }, 16);
+	tree.range_align(range, { 0.5, 0.5 }, 16);
 	//左边界向下对齐至 16 的倍数
 	EXPECT_EQ(range.left, -15);
 	//右边界向上对齐
@@ -193,7 +193,7 @@ TEST_F(Quadtree_Test, 已对齐范围保持不变)
 	//恰好落在区块边界上的范围
 	engine::Rect2l range{ -15, 0, 0, -15 };
 	//执行格式化
-	tree.target_range_format(range, { 0.5, 0.5 }, 16);
+	tree.range_align(range, { 0.5, 0.5 }, 16);
 	//四个边界均保持原值
 	EXPECT_EQ(range.left, -15);
 	EXPECT_EQ(range.right, 0);
@@ -209,11 +209,11 @@ TEST_F(Quadtree_Test, 可查询范围无需扩大)
 	//可查询范围接收器
 	engine::Rect2l seekable{};
 	//初始化为树的管理范围
-	tree.manage_range_calcu(seekable, { 0.5, 0.5 }, 256);
+	seekable = tree.rect_range_calcu({ 0.5, 0.5 }, 256);
 	//待查询范围完全落在树内
 	engine::Rect2l target{ -15, 0, 0, -15 };
 	//求交集
-	engine::Point2d register_coord = tree.seekable_range_calcu(target, seekable);
+	engine::Point2d register_coord = tree.range_intersect(target, seekable);
 	//返回树根坐标表示无需扩大
 	EXPECT_EQ(register_coord, (engine::Point2d(0.5, 0.5)));
 	//可查询范围被收窄为待查询范围
@@ -231,11 +231,11 @@ TEST_F(Quadtree_Test, 可查询范围请求扩大)
 	//可查询范围接收器
 	engine::Rect2l seekable{};
 	//初始化为树的管理范围
-	tree.manage_range_calcu(seekable, { 0.5, 0.5 }, 256);
+	seekable = tree.rect_range_calcu({ 0.5, 0.5 }, 256);
 	//待查询范围向右越界
 	engine::Rect2l target{ 100, 200, 0, -15 };
 	//求交集
-	engine::Point2d register_coord = tree.seekable_range_calcu(target, seekable);
+	engine::Point2d register_coord = tree.range_intersect(target, seekable);
 	//返回坐标非树根坐标
 	EXPECT_NE(register_coord, (engine::Point2d(0.5, 0.5)));
 	//标记值取自原可查询范围的右边界
@@ -269,19 +269,19 @@ TEST_F(Quadtree_Test, 扩大保留原有区块)
 	//已配置的四叉树
 	engine::Quadtree<int> tree = make_tree();
 	//先建立一条区块路径
-	std::shared_ptr<engine::Tree_Chunk_Data<int>> before;
+	engine::Tree_Chunk_Data<int> before;
 	tree.get({ 0, 0 }, before);
-	ASSERT_NE(before, nullptr);
+	ASSERT_NE(before.data, nullptr);
 	//记录扩展前命中的区块存储
-	std::shared_ptr<int> storage_before = before->data;
+	std::shared_ptr<int> storage_before = before.data;
 	//手动扩大一次
 	ASSERT_TRUE(tree.tree_expand());
 	//同一坐标再次获取
-	std::shared_ptr<engine::Tree_Chunk_Data<int>> after;
+	engine::Tree_Chunk_Data<int> after;
 	tree.get({ 0, 0 }, after);
-	ASSERT_NE(after, nullptr);
+	ASSERT_NE(after.data, nullptr);
 	//仍落在同一块区块存储上
-	EXPECT_EQ(after->data, storage_before);
+	EXPECT_EQ(after.data, storage_before);
 }
 
 // ———— 区块构建 ————
@@ -294,15 +294,15 @@ TEST_F(Quadtree_Test, build单点创建叶子后可seek取回)
 	//按单点建出区块
 	tree.build({ 0, 0 });
 	//检索结果
-	std::shared_ptr<engine::Tree_Chunk_Data<int>> receiver;
+	engine::Tree_Chunk_Data<int> receiver;
 	//只读取回同一区块
 	tree.seek({ 0, 0 }, receiver);
-	ASSERT_NE(receiver, nullptr);
+	ASSERT_NE(receiver.data, nullptr);
 	//新区块已挂载默认分配的区块数据
-	EXPECT_NE(receiver->data, nullptr);
+	EXPECT_NE(receiver.data, nullptr);
 	//区块中心为叶子范围中点
-	EXPECT_DOUBLE_EQ(receiver->node.X, -7.5);
-	EXPECT_DOUBLE_EQ(receiver->node.Y, -7.5);
+	EXPECT_DOUBLE_EQ(receiver.center.X, -7.5);
+	EXPECT_DOUBLE_EQ(receiver.center.Y, -7.5);
 }
 
 //区块构建：挂载自定义数据后可原样取回同一对象
@@ -316,13 +316,13 @@ TEST_F(Quadtree_Test, build挂载自定义数据可原样取回)
 	//按单点建出区块并挂载数据
 	tree.build({ 0, 0 }, data);
 	//检索结果
-	std::shared_ptr<engine::Tree_Chunk_Data<int>> receiver;
+	engine::Tree_Chunk_Data<int> receiver;
 	tree.seek({ 0, 0 }, receiver);
-	ASSERT_NE(receiver, nullptr);
+	ASSERT_NE(receiver.data, nullptr);
 	//取回的是同一区块数据对象
-	EXPECT_EQ(receiver->data, data);
+	EXPECT_EQ(receiver.data, data);
 	//数据内容未被改动
-	EXPECT_EQ(*receiver->data, 42);
+	EXPECT_EQ(*receiver.data, 42);
 }
 
 //区块构建：范围构建后单点与范围均可取回
@@ -333,17 +333,17 @@ TEST_F(Quadtree_Test, build范围创建后单点与范围均可取回)
 	//按范围建出区块
 	tree.build(engine::Rect2l(-15, 0, 0, -15));
 	//单点取回该区块
-	std::shared_ptr<engine::Tree_Chunk_Data<int>> point;
+	engine::Tree_Chunk_Data<int> point;
 	tree.seek(engine::Point2l(0, 0), point);
-	ASSERT_NE(point, nullptr);
+	ASSERT_NE(point.data, nullptr);
 	//区块数据已随范围构建分配
-	EXPECT_NE(point->data, nullptr);
+	EXPECT_NE(point.data, nullptr);
 	//范围取回同一区块
-	std::vector<std::shared_ptr<engine::Tree_Chunk_Data<int>>> range_receiver{};
+	std::vector<engine::Tree_Chunk_Data<int>> range_receiver{};
 	tree.seek(engine::Rect2l(-15, 0, 0, -15), range_receiver);
 	ASSERT_EQ(range_receiver.size(), 1u);
 	//两条路径指向同一区块数据
-	EXPECT_EQ(range_receiver[0]->data, point->data);
+	EXPECT_EQ(range_receiver[0].data, point.data);
 	chunk_clean(range_receiver);
 }
 
@@ -355,16 +355,16 @@ TEST_F(Quadtree_Test, get不存在时创建存在时取回同一叶子)
 	//已配置的四叉树
 	engine::Quadtree<int> tree = make_tree();
 	//首次获取创建区块
-	std::shared_ptr<engine::Tree_Chunk_Data<int>> first;
+	engine::Tree_Chunk_Data<int> first;
 	tree.get({ 0, 0 }, first);
-	ASSERT_NE(first, nullptr);
-	ASSERT_NE(first->data, nullptr);
+	ASSERT_NE(first.data, nullptr);
+	ASSERT_NE(first.data, nullptr);
 	//再次获取命中已有叶子
-	std::shared_ptr<engine::Tree_Chunk_Data<int>> second;
+	engine::Tree_Chunk_Data<int> second;
 	tree.get({ 0, 0 }, second);
-	ASSERT_NE(second, nullptr);
+	ASSERT_NE(second.data, nullptr);
 	//两次指向同一区块数据
-	EXPECT_EQ(first->data, second->data);
+	EXPECT_EQ(first.data, second.data);
 }
 
 //区块查找：seek 不创建区块而 get 会创建
@@ -373,18 +373,18 @@ TEST_F(Quadtree_Test, seek不创建区块而get会创建)
 	//已配置的四叉树
 	engine::Quadtree<int> tree = make_tree();
 	//只读查找结果
-	std::shared_ptr<engine::Tree_Chunk_Data<int>> seek_receiver;
+	engine::Tree_Chunk_Data<int> seek_receiver;
 	//只读查找尚未建立的区块
 	tree.seek({ 0, 0 }, seek_receiver);
 	//只读查找不创建区块
-	EXPECT_EQ(seek_receiver, nullptr);
+	EXPECT_EQ(seek_receiver.data, nullptr);
 	//获取结果
-	std::shared_ptr<engine::Tree_Chunk_Data<int>> get_receiver;
+	engine::Tree_Chunk_Data<int> get_receiver;
 	//获取模式在同一坐标创建区块
 	tree.get({ 0, 0 }, get_receiver);
 	//获取模式建出并取回区块
-	ASSERT_NE(get_receiver, nullptr);
-	EXPECT_NE(get_receiver->data, nullptr);
+	ASSERT_NE(get_receiver.data, nullptr);
+	EXPECT_NE(get_receiver.data, nullptr);
 }
 
 //区块获取：重复获取命中同一区块存储
@@ -393,15 +393,15 @@ TEST_F(Quadtree_Test, 稳定模式重复查询命中同一存储)
 	//已配置的四叉树
 	engine::Quadtree<int> tree = make_tree();
 	//两次检索结果
-	std::shared_ptr<engine::Tree_Chunk_Data<int>> first;
-	std::shared_ptr<engine::Tree_Chunk_Data<int>> second;
+	engine::Tree_Chunk_Data<int> first;
+	engine::Tree_Chunk_Data<int> second;
 	//同一坐标获取两次
 	tree.get({ 0, 0 }, first);
 	tree.get({ 0, 0 }, second);
-	ASSERT_NE(first, nullptr);
-	ASSERT_NE(second, nullptr);
+	ASSERT_NE(first.data, nullptr);
+	ASSERT_NE(second.data, nullptr);
 	//两次指向同一叶子
-	EXPECT_EQ(first->data, second->data);
+	EXPECT_EQ(first.data, second.data);
 }
 
 //区块获取：不同区块相互独立
@@ -410,18 +410,18 @@ TEST_F(Quadtree_Test, 不同区块相互独立)
 	//已配置的四叉树
 	engine::Quadtree<int> tree = make_tree();
 	//两个不同区块的检索结果
-	std::shared_ptr<engine::Tree_Chunk_Data<int>> west;
-	std::shared_ptr<engine::Tree_Chunk_Data<int>> east;
+	engine::Tree_Chunk_Data<int> west;
+	engine::Tree_Chunk_Data<int> east;
 	//原点与 (10,10) 分属不同区块
 	tree.get({ 0, 0 }, west);
 	tree.get({ 10, 10 }, east);
-	ASSERT_NE(west, nullptr);
-	ASSERT_NE(east, nullptr);
+	ASSERT_NE(west.data, nullptr);
+	ASSERT_NE(east.data, nullptr);
 	//两块叶子互不相同
-	EXPECT_NE(west->data, east->data);
+	EXPECT_NE(west.data, east.data);
 	//区块中心各自独立
-	EXPECT_DOUBLE_EQ(west->node.X, -7.5);
-	EXPECT_DOUBLE_EQ(east->node.X, 8.5);
+	EXPECT_DOUBLE_EQ(west.center.X, -7.5);
+	EXPECT_DOUBLE_EQ(east.center.X, 8.5);
 }
 
 //区块获取：同一区块内的坐标命中同一叶子
@@ -430,17 +430,17 @@ TEST_F(Quadtree_Test, 同区块坐标命中同一叶子)
 	//已配置的四叉树
 	engine::Quadtree<int> tree = make_tree();
 	//同一区块内的两个检索结果
-	std::shared_ptr<engine::Tree_Chunk_Data<int>> origin;
-	std::shared_ptr<engine::Tree_Chunk_Data<int>> corner;
+	engine::Tree_Chunk_Data<int> origin;
+	engine::Tree_Chunk_Data<int> corner;
 	//(0,0) 与 (-15,-15) 同属 [-15,0] 区块
 	tree.get({ 0, 0 }, origin);
 	tree.get({ -15, -15 }, corner);
-	ASSERT_NE(origin, nullptr);
-	ASSERT_NE(corner, nullptr);
+	ASSERT_NE(origin.data, nullptr);
+	ASSERT_NE(corner.data, nullptr);
 	//两个坐标落到同一叶子存储
-	EXPECT_EQ(origin->data, corner->data);
+	EXPECT_EQ(origin.data, corner.data);
 	//区块中心一致
-	EXPECT_DOUBLE_EQ(origin->node.X, corner->node.X);
+	EXPECT_DOUBLE_EQ(origin.center.X, corner.center.X);
 }
 
 //区块获取：区块边界两侧分属不同叶子
@@ -449,15 +449,15 @@ TEST_F(Quadtree_Test, 区块边界两侧分属不同叶子)
 	//已配置的四叉树
 	engine::Quadtree<int> tree = make_tree();
 	//边界两侧的检索结果
-	std::shared_ptr<engine::Tree_Chunk_Data<int>> inside;
-	std::shared_ptr<engine::Tree_Chunk_Data<int>> outside;
+	engine::Tree_Chunk_Data<int> inside;
+	engine::Tree_Chunk_Data<int> outside;
 	//(0,0) 在 [-15,0] 内，(-16,-16) 已跨到相邻区块
 	tree.get({ 0, 0 }, inside);
 	tree.get({ -16, -16 }, outside);
-	ASSERT_NE(inside, nullptr);
-	ASSERT_NE(outside, nullptr);
+	ASSERT_NE(inside.data, nullptr);
+	ASSERT_NE(outside.data, nullptr);
 	//两者属于不同叶子
-	EXPECT_NE(inside->data, outside->data);
+	EXPECT_NE(inside.data, outside.data);
 }
 
 //只读查找：不建立路径
@@ -466,11 +466,11 @@ TEST_F(Quadtree_Test, 非稳定模式不建立路径)
 	//已配置的四叉树
 	engine::Quadtree<int> tree = make_tree();
 	//检索结果
-	std::shared_ptr<engine::Tree_Chunk_Data<int>> receiver;
+	engine::Tree_Chunk_Data<int> receiver;
 	//只读查询未建立过的坐标
 	tree.seek({ 0, 0 }, receiver);
 	//路径不存在，取不到区块
-	EXPECT_EQ(receiver, nullptr);
+	EXPECT_EQ(receiver.data, nullptr);
 }
 
 //只读查找：可命中已建立的路径
@@ -479,15 +479,15 @@ TEST_F(Quadtree_Test, 非稳定模式命中已建立路径)
 	//已配置的四叉树
 	engine::Quadtree<int> tree = make_tree();
 	//先用获取模式建立路径
-	std::shared_ptr<engine::Tree_Chunk_Data<int>> created;
+	engine::Tree_Chunk_Data<int> created;
 	tree.get({ 0, 0 }, created);
-	ASSERT_NE(created, nullptr);
+	ASSERT_NE(created.data, nullptr);
 	//同区块的另一坐标走只读查找
-	std::shared_ptr<engine::Tree_Chunk_Data<int>> hit;
+	engine::Tree_Chunk_Data<int> hit;
 	tree.seek({ -15, -15 }, hit);
-	ASSERT_NE(hit, nullptr);
+	ASSERT_NE(hit.data, nullptr);
 	//命中同一叶子存储
-	EXPECT_EQ(hit->data, created->data);
+	EXPECT_EQ(hit.data, created.data);
 }
 
 //退化树：范围查找不产出结果
@@ -498,7 +498,7 @@ TEST_F(Quadtree_Test, 退化树范围查询不产出结果)
 	//构造递归级数为零的退化树
 	engine::Quadtree<int> tree = make_tree(16, { 0.5, 0.5 }, 9);
 	//范围检索结果集合
-	std::vector<std::shared_ptr<engine::Tree_Chunk_Data<int>>> receiver{};
+	std::vector<engine::Tree_Chunk_Data<int>> receiver{};
 	//范围只读查找
 	tree.seek(engine::Rect2l(-7, 8, 8, -7), receiver);
 	//无可寻址叶子，结果为空
@@ -506,21 +506,20 @@ TEST_F(Quadtree_Test, 退化树范围查询不产出结果)
 	chunk_clean(receiver);
 }
 
-//退化树：单点查找触发引擎缺陷，暂不验证
-//退化树递归级数为零，单点查找会直接对根节点（中间节点）执行
-//std::get<1>(根节点数据)以取区块数据，而根节点持有的是子节点数组，
-//故抛 std::bad_variant_access。此为引擎实现缺陷，非测试可修正范围，
-//留待引擎层补齐退化树单点查找的空值防御后再启用。
-TEST_F(Quadtree_Test, 退化树单点查询触发引擎缺陷)
+//退化树：单点查询安全返回空
+//区块单元不是 2 的幂时 set_block_size 会拒绝写入，
+//此时树的区块单元保持为 0，任何区块操作都会直接返回。
+TEST_F(Quadtree_Test, 退化树单点查询安全返回空)
 {
-	GTEST_SKIP() << "退化树单点查找对中间节点取区块数据抛 std::bad_variant_access，属引擎缺陷";
-	//使递归级数为零的退化树（区块单元大于边长一半）
+	//构造区块单元非法的四叉树
 	engine::Quadtree<int> tree = make_tree(16, { 0.5, 0.5 }, 9);
+	//非法区块单元未被写入
+	EXPECT_EQ(tree.tree_state_get().block_size, 0u);
 	//检索结果
-	std::shared_ptr<engine::Tree_Chunk_Data<int>> receiver;
-	//单点只读查找
-	tree.seek({ 0, 0 }, receiver);
-	EXPECT_EQ(receiver, nullptr);
+	engine::Tree_Chunk_Data<int> receiver;
+	//单点只读查找安全返回未命中
+	EXPECT_FALSE(tree.seek({ 0, 0 }, receiver));
+	EXPECT_EQ(receiver.data, nullptr);
 }
 
 // ———— 卸载 ————
@@ -534,17 +533,17 @@ TEST_F(Quadtree_Test, unload单点后叶子被移除)
 	//先建出区块
 	tree.build({ 0, 0 });
 	//卸载前确认区块数据存在
-	std::shared_ptr<engine::Tree_Chunk_Data<int>> before;
+	engine::Tree_Chunk_Data<int> before;
 	tree.seek({ 0, 0 }, before);
-	ASSERT_NE(before, nullptr);
-	ASSERT_NE(before->data, nullptr);
+	ASSERT_NE(before.data, nullptr);
+	ASSERT_NE(before.data, nullptr);
 	//卸载该区块
 	tree.unload({ 0, 0 });
 	//卸载后只读取回
-	std::shared_ptr<engine::Tree_Chunk_Data<int>> after;
+	engine::Tree_Chunk_Data<int> after;
 	tree.seek({ 0, 0 }, after);
 	//叶子节点已被移除，查找不再返回结果
-	EXPECT_EQ(after, nullptr);
+	EXPECT_EQ(after.data, nullptr);
 }
 
 //区块卸载：范围卸载移除叶子节点本身
@@ -555,17 +554,17 @@ TEST_F(Quadtree_Test, unload范围后叶子被移除)
 	//按范围建出区块
 	tree.build(engine::Rect2l(-15, 0, 0, -15));
 	//卸载前确认区块数据存在
-	std::shared_ptr<engine::Tree_Chunk_Data<int>> before;
+	engine::Tree_Chunk_Data<int> before;
 	tree.seek(engine::Point2l(0, 0), before);
-	ASSERT_NE(before, nullptr);
-	ASSERT_NE(before->data, nullptr);
+	ASSERT_NE(before.data, nullptr);
+	ASSERT_NE(before.data, nullptr);
 	//按范围卸载该区块
 	tree.unload(engine::Rect2l(-15, 0, 0, -15));
 	//卸载后只读取回
-	std::shared_ptr<engine::Tree_Chunk_Data<int>> after;
+	engine::Tree_Chunk_Data<int> after;
 	tree.seek(engine::Point2l(0, 0), after);
 	//叶子节点已被移除，查找不再返回结果
-	EXPECT_EQ(after, nullptr);
+	EXPECT_EQ(after.data, nullptr);
 }
 
 // ———— 64 位坐标 ————
@@ -584,14 +583,14 @@ TEST_F(Quadtree_Test, 64位坐标可建出并取回区块)
 	//边长被逐级翻倍至 2 的 41 次方
 	EXPECT_EQ(tree.tree_state_get().size, (1ull << 41));
 	//检索结果
-	std::shared_ptr<engine::Tree_Chunk_Data<int>> receiver;
+	engine::Tree_Chunk_Data<int> receiver;
 	//按同一大坐标只读取回区块
 	tree.seek(engine::Point2l(big, big), receiver);
-	ASSERT_NE(receiver, nullptr);
-	EXPECT_NE(receiver->data, nullptr);
+	ASSERT_NE(receiver.data, nullptr);
+	EXPECT_NE(receiver.data, nullptr);
 	//区块中心落在目标坐标半个区块边长以内
-	EXPECT_LE(std::abs(receiver->node.X - static_cast<double>(big)), 16.0);
-	EXPECT_LE(std::abs(receiver->node.Y - static_cast<double>(big)), 16.0);
+	EXPECT_LE(std::abs(receiver.center.X - static_cast<double>(big)), 16.0);
+	EXPECT_LE(std::abs(receiver.center.Y - static_cast<double>(big)), 16.0);
 }
 
 // ———— 越界与扩大联动 ————
@@ -604,15 +603,15 @@ TEST_F(Quadtree_Test, 越界检索经回调放行后扩大)
 	//回调一律放行
 	tree.set_callback_manage([](engine::Point2d, engine::Point2l) { return true; });
 	//检索结果
-	std::shared_ptr<engine::Tree_Chunk_Data<int>> receiver;
+	engine::Tree_Chunk_Data<int> receiver;
 	//获取超出当前管理范围的坐标
 	tree.get({ 200, 200 }, receiver);
 	//边长被扩大一次
 	EXPECT_EQ(tree.tree_state_get().size, 512u);
 	//扩大后该坐标落在树内并取到区块
-	ASSERT_NE(receiver, nullptr);
+	ASSERT_NE(receiver.data, nullptr);
 	//数据指针有效
-	EXPECT_NE(receiver->data, nullptr);
+	EXPECT_NE(receiver.data, nullptr);
 }
 
 //越界检索：回调拒绝时不扩大
@@ -623,13 +622,13 @@ TEST_F(Quadtree_Test, 越界检索被回调拒绝)
 	//回调一律拒绝
 	tree.set_callback_manage([](engine::Point2d, engine::Point2l) { return false; });
 	//检索结果
-	std::shared_ptr<engine::Tree_Chunk_Data<int>> receiver;
+	engine::Tree_Chunk_Data<int> receiver;
 	//获取超出当前管理范围的坐标
 	tree.get({ 200, 200 }, receiver);
 	//边长未变
 	EXPECT_EQ(tree.tree_state_get().size, 256u);
 	//未取到区块
-	EXPECT_EQ(receiver, nullptr);
+	EXPECT_EQ(receiver.data, nullptr);
 }
 
 //越界检索：未注册回调时仍会自动扩大
@@ -638,7 +637,7 @@ TEST_F(Quadtree_Test, 越界检索无回调时扩大)
 	//已配置的四叉树
 	engine::Quadtree<int> tree = make_tree();
 	//检索结果
-	std::shared_ptr<engine::Tree_Chunk_Data<int>> receiver;
+	engine::Tree_Chunk_Data<int> receiver;
 	//不注册回调直接获取越界坐标
 	tree.get({ 200, 200 }, receiver);
 	//边长被扩大一次
@@ -654,17 +653,17 @@ TEST_F(Quadtree_Test, 达到边长上限不再扩大)
 	//把上限设为 512（须严格大于当前边长 256）
 	ASSERT_TRUE(tree.set_max_size(512));
 	//首次越界获取把边长撑到上限
-	std::shared_ptr<engine::Tree_Chunk_Data<int>> first;
+	engine::Tree_Chunk_Data<int> first;
 	tree.get({ 200, 200 }, first);
 	ASSERT_EQ(tree.tree_state_get().size, 512u);
 	//检索结果
-	std::shared_ptr<engine::Tree_Chunk_Data<int>> receiver;
+	engine::Tree_Chunk_Data<int> receiver;
 	//获取远超管理范围的坐标
 	tree.get({ 100000, 100000 }, receiver);
 	//边长保持在上限
 	EXPECT_EQ(tree.tree_state_get().size, 512u);
 	//未取到区块
-	EXPECT_EQ(receiver, nullptr);
+	EXPECT_EQ(receiver.data, nullptr);
 }
 
 //越界检索：达到上限时回调收到一次通报
@@ -676,7 +675,7 @@ TEST_F(Quadtree_Test, 达到上限时回调收到通报)
 	//把上限设为 512
 	ASSERT_TRUE(tree.set_max_size(512));
 	//无回调地把边长撑到上限
-	std::shared_ptr<engine::Tree_Chunk_Data<int>> warm;
+	engine::Tree_Chunk_Data<int> warm;
 	tree.get({ 200, 200 }, warm);
 	ASSERT_EQ(tree.tree_state_get().size, 512u);
 	//记录回调次数
@@ -688,13 +687,13 @@ TEST_F(Quadtree_Test, 达到上限时回调收到通报)
 			return false;
 		});
 	//检索结果
-	std::shared_ptr<engine::Tree_Chunk_Data<int>> receiver;
+	engine::Tree_Chunk_Data<int> receiver;
 	//获取远超管理范围的坐标
 	tree.get({ 100000, 100000 }, receiver);
 	//上限分支下回调被调用一次，仅作通报
 	EXPECT_EQ(call_count, 1);
 	//未取到区块
-	EXPECT_EQ(receiver, nullptr);
+	EXPECT_EQ(receiver.data, nullptr);
 }
 
 //越界检索：单次调用连续扩大直至容纳目标坐标
@@ -707,7 +706,7 @@ TEST_F(Quadtree_Test, 越界检索连续扩大直至容纳目标)
 	//已配置的四叉树
 	engine::Quadtree<int> tree = make_tree();
 	//检索结果
-	std::shared_ptr<engine::Tree_Chunk_Data<int>> receiver;
+	engine::Tree_Chunk_Data<int> receiver;
 	//获取远超出管理范围的坐标
 	tree.get({ 100000, 100000 }, receiver);
 	//边长被逐级翻倍至足以覆盖 (100000,100000) 的 262144
@@ -722,15 +721,15 @@ TEST_F(Quadtree_Test, 范围检索单区块)
 	//已配置的四叉树
 	engine::Quadtree<int> tree = make_tree();
 	//检索结果集合
-	std::vector<std::shared_ptr<engine::Tree_Chunk_Data<int>>> receiver;
+	std::vector<engine::Tree_Chunk_Data<int>> receiver;
 	//获取原点所在区块
 	engine::Rect2l range{ -15, 0, 0, -15 };
 	tree.get(range, receiver);
 	//恰好命中一个区块
 	ASSERT_EQ(receiver.size(), 1u);
 	//区块中心与单点检索一致
-	EXPECT_DOUBLE_EQ(receiver[0]->node.X, -7.5);
-	EXPECT_DOUBLE_EQ(receiver[0]->node.Y, -7.5);
+	EXPECT_DOUBLE_EQ(receiver[0].center.X, -7.5);
+	EXPECT_DOUBLE_EQ(receiver[0].center.Y, -7.5);
 	chunk_clean(receiver);
 }
 
@@ -740,7 +739,7 @@ TEST_F(Quadtree_Test, 范围检索跨区块)
 	//已配置的四叉树
 	engine::Quadtree<int> tree = make_tree();
 	//检索结果集合
-	std::vector<std::shared_ptr<engine::Tree_Chunk_Data<int>>> receiver;
+	std::vector<engine::Tree_Chunk_Data<int>> receiver;
 	//获取横跨四块区块的范围
 	engine::Rect2l range{ -15, 16, 16, -15 };
 	tree.get(range, receiver);
@@ -753,13 +752,13 @@ TEST_F(Quadtree_Test, 范围检索跨区块)
 	bool has_ne = false;
 	for (const auto& item : receiver)
 	{
-		if (item->node.X == -7.5 && item->node.Y == -7.5)
+		if (item.center.X == -7.5 && item.center.Y == -7.5)
 			has_sw = true;
-		if (item->node.X == 8.5 && item->node.Y == -7.5)
+		if (item.center.X == 8.5 && item.center.Y == -7.5)
 			has_se = true;
-		if (item->node.X == -7.5 && item->node.Y == 8.5)
+		if (item.center.X == -7.5 && item.center.Y == 8.5)
 			has_nw = true;
-		if (item->node.X == 8.5 && item->node.Y == 8.5)
+		if (item.center.X == 8.5 && item.center.Y == 8.5)
 			has_ne = true;
 	}
 	//四块区块齐全且互不重复
@@ -776,16 +775,16 @@ TEST_F(Quadtree_Test, 范围检索与单点检索一致)
 	//已配置的四叉树
 	engine::Quadtree<int> tree = make_tree();
 	//先做一次单点获取
-	std::shared_ptr<engine::Tree_Chunk_Data<int>> point;
+	engine::Tree_Chunk_Data<int> point;
 	tree.get({ 0, 0 }, point);
-	ASSERT_NE(point, nullptr);
+	ASSERT_NE(point.data, nullptr);
 	//再做同区块的范围获取
-	std::vector<std::shared_ptr<engine::Tree_Chunk_Data<int>>> receiver;
+	std::vector<engine::Tree_Chunk_Data<int>> receiver;
 	engine::Rect2l range{ -15, 0, 0, -15 };
 	tree.get(range, receiver);
 	ASSERT_EQ(receiver.size(), 1u);
 	//两条路径指向同一叶子存储
-	EXPECT_EQ(receiver[0]->data, point->data);
+	EXPECT_EQ(receiver[0].data, point.data);
 	chunk_clean(receiver);
 }
 
@@ -795,7 +794,7 @@ TEST_F(Quadtree_Test, 范围检索非稳定模式)
 	//已配置的四叉树
 	engine::Quadtree<int> tree = make_tree();
 	//检索结果集合
-	std::vector<std::shared_ptr<engine::Tree_Chunk_Data<int>>> receiver;
+	std::vector<engine::Tree_Chunk_Data<int>> receiver;
 	//只读模式查询新区块
 	engine::Rect2l range{ -15, 0, 0, -15 };
 	tree.seek(range, receiver);
@@ -812,7 +811,7 @@ TEST_F(Quadtree_Test, 范围检索越界触发扩大)
 	//回调一律放行
 	tree.set_callback_manage([](engine::Point2d, engine::Point2l) { return true; });
 	//检索结果集合
-	std::vector<std::shared_ptr<engine::Tree_Chunk_Data<int>>> receiver;
+	std::vector<engine::Tree_Chunk_Data<int>> receiver;
 	//获取向右越界的范围
 	engine::Rect2l range{ 100, 200, 16, -15 };
 	tree.get(range, receiver);
@@ -840,14 +839,14 @@ TEST_F(Quadtree_Test, 空树析构)
 TEST_F(Quadtree_Test, 建立路径后析构)
 {
 	//检索结果在作用域外持有
-	std::shared_ptr<engine::Tree_Chunk_Data<int>> receiver;
+	engine::Tree_Chunk_Data<int> receiver;
 	//作用域内获取后离开
 	{
 		engine::Quadtree<int> tree = make_tree();
 		tree.get({ 0, 0 }, receiver);
 	}
 	//执行至此说明回收路径未崩溃
-	ASSERT_NE(receiver, nullptr);
+	ASSERT_NE(receiver.data, nullptr);
 }
 
 //析构：反复扩大后可安全析构

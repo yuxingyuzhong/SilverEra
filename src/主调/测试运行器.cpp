@@ -20,11 +20,15 @@ namespace engine
         installed = true;
         //接入输出镜像监听器
         ::testing::UnitTest::GetInstance()->listeners().Append(&mirror);
-        //释放默认打印器（转移所有权给本进程，需自行释放，避免控制台重复输出）
+        //释放默认打印器：Release 把所有权交给调用方，须自行 delete，否则泄漏
+        //（释放后控制台不再重复打印，输出只进界面镜像）
         ::testing::TestEventListener* default_printer =
             ::testing::UnitTest::GetInstance()->listeners().default_result_printer();
         if (default_printer != nullptr)
+        {
             ::testing::UnitTest::GetInstance()->listeners().Release(default_printer);
+            delete default_printer;
+        }
     }
 
     //请求运行一轮
@@ -39,6 +43,9 @@ namespace engine
         //若当前空闲则启动工作线程
         if (state.load() == static_cast<int>(State::Idle))
         {
+            //上一轮线程可能已结束但仍 joinable：赋新 thread 前必须先 join，否则 std::terminate
+            if (worker.joinable())
+                worker.join();
             state.store(static_cast<int>(State::Running));
             worker = std::thread([this] { worker_main(); });
         }
@@ -67,6 +74,13 @@ namespace engine
         //等待工作线程结束（若正在跑一轮，将等待其完成）
         if (worker.joinable())
             worker.join();
+        //从 gtest 监听器列表摘除镜像：Release 只摘除、不析构（镜像为本类成员）
+        //不摘除会使监听器列表在本对象销毁后仍持有悬垂指针
+        if (installed)
+        {
+            ::testing::UnitTest::GetInstance()->listeners().Release(&mirror);
+            installed = false;
+        }
     }
 
     //是否处于运行状态
@@ -78,7 +92,7 @@ namespace engine
     //上一轮退出码
     int Test_Runner::last_exit_code(void) const
     {
-        return exit_code;
+        return exit_code.load();
     }
 
     //取当前轮进度

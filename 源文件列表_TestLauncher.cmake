@@ -35,5 +35,6 @@ target_sources(TestLauncher PRIVATE
     "src/主调/测试运行器.h"
     "src/主调/测试运行记录.h"
     "src/主调/测试选择模型.h"
+    "src/主调/能力展示场景.h"
     "src/主调/退出等待判定.h"
 )

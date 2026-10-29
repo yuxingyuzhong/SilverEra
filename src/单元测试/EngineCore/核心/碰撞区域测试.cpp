@@ -244,7 +244,7 @@ TEST_F(Collision_Region_Test, 空间边界构建与卸载)
 	//重复构建覆盖原有边界
 	EXPECT_TRUE(region.boundary_build(mesh_name));
 	//非法路径构建失败
-	EXPECT_FALSE(region.boundary_build("src/单元测试/核心/不存在的网格.obj"));
+	EXPECT_FALSE(region.boundary_build("src/单元测试/EngineCore/核心/不存在的网格.obj"));
 
 	//卸载空间边界
 	region.boundary_unload();

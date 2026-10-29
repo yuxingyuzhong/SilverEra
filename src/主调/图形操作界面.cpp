@@ -185,6 +185,8 @@ namespace engine
             //界面请求进入 / 退出展示模式（主循环执行资源搭建与释放）
             bool 请求进入展示 = false;
             bool 请求退出展示 = false;
+            //从展示模式返回测试界面那一帧抑制 Esc 退出（同一按键沿不得二次生效）
+            bool 抑制退出键 = false;
             //展示模式的相机输入（界面采集，主循环消费）
             展示输入 输入{};
 			//能力展示场景（非空即表示已搭建）
@@ -206,10 +208,10 @@ namespace engine
         //展示模式的叠加层（能力清单 ＋ 相机与帧统计 ＋ 操作提示 ＋ 返回按钮）
         void 绘制展示叠加层(Ui_会话上下文& 上下文, const 能力展示场景& 场景)
         {
-            //左上角信息面板
+            //左上角信息面板（宽度按最长说明行折行；第二百一十八轮修正文字被裁剪问题）
             const ImGuiViewport* 视口 = ImGui::GetMainViewport();
             ImGui::SetNextWindowPos(ImVec2(视口->WorkPos.x + 16.0f, 视口->WorkPos.y + 16.0f));
-            ImGui::SetNextWindowSize(ImVec2(352.0f, 0.0f));
+            ImGui::SetNextWindowSize(ImVec2(430.0f, 0.0f));
             //展示模式下没有蓝色渐变背景，本面板必须自带不透明底色，否则整个面板不可见
             ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.04f, 0.07f, 0.14f, 0.92f));
             ImGui::Begin("##能力展示信息", nullptr,
@@ -217,40 +219,40 @@ namespace engine
                 | ImGuiWindowFlags_NoFocusOnAppearing);
             ImGui::TextUnformatted("渲染能力展示 · 可漫游场景");
             ImGui::Separator();
-            //展区图例（与三维投影标签一一对应）
+            //展区图例（与三维投影标签一一对应；长行自动折行，避免右端被窗口裁剪）
             ImGui::TextUnformatted("七个展区（场景内有同名标签）：");
-            ImGui::Bullet(); ImGui::TextUnformatted("① 程序化网格：八种图元环形排布");
-            ImGui::Bullet(); ImGui::TextUnformatted("② PBR 材质：粗糙度 / 金属度 / 法线贴图 / 自发光");
-            ImGui::Bullet(); ImGui::TextUnformatted("③ 光照与阴影：方向光 / 点光 / 聚光 / 三级级联");
-            ImGui::Bullet(); ImGui::TextUnformatted("④ 实例化合批：阶梯金字塔一次提交");
-            ImGui::Bullet(); ImGui::TextUnformatted("⑤ 几何拼接：拱门 / 晶塔 / 环阵");
-            ImGui::Bullet(); ImGui::TextUnformatted("⑥ 纹理与动态：棋盘 / 动态更新 / UV 立方");
-            ImGui::Bullet(); ImGui::TextUnformatted("⑦ 卡通渲染：走近该区即切换为色阶量化 / 边缘光 / 暗部色调 / 卡通高光");
-            ImGui::Bullet(); ImGui::TextUnformatted("多线程：4 工作线程（并行剔除 / 差异扫描；场景 pass 与阴影 pass 均按段并行录制）");
+            ImGui::Bullet(); ImGui::TextWrapped("① 程序化网格：八种图元环形排布（含细分地形底板）");
+            ImGui::Bullet(); ImGui::TextWrapped("② PBR 材质：粗糙度 / 金属度 / 法线贴图 / 自发光");
+            ImGui::Bullet(); ImGui::TextWrapped("③ 光照与阴影：方向光 / 点光 / 聚光 / 三级级联");
+            ImGui::Bullet(); ImGui::TextWrapped("④ 实例化合批：阶梯金字塔一次提交");
+            ImGui::Bullet(); ImGui::TextWrapped("⑤ 几何拼接：拱门 / 晶塔 / 环阵");
+            ImGui::Bullet(); ImGui::TextWrapped("⑥ 纹理与动态：棋盘 / 动态更新 / UV 立方");
+            ImGui::Bullet(); ImGui::TextWrapped("⑦ 卡通渲染：走近该区即切换色阶量化 / 边缘光 / 暗部色调 / 卡通高光");
+            ImGui::Bullet(); ImGui::TextWrapped("多线程：4 工作线程（并行剔除 / 差异扫描；场景 pass 与阴影 pass 均按段并行录制）");
             ImGui::Separator();
             float 位置[3] = { 0.0f, 0.0f, 0.0f };
             场景.相机位置(位置);
-            ImGui::Text("相机：%.1f, %.1f, %.1f   偏航 %.2f / 俯仰 %.2f", 位置[0], 位置[1], 位置[2],
+            ImGui::TextWrapped("相机：%.1f, %.1f, %.1f   偏航 %.2f / 俯仰 %.2f", 位置[0], 位置[1], 位置[2],
                 场景.偏航(), 场景.俯仰());
-            ImGui::Text("帧数 %llu   绘制 %llu   合并 %llu   剔除 %llu   %.2f ms",
+            ImGui::TextWrapped("帧数 %llu   绘制 %llu   合并 %llu   剔除 %llu   %.2f ms",
                 static_cast<unsigned long long>(上下文.运行状态.frames),
                 static_cast<unsigned long long>(上下文.运行状态.drawn_items),
                 static_cast<unsigned long long>(上下文.运行状态.last_merged_items),
                 static_cast<unsigned long long>(上下文.运行状态.last_culled_items),
                 上下文.运行状态.frame_ms);
-            ImGui::Text("最近一帧交给录制 %llu 项（若为 0 说明绘制项被跳过）",
+            ImGui::TextWrapped("最近一帧交给录制 %llu 项（若为 0 说明绘制项被跳过）",
                 static_cast<unsigned long long>(上下文.运行状态.last_draw_items));
-            ImGui::Text("MSAA %u×   阴影 %u 项（最近一帧%s）",
+            ImGui::TextWrapped("MSAA %u×   阴影 %u 项（最近一帧%s）",
                 上下文.运行状态.msaa_samples,
                 上下文.运行状态.last_shadow_items,
                 上下文.运行状态.shadow_last_redrawn != 0 ? "重绘" : "复用");
-            ImGui::Text("渲染线程 %u   并行派发 %llu   最近一帧并行段 %u   阴影段 %u",
+            ImGui::TextWrapped("渲染线程 %u   并行派发 %llu   最近一帧并行段 %u   阴影段 %u",
                 上下文.运行状态.render_threads,
                 static_cast<unsigned long long>(上下文.运行状态.parallel_dispatches),
                 上下文.运行状态.parallel_segments,
                 上下文.运行状态.shadow_parallel_segments);
             ImGui::Separator();
-            ImGui::TextUnformatted("操作：WASD 移动 · E / 空格 上升 · Q / Shift 下降 · 右键拖拽看向 · 滚轮调速 · ESC 返回");
+            ImGui::TextWrapped("操作：WASD 移动 · E / 空格 上升 · Q / Shift 下降 · 右键拖拽看向 · 滚轮调速 · ESC 返回");
             if (ImGui::Button("返回测试界面", ImVec2(150.0f, 30.0f)))
                 上下文.请求退出展示 = true;
             ImGui::SameLine();
@@ -258,20 +260,6 @@ namespace engine
                 上下文.退出请求 = true;
             ImGui::End();
             ImGui::PopStyleColor();
-        }
-
-        //测试界面的展示入口按钮（右上角悬浮）
-        void 绘制展示入口(Ui_会话上下文& 上下文)
-        {
-            const ImGuiViewport* 视口 = ImGui::GetMainViewport();
-            ImGui::SetNextWindowPos(ImVec2(视口->WorkPos.x + 视口->WorkSize.x - 232.0f, 视口->WorkPos.y + 12.0f));
-            ImGui::SetNextWindowSize(ImVec2(220.0f, 0.0f));
-            ImGui::Begin("##展示入口", nullptr,
-                ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings
-                | ImGuiWindowFlags_NoFocusOnAppearing);
-            if (ImGui::Button("进入渲染能力展示", ImVec2(-1.0f, 34.0f)))
-                上下文.请求进入展示 = true;
-            ImGui::End();
         }
 
         //每帧 UI 绘制回调（渲染层帧链路在场景通道内、呈现转换前调用）
@@ -318,6 +306,14 @@ namespace engine
             {
                 绘制蓝色渐变背景();
 
+                /*
+                刚由展示模式返回时清空本帧按键状态（第二百一十八轮）
+                返回请求与 Esc 按下可能落在相邻帧：ImGui 在返回帧仍持有该按键状态，
+                若不清空会把「返回」误判成「退出界面」。清空后本帧不再有 ESC 按下沿。
+                */
+                if (上下文.抑制退出键)
+                    ImGui::GetIO().ClearInputKeys();
+
                 //铺满整个窗口的无标题面板
                 const ImGuiViewport* 视口 = ImGui::GetMainViewport();
                 ImGui::SetNextWindowPos(视口->WorkPos);
@@ -327,12 +323,11 @@ namespace engine
 
                 //绘制测试操作界面（树 / 控制 / 结果 / 输出镜像 / 轮次 / 日志）
                 //注意：必须在面板窗口内绘制，控件才有有效窗口可放置与命中
-                测试界面_绘制(*上下文.运行器, *上下文.模型, 上下文.退出请求, &上下文.运行状态);
+                //展示入口按钮由本界面在控制条行末绘制（避免右上角悬浮窗遮挡运行进度条）
+                测试界面_绘制(*上下文.运行器, *上下文.模型, 上下文.退出请求, &上下文.运行状态,
+                    &上下文.请求进入展示, &上下文.抑制退出键);
 
                 ImGui::End();
-
-                //右上角悬浮「进入渲染能力展示」入口
-                绘制展示入口(上下文);
             }
 
             //提交绘制：交给渲染层帧链路命令缓冲（后端画在已开启的动态渲染通道内）
@@ -509,6 +504,13 @@ namespace engine
                     上下文.展示场景 = &展示;
                     上下文.展示模式 = true;
                 }
+                else
+                {
+                    //搭建失败：回收已建资源与展示期开关（shutdown 对未建资源为空操作）
+                    渲染器.frame_wait_idle();
+                    展示.shutdown(渲染器);
+                    恢复测试界面场景();
+                }
             }
             //处理「退出展示」请求（返回测试界面）
             if (上下文.请求退出展示)
@@ -516,12 +518,16 @@ namespace engine
                 上下文.请求退出展示 = false;
                 if (展示已搭建)
                 {
+                    //先等尽在途帧再卸载展示资源（否则资源仍可能被在途命令缓冲引用）
+                    渲染器.frame_wait_idle();
                     展示.shutdown(渲染器);
                     展示已搭建 = false;
                 }
                 上下文.展示场景 = nullptr;
                 上下文.展示模式 = false;
                 恢复测试界面场景();
+                //返回那一帧抑制 Esc（展示模式里的同一次按下不得再次触发「退出界面」）
+                上下文.抑制退出键 = true;
             }
 
             //帧间隔（限制上限，避免卡顿后瞬移）
@@ -571,17 +577,24 @@ namespace engine
                 break;
         }
 
-        //退出前释放展示资源
+        //退出前释放展示资源（先等尽在途帧，避免资源被在途命令缓冲引用）
         if (展示已搭建)
         {
+            渲染器.frame_wait_idle();
             展示.shutdown(渲染器);
             展示已搭建 = false;
         }
 
-        //—— 清理：先解接线，再停运行器，最后销毁 UI 后端与渲染器 ——
+        //—— 清理：先解接线，再停运行器，然后等尽在途帧 → 销毁 UI 后端 → 销毁渲染器 ——
         通道->event_callback_clear();
         通道->draw_callback_clear();
         运行器.shutdown();
+        /*
+        UI 后端自有描述符池 / 采样器 / 管线（第二百一十八轮）
+        ImGui 的 Vulkan 后端在销毁时释放上述资源，若最后一帧命令缓冲仍在飞行，
+        校验层会报「资源仍在使用」；故销毁前先让渲染器等尽全部在途帧。
+        */
+        渲染器.frame_wait_idle();
         ImGui_ImplVulkan_Shutdown();
         ImGui_ImplSDL3_Shutdown();
         ImGui::DestroyContext();

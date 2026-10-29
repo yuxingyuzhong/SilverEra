@@ -62,7 +62,7 @@ TEST_F(Renderer_Visible_Test, 可见窗口呈现纯色)
 {
 	//未开启则跳过
 	if (!l3_enabled())
-		GTEST_SKIP() << "未设置 BYJY_RUN_L3=1，跳过可见窗口用例";
+		GTEST_SKIP() << "BYJY_RUN_L3=0，跳过可见窗口用例";
 	engine::Renderer renderer;
 	ASSERT_TRUE(renderer.init(visible_config())) << "可见窗口初始化失败";
 	//连续呈现 120 帧供目视确认（清屏色稳定、无黑屏闪烁）
@@ -81,7 +81,7 @@ TEST_F(Renderer_Visible_Test, 可见窗口呈现三角形与棋盘格)
 {
 	//未开启则跳过
 	if (!l3_enabled())
-		GTEST_SKIP() << "未设置 BYJY_RUN_L3=1，跳过可见窗口用例";
+		GTEST_SKIP() << "BYJY_RUN_L3=0，跳过可见窗口用例";
 	engine::Renderer renderer;
 	ASSERT_TRUE(renderer.init(visible_config()));
 	//把相机拉到前方并注视原点

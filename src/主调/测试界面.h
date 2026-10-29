@@ -57,6 +57,9 @@ namespace engine
     //model：选择模型（套件 / 用例勾选态）
     //exit_requested：界面请求退出（由调用方主循环检查）
     //运行状态：可选的渲染器帧统计快照（缺省不显示性能条）
+    //进入展示请求：可选；非空时在运行控制条行末绘制「进入渲染能力展示」按钮并置位
+    //抑制退出键：可选；非空且为真时，本帧不把 Esc 当作「退出界面」（用于展示模式返回后的同一按键沿）
     void 测试界面_绘制(Test_Runner& runner, Test_Selection_Model& model, bool& exit_requested,
-        const Ui_Runtime_Stats* 运行状态 = nullptr);
+        const Ui_Runtime_Stats* 运行状态 = nullptr, bool* 进入展示请求 = nullptr,
+        bool* 抑制退出键 = nullptr);
 }

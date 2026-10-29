@@ -530,14 +530,12 @@ namespace engine
 					目标乙_ = 新乙;
 					目标宽_ = 宽;
 					目标高_ = 高;
-					uint64_t 链[6] = { 亮部提取_, 模糊_, 暗角_, 色彩查找_, 遮蔽_, 平滑_ };
-					uint64_t 目标组[2] = { 目标甲_, 目标乙_ };
-					(void)渲染器.post_chain_set(链, 6);
-					//链变更会清除逐级专设值，重建后重新应用查找表、遮蔽与 FXAA 参数
-					渲染器.post_stage_param_set(3, 1.0f, 0.0f, 1.0f);
-					渲染器.post_stage_param4_set(4, 0.8f, 12.0f, 0.5f, 1.0f);
-					渲染器.post_stage_param_set(5, 0.0f, 0.0f, 1.0f);
-					(void)渲染器.render_target_present_chain_set(目标组, 2);
+					/*
+					重建目标但保持直通路径（第二百一十八轮修正）
+					init 已明确关闭后处理链（六段链会把整幅画面连叠加层一起糊成残影），
+					而此处此前会重新启用 6 级链并切换呈现链，导致「窗口一改尺寸画面就被链吞掉」。
+					故 resize 只重建目标（供后续显式启用），不改变链与呈现路径。
+					*/
 				}
 			}
 		}
@@ -1028,6 +1026,13 @@ namespace engine
 		渲染器.toon_specular_set(0.0f);
 		卡通区激活_ = false;
 		渲染器.sky_enable_set(false);
+		/*
+		清除天空贴图与 LUT 绑定（第二百一十八轮）
+		二者绑定的是展示场景自建纹理，纹理卸载后绑定仍指向旧句柄；
+		虽然关闭开关后不采样，但下次启用前必须先解除绑定，避免引用已销毁纹理。
+		*/
+		渲染器.sky_texture_set(0);
+		渲染器.post_lut_bind(0);
 		渲染器.shadow_enable_set(false);
 		渲染器.shadow_cascade_set(1, 3.0f, 12.0f);
 		渲染器.pbr_enable_set(false);
@@ -1036,6 +1041,8 @@ namespace engine
 		渲染器.material_pbr_clear();
 		渲染器.material_tint_clear();
 		渲染器.material_emissive_clear();
+		//多重采样恢复默认（展示期曾设为 4×）
+		渲染器.msaa_samples_set(1);
 	}
 
 	//相机世界位置

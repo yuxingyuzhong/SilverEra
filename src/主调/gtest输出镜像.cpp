@@ -28,6 +28,8 @@ namespace engine
         for (const Case_Result& item : cases)
         {
             ++summary.total;
+            //累计本轮总耗时（各用例耗时之和）
+            summary.elapsed_ms += item.elapsed_ms;
             if (item.status == Case_Status::Passed)
                 ++summary.passed;
             else if (item.status == Case_Status::Failed)
@@ -171,6 +173,9 @@ namespace engine
         }
         //写入本轮用例记录
         cases.push_back(current_case);
+        //超出用例结果上限时丢弃最旧（与输出缓冲同样的环形语义）
+        while (static_cast<int>(cases.size()) > cases_cap)
+            cases.erase(cases.begin());
         ++completed_cases;
         in_case = false;
         //镜像控制台风格的用例收尾行

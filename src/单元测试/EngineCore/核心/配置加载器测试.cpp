@@ -24,13 +24,13 @@ protected:
 	//投递到的配置事件
 	std::vector<std::shared_ptr<engine::Event>> delivered{};
 
-	//条目事件类别（为空表示条目不写该字段）
-	std::string entry_category = "Test";
-	//条目事件标签（为空表示条目不写该字段）
+	//条目事件类别（缺省回落 Config；置空表示条目不写该字段）
+	std::string entry_category = "Config";
+	//条目事件标签（缺省回落 Load；置空表示条目不写该字段）
 	std::string entry_tag = "Load";
-	//订阅者订阅的事件类别（与条目缺省值一致，取非预定义标识）
-	std::string subscribe_category = "Test";
-	//订阅者订阅的事件标签（与条目缺省值一致，取非预定义标识）
+	//订阅者订阅的事件类别（缺省为 Config/Load）
+	std::string subscribe_category = "Config";
+	//订阅者订阅的事件标签（缺省为 Config/Load）
 	std::string subscribe_tag = "Load";
 
 	//本次用例根目录名
@@ -215,7 +215,7 @@ TEST_F(Config_Loader_Test, 可信根添加后配置可加载)
 	//加载可信根目录
 	event_send("Believed_Root", "Load", root_payload(root_route, root_config));
 	//请求对象配置加载
-	event_send("Config", "Load", object_payload());
+	event_send("Config_File", "Load", object_payload());
 
 	//应投递一次配置
 	ASSERT_EQ(delivered.size(), 1u);
@@ -235,13 +235,13 @@ TEST_F(Config_Loader_Test, 重复添加可信根被跳过)
 	//加载可信根目录
 	event_send("Believed_Root", "Load", root_payload(root_route, root_config));
 	//请求对象配置加载
-	event_send("Config", "Load", object_payload());
+	event_send("Config_File", "Load", object_payload());
 	ASSERT_EQ(delivered.size(), 1u);
 
 	//再次加载同一可信根目录（应被跳过，缓存条目脏标记不被重置）
 	event_send("Believed_Root", "Load", root_payload(root_route, root_config));
 	//再次请求对象配置加载
-	event_send("Config", "Load", object_payload());
+	event_send("Config_File", "Load", object_payload());
 
 	//脏标记仍在，不应再次投递
 	EXPECT_EQ(delivered.size(), 1u);
@@ -269,7 +269,7 @@ TEST_F(Config_Loader_Test, 可信根增量重建恢复缓存)
 	ASSERT_EQ(delivered.size(), 2u);
 
 	//请求对象配置加载：缓存条目已带本轮脏标记 ⇒ 不再重复投递
-	event_send("Config", "Load", object_payload());
+	event_send("Config_File", "Load", object_payload());
 	ASSERT_EQ(delivered.size(), 2u);
 	EXPECT_EQ(delivered.back()->config["键"].get<std::string>(), "值");
 }
@@ -287,7 +287,7 @@ TEST_F(Config_Loader_Test, 可信根载荷缺失被驳回)
 	//发送载荷不完整的添加事件
 	event_send("Believed_Root", "Add", payload);
 	//请求对象配置加载
-	event_send("Config", "Load", object_payload());
+	event_send("Config_File", "Load", object_payload());
 
 	//事件被驳回，缓存未建立，不应投递
 	EXPECT_EQ(delivered.size(), 0u);
@@ -344,7 +344,7 @@ TEST_F(Config_Loader_Test, 条目自定义事件名生效)
 //条目自定义事件名无订阅者：投递被中转站丢弃
 TEST_F(Config_Loader_Test, 条目自定义事件名无订阅者被丢弃)
 {
-	//配置条目自定义事件名，但订阅者仍只订阅夹具缺省事件名（Test/Load）
+	//配置条目自定义事件名，但订阅者仍只订阅夹具缺省事件名（Config/Load）
 	entry_category = "Property";
 	entry_tag = "Push";
 	//准备测试目录
@@ -360,36 +360,62 @@ TEST_F(Config_Loader_Test, 条目自定义事件名无订阅者被丢弃)
 	EXPECT_EQ(delivered.size(), 0u);
 }
 
-//条目事件标识缺失：无缺省回落，条目被驳回而不投递
-TEST_F(Config_Loader_Test, 条目缺事件标识被驳回)
+//条目事件名缺省回落：未写 event_category/event_tag 时回落 Config/Load
+TEST_F(Config_Loader_Test, 条目事件名缺省回落)
 {
 	//条目不写事件标识字段（置空即不写入）
 	entry_category = "";
 	entry_tag = "";
-	//订阅者订阅旧的缺省事件名（若仍回落则会收到事件，以此捕获回归）
+	//订阅者订阅缺省事件名
 	subscribe_category = "Config";
 	subscribe_tag = "Load";
 	//准备测试目录
-	root_make("配置事件名测试_缺失", false);
+	root_make("配置事件名测试_回落", false);
 	//接入终端与订阅对象
 	loader_attach();
 	object_attach();
 
-	//加载可信根目录（条目事件标识无效，该条目被驳回）
+	//加载可信根目录（应即时按缺省事件名投递一次）
 	event_send("Believed_Root", "Load", root_payload(root_route, root_config));
 
-	//条目被驳回，订阅者收不到事件
-	EXPECT_EQ(delivered.size(), 0u);
+	//应投递一次，且事件名为缺省值
+	ASSERT_EQ(delivered.size(), 1u);
+	EXPECT_EQ(delivered[0]->category, "Config");
+	EXPECT_EQ(delivered[0]->tag, "Load");
+}
+
+//条目事件名独立回落：仅写 event_category 时 event_tag 回落 Load
+TEST_F(Config_Loader_Test, 条目事件名独立回落)
+{
+	//条目仅写事件类别，事件标签留空
+	entry_category = "Property";
+	entry_tag = "";
+	//订阅者订阅「自定义类别 + 缺省标签」
+	subscribe_category = "Property";
+	subscribe_tag = "Load";
+	//准备测试目录
+	root_make("配置事件名测试_独立回落", false);
+	//接入终端与订阅对象
+	loader_attach();
+	object_attach();
+
+	//加载可信根目录（事件标签应独立回落 Load）
+	event_send("Believed_Root", "Load", root_payload(root_route, root_config));
+
+	//应投递一次，且标签为缺省值
+	ASSERT_EQ(delivered.size(), 1u);
+	EXPECT_EQ(delivered[0]->category, "Property");
+	EXPECT_EQ(delivered[0]->tag, "Load");
 }
 
 //条目事件标识命中预定义事件：条目被驳回而不投递
 TEST_F(Config_Loader_Test, 条目使用预定义事件标识被驳回)
 {
 	//条目使用配置加载器的预定义事件标识
-	entry_category = "Config";
+	entry_category = "Config_File";
 	entry_tag = "Load";
 	//订阅者订阅同一标识（若未被驳回则会收到事件，以此捕获回归）
-	subscribe_category = "Config";
+	subscribe_category = "Config_File";
 	subscribe_tag = "Load";
 	//准备测试目录
 	root_make("配置事件名测试_保留", false);
@@ -418,9 +444,9 @@ TEST_F(Config_Loader_Test, 配置卸载后可重建)
 	ASSERT_EQ(delivered.size(), 1u);
 
 	//卸载该对象的指定配置文件缓存（条目标记与文件头标记一并被抹除）
-	event_send("Config", "Unload", object_payload());
+	event_send("Config_File", "Unload", object_payload());
 	//再次请求对象配置加载：缓存已清且无文件清单可加载，不应投递
-	event_send("Config", "Load", object_payload());
+	event_send("Config_File", "Load", object_payload());
 	EXPECT_EQ(delivered.size(), 1u);
 
 	//以同一目录对请求路由加载（登记仍在、标记已抹除 ⇒ 重新扫描并投递）
@@ -445,7 +471,7 @@ TEST_F(Config_Loader_Test, 路由卸载后可重建)
 	//卸载该目录对下该对象的缓存
 	event_send("Route", "Unload", route_payload(object_route, object_config));
 	//对象配置缓存已清，加载不再投递
-	event_send("Config", "Load", object_payload());
+	event_send("Config_File", "Load", object_payload());
 	EXPECT_EQ(delivered.size(), 1u);
 
 	//以同一目录对请求路由加载（重新扫描并投递）
@@ -470,9 +496,9 @@ TEST_F(Config_Loader_Test, 配置卸载空载荷全卸载)
 	//构造仅含对象字段的卸载载荷（无 files ⇒ 全量卸载）
 	nlohmann::json payload;
 	payload["object"] = object_name;
-	event_send("Config", "Unload", payload);
+	event_send("Config_File", "Unload", payload);
 	//对象配置缓存已清，加载不再投递
-	event_send("Config", "Load", object_payload());
+	event_send("Config_File", "Load", object_payload());
 	EXPECT_EQ(delivered.size(), 1u);
 
 	//以同一目录对请求路由加载（重新扫描并投递）
@@ -496,11 +522,11 @@ TEST_F(Config_Loader_Test, 非法卸载目标被驳回)
 	//卸载一个无配置记录的对象（应被驳回）
 	nlohmann::json bad_payload;
 	bad_payload["object"] = "不存在对象";
-	event_send("Config", "Unload", bad_payload);
+	event_send("Config_File", "Unload", bad_payload);
 	//卸载一个未登记的目录对（应被驳回）
 	event_send("Route", "Unload", route_payload(object_route + "/无此目录", object_config + "/无此目录"));
 	//对象配置缓存未被清除，仍可命中脏标记而不重复投递
-	event_send("Config", "Load", object_payload());
+	event_send("Config_File", "Load", object_payload());
 
 	//投递数保持不变
 	EXPECT_EQ(delivered.size(), 1u);

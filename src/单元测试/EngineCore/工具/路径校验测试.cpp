@@ -15,7 +15,7 @@ class Path_Check_Test : public ::testing::Test
 {
 protected:
 	//临时文件相对可执行文件目录的路径
-	const std::string temp_name = "src/单元测试/工具/路径校验临时文件.txt";
+	const std::string temp_name = "src/单元测试/EngineCore/工具/路径校验临时文件.txt";
 
 	//写入临时文件并在用例结束后删除
 	void SetUp() override
@@ -110,7 +110,7 @@ TEST_F(Path_Check_Test, 中文路径常规文件通过)
 {
 	//构造一个中文名临时文件
 	const std::filesystem::path chinese_path =
-		engine::Engine_Env::exe_dir_get() / engine::detail::string_to_path("src/单元测试/工具/路径校验临时中文.txt");
+		engine::Engine_Env::exe_dir_get() / engine::detail::string_to_path("src/单元测试/EngineCore/工具/路径校验临时中文.txt");
 
 	//写入文件
 	std::ofstream file(chinese_path);

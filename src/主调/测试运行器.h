@@ -82,8 +82,8 @@ namespace engine
         bool queued = false;
         //运行状态
         std::atomic<int> state{ 0 };
-        //上一轮退出码
-        int exit_code = 0;
+        //上一轮退出码（工作线程写、界面线程读，故用原子量避免数据竞争）
+        std::atomic<int> exit_code{ 0 };
         //界面模式是否已安装
         bool installed = false;
     };
