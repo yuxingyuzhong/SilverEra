@@ -1185,3 +1185,59 @@ TEST_F(Renderer_Material_Test, 逐物体清漆门面开关)
 	renderer.texture_unload(gray);
 }
 
+/*
+实例化绘制携带清漆层（第二百四十轮）
+口径：`mesh_draw_instanced` 与逐项路径共用同一推送块写入。两枚小球在高光区只覆盖约 40 个像素，
+      故以「开 / 关清漆的差异像素数」判定（实测实例化与逐项均为 44），不用整幅亮度和（阈值易受 sRGB 舍入影响）。
+*/
+TEST_F(Renderer_Material_Test, 实例化绘制携带清漆层)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	engine::Mesh_Handle sphere = 0;
+	ASSERT_TRUE(renderer.mesh_sphere_load(sphere, 0.5f, 24, 12));
+	const float direction[3] = { 0.0f, 0.0f, -1.0f };
+	const float color[3] = { 1.0f, 1.0f, 1.0f };
+	renderer.light_set(direction, color, 1.0f, 0.2f);
+	renderer.specular_set(1.0f, 32.0f);
+	renderer.pbr_enable_set(true);
+	renderer.pbr_roughness_set(0.5f);
+	uint64_t gray = 0;
+	std::vector<uint8_t> gray_texels(4u * 4u * 4u, 100);
+	for (std::size_t index = 3; index < gray_texels.size(); index += 4)
+		gray_texels[index] = 255;
+	ASSERT_TRUE(renderer.texture_load(gray, gray_texels.data(), 4, 4));
+	renderer.texture_bind_set(gray);
+	std::array<std::array<float, 16>, 2> matrices{};
+	matrices[0] = { 0.5f,0,0,0, 0,0.5f,0,0, 0,0,0.5f,0, -1,0,0,1 };
+	matrices[1] = { 0.5f,0,0,0, 0,0.5f,0,0, 0,0,0.5f,0, 1,0,0,1 };
+	auto render_frame = [&](std::vector<uint8_t>& pixels)
+	{
+		EXPECT_TRUE(renderer.mesh_draw_instanced(sphere, matrices[0].data(), 2));
+		pixels.resize(pixel_bytes());
+		EXPECT_TRUE(renderer.frame_render(pixels.data(), static_cast<uint32_t>(pixels.size())));
+	};
+	std::vector<uint8_t> base_pixels;
+	render_frame(base_pixels);
+	ASSERT_TRUE(renderer.material_clear_coat_set(1.0f, 1.0f));
+	std::vector<uint8_t> coat_pixels;
+	render_frame(coat_pixels);
+	std::size_t differing = 0;
+	for (std::size_t offset = 0; offset + 3 < base_pixels.size(); offset += 4)
+	{
+		if (base_pixels[offset] != coat_pixels[offset] || base_pixels[offset + 1] != coat_pixels[offset + 1]
+			|| base_pixels[offset + 2] != coat_pixels[offset + 2])
+			++differing;
+	}
+	EXPECT_GT(differing, 20u) << "实例化绘制未携带清漆层（差异像素 " << differing << "）";
+
+	//清除后回落与基准帧逐字节一致
+	renderer.material_clear_coat_clear();
+	std::vector<uint8_t> cleared_pixels;
+	render_frame(cleared_pixels);
+	EXPECT_EQ(cleared_pixels, base_pixels) << "实例化路径清除清漆后画面未回落";
+
+	renderer.mesh_unload(sphere);
+	renderer.texture_unload(gray);
+}
+
