@@ -100,3 +100,27 @@ TEST_F(Renderer_Post_Chain_Test, 深度描边描边色可配)
 	EXPECT_GT(raised, 20u) << "描边色未生效（外通道抬升像素 " << raised << "）";
 }
 
+/*
+描边半径可配（第二百二十轮）
+口径：同一场景与强度下，半径 2 的轮廓应比半径 1 更宽（被压暗的像素更多）；
+      半径参数缺省（w = 0）必须与半径 1 逐像素一致，保证默认画面不变。
+*/
+TEST_F(Renderer_Post_Chain_Test, 深度描边半径可配)
+{
+	std::vector<uint8_t> reference = render_outline("后处理.frag.spv", { 0.0f, 0.0f, 0.0f, 0.0f });
+	//缺省半径（w = 0）与半径 1 / 2 三帧
+	std::vector<uint8_t> radius_zero = render_outline("深度描边.frag.spv", { 1.0f, 1.0f, 2.0f, 0.0f });
+	std::vector<uint8_t> radius_one = render_outline("深度描边.frag.spv", { 1.0f, 1.0f, 2.0f, 1.0f });
+	std::vector<uint8_t> radius_two = render_outline("深度描边.frag.spv", { 1.0f, 1.0f, 2.0f, 2.0f });
+	//缺省值必须回落单像素，且与半径 1 逐像素一致
+	int default_diff = max_channel_diff(radius_zero, radius_one);
+	RecordProperty("outline_radius_default_diff", default_diff);
+	EXPECT_EQ(default_diff, 0) << "半径缺省未回落单像素（最大差 " << default_diff << "）";
+	//半径 2 应覆盖更宽的轮廓
+	uint32_t thin = darkened_count(radius_one, reference, 0.05f);
+	uint32_t thick = darkened_count(radius_two, reference, 0.05f);
+	RecordProperty("outline_radius1_pixels", static_cast<int>(thin));
+	RecordProperty("outline_radius2_pixels", static_cast<int>(thick));
+	EXPECT_GT(thick, thin) << "半径 2 未加宽描边（半径 1 像素 " << thin << " / 半径 2 像素 " << thick << "）";
+}
+
