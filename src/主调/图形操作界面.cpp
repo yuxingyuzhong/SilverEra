@@ -227,7 +227,7 @@ namespace engine
             ImGui::Bullet(); ImGui::TextWrapped("④ 实例化合批：阶梯金字塔一次提交");
             ImGui::Bullet(); ImGui::TextWrapped("⑤ 几何拼接：拱门 / 晶塔 / 环阵");
             ImGui::Bullet(); ImGui::TextWrapped("⑥ 纹理与动态：棋盘 / 动态更新 / UV 立方");
-            ImGui::Bullet(); ImGui::TextWrapped("⑦ 卡通渲染：走近该区即切换色阶量化 / 边缘光 / 暗部色调 / 卡通高光");
+            ImGui::Bullet(); ImGui::TextWrapped("⑦ 卡通渲染：走近该区即切换色阶量化 / 边缘光 / 暗部色调 / 卡通高光 / 外扩描边 / 加法光晕");
             ImGui::Bullet(); ImGui::TextWrapped("多线程：4 工作线程（并行剔除 / 差异扫描；场景 pass 与阴影 pass 均按段并行录制）");
             ImGui::Separator();
             float 位置[3] = { 0.0f, 0.0f, 0.0f };
