@@ -1100,3 +1100,88 @@ TEST_F(Renderer_Material_Test, 清漆参数非法值归一)
 	renderer.texture_unload(gray);
 }
 
+/*
+逐物体清漆门面开关（第二百三十九轮）
+口径：`material_clear_coat_set(1, 1)` 后绘制亮度应抬升；`material_clear_coat_clear()` 后画面回落与未设置时逐字节一致；
+      非法参数整次拒绝且状态不变；查询接口与吸附状态一致。
+*/
+TEST_F(Renderer_Material_Test, 逐物体清漆门面开关)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	engine::Mesh_Handle sphere = 0;
+	ASSERT_TRUE(renderer.mesh_sphere_load(sphere, 0.6f, 32, 16));
+	const float direction[3] = { 0.0f, 0.0f, -1.0f };
+	const float color[3] = { 1.0f, 1.0f, 1.0f };
+	renderer.light_set(direction, color, 1.0f, 0.2f);
+	renderer.specular_set(1.0f, 32.0f);
+	renderer.pbr_enable_set(true);
+	renderer.pbr_roughness_set(0.5f);
+	uint64_t gray = 0;
+	{
+		std::vector<uint8_t> gray_texels(4u * 4u * 4u, 100);
+		for (std::size_t index = 3; index < gray_texels.size(); index += 4)
+			gray_texels[index] = 255;
+		ASSERT_TRUE(renderer.texture_load(gray, gray_texels.data(), 4, 4));
+	}
+	renderer.texture_bind_set(gray);
+	//整幅三通道最小值累加（与前述清漆用例同一判据）
+	auto brightness_sum = [](const std::vector<uint8_t>& pixels)
+	{
+		uint64_t sum = 0;
+		for (std::size_t offset = 0; offset + 3 < pixels.size(); offset += 4)
+		{
+			uint8_t result = pixels[offset];
+			if (pixels[offset + 1] < result)
+				result = pixels[offset + 1];
+			if (pixels[offset + 2] < result)
+				result = pixels[offset + 2];
+			sum += result;
+		}
+		return sum;
+	};
+	auto render_frame = [&](std::vector<uint8_t>& pixels)
+	{
+		EXPECT_TRUE(renderer.mesh_draw(sphere, nullptr));
+		pixels.resize(pixel_bytes());
+		EXPECT_TRUE(renderer.frame_render(pixels.data(), static_cast<uint32_t>(pixels.size())));
+	};
+
+	//默认状态
+	EXPECT_FALSE(renderer.material_clear_coat_active());
+	EXPECT_FLOAT_EQ(renderer.material_clear_coat_strength(), 0.0f);
+	EXPECT_FLOAT_EQ(renderer.material_clear_coat_roughness(), 0.15f);
+
+	//基准帧（未设置逐物体清漆）
+	std::vector<uint8_t> base_pixels;
+	render_frame(base_pixels);
+
+	//开启逐物体清漆
+	ASSERT_TRUE(renderer.material_clear_coat_set(1.0f, 1.0f));
+	EXPECT_TRUE(renderer.material_clear_coat_active());
+	EXPECT_FLOAT_EQ(renderer.material_clear_coat_strength(), 1.0f);
+	EXPECT_FLOAT_EQ(renderer.material_clear_coat_roughness(), 1.0f);
+	std::vector<uint8_t> coat_pixels;
+	render_frame(coat_pixels);
+	EXPECT_GT(brightness_sum(coat_pixels), brightness_sum(base_pixels) + 100)
+		<< "逐物体清漆未抬升画面亮度";
+
+	//非法参数整次拒绝（状态不变）
+	EXPECT_FALSE(renderer.material_clear_coat_set(0.0f, 1.0f));
+	EXPECT_FALSE(renderer.material_clear_coat_set(1.0f, 0.0f));
+	EXPECT_TRUE(renderer.material_clear_coat_active());
+
+	//清除后回落与基准帧逐字节一致
+	renderer.material_clear_coat_clear();
+	EXPECT_FALSE(renderer.material_clear_coat_active());
+	EXPECT_FLOAT_EQ(renderer.material_clear_coat_strength(), 0.0f);
+	std::vector<uint8_t> cleared_pixels;
+	render_frame(cleared_pixels);
+	EXPECT_EQ(cleared_pixels, base_pixels) << "清除逐物体清漆后画面未回落";
+
+	renderer.mesh_unload(sphere);
+	renderer.texture_unload(gray);
+}
+
