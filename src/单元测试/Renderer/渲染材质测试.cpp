@@ -850,3 +850,90 @@ TEST_F(Renderer_Material_Test, 实例化绘制保留法线贴图参数)
 	renderer.texture_unload(normal_texels);
 }
 
+/*
+清漆层（第二百三十三轮）
+球体在 PBR 模式下叠加清漆层（强度 1、粗糙度 0.05）后，中心高光应更亮；
+绑定 0 清除材质状态后回落。判据为「中心像素三通道最小值」，与通道序无关。
+*/
+TEST_F(Renderer_Material_Test, 清漆层增强高光)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	//球体（法线连续，才有镜面高光）
+	engine::Mesh_Handle sphere = 0;
+	ASSERT_TRUE(renderer.mesh_sphere_load(sphere, 0.6f, 32, 16));
+	//方向光沿 −Z 传播（相机在 +Z 3 单位处），球心正对高光；开启 PBR 与固定高光强度
+	const float direction[3] = { 0.0f, 0.0f, -1.0f };
+	const float color[3] = { 1.0f, 1.0f, 1.0f };
+	renderer.light_set(direction, color, 1.0f, 0.2f);
+	renderer.specular_set(1.0f, 32.0f);
+	renderer.pbr_enable_set(true);
+	renderer.pbr_roughness_set(0.5f);
+	/*
+	中性灰反照率（0.4 左右）：避免漫反射先把中心顶到饱和，
+	否则清漆层叠加的镜面高光没有抬升空间（饱和后两者都读到 255）。
+	*/
+	uint64_t gray = 0;
+	{
+		std::vector<uint8_t> gray_texels(4u * 4u * 4u, 100);
+		for (std::size_t index = 3; index < gray_texels.size(); index += 4)
+			gray_texels[index] = 255;
+		ASSERT_TRUE(renderer.texture_load(gray, gray_texels.data(), 4, 4));
+	}
+
+	//整幅三通道最小值的累加（亮度判据；避免单像素落在高光峰值外而漏判）
+	auto brightness_sum = [](const std::vector<uint8_t>& pixels)
+	{
+		uint64_t sum = 0;
+		for (std::size_t offset = 0; offset + 3 < pixels.size(); offset += 4)
+		{
+			uint8_t result = pixels[offset];
+			if (pixels[offset + 1] < result)
+				result = pixels[offset + 1];
+			if (pixels[offset + 2] < result)
+				result = pixels[offset + 2];
+			sum += result;
+		}
+		return sum;
+	};
+
+	//基准：材质不带清漆
+	engine::Material_Data plain_data;
+	plain_data.pbr_override = true;
+	plain_data.pbr_roughness = 0.5f;
+	plain_data.texture = gray;
+	engine::Material_Handle plain = 0;
+	ASSERT_TRUE(renderer.material_load(plain, plain_data));
+	renderer.material_bind_set(plain);
+	ASSERT_TRUE(renderer.mesh_draw(sphere, nullptr));
+	std::vector<uint8_t> base_pixels(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(base_pixels.data(), static_cast<uint32_t>(base_pixels.size())));
+	uint64_t base_sum = brightness_sum(base_pixels);
+
+	//对照：清漆强度 1、粗糙度 0.05（更锐利的第二层高光）
+	engine::Material_Data coat_data;
+	coat_data.pbr_override = true;
+	coat_data.pbr_roughness = 0.5f;
+	coat_data.clear_coat = 1.0f;
+	coat_data.clear_coat_roughness = 1.0f;
+	coat_data.texture = gray;
+	engine::Material_Handle coat = 0;
+	ASSERT_TRUE(renderer.material_load(coat, coat_data));
+	renderer.material_bind_set(coat);
+	ASSERT_TRUE(renderer.mesh_draw(sphere, nullptr));
+	std::vector<uint8_t> coat_pixels(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(coat_pixels.data(), static_cast<uint32_t>(coat_pixels.size())));
+	uint64_t coat_sum = brightness_sum(coat_pixels);
+
+	//开启清漆后整幅亮度应抬升（清漆层叠加的镜面高光不会低于 100 级灰度总量）
+	EXPECT_GT(coat_sum, base_sum + 100)
+		<< "清漆层未抬升画面亮度：" << base_sum << " vs " << coat_sum;
+
+	renderer.material_unload(plain);
+	renderer.material_unload(coat);
+	renderer.mesh_unload(sphere);
+	renderer.texture_unload(gray);
+}
+
