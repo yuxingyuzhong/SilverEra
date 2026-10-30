@@ -284,3 +284,53 @@ TEST_F(Renderer_Compute_Test, 回读通道非法参数)
 		static_cast<uint32_t>(seed.size() * sizeof(float)) - 4u));
 	renderer.compute_buffer_unload(buffer);
 }
+/*
+强制关闭计算路径（第二百四十六轮）
+口径：compute_enable = false 时不构建计算上下文、compute_supported 恒假，但默认帧路径照常出帧。
+*/
+TEST_F(Renderer_Compute_Test, 计算强制关闭仍出帧)
+{
+	engine::Renderer_Config config = hidden_config();
+	config.compute_enable = false;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(config));
+	//计算路径整体关闭
+	EXPECT_FALSE(renderer.compute_supported());
+	EXPECT_FALSE(renderer.compute_timestamp_supported());
+	//能力探测仍如实反映设备（与开关无关）
+	engine::Compute_Capabilities capabilities = renderer.compute_capabilities_get();
+	EXPECT_TRUE(capabilities.compute) << "本机图形队列族应含 COMPUTE 位；否则此断言需按设备能力放宽";
+	//默认帧路径照常出帧两帧
+	EXPECT_TRUE(renderer.frame_render());
+	EXPECT_TRUE(renderer.frame_render());
+	EXPECT_GE(renderer.frame_stats_get().frames, 1u);
+	//计算缓冲 / 管线在关闭状态下全部拒绝
+	engine::Compute_Buffer_Handle buffer = 7;
+	EXPECT_FALSE(renderer.compute_buffer_load(buffer, 64));
+	EXPECT_EQ(buffer, 0u);
+	engine::Compute_Pipeline_Handle pipeline = 9;
+	EXPECT_FALSE(renderer.compute_pipeline_load(pipeline, "计算加一.comp.spv"));
+	EXPECT_EQ(pipeline, 0u);
+}
+
+//降级矩阵探测与未初始化口径（第二百四十六轮）
+TEST_F(Renderer_Compute_Test, 降级矩阵探测)
+{
+	//未初始化：各项为假
+	engine::Renderer cold;
+	engine::Compute_Capabilities cold_caps = cold.compute_capabilities_get();
+	EXPECT_FALSE(cold_caps.compute);
+	EXPECT_FALSE(cold_caps.draw_indirect_count);
+	EXPECT_FALSE(cold_caps.multi_draw_indirect);
+	EXPECT_FALSE(cold_caps.timestamp);
+	EXPECT_FALSE(cold_caps.host_query_reset);
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	engine::Compute_Capabilities caps = renderer.compute_capabilities_get();
+	//计算能力与门面一致（本机不支持计算时整例跳过）
+	if (!caps.compute)
+		GTEST_SKIP() << "本机图形队列族不支持计算路径";
+	EXPECT_TRUE(renderer.compute_supported());
+	//时间戳能力与门面同口径
+	EXPECT_EQ(caps.timestamp, renderer.compute_timestamp_supported());
+}
