@@ -10,6 +10,8 @@
 
 //获取渲染器门面
 #include "Application/Renderer/src/render/Renderer/渲染器.h"
+//线程组数换算与屏障用途（第二百四十二轮）
+#include "Application/Renderer/src/render/Compute/计算数据.h"
 
 namespace
 {
@@ -68,4 +70,33 @@ TEST_F(Renderer_Compute_Test, 计算启用不影响默认路径)
 	//无论是否支持计算，默认路径都应能连续出帧
 	ASSERT_TRUE(renderer.frame_render());
 	ASSERT_TRUE(renderer.frame_render());
+}
+
+//线程组数换算（第二百四十二轮）：向上取整、空输入不调度
+TEST_F(Renderer_Compute_Test, 线程组数换算)
+{
+	//空元素数 / 非法组大小一律为 0
+	EXPECT_EQ(engine::compute_group_count(0u, 64u), 0u);
+	EXPECT_EQ(engine::compute_group_count(64u, 0u), 0u);
+	//整除与余数
+	EXPECT_EQ(engine::compute_group_count(64u, 64u), 1u);
+	EXPECT_EQ(engine::compute_group_count(65u, 64u), 2u);
+	EXPECT_EQ(engine::compute_group_count(1u, 1u), 1u);
+	EXPECT_EQ(engine::compute_group_count(10000u, 64u), 157u);
+	EXPECT_EQ(engine::compute_group_count(10000u, 256u), 40u);
+}
+
+//调度计数随健康检查累加（第二百四十二轮：dispatch 计数与统计快照）
+TEST_F(Renderer_Compute_Test, 调度计数累加)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	//不支持计算则跳过
+	if (!renderer.compute_supported())
+		GTEST_SKIP() << "本机图形队列族不支持计算路径";
+	//两次健康检查 → 两次调度
+	uint32_t read_back = 0;
+	ASSERT_TRUE(renderer.compute_health_check(0x3F800000u, read_back));
+	ASSERT_TRUE(renderer.compute_health_check(0x40490FDBu, read_back));
+	EXPECT_EQ(read_back, 0x40490FDBu);
 }
