@@ -172,3 +172,63 @@ TEST_F(Renderer_Compute_Test, 计算资源非法参数)
 	EXPECT_TRUE(renderer.compute_dispatch(missing, 0, 64));
 	renderer.compute_buffer_unload(buffer);
 }
+
+/*
+设备本地缓冲 ＋ GPU 回读通道（第二百四十四轮）
+口径：设备本地 SSBO（经暂存上传初值）加一后，用 compute_readback（拷贝到暂存再映射）逐元素回读为 1.0。
+*/
+TEST_F(Renderer_Compute_Test, 设备本地缓冲回读一致)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	//不支持计算则跳过
+	if (!renderer.compute_supported())
+		GTEST_SKIP() << "本机图形队列族不支持计算路径";
+	constexpr uint32_t ELEMENT_COUNT = 10000;
+	std::vector<float> values(ELEMENT_COUNT, 0.0f);
+	//登记设备本地存储缓冲（初值经暂存上传）
+	engine::Compute_Buffer_Handle buffer = 0;
+	ASSERT_TRUE(renderer.compute_buffer_load(buffer, static_cast<uint32_t>(values.size() * sizeof(float)),
+		values.data(), true));
+	EXPECT_GE(buffer, 1u);
+	//登记「计算加一」管线并绑定
+	engine::Compute_Pipeline_Handle pipeline = 0;
+	ASSERT_TRUE(renderer.compute_pipeline_load(pipeline, "计算加一.comp.spv"));
+	ASSERT_TRUE(renderer.compute_buffer_bind(buffer, 0));
+	//推送常量：元素数
+	uint32_t count = ELEMENT_COUNT;
+	ASSERT_TRUE(renderer.compute_dispatch(pipeline, ELEMENT_COUNT, 256, &count, sizeof(count)));
+	//GPU 回读通道：拷贝到暂存后映射读回
+	std::vector<float> result(ELEMENT_COUNT, 0.0f);
+	ASSERT_TRUE(renderer.compute_readback(buffer, result.data(), static_cast<uint32_t>(result.size() * sizeof(float))));
+	for (std::size_t index = 0; index < result.size(); ++index)
+		ASSERT_FLOAT_EQ(result[index], 1.0f) << "第 " << index << " 个元素未被加一";
+	renderer.compute_pipeline_unload(pipeline);
+	renderer.compute_buffer_unload(buffer);
+}
+
+//回读通道的非法参数与主机可见缓冲同口径（第二百四十四轮）
+TEST_F(Renderer_Compute_Test, 回读通道非法参数)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.compute_supported())
+		GTEST_SKIP() << "本机图形队列族不支持计算路径";
+	//合法主机可见缓冲（带初值）
+	std::vector<float> seed(16, 3.5f);
+	engine::Compute_Buffer_Handle buffer = 0;
+	ASSERT_TRUE(renderer.compute_buffer_load(buffer, static_cast<uint32_t>(seed.size() * sizeof(float)), seed.data()));
+	//主机可见缓冲走同一回读通道，结果与初值一致
+	std::vector<float> result(seed.size(), 0.0f);
+	ASSERT_TRUE(renderer.compute_readback(buffer, result.data(), static_cast<uint32_t>(result.size() * sizeof(float))));
+	for (std::size_t index = 0; index < result.size(); ++index)
+		EXPECT_FLOAT_EQ(result[index], 3.5f);
+	//尺寸 0 / 越界 / 无效句柄一律拒绝
+	EXPECT_FALSE(renderer.compute_readback(buffer, result.data(), 0, 0));
+	EXPECT_FALSE(renderer.compute_readback(buffer, result.data(), 8, static_cast<uint32_t>(seed.size() * sizeof(float))));
+	EXPECT_FALSE(renderer.compute_readback(9999u, result.data(), 8, 0));
+	//偏移 + 长度恰达末尾（合法）
+	EXPECT_TRUE(renderer.compute_readback(buffer, result.data(), 4,
+		static_cast<uint32_t>(seed.size() * sizeof(float)) - 4u));
+	renderer.compute_buffer_unload(buffer);
+}
