@@ -1,7 +1,8 @@
 ﻿# GPU 驱动模块（GPU驱动）
 
-> 版次：`清漆层与展廊同步_a5fb6d5+50bf828`（第 247 轮新增）
-> 源码：`Application/Renderer/src/render/GPU驱动/`（`包围体.h` / `局部命名空间使用.h` / `core/包围体.cpp`）
+> 版次：`清漆层与展廊同步_a5fb6d5+50bf828`（第 247–248 轮新增）
+> 源码：`Application/Renderer/src/render/GPU驱动/`（`包围体.h` / `剔除数据.h` / `局部命名空间使用.h` / `core/包围体.cpp` / `core/剔除.cpp`）
+> 着色器：`Application/Renderer/assets/shaders/视锥剔除.comp`
 
 ## 目录
 
@@ -26,6 +27,16 @@
 | `constexpr WORLD_BOUNDS_SPHERE_SCALE = 1.001` / `WORLD_BOUNDS_SPHERE_EXPAND = 0.002` | 包围球半径倍率与附加量 |
 | `bool world_bounds_build(World_Bounds& out, const float local_min[3], const float local_max[3], const float model[16])` | 由局部 AABB 与列主序模型矩阵构造世界包围体；入参非法返回假 |
 
+### 2.1 第二百四十八轮增量（视锥剔除）
+
+| 接口 | 语义 |
+| --- | --- |
+| `struct Frustum_Planes{planes[6][4]}` / `FRUSTUM_CULL_EPSILON = 1e-4`（`剔除数据.h`） | 六平面（xyz 法线 ＋ w 常数，已归一化）与判定容差 |
+| `bool frustum_planes_extract(Frustum_Planes&, const float view_proj[16])` | 列主序矩阵按行组合（row3 ± row0/1/2；Vulkan z∈[0,1]），逐平面归一化；退化平面返回假 |
+| `bool frustum_sphere_visible(planes, center, radius)` | 球判可见（`dot(n,c)+d+r ≥ −ε`，与 `视锥剔除.comp` 同公式） |
+| `bool frustum_aabb_visible(planes, aabb_min, aabb_max)` | AABB 正顶点判定（更紧，用于验证 GPU 不多剔） |
+| 门面 `bool gpu_cull_mask(transforms, count, local_min, local_max, mask_out)` | CPU 求球 → SSBO → 懒加载 `视锥剔除.comp` 管线 → 调度 → 回读掩码（1 = 可见） |
+
 ## 3. 模块私有方法
 
 无（单一自由函数，无内部状态）。
@@ -35,17 +46,20 @@
 ```
 GPU驱动/
 ├── 包围体.h          # Vulkan-free：World_Bounds ＋ 保守常量 ＋ world_bounds_build
+├── 剔除数据.h        # Vulkan-free：Frustum_Planes ＋ 平面提取 ＋ 球 / 盒判可见（第 248 轮）
 ├── 局部命名空间使用.h  # cpp 侧 using 引入
-└── core/包围体.cpp   # 实现：中心 / 半对角 / 列长 / 8 角点重求
+└── core/
+    ├── 包围体.cpp    # 实现：中心 / 半对角 / 列长 / 8 角点重求 / 盒角半径修正
+    └── 剔除.cpp      # 实现：六平面提取与球 / 盒判定（第 248 轮）
 ```
 
 - 与 `Compute/` 的关系：计算模块只管 GPU 侧管线与缓冲；包围体的 CPU 侧换算在本模块，二者不互相包含。
-- 与 `Renderer` 的关系：门面目前**尚未调用**本模块（剔除仍是 CPU 路径），第 248 轮接入视锥剔除 compute 时由门面在登记实例时调用。
+- 与 `Renderer` 的关系：门面第 248 轮新增 `gpu_cull_mask`（剔除原语），仍未接入默认帧路径；第 249 轮接入间接绘制后由帧路径调用。
 
 ## 5. 模块设计 / 实现细节
 
 1. **数学口径（规划 §2.3）**：局部 AABB 经非轴对齐变换后不再是 AABB，**严禁**直接把局部 min/max 乘矩阵；实现逐 8 角点变换后重求 min/max，结果偏大属正确的保守包围。
-2. **球半径**：`半对角长 × 三列最大列长 × 1.001 ＋ 0.002`；三列最大列长覆盖非均匀缩放的各轴最大倍数（保守）。
+2. **球半径**：先按「半对角长 × 三列最大列长 × 1.001 ＋ 0.002」估下界，**再按扩张后世界 AABB 的 8 个角点距离修正并取较大值**（`corner_max × 1.001 ＋ 0.002`）。原因：旋转后世界 AABB 的角点不在变换后局部角点的凸包上，只按局部半对角估半径会出现「AABB 判可见、球判不可见」，破坏 `C ⊆ G`（第二百四十八轮实测：半径 0.0854 对盒角 0.1012）。
 3. **球心**：变换局部 AABB 中心（而非 8 角点重心），与半径口径配套。
 4. **扩张**：AABB 每轴 ±0.002（世界单位）；球 ×1.001 ＋ 0.002；扩张在构造内完成，调用方无需自行加容差。
 5. **非法入参**：空指针 / 局部下界大于上界 / 矩阵含非有限值（`NaN` / `Inf`）一律返回假且不写出参。
