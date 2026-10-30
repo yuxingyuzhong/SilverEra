@@ -1,164 +1,188 @@
-# 深研规划 · 方向一：Compute Shader 管线 ＋ GPU 驱动渲染
+# 深研规划 · 方向一：Compute Shader 管线 ＋ GPU 驱动渲染（v2）
 
-> 状态：**待用户评审**（2026-10-30 制定）
-> 口径（用户 2026-10-30 裁定）：三个深研方向按 **Compute → 粒子 → toon/多层** 串行；GPU 驱动范围 **全都要（剔除 ＋ Hi-Z ＋ Cluster）**；新能力**默认关闭、默认路径逐字节不变**；轮粒度 **30–40 分钟/轮**；任务报告**每轮新建**，项目导航**每窗口建立一次**。
-> 计划提前量：本方向排布 **32 轮**（≥20 轮要求，按「全都要」扩容）。
+> 状态：**已按评审修正，执行中**（v1：2026-10-30 制定；v2：同日按评审补目标场景、性能验收与六处硬坑方案）
+> 口径：三方向按 **Compute → 粒子 → toon/多层** 串行；GPU 驱动范围 **全都要（剔除 ＋ Hi-Z ＋ Cluster）**；新能力**默认关闭、默认路径逐字节不变**；轮粒度 **30–40 分钟/轮**；任务报告**每轮新建**，项目导航**每窗口建立一次**。
+> 轮数：**36 轮（241–276）**（v1 的 32 轮偏乐观：前缀和拆 3 轮、Hi-Z 保守性拆 2 轮、新增目标场景与性能对照轮）。
 
 ---
 
-## 一、目标与验收总纲
+## §0 目标场景（一切验收的锚点）
 
-- **目标**：在现有 Vulkan 1.3 渲染层内建成一套**可复用、数据驱动、默认关闭**的 GPU 驱动渲染链路：
-  1. 通用 **Compute 管线**（着色器模块 / 描述符 / 推送常量 / 屏障 / 调度封装）；
-  2. **GPU 端视锥与距离剔除** ＋ **间接绘制**（Indirect Draw）；
-  3. **Hi-Z 遮挡剔除**（深度金字塔 ＋ 上一帧复用）；
-  4. **Cluster 光照**（3D 分簇 ＋ 逐簇光源列表 ＋ 着色器采样）。
-- **验收总纲**（每项都须同时满足）：
-  - 功能：三类剔除与 Cluster 光照在展廊/用例中**可见生效**，计数与 CPU 基线一致或更优；
-  - 兼容：全部新路径**默认关闭**；关闭时**画面逐字节不变**（像素级回归证明）；
-  - 完整：不是「最小可用」——包含资源生命周期、降级路径、观测字段、门面与数据化、用例、展廊展示；
-  - 质量：三树零错误、全量回归全过、源码统计与文档按轮落盘。
+| 项 | 主场景（基准） | 对照小场景（判断阈值用） |
+| --- | --- | --- |
+| 分辨率 | 1920 × 1080 | 同 |
+| 实例数 | **10,000**（同网格多批次，≥4 种网格） | 100 |
+| 光源 | **512**（点光 384 ＋ 聚光 128） | 8 |
+| 阴影 | 三级级联（现有能力），2048 | 同 |
+| 采样 | MSAA 4× | 同 |
+| 相机 | 默认机位 ＋ 卡通区近景机位 | 同 |
 
-## 二、现状与差距（2026-10-30 核查）
+**价值判据（决定是否值得保留该能力）**：
+- 1 万实例：GPU 剔除耗时 ≤ CPU 剔除的 **1/3**；开剔除后整帧 GPU 耗时 **下降 ≥ 12%**。
+- 100 实例：允许 GPU 剔除**更慢**（dispatch 固定开销），此时保持默认关闭即可 —— 这正是默认关闭口径存在的理由。
+- 512 光源：Cluster 构建 ≤ **0.6 ms**；开 Cluster 后整帧 GPU 耗时 **下降 ≥ 20%**（对比逐片元 8 盏循环截断方案）。
+- 8 光源：Cluster 无收益，允许关闭。
+
+## §性能验收（阶段 B 开工前建立基线，此后每轮对照）
+
+建立于第 **247 轮之前**（作为 247 轮的独立前置子步，写入任务报告）：
+1. **采集项**：整帧 GPU 耗时、场景 pass 耗时、CPU 剔除耗时、GPU 剔除耗时、Cluster 构建耗时、绘制项数、间接绘制数、剔除实例数、dispatch 数。
+2. **手段**：`VK_EXT_host_query_reset` / `vkCmdWriteTimestamp2`（时间戳两段：pass 前后），统计经 staging 回读写入 `Frame_Stats`；CPU 侧用 `std::chrono::high_resolution_clock`。
+3. **记录**：`性能基线_方向一.md`（工作站）——每轮追加一行「轮次 / 场景 / 关键耗时 / 相对基线变化」。
+4. **判定**：每轮若涉及性能面，报告必须带一行「相对基线 ±%」；**没有数值的性能结论不写入报告**。
+
+## §一、现状与差距（2026-10-30 核查）
 
 | 能力 | 现状 | 差距 |
 | --- | --- | --- |
-| `.comp` 编译 | CMake 已 glob `assets/shaders/*.comp` 并用 glslc 编译（第 399 行） | **尚未有任何 .comp 源文件** |
-| Compute 管线 | 无 | 需新增 `vkCreateComputePipelines`、compute 描述符布局、compute 绑定/调度 |
-| 存储缓冲（SSBO） | 内存模块只覆盖 UBO / 顶点 / 索引 / 实例 | 需通用 storage buffer 创建、写入、读回 |
-| GPU 数据回读 | 仅颜色/深度/纹理读回 | 需 compute 结果回读通道（staging） |
-| 间接绘制 | 无（全部 `vkCmdDrawIndexed`） | 需 indirect 参数/计数缓冲与 `vkCmdDrawIndexedIndirect` |
-| Hi-Z | 无（仅有级联阴影深度图） | 需深度金字塔生成与采样 |
-| Cluster 光照 | 逐片元循环 8 盏点光/聚光（`场景.frag`） | 需光源 SSBO、分簇构建（前缀和）、着色器分支 |
+| `.comp` 编译 | CMake 已 glob 并用 glslc 编译 | 尚无 `.comp` 源文件 |
+| Compute 管线 | 无 | 需 `vkCreateComputePipelines` ＋ 独立描述符布局 ＋ 调度/屏障 |
+| SSBO | 内存模块只覆盖 UBO/顶点/索引/实例 | 需通用 storage buffer 创建/写入/读回 |
+| GPU 回读 | 仅颜色/深度/纹理 | 需 compute 结果回读（staging） |
+| 间接绘制 | 无（全 `vkCmdDrawIndexed`） | 需 indirect 参数/计数缓冲＋特性探测 |
+| Hi-Z | 无 | 需深度金字塔＋双缓冲深度来源 |
+| Cluster | 逐片元 8 盏循环 | 需光源 SSBO＋前缀和＋着色器分支 |
 
-## 三、架构设计（先定骨架，避免架构债）
+## §二、架构设计（实施前冻结的关键决策）
 
-### 3.1 模块划分
+### 2.1 模块划分（同 v1）
+`src/render/Compute/`、`src/render/GPU驱动/`、`src/render/HiZ/`、`src/render/Cluster/`，各自 `core/ ＋ 对外头 ＋ 局部命名空间使用.h`；`Frame` 只负责串联 pass，不承载能力逻辑。
 
-```
-Application/Renderer/src/render/
-├── Compute/                     # 新增：通用 compute 基础设施
-│   ├── core/                    #   compute 管线缓存 / 描述符 / 调度 / 屏障
-│   ├── 计算数据.h               #   Vulkan-free 公共语义头（开关、线程组、统计）
-│   └── Compute.h                #   对外头（供 Renderer 门面消费）
-├── GPU驱动/                     # 新增：剔除与间接绘制
-│   ├── core/                    #   视锥/距离/遮挡测试 compute、indirect 参数
-│   └── 驱动数据.h               #   开关、阈值、统计
-├── HiZ/                         # 新增：深度金字塔
-│   ├── core/                    #   生成 compute（逐级降采样取最大深度）
-│   └── HiZ数据.h
-└── Cluster/                     # 新增：分簇光照
-    ├── core/                    #   分簇构建、前缀和、光源列表
-    └── 分簇数据.h
-```
+### 2.2 描述符布局（**前置决策，241 轮落地**）
+- **compute 使用独立描述符布局 `compute_set0`**：binding 0..3 为 storage buffer（实例/AABB、剔除输出、光源、Cluster 列表），binding 4..5 为 storage image（Hi-Z 等）。
+- **不与图形 set 0（Scene UBO）与 set 1（材质采样）混用**：图形与 compute 各自 `VkDescriptorSetLayout`，避免「图形 pass 增字段导致 compute 布局失效」。
+- 推送常量：compute 用与图形**同尺寸**的 128 字节块，字段复用现有 `Push_Tint` 的偏移约定，避免两套偏移表。
 
-- 新模块一律遵守既有「core/ ＋ 对外头 ＋ 局部命名空间使用.h」结构；门面 `渲染器.h` 只保留转发与查询，能力域 API 放扩展头。
-- `Frame` 模块负责把 compute pass 与图形 pass 串联（复用现有并行录制与命令池），**不把 compute 逻辑塞进 Frame**。
+### 2.3 包围体表示（**修正 v1 数学错误**）
+- 视锥 / 距离 / 遮挡测试统一使用**世界空间包围球**（中心 = 局部 AABB 中心经模型矩阵，半径 = 局部 AABB 半对角长 × max(模型矩阵列长)）。
+- Hi-Z 投影需要矩形，采用**世界空间 AABB**：把局部 AABB 的 **8 个角点逐一变换**后重求 min/max（**不得**直接对局部 AABB 乘矩阵）。
+- 8 角点变换在 `站内`（登记期，CPU）完成，结果进实例缓冲；每实例额外存 `sphere_center_r`（vec4）与 `aabb_min/aabb_max`（各 vec4）。
+- 保守扩张：球半径 ×1.001 ＋ 0.002 世界单位；AABB 每轴再外扩 0.002。
 
-### 3.2 数据布局（关键决策，实施前冻结）
+### 2.4 深度来源（**修正 v1 缺口**）
+- 第 **253 轮先核查**现有深度附件的帧槽分配：若已按在途帧数（frames in flight）每槽一份，则「上一帧深度」天然存在，直接用于 Hi-Z；
+  若为单份复用，则新增**双缓冲深度纹理**（`R32_SFLOAT` ×2 轮转），每帧在场景 pass 末尾拷贝一次（`vkCmdCopyImage`）。
+- 无论哪种方案，Hi-Z 一律**读取上一帧的历史深度**，不与本帧写入同资源；首帧无历史 → 跳过遮挡（只做视锥/距离）。
 
-- **实例剔除输入**：`Instanced_Record { mat4 model; vec4 material; vec4 aabb_min; vec4 aabb_max; }`（AABB 由网格模块提供局部包围盒 × 模型矩阵求得，或在登记时预变换）。
-- **剔除输出（间接参数）**：`Draw_Indexed_Indirect { uint32 index_count; uint32 instance_count; uint32 first_index; int32 vertex_offset; uint32 first_instance; }` ＋ 独立 `visible_count` 缓冲（供统计与回读）。
-- **Hi-Z**：与场景深度同宽高的 `R32_SFLOAT` 金字塔，级数 `floor(log2(max(w,h))) + 1`；`HiZ[i] = max(HiZ[i+1] 四邻域)`。
-- **Cluster**：视图空间 3D 网格（默认 `16×9×24`，可配）；`cluster_light_count[i]`、`cluster_light_offset[i]`（前缀和）、`cluster_light_indices[]`。
-- **光源 SSBO**：`Light_Record { vec4 pos_radius; vec4 color_intensity; vec4 dir_cone; vec4 params; }`，上限可配（默认 1024），旧 8 盏门面 API **保留并映射**。
+### 2.5 设备特性探测与降级矩阵（**补充 v1**）
 
-### 3.3 同步与生命周期
+| 特性 | 依赖轮次 | 不支持时降级 |
+| --- | --- | --- |
+| Compute（storage buffer / storage image） | 241+ | `compute_supported = false`，全部 GPU 路径关闭，走 CPU 剔除 |
+| `drawIndirectCount` | 249 | 改用 CPU 写 `instance_count` 的间接绘制（仍省绘制调用但需一次回读） |
+| `multiDrawIndirect` | 252 | 逐批次 `vkCmdDrawIndexedIndirect` 多次调用 |
+| `timestamp`（`VK_EXT_host_query_reset`） | 245 | 统计退化为计数，耗时字段置 −1 |
+| 8 位存储 / 保守光栅化（若用于 Hi-Z 辅助） | 253 | 不启用，按常规路径 |
 
-- compute 与图形 pass 之间用 **同步 2 屏障**（`VkMemoryBarrier2` 的 stage/access 掩码按用途精确指定），禁止 `vkDeviceWaitIdle`。
-- 资源全部走既有**延迟销毁队列**（在途帧数 + 1），compute 缓冲同规则。
-- Hi-Z 使用**上一帧**深度（延迟一帧，避免同帧读写冲突）；首帧无历史时整体跳过遮挡，只做视锥剔除。
-- 不支持 compute 的设备：配置项直接报 false 并回落到 CPU 剔除路径（现有路径）。
+### 2.6 Cluster 切分与 >8 盏逻辑（**修正 v1 逻辑漏洞**）
+- 切分默认**视图空间线性**（`cluster_scheme = Linear`）；预留 `Logarithmic` 开关（默认关）。
+- 光源容量：`light_capacity` 默认 1024；**>256 盏必须 cluster 开启**。
+- **>8 盏且 cluster 关闭**：`light_count_effective = min(light_count, 8)`，**发出一次告警**并在 `Frame_Stats` 记录 `light_truncated`；不静默截断。
+- **cluster 关闭时不存在第三条「非 cluster 的 SSBO 循环」**：旧路径就是现有 8 盏前向循环；>8 盏只能靠 cluster。
+- 旧 API（`light_add_point`/`light_add_spot`，≤8 盏）保留，写入 SSBO 前 8 槽，逐字节等价。
 
-### 3.4 门面与数据化（默认关闭）
+### 2.7 Compute 与并行录制的关系（**补充 v1**）
+- compute pass **在主线程按顺序插入**到命令缓冲（场景 pass 之前 / Hi-Z 生成在场景 pass 之后），**不进入并行录制**；理由：compute 依赖跨 pass 结果，拆并行会引入屏障与顺序复杂度。
+- 并行录制仍只覆盖图形 pass（现状）；若后续需要并行 compute，列为方向一完成后的候选，不在 36 轮内。
 
-- `Renderer_Config` 增：`compute_enable`（默认 false）、`gpu_cull_enable`、`hiz_enable`、`cluster_enable`、`cluster_grid[3]`、`light_capacity`。
-- 门面增：`compute_supported()`、`gpu_cull_set/get`、`hiz_set/get`、`cluster_set/get`、`cluster_grid_set`、`gpu_stats()`（剔除/间接/集群计数）。
-- **所有开关关闭时**：走原逐项 `vkCmdDrawIndexed` 与逐片元光源循环，像素逐字节一致。
+### 2.8 CPU/GPU 一致性口径（**补充 v1**）
+- **GPU 必须保守**：CPU 剔除结果 `C`，GPU 结果 `G`，断言 `C ⊆ G`（GPU 不多剔）。
+- 浮点容差：平面测试使用 `dot(n, c) + r + 1e-4 ≤ 0` 判定完全在外；AABB 投影各轴外扩 `0.002`；跨近平面时**保守判可见**（不做近平面裁剪剔除，先整体判可见再进遮挡测试）。
+- 用例：随机 2000 个实例 × 8 组随机视锥，断言 `C ⊆ G` 恒成立。
 
-## 四、32 轮分解（每轮 30–40 分钟）
+### 2.9 同步与生命周期
+- `VkMemoryBarrier2`（stage/access 精确）；禁止 `vkDeviceWaitIdle`；资源走延迟销毁队列（在途帧数 + 1）。
 
-### 阶段 A · Compute 基础设施（1–6 轮）
+### 2.10 门面与数据化（默认关闭）
+`Renderer_Config`：`compute_enable`、`gpu_cull_enable`、`hiz_enable`、`cluster_enable`、`cluster_grid[3]`（默认 16×9×24）、`cluster_scheme`、`light_capacity`（默认 1024）。
+门面：`compute_supported()`、`gpu_cull_set/get`、`hiz_set/get`、`cluster_set/get`、`cluster_grid_set`、`gpu_stats()`（剔除/间接/集群/耗时）。
 
-| 轮 | 主题 | 主要改动 | 验收 |
+## §三、36 轮分解（241–276）
+
+### 阶段 A · Compute 基础设施（241–246，6 轮）
+
+| 轮 | 主题 | 关键点 | 验收 |
 | --- | --- | --- | --- |
-| 241 | Compute 管线创建与绑定 | `Pipeline` 增 compute 管线分支（layout / descriptor / push constant），`pipeline_compute_register/activate` | 空 compute 着色器（写入常量）回读正确 |
-| 242 | Compute 调度封装 | 新模块 `Compute/core`：`dispatch(group_x,...)`、组尺寸查询、错误检查、屏障辅助 | 调度封装单测（1D 拷贝用例） |
-| 243 | 门面 `compute_*` ＋ SSBO 创建 | `buffer_create/storage_bind`、`compute_load/bind/dispatch`；默认关闭 | 1 万 float「加一」用例 CPU 回读一致 |
-| 244 | GPU 数据回读通道 | staging 缓冲 ＋ 拷贝 ＋ 回读封装；门面 `compute_readback` | 回读与写入值一致（含大缓冲） |
-| 245 | Compute 统计与计时 | `Frame_Stats` 增 `compute_dispatches` / `gpu_compute_ms`（时间戳） | 关闭时为 0；开启可读 |
-| 246 | Compute 资源生命周期与降级 | 延迟销毁接入、设备不支持时 `compute_supported = false` 且初始化不失败 | 强制关闭仍正常出帧 |
+| 241 | Compute 管线创建与绑定 | 独立 `compute_set0` 布局；`compute_pipeline_register/activate`；128B 推送常量 | compute 写常量 → 回读正确 |
+| 242 | 调度封装 | 新模块 `Compute/core`：dispatch、组尺寸查询、`VkMemoryBarrier2` 辅助 | 1D 拷贝用例 |
+| 243 | 门面 `compute_*` ＋ SSBO | `buffer_create/storage_bind`；默认关闭 | 1 万 float 加一 → CPU 回读一致 |
+| 244 | GPU 回读通道 | staging ＋ 拷贝 ＋ 回读；`compute_readback` | 大缓冲回读一致 |
+| 245 | 统计与计时 | `compute_dispatches`、`gpu_compute_ms`（timestamp 探测 + 降级） | 关闭为 0，开启可读 |
+| 246 | 生命周期与降级矩阵 | 延迟销毁；§2.5 五类特性探测；`compute_supported` | 强制关闭仍正常出帧 |
 
-### 阶段 B · GPU 剔除 ＋ 间接绘制（7–12 轮）
+### 阶段 B · GPU 剔除 ＋ 间接绘制（247–252，6 轮）
 
-| 轮 | 主题 | 主要改动 | 验收 |
+| 轮 | 主题 | 关键点 | 验收 |
 | --- | --- | --- | --- |
-| 247 | 实例 AABB 缓冲 | 网格局部 AABB × 模型矩阵构建 compute 输入（登记期生成） | AABB 与 CPU 计算一致 |
-| 248 | 视锥剔除 compute | 6 平面测试写可见索引与 count | 可见集合与 CPU 剔除一致 |
-| 249 | 间接绘制路径 | `vkCmdDrawIndexedIndirect` ＋ count buffer；门面开关 | 开关打开时画面与逐项路径逐字节一致 |
-| 250 | 距离 / 背面剔除 | 距离阈值与背面朝向剔除并入 compute | 用例覆盖边界（相切、背向） |
-| 251 | 剔除观测与统计 | `gpu_culled_instances` / `indirect_draws`；面板与展廊同步 | 计数与 CPU 基线一致 |
-| 252 | 多批实例合批与缓冲复用 | 多网格批次的 indirect 参数合并、每帧缓冲复用 | 大实例场景（≥1 万）帧率不降 |
+| 247 | **性能基线** ＋ 实例包围体 | §性能验收采集；8 角点重求世界 AABB ＋ 包围球（§2.3） | 基线表落盘；AABB ⊆ CPU 参考的 1e-3 |
+| 248 | 视锥剔除 compute | 保守测试；`C ⊆ G` 断言 | 随机 2000 实例 × 8 视锥恒成立 |
+| 249 | 间接绘制路径 | `drawIndirectCount` 探测；不支持则 CPU 写 count | 开关开/关画面逐字节一致 |
+| 250 | 距离 / 背面剔除 | 阈值边界（相切、背向） | 用例覆盖边界 |
+| 251 | 观测 ＋ 展廊（剔除前后） | `gpu_culled_instances`；展廊三态（关/视锥/视锥＋距离）对比 | 计数与 CPU 基线一致；目视确认 |
+| 252 | 多批次合批与复用 | `multiDrawIndirect` 探测；≥1 万实例 | 相对基线 GPU 耗时下降 ≥ 12% |
 
-### 阶段 C · Hi-Z 遮挡剔除（13–20 轮）
+### 阶段 C · Hi-Z 遮挡剔除（253–262，10 轮）
 
-| 轮 | 主题 | 主要改动 | 验收 |
+| 轮 | 主题 | 关键点 | 验收 |
 | --- | --- | --- | --- |
-| 253 | 深度金字塔资源 | `HiZ` 模块：级数计算、逐级视图、布局与销毁 | 资源创建/销毁无校验错误 |
-| 254 | Hi-Z 生成 compute | 逐级 2×2 取最大深度；边界 clamp | 每级值 = 下一级对应区域最大值 |
-| 255 | 遮挡测试 compute | AABB 投影矩形 ＋ 逐级 `max` 比较 | 被完全遮挡实例被剔除 |
-| 256 | 接入剔除管线（默认关闭） | `hiz_enable` 开关；首帧跳过 | 开关关闭画面逐字节不变 |
-| 257 | 保守性收紧 | 投影矩形扩张与深度 bias；避免误剔除 | 用例：可见实例 0 误剔除（多场景） |
-| 258 | 上一帧 Hi-Z 复用 | 延迟一帧读取历史深度 | 画面稳定、无闪烁（逐帧像素一致） |
-| 259 | MSAA / 离屏兼容 | MSAA 下用解析深度生成 Hi-Z；离屏路径同口径 | 4× MSAA 路径可用 |
-| 260 | Hi-Z 观测与展廊 | `hiz_culled_instances`、金字塔可视化开关 | 面板与展廊可见 |
+| 253 | 深度来源 ＋ 金字塔资源 | **先核查帧槽深度**；需要时双缓冲 §2.4；级数/视图/销毁 | 无校验错误 |
+| 254 | Hi-Z 生成 compute | 逐级 2×2 取最大；边界 clamp | 每级 = 下级对应区域最大值 |
+| 255 | 遮挡测试 ＋ 近平面处理 | AABB 投影；跨近平面判可见（§2.8）；逐级比较 | 完全遮挡实例被剔除 |
+| 256 | 接入剔除管线（默认关闭） | `hiz_enable`；首帧跳过 | 关闭时逐字节不变 |
+| 257 | 保守性初版 | 扩张 ＋ bias；多场景初测 | 可见实例 0 误剔除（主场景） |
+| 258 | 保守性调参（多场景） | 近景/远景/摩天楼式遮挡；参数收敛 | 3 场景零误剔除 ＋ 剔除率 ≥ 预期 |
+| 259 | 上一帧复用 | 历史深度稳定 | 逐帧像素一致、无闪烁 |
+| 260 | MSAA / 离屏兼容 | 解析深度生成；离屏同口径 | 4× MSAA 可用 |
+| 261 | 观测 ＋ 展廊（遮挡前后） | `hiz_culled_instances`；三态对比可视化 | 面板与展廊可见 |
+| 262 | Hi-Z 性能对照 | 相对 247 基线 | 剔除外耗时 ≤ 0.3 ms；总耗时下降 ≥ 5% |
 
-### 阶段 D · Cluster 光照（21–29 轮）
+### 阶段 D · Cluster 光照（263–273，11 轮）
 
-| 轮 | 主题 | 主要改动 | 验收 |
+| 轮 | 主题 | 关键点 | 验收 |
 | --- | --- | --- | --- |
-| 261 | 光源 SSBO 化 | `Light_Record` 数组、容量可配（默认 1024）；旧 8 盏 API 映射 | 旧用例全过（≤8 盏逐字节一致） |
-| 262 | 分簇网格与计数 | 视图空间 3D 网格、逐簇光源计数 compute | 计数与 CPU 参考一致 |
-| 263 | 前缀和与列表写入 | 并行前缀和 ＋ 索引写入（两段 dispatch） | 偏移单调、无越界 |
-| 264 | 着色器 Cluster 采样 | `场景.frag` 增 cluster 分支（默认关闭） | 小规模光源与旧路径逐像素一致 |
-| 265 | Cluster 数据化与门面 | `cluster_set`、`cluster_grid_set`、`Cluster_Data` | 配置非法值钳制 |
-| 266 | 大于 8 盏光源支持 | 点光/聚光上限扩到 `light_capacity`；门面 API 兼容 | 512 盏点光可用且不崩 |
-| 267 | 与阴影 / 聚光锥 / 衰减兼容 | Cluster 分支覆盖三类光源参数 | 阴影/锥形/衰减用例全过 |
-| 268 | Cluster 展廊展示 | 数百点光的「灯墙」展区 ＋ 图例 | 目视确认 |
-| 269 | 调优与耗时观测 | local size / dispatch 合并；`gpu_cluster_ms` | 构建耗时下降，画面不变 |
+| 263 | 光源 SSBO 化 ＋ >8 逻辑 | `Light_Record` 数组；§2.6 截断告警/强制 cluster | ≤8 盏用例逐字节一致；>8 且关 cluster 告警 |
+| 264 | 分簇网格与逐簇计数 | 视图空间线性切分 §2.6 | 计数与 CPU 参考一致 |
+| 265 | 块内扫描 | 单块内并行前缀和（共享内存） | 块内和与 CPU 一致 |
+| 266 | 块间扫描 | 块和上行/下行扫描 | 全量前缀和单调无洞 |
+| 267 | 偏移合成与列表写入 | 合成偏移 ＋ 写索引（两次 dispatch） | 列表与 CPU 参考一致、无越界 |
+| 268 | 着色器 Cluster 采样 | `场景.frag` 分支（默认关） | 小规模光源与旧路径逐像素一致 |
+| 269 | 数据化与门面 | `cluster_set`、`cluster_grid_set`、`cluster_scheme` | 非法值钳制 |
+| 270 | 大光源数 ＋ 三类光源兼容 | 512 盏；圆锥/衰减/阴影参数 | 阴影/锥形/衰减用例全过 |
+| 271 | 展廊灯墙 | 数百点光展区 ＋ 图例 | 目视确认 |
+| 272 | 调优 | local size / dispatch 合并 / 共享内存占用 | 构建耗时下降且画面不变 |
+| 273 | Cluster 性能对照 | 相对 247 基线 | 构建 ≤ 0.6 ms；整帧下降 ≥ 20% |
 
-### 阶段 E · 整合收口（30–32 轮）
+### 阶段 E · 整合收口（274–276，3 轮）
 
-| 轮 | 主题 | 主要改动 | 验收 |
+| 轮 | 主题 | 关键点 | 验收 |
 | --- | --- | --- | --- |
-| 270 | 总开关与降级矩阵 | 四开关组合矩阵（纯 CPU / 仅 compute / 剔除 / Hi-Z / Cluster） | 每种组合可出帧 |
-| 271 | 全路径回归与稳定性 | 三树构建、全量回归、展示冒烟、双跑复核 | 全量全过 |
-| 272 | 性能基线记录与方向收口 | 工作站记录性能对比、能力汇总、导航、按轮报告 | 文档齐备 |
+| 274 | 开关组合矩阵与降级 | 16 组合 × 特性缺失矩阵 | 每种组合可出帧 |
+| 275 | 全路径回归与稳定性 | 三树 ＋ 全量 ＋ 双跑 ＋ 展示冒烟 | 全量全过 |
+| 276 | 性能总结与文档收口 | 基线终值、能力汇总、导航、按轮报告 | 文档齐备、性能表完整 |
 
-## 五、测试与回归策略
+## §四、测试与回归策略（含分组回归）
 
-- **用例分层**：L1 数据正确性（SSBO/回读/AABB/前缀和）→ L2 行为一致性（开关开/关像素逐字节）→ L3 场景级（大实例、512 光源、MSAA、离屏）。
-- **新套件**：`Renderer_Compute_Test`、`Renderer_Gpu_Cull_Test`、`Renderer_HiZ_Test`、`Renderer_Cluster_Test`，各 ≤ 约 400 行（遵守单文件上限）。
-- **回归口径**：每轮全量回归；默认关闭路径必须逐字节一致；性能类改动须给出前后计数（绘制项、剔除数、dispatch 数）。
+- **用例分层**：L1 数据（SSBO/回读/AABB/前缀和）→ L2 行为（开关开/关逐字节）→ L3 场景（1 万实例、512 光源、MSAA、离屏）。
+- **新套件**：`Renderer_Compute_Test`、`Renderer_Gpu_Cull_Test`、`Renderer_HiZ_Test`、`Renderer_Cluster_Test`。
+- **分组回归（控制每轮时长）**：每轮跑「受影响套件 ＋ 渲染核心套件（材质/网格/场景）」；**每 3 轮**与**窗口收口**跑全量（150–180 s）。全量结果逐轮记入报告。
+- **一致性断言**：GPU 剔除 `C ⊆ G`；Hi-Z 保守性「零误剔除」；Cluster 小规模逐像素等价。
 
-## 六、风险与回退
+## §五、风险与回退
 
 | 风险 | 处置 |
 | --- | --- |
-| Compute 队列族缺失（仅图形队列） | 优先复用图形队列族（Vulkan 1.3 常见），失败即降级并报 `compute_supported=false` |
-| Hi-Z 误剔除造成闪烁 | 投影矩形扩张 ＋ 深度 bias ＋ 上一帧复用；用例「零误剔除」把关 |
-| Cluster 前缀和在 30–40 分钟轮内偏重 | 允许第 263 轮拆成「扫描上行/下行」两次提交，仍算一轮 |
-| 着色器分支导致旧路径像素变化 | 所有分支以 push constant/UBO 开关驱动，关闭时值恒为 0，编译器仍可能重排 —— 用像素回归强制把关 |
-| 设备能力差异（本机 NVIDIA） | 关键能力（compute、timestamp、storage buffer）启动时探测并记录 |
+| 包围体变换数学错 | §2.3 8 角点重求 ＋ 球表示；247 轮先用 CPU 参考对数（AABB ⊆ 参考 1e-3） |
+| 上一帧深度不存在 | 253 轮先核查帧槽，必要时双缓冲（§2.4） |
+| 无 `drawIndirectCount` | 249 轮降级为 CPU 写 count（§2.5） |
+| >8 盏与 cluster 关闭矛盾 | §2.6 告警截断或强制 cluster，不静默 |
+| Hi-Z 误剔除 | 257/258 两轮保守性调参；三场景零误剔除 |
+| 前缀和出错 | 265/266/267 三轮拆分，逐级对 CPU 参考 |
+| 着色器分支像素漂移 | 分支由 0 值开关驱动；像素回归把关 |
+| 全量回归占用轮时 | §四 分组回归（3 轮一次全量） |
 
-## 七、文档与流程义务
+## §六、文档与流程义务（不变）
+每轮新建任务报告目录 ＋ 报告提交历史；每窗口新建导航版次 ＋ README/分支提交历史；两汇总/能力汇总/下轮方向逐轮追加；`检查/源码行数统计.ps1` 每轮运行；外部库变更逐轮登记（无则「无」）。
 
-- **每轮**新建任务报告目录（执行计划 ＋ 执行报告），并更新 `报告提交历史`。
-- **每窗口**新建项目导航版次（窗口内就地增量），窗口收口更新 README / 分支提交历史。
-- 两个汇总文件（执行计划汇总 / 执行报告汇总）、能力汇总、下轮方向逐轮追加；外部库变更逐轮登记（无则写「无」）。
-- 源码统计每轮运行 `检查/源码行数统计.ps1`。
-
-## 八、与方向二 / 三的接口预留
-
-- **粒子**复用：Compute 调度封装、SSBO、间接绘制、GPU 回读 —— 方向二不再重复搭基础设施。
-- **toon/多层材质**只依赖材质与着色器域，**不修改** compute/剔除结构；多层材质的材质参数化预留 SSBO 扩展位（图层栈最多 8 层，参数走材质 UBO/SSBO）。
+## §七、与方向二 / 三的接口预留
+- 粒子复用：compute 调度、SSBO、间接绘制、GPU 回读、特性探测矩阵。
+- toon/多层材质：不触碰 compute/剔除结构；图层栈参数预留 SSBO 扩展位（≤8 层）。
