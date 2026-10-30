@@ -37,6 +37,17 @@
 | `bool frustum_aabb_visible(planes, aabb_min, aabb_max)` | AABB 正顶点判定（更紧，用于验证 GPU 不多剔） |
 | 门面 `bool gpu_cull_mask(transforms, count, local_min, local_max, mask_out)` | CPU 求球 → SSBO → 懒加载 `视锥剔除.comp` 管线 → 调度 → 回读掩码（1 = 可见） |
 
+### 2.2 第二百四十九轮增量（GPU 实例压缩）
+
+| 接口 / 配置 | 语义 |
+| --- | --- |
+| `Renderer_Config::gpu_cull_enable`（默认关） | 为真且计算可用时，`mesh_draw_instanced` 改走 GPU 压缩；失败自动回落 CPU 剔除 |
+| `void gpu_cull_enable_set(bool)` / `bool gpu_cull_enable_get()` | 运行时开关与查询 |
+| `bool gpu_instance_compact(transforms, count, local_min, local_max, matrices_out, visible_out)` | 三缓冲（源矩阵 / 压缩输出 / 原子计数）＋ 懒加载 `实例压缩.comp` → 调度 → 回读可见数与压缩矩阵 |
+| `Frame_Stats::gpu_cull_ms` | 走 GPU 路径时为计算时间戳量测的压缩耗时；未走时为 0 |
+
+着色器 `实例压缩.comp` 与渲染器 `frustum_cull_aabb` **逐式同构**（mvp × 8 角点 × 六面「全部角点在外」），故开/关两路径像素逐字节一致；原子槽位顺序不保证与输入顺序一致，渲染正确性不依赖顺序。
+
 ## 3. 模块私有方法
 
 无（单一自由函数，无内部状态）。
