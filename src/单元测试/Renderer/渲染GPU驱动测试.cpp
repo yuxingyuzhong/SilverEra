@@ -6,6 +6,7 @@
 */
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdint>
@@ -418,4 +419,181 @@ TEST_F(Renderer_GPU_Driven_Test, GPU剔除与CPU一致且CPU更保守)
 		//该视图下至少有一半实例可见（相机在场景中，统计口径自洽）
 		EXPECT_GE(visible_count, 1u);
 	}
+}
+namespace
+{
+	//CPU 剔除参考（与渲染器 core 内 frustum_cull_aabb 逐式同构；第二百四十九轮）
+	bool cpu_cull_clip(const float view_proj[16], const float model[16],
+		const float local_min[3], const float local_max[3])
+	{
+		//组合矩阵 mvp = view_proj × model（列主序）
+		float mvp[16] = {};
+		for (uint32_t column = 0; column < 4; ++column)
+			for (uint32_t row = 0; row < 4; ++row)
+			{
+				float sum = 0.0f;
+				for (uint32_t inner = 0; inner < 4; ++inner)
+					sum += view_proj[inner * 4 + row] * model[column * 4 + inner];
+				mvp[column * 4 + row] = sum;
+			}
+		bool outside[6] = { true, true, true, true, true, true };
+		for (uint32_t corner = 0; corner < 8; ++corner)
+		{
+			const float x = (corner & 1u) != 0 ? local_max[0] : local_min[0];
+			const float y = (corner & 2u) != 0 ? local_max[1] : local_min[1];
+			const float z = (corner & 4u) != 0 ? local_max[2] : local_min[2];
+			const float clip_x = mvp[0] * x + mvp[4] * y + mvp[8] * z + mvp[12];
+			const float clip_y = mvp[1] * x + mvp[5] * y + mvp[9] * z + mvp[13];
+			const float clip_z = mvp[2] * x + mvp[6] * y + mvp[10] * z + mvp[14];
+			const float clip_w = mvp[3] * x + mvp[7] * y + mvp[11] * z + mvp[15];
+			if (!(clip_x > clip_w))
+				outside[0] = false;
+			if (!(clip_x < -clip_w))
+				outside[1] = false;
+			if (!(clip_y > clip_w))
+				outside[2] = false;
+			if (!(clip_y < -clip_w))
+				outside[3] = false;
+			if (!(clip_z < 0.0f))
+				outside[4] = false;
+			if (!(clip_z > clip_w))
+				outside[5] = false;
+		}
+		for (uint32_t plane = 0; plane < 6; ++plane)
+			if (outside[plane])
+				return true;
+		return false;
+	}
+}
+
+/*
+GPU 压缩与 CPU 剔除一致（第二百四十九轮）
+口径：8 组随机相机 × 2000 随机实例，GPU 压缩出的矩阵序列必须与 CPU 剔除保留的序列逐字节一致。
+*/
+TEST_F(Renderer_GPU_Driven_Test, GPU压缩与CPU剔除一致)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.compute_supported())
+		GTEST_SKIP() << "本机图形队列族不支持计算路径";
+	const float local_min[3] = { -QUAD_HALF, -QUAD_HALF, 0.0f };
+	const float local_max[3] = { QUAD_HALF, QUAD_HALF, 0.0f };
+	constexpr uint32_t INSTANCE_COUNT = 2000;
+	std::mt19937 generator(20261030u);
+	std::uniform_real_distribution<float> offset_x(-30.0f, 30.0f);
+	std::uniform_real_distribution<float> offset_yz(-10.0f, 10.0f);
+	std::uniform_real_distribution<float> scale(0.2f, 2.0f);
+	std::uniform_real_distribution<float> angle(-3.14159265f, 3.14159265f);
+	std::vector<std::array<float, 16>> transforms(INSTANCE_COUNT);
+	for (uint32_t index = 0; index < INSTANCE_COUNT; ++index)
+	{
+		const float s = scale(generator);
+		const float a = angle(generator);
+		std::array<float, 16> matrix = identity_matrix();
+		matrix[0] = std::cos(a) * s;
+		matrix[1] = std::sin(a) * s;
+		matrix[4] = -std::sin(a) * s;
+		matrix[5] = std::cos(a) * s;
+		matrix[10] = s;
+		matrix[12] = offset_x(generator);
+		matrix[13] = offset_yz(generator);
+		matrix[14] = offset_yz(generator);
+		transforms[index] = matrix;
+	}
+	std::vector<float> compacted(static_cast<std::size_t>(INSTANCE_COUNT) * 16, 0.0f);
+	for (uint32_t view = 0; view < 8; ++view)
+	{
+		renderer.camera_position_set(offset_x(generator) * 0.3f, offset_yz(generator) * 0.3f, 6.0f);
+		renderer.camera_target_set(0.0f, 0.0f, 0.0f);
+		renderer.camera_fov_set(0.7f + 0.15f * static_cast<float>(view % 4));
+		uint32_t visible = 0;
+		ASSERT_TRUE(renderer.gpu_instance_compact(transforms[0].data(), INSTANCE_COUNT,
+			local_min, local_max, compacted.data(), &visible));
+		float view_proj[16] = {};
+		ASSERT_TRUE(renderer.camera_view_proj(view_proj));
+		//CPU 参考序列
+		std::vector<std::array<float, 16>> expected;
+		for (uint32_t index = 0; index < INSTANCE_COUNT; ++index)
+			if (!cpu_cull_clip(view_proj, transforms[index].data(), local_min, local_max))
+				expected.push_back(transforms[index]);
+		ASSERT_EQ(visible, static_cast<uint32_t>(expected.size())) << "视图 " << view;
+		/*
+		逐实例比对（按字典序排序后比较）
+		原子计数分配的槽位顺序由 GPU 调度决定，不保证与输入顺序一致；
+		故校验「集合相等」而非「序列相等」——像素等价由开关用例以整帧像素断言覆盖。
+		*/
+		std::vector<std::array<float, 16>> gpu_slots(visible);
+		for (uint32_t slot = 0; slot < visible; ++slot)
+			for (uint32_t element = 0; element < 16; ++element)
+				gpu_slots[slot][element] = compacted[static_cast<std::size_t>(slot) * 16 + element];
+		auto less = [](const std::array<float, 16>& left, const std::array<float, 16>& right)
+		{
+			for (uint32_t element = 0; element < 16; ++element)
+				if (left[element] != right[element])
+					return left[element] < right[element];
+			return false;
+		};
+		std::sort(gpu_slots.begin(), gpu_slots.end(), less);
+		std::sort(expected.begin(), expected.end(), less);
+		for (uint32_t slot = 0; slot < visible; ++slot)
+			for (uint32_t element = 0; element < 16; ++element)
+				ASSERT_FLOAT_EQ(gpu_slots[slot][element], expected[slot][element])
+					<< "视图 " << view << " 槽 " << slot << " 元素 " << element;
+	}
+}
+
+/*
+GPU 剔除开关的画面与统计等价（第二百四十九轮核心验收）
+口径：同一 1000 实例场景，关/开 GPU 剔除的两渲染器必须像素逐字节一致，绘制与剔除统计一致。
+*/
+TEST_F(Renderer_GPU_Driven_Test, GPU剔除开关画面等价)
+{
+	engine::Renderer_Config off_config = hidden_config();
+	off_config.instance_capacity = 1024;
+	engine::Renderer off;
+	ASSERT_TRUE(off.init(off_config));
+	if (!off.readback_supported() || !off.compute_supported())
+		GTEST_SKIP() << "本机不支持像素回读或计算路径";
+	engine::Renderer_Config on_config = off_config;
+	on_config.gpu_cull_enable = true;
+	engine::Renderer on;
+	ASSERT_TRUE(on.init(on_config));
+	EXPECT_TRUE(on.gpu_cull_enable_get());
+	//同一批实例（横向铺开，一部分在视锥外）
+	std::mt19937 generator(20261030u);
+	std::uniform_real_distribution<float> offset_x(-8.0f, 8.0f);
+	std::vector<std::array<float, 16>> transforms(1000);
+	for (uint32_t index = 0; index < transforms.size(); ++index)
+	{
+		std::array<float, 16> matrix = identity_matrix();
+		matrix[12] = offset_x(generator);
+		transforms[index] = matrix;
+	}
+	engine::Mesh_Handle off_mesh = 0;
+	engine::Mesh_Handle on_mesh = 0;
+	ASSERT_TRUE(off.mesh_load(off_mesh, quad_data()));
+	ASSERT_TRUE(on.mesh_load(on_mesh, quad_data()));
+	ASSERT_TRUE(off.mesh_draw_instanced(off_mesh, transforms[0].data(), static_cast<uint32_t>(transforms.size())));
+	ASSERT_TRUE(on.mesh_draw_instanced(on_mesh, transforms[0].data(), static_cast<uint32_t>(transforms.size())));
+	std::vector<uint8_t> off_pixels(WINDOW_WIDTH * WINDOW_HEIGHT * 4, 0);
+	std::vector<uint8_t> on_pixels(off_pixels.size(), 0);
+	ASSERT_TRUE(off.frame_render(off_pixels.data(), static_cast<uint32_t>(off_pixels.size())));
+	ASSERT_TRUE(on.frame_render(on_pixels.data(), static_cast<uint32_t>(on_pixels.size())));
+	//像素逐字节一致
+	uint32_t diff = 0;
+	for (std::size_t offset = 0; offset < off_pixels.size(); ++offset)
+		if (off_pixels[offset] != on_pixels[offset])
+			++diff;
+	EXPECT_EQ(diff, 0u) << "开/关 GPU 剔除的像素不一致";
+	//统计一致（剔除数 / 可见实例数 / 实际绘制实例数）
+	const engine::Frame_Stats off_stats = off.frame_stats_get();
+	const engine::Frame_Stats on_stats = on.frame_stats_get();
+	EXPECT_EQ(off_stats.last_culled_instances, on_stats.last_culled_instances);
+	EXPECT_EQ(off_stats.last_instances, on_stats.last_instances);
+	EXPECT_EQ(off_stats.drawn_instances, on_stats.drawn_instances);
+	//GPU 路径确实产生了耗时或至少计数可读（不支持时间戳时为 −1）
+	if (on.compute_timestamp_supported())
+		EXPECT_GE(on_stats.gpu_cull_ms, 0.0);
+	off.mesh_unload(off_mesh);
+	on.mesh_unload(on_mesh);
 }
