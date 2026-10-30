@@ -670,3 +670,63 @@ TEST_F(Renderer_GPU_Driven_Test, GPU距离剔除与CPU一致)
 	}
 	EXPECT_EQ(visible, expected);
 }
+/*
+剔除三态统计单调（第二百五十一轮）
+口径：同一 512 实例场景三态——关（CPU 剔除）/ GPU 视锥 / GPU 视锥＋距离：
+① 关与 GPU 视锥两态剔除数相等（开关等价）；② GPU 派发计数 0 → 1；③ 加距离后可见数不增。
+*/
+TEST_F(Renderer_GPU_Driven_Test, 剔除三态统计单调)
+{
+	engine::Renderer_Config base = hidden_config();
+	base.instance_capacity = 1024;
+	engine::Renderer off;
+	ASSERT_TRUE(off.init(base));
+	engine::Renderer_Config gpu_config = base;
+	gpu_config.gpu_cull_enable = true;
+	engine::Renderer gpu;
+	ASSERT_TRUE(gpu.init(gpu_config));
+	if (!gpu.compute_supported())
+		GTEST_SKIP() << "本机图形队列族不支持计算路径";
+	constexpr uint32_t COUNT = 512;
+	std::mt19937 generator(20261030u);
+	std::uniform_real_distribution<float> offset_x(-8.0f, 8.0f);
+	std::vector<std::array<float, 16>> transforms(COUNT);
+	for (uint32_t index = 0; index < COUNT; ++index)
+	{
+		std::array<float, 16> matrix = identity_matrix();
+		matrix[12] = offset_x(generator);
+		transforms[index] = matrix;
+	}
+	engine::Mesh_Handle off_mesh = 0;
+	engine::Mesh_Handle gpu_mesh = 0;
+	ASSERT_TRUE(off.mesh_load(off_mesh, quad_data()));
+	ASSERT_TRUE(gpu.mesh_load(gpu_mesh, quad_data()));
+	ASSERT_TRUE(off.mesh_draw_instanced(off_mesh, transforms[0].data(), COUNT));
+	ASSERT_TRUE(gpu.mesh_draw_instanced(gpu_mesh, transforms[0].data(), COUNT));
+	ASSERT_TRUE(off.frame_render());
+	ASSERT_TRUE(gpu.frame_render());
+	const engine::Frame_Stats off_stats = off.frame_stats_get();
+	const engine::Frame_Stats gpu_stats = gpu.frame_stats_get();
+	//关与 GPU 视锥的剔除 / 可见数一致
+	EXPECT_EQ(off_stats.last_culled_instances, gpu_stats.last_culled_instances);
+	EXPECT_EQ(off_stats.last_instances, gpu_stats.last_instances);
+	//派发计数：关为 0、GPU 为 1
+	EXPECT_EQ(off_stats.gpu_cull_dispatches, 0u);
+	EXPECT_EQ(gpu_stats.gpu_cull_dispatches, 1u);
+	//再加距离上限：可见数不增（且剔除数增加）
+	const float center[3] = { 0.0f, 0.0f, 6.0f };
+	const float forward_dir[3] = { 0.0f, 0.0f, -1.0f };
+	const float local_min[3] = { -QUAD_HALF, -QUAD_HALF, 0.0f };
+	const float local_max[3] = { QUAD_HALF, QUAD_HALF, 0.0f };
+	std::vector<float> compacted(static_cast<std::size_t>(COUNT) * 16, 0.0f);
+	uint32_t visible_distance = 0;
+	ASSERT_TRUE(gpu.gpu_instance_compact_ex(transforms[0].data(), COUNT, local_min, local_max,
+		center, forward_dir, 14.0f, false, compacted.data(), &visible_distance));
+	const float* view_proj_dummy = nullptr;
+	(void)view_proj_dummy;
+	EXPECT_LE(visible_distance, gpu_stats.last_instances);
+	//派发计数再增 1
+	EXPECT_EQ(gpu.frame_stats_get().gpu_cull_dispatches, 2u);
+	off.mesh_unload(off_mesh);
+	gpu.mesh_unload(gpu_mesh);
+}
