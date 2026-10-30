@@ -1,4 +1,4 @@
-﻿/*
+/*
 渲染计算测试（第二百四十一轮）
 覆盖：未初始化时计算不支持且健康检查失败；
       初始化后计算上下文可用（图形队列族含 COMPUTE 位的机器上），健康检查把推送常量按位模式写入并回读一致；
@@ -173,6 +173,58 @@ TEST_F(Renderer_Compute_Test, 计算资源非法参数)
 	renderer.compute_buffer_unload(buffer);
 }
 
+//未初始化时的计算统计（第二百四十五轮）
+TEST_F(Renderer_Compute_Test, 未初始化计算统计为零)
+{
+	engine::Renderer renderer;
+	engine::Compute_Stats stats = renderer.compute_stats_get();
+	EXPECT_EQ(stats.dispatch_count, 0u);
+	EXPECT_FLOAT_EQ(stats.elapsed_ms, -1.0f);
+	EXPECT_FALSE(renderer.compute_timestamp_supported());
+}
+
+/*
+计算调度计数与计时（第二百四十五轮）
+口径：调度前计数为 0、计时为 −1；两次调度后计数为 2；支持时间戳时计时为非负且量级合理，不支持时恒 −1。
+*/
+TEST_F(Renderer_Compute_Test, 计算统计与计时)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.compute_supported())
+		GTEST_SKIP() << "本机图形队列族不支持计算路径";
+	//调度前：计数为 0、计时为 −1
+	engine::Compute_Stats before = renderer.compute_stats_get();
+	EXPECT_EQ(before.dispatch_count, 0u);
+	EXPECT_FLOAT_EQ(before.elapsed_ms, -1.0f);
+	//准备 1 万 float 与管线
+	constexpr uint32_t ELEMENT_COUNT = 10000;
+	std::vector<float> values(ELEMENT_COUNT, 0.0f);
+	engine::Compute_Buffer_Handle buffer = 0;
+	ASSERT_TRUE(renderer.compute_buffer_load(buffer, static_cast<uint32_t>(values.size() * sizeof(float)), values.data()));
+	engine::Compute_Pipeline_Handle pipeline = 0;
+	ASSERT_TRUE(renderer.compute_pipeline_load(pipeline, "计算加一.comp.spv"));
+	ASSERT_TRUE(renderer.compute_buffer_bind(buffer, 0));
+	uint32_t count = ELEMENT_COUNT;
+	ASSERT_TRUE(renderer.compute_dispatch(pipeline, ELEMENT_COUNT, 256, &count, sizeof(count)));
+	//首次调度后：计数为 1
+	engine::Compute_Stats after_first = renderer.compute_stats_get();
+	EXPECT_EQ(after_first.dispatch_count, 1u);
+	//支持时间戳：计时非负且量级合理（1 万 float 加一远小于 1 秒）
+	if (renderer.compute_timestamp_supported())
+	{
+		EXPECT_GE(after_first.elapsed_ms, 0.0f);
+		EXPECT_LT(after_first.elapsed_ms, 1000.0f);
+	}
+	//不支持时间戳：计时恒 −1
+	else
+		EXPECT_FLOAT_EQ(after_first.elapsed_ms, -1.0f);
+	//第二次调度后：计数为 2
+	ASSERT_TRUE(renderer.compute_dispatch(pipeline, ELEMENT_COUNT, 256, &count, sizeof(count)));
+	EXPECT_EQ(renderer.compute_stats_get().dispatch_count, 2u);
+	renderer.compute_pipeline_unload(pipeline);
+	renderer.compute_buffer_unload(buffer);
+}
 /*
 设备本地缓冲 ＋ GPU 回读通道（第二百四十四轮）
 口径：设备本地 SSBO（经暂存上传初值）加一后，用 compute_readback（拷贝到暂存再映射）逐元素回读为 1.0。
