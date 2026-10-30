@@ -597,3 +597,76 @@ TEST_F(Renderer_GPU_Driven_Test, GPU剔除开关画面等价)
 	off.mesh_unload(off_mesh);
 	on.mesh_unload(on_mesh);
 }
+//距离与背面剔除边界（第二百五十轮；纯 CPU 口径）
+TEST_F(Renderer_GPU_Driven_Test, 距离与背面剔除边界)
+{
+	const float camera[3] = { 0.0f, 0.0f, 0.0f };
+	const float forward[3] = { 0.0f, 0.0f, -1.0f };
+	//恰好等于阈值仍可见（严格大于才剔除）
+	const float at_edge[3] = { 5.0f, 0.0f, 0.0f };
+	EXPECT_FALSE(engine::distance_cull(at_edge, camera, 5.0f));
+	//略超阈值被剔除
+	const float beyond[3] = { 5.001f, 0.0f, 0.0f };
+	EXPECT_TRUE(engine::distance_cull(beyond, camera, 5.0f));
+	//阈值 ≤ 0 不限距离
+	EXPECT_FALSE(engine::distance_cull(beyond, camera, 0.0f));
+	EXPECT_FALSE(engine::distance_cull(beyond, camera, -1.0f));
+	//相机前方可见、正交可见、后方被剔除
+	const float front[3] = { 0.0f, 0.0f, -3.0f };
+	const float side[3] = { 3.0f, 0.0f, 0.0f };
+	const float behind[3] = { 0.0f, 0.0f, 3.0f };
+	EXPECT_FALSE(engine::backface_cull(front, camera, forward));
+	EXPECT_FALSE(engine::backface_cull(side, camera, forward));
+	EXPECT_TRUE(engine::backface_cull(behind, camera, forward));
+}
+
+/*
+GPU 距离 / 背面剔除与 CPU 一致（第二百五十轮）
+口径：同一 2000 实例场景，开启距离上限与背面剔除，GPU 压缩可见数必须等于 CPU 参考（距离 ∪ 背面 ∪ 视锥）。
+*/
+TEST_F(Renderer_GPU_Driven_Test, GPU距离剔除与CPU一致)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.compute_supported())
+		GTEST_SKIP() << "本机图形队列族不支持计算路径";
+	const float local_min[3] = { -QUAD_HALF, -QUAD_HALF, 0.0f };
+	const float local_max[3] = { QUAD_HALF, QUAD_HALF, 0.0f };
+	constexpr uint32_t INSTANCE_COUNT = 2000;
+	std::mt19937 generator(20261030u);
+	std::uniform_real_distribution<float> offset_x(-20.0f, 20.0f);
+	std::uniform_real_distribution<float> offset_yz(-8.0f, 8.0f);
+	std::vector<std::array<float, 16>> transforms(INSTANCE_COUNT);
+	for (uint32_t index = 0; index < INSTANCE_COUNT; ++index)
+	{
+		std::array<float, 16> matrix = identity_matrix();
+		matrix[12] = offset_x(generator);
+		matrix[13] = offset_yz(generator);
+		matrix[14] = offset_yz(generator);
+		transforms[index] = matrix;
+	}
+	//相机在 +Z 侧看向原点；距离上限 22；开背面剔除
+	const float camera[3] = { 0.0f, 0.0f, 6.0f };
+	const float forward[3] = { 0.0f, 0.0f, -1.0f };
+	constexpr float MAX_DISTANCE = 22.0f;
+	renderer.camera_position_set(camera[0], camera[1], camera[2]);
+	renderer.camera_target_set(0.0f, 0.0f, 0.0f);
+	std::vector<float> compacted(static_cast<std::size_t>(INSTANCE_COUNT) * 16, 0.0f);
+	uint32_t visible = 0;
+	ASSERT_TRUE(renderer.gpu_instance_compact_ex(transforms[0].data(), INSTANCE_COUNT,
+		local_min, local_max, camera, forward, MAX_DISTANCE, true, compacted.data(), &visible));
+	float view_proj[16] = {};
+	ASSERT_TRUE(renderer.camera_view_proj(view_proj));
+	uint32_t expected = 0;
+	for (uint32_t index = 0; index < INSTANCE_COUNT; ++index)
+	{
+		//实例中心 = 平移列
+		const float center[3] = { transforms[index][12], transforms[index][13], transforms[index][14] };
+		const bool culled = engine::distance_cull(center, camera, MAX_DISTANCE)
+			|| engine::backface_cull(center, camera, forward)
+			|| cpu_cull_clip(view_proj, transforms[index].data(), local_min, local_max);
+		if (!culled)
+			++expected;
+	}
+	EXPECT_EQ(visible, expected);
+}
