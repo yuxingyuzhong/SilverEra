@@ -48,6 +48,16 @@
 
 着色器 `实例压缩.comp` 与渲染器 `frustum_cull_aabb` **逐式同构**（mvp × 8 角点 × 六面「全部角点在外」），故开/关两路径像素逐字节一致；原子槽位顺序不保证与输入顺序一致，渲染正确性不依赖顺序。
 
+### 2.3 第二百五十轮增量（距离 / 背面剔除）
+
+| 接口 | 语义 |
+| --- | --- |
+| `bool distance_cull(center, camera_position, max_distance)` | 中心与相机距离**严格大于**阈值才剔除；阈值 ≤ 0 不限 |
+| `bool backface_cull(center, camera_position, forward)` | `dot(forward, center − camera) < 0` 才剔除；正交仍可见 |
+| 门面 `gpu_instance_compact_ex(transforms, count, min, max, camera, forward, max_distance, backface, out, visible)` | 压缩着色器新增第 3 绑定 `Params_Block`（相机位置 / 前向 / `limits`：x 距离上限、y 背面开关）；旧 `gpu_instance_compact` 委托（距离 0、背面关） |
+
+顺序固定为「距离 → 背面 → 视锥」；参数走 SSBO，推送常量仍为 100 字节。
+
 ## 3. 模块私有方法
 
 无（单一自由函数，无内部状态）。
