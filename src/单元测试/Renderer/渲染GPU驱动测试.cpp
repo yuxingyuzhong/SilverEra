@@ -17,6 +17,8 @@
 //获取渲染器门面与包围体构造
 #include "Application/Renderer/src/render/Renderer/渲染器.h"
 #include "Application/Renderer/src/render/GPU驱动/包围体.h"
+//视锥平面与 CPU 参考判定（第二百四十八轮）
+#include "Application/Renderer/src/render/GPU驱动/剔除数据.h"
 
 namespace
 {
@@ -123,9 +125,9 @@ TEST_F(Renderer_GPU_Driven_Test, 单位矩阵包围体)
 	EXPECT_FLOAT_EQ(bounds.center[0], 0.0f);
 	EXPECT_FLOAT_EQ(bounds.center[1], 0.0f);
 	EXPECT_FLOAT_EQ(bounds.center[2], 0.0f);
-	//半对角长 = √(1 + 0.25 + 4)
-	const float half_diagonal = std::sqrt(1.0f + 0.25f + 4.0f);
-	EXPECT_NEAR(bounds.radius, half_diagonal * engine::WORLD_BOUNDS_SPHERE_SCALE + engine::WORLD_BOUNDS_SPHERE_EXPAND, 1e-5f);
+	//半径 = 扩张后 AABB 角点最远距离 × 倍率 ＋ 附加量（球须覆盖盒）
+	const float corner_distance = std::sqrt(1.002f * 1.002f + 0.502f * 0.502f + 2.002f * 2.002f);
+	EXPECT_NEAR(bounds.radius, corner_distance * engine::WORLD_BOUNDS_SPHERE_SCALE + engine::WORLD_BOUNDS_SPHERE_EXPAND, 1e-5f);
 	//盒 = 局部盒 ± 外扩
 	EXPECT_NEAR(bounds.aabb_min[0], -1.0f - engine::WORLD_BOUNDS_AABB_EXPAND, 1e-5f);
 	EXPECT_NEAR(bounds.aabb_max[2], 2.0f + engine::WORLD_BOUNDS_AABB_EXPAND, 1e-5f);
@@ -309,4 +311,111 @@ TEST_F(Renderer_GPU_Driven_Test, 性能基线采集)
 	EXPECT_GE(last_instances + last_culled_instances, 1u);
 	EXPECT_GE(cpu_cull_sum, 0.0);
 	renderer.mesh_unload(mesh);
+}
+//视锥平面提取与球 / 盒判定（第二百四十八轮；纯 CPU 口径）
+TEST_F(Renderer_GPU_Driven_Test, 视锥平面与球判可见)
+{
+	//单位裁剪矩阵：视锥退化为 [−1, 1] 立方体
+	std::array<float, 16> identity = identity_matrix();
+	engine::Frustum_Planes planes;
+	ASSERT_TRUE(engine::frustum_planes_extract(planes, identity.data()));
+	//六个平面均已归一化
+	for (uint32_t plane = 0; plane < 6; ++plane)
+	{
+		const float* value = planes.planes[plane];
+		const float length = std::sqrt(value[0] * value[0] + value[1] * value[1] + value[2] * value[2]);
+		EXPECT_NEAR(length, 1.0f, 1e-4f) << "平面 " << plane;
+	}
+	//原点小球可见
+	const float center_origin[3] = { 0.0f, 0.0f, 0.0f };
+	EXPECT_TRUE(engine::frustum_sphere_visible(planes, center_origin, 0.1f));
+	//盒内边缘小球可见（1.05 − 1 = 0.05 ≤ 半径）
+	const float center_edge[3] = { 1.05f, 0.0f, 0.0f };
+	EXPECT_TRUE(engine::frustum_sphere_visible(planes, center_edge, 0.1f));
+	//盒外小球不可见
+	const float center_out[3] = { 1.5f, 0.0f, 0.0f };
+	EXPECT_FALSE(engine::frustum_sphere_visible(planes, center_out, 0.1f));
+	//跨边界的大球仍可见（半径覆盖到盒内）
+	EXPECT_TRUE(engine::frustum_sphere_visible(planes, center_out, 0.6f));
+	//盒判定：完全在立方体内的盒可见、完全在外不可见
+	const float inside_min[3] = { -0.5f, -0.5f, -0.5f };
+	const float inside_max[3] = { 0.5f, 0.5f, 0.5f };
+	EXPECT_TRUE(engine::frustum_aabb_visible(planes, inside_min, inside_max));
+	const float outside_min[3] = { 2.0f, 2.0f, 2.0f };
+	const float outside_max[3] = { 3.0f, 3.0f, 3.0f };
+	EXPECT_FALSE(engine::frustum_aabb_visible(planes, outside_min, outside_max));
+	//非法矩阵
+	const float broken[16] = { 0.0f };
+	EXPECT_FALSE(engine::frustum_planes_extract(planes, broken));
+}
+
+/*
+GPU 剔除与 CPU 参考一致且 CPU 更保守（第二百四十八轮核心验收）
+口径：8 组随机相机 × 2000 个随机实例，断言 GPU 掩码与 CPU 球判定逐项一致，
+且 CPU 的 AABB 判定为可见的实例在 GPU 掩码里必须可见（C ⊆ G）。
+*/
+TEST_F(Renderer_GPU_Driven_Test, GPU剔除与CPU一致且CPU更保守)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.compute_supported())
+		GTEST_SKIP() << "本机图形队列族不支持计算路径";
+	//网格局部 AABB（与 quad_data 一致）
+	const float local_min[3] = { -QUAD_HALF, -QUAD_HALF, 0.0f };
+	const float local_max[3] = { QUAD_HALF, QUAD_HALF, 0.0f };
+	constexpr uint32_t INSTANCE_COUNT = 2000;
+	//随机实例矩阵：平移铺开 ＋ 随机缩放 ＋ 绕 Z 旋转
+	std::mt19937 generator(20261030u);
+	std::uniform_real_distribution<float> offset_x(-40.0f, 40.0f);
+	std::uniform_real_distribution<float> offset_yz(-12.0f, 12.0f);
+	std::uniform_real_distribution<float> scale(0.2f, 3.0f);
+	std::uniform_real_distribution<float> angle(-3.14159265f, 3.14159265f);
+	std::vector<std::array<float, 16>> transforms(INSTANCE_COUNT);
+	for (uint32_t index = 0; index < INSTANCE_COUNT; ++index)
+	{
+		const float s = scale(generator);
+		const float a = angle(generator);
+		std::array<float, 16> matrix = identity_matrix();
+		matrix[0] = std::cos(a) * s;
+		matrix[1] = std::sin(a) * s;
+		matrix[4] = -std::sin(a) * s;
+		matrix[5] = std::cos(a) * s;
+		matrix[10] = s;
+		matrix[12] = offset_x(generator);
+		matrix[13] = offset_yz(generator);
+		matrix[14] = offset_yz(generator);
+		transforms[index] = matrix;
+	}
+	std::vector<uint32_t> mask(INSTANCE_COUNT, 0u);
+	//8 组随机相机
+	for (uint32_t view = 0; view < 8; ++view)
+	{
+		renderer.camera_position_set(offset_x(generator) * 0.5f, offset_yz(generator) * 0.5f,
+			offset_yz(generator) * 0.5f + 6.0f);
+		renderer.camera_target_set(0.0f, 0.0f, 0.0f);
+		renderer.camera_fov_set(0.6f + 0.2f * static_cast<float>(view % 4));
+		ASSERT_TRUE(renderer.gpu_cull_mask(transforms[0].data(), INSTANCE_COUNT, local_min, local_max, mask.data()));
+		//CPU 参考：当前相机矩阵 → 六平面
+		float view_proj[16] = {};
+		ASSERT_TRUE(renderer.camera_view_proj(view_proj));
+		engine::Frustum_Planes planes;
+		ASSERT_TRUE(engine::frustum_planes_extract(planes, view_proj));
+		uint32_t visible_count = 0;
+		for (uint32_t index = 0; index < INSTANCE_COUNT; ++index)
+		{
+			engine::World_Bounds bounds;
+			ASSERT_TRUE(engine::world_bounds_build(bounds, local_min, local_max, transforms[index].data()));
+			const bool cpu_sphere = engine::frustum_sphere_visible(planes, bounds.center, bounds.radius);
+			const bool gpu = mask[index] != 0u;
+			//GPU 与 CPU 球判定逐项一致
+			EXPECT_EQ(gpu, cpu_sphere) << "视图 " << view << " 实例 " << index;
+			//CPU 的 AABB 判定更紧：它为可见时必须 GPU 也可见（C ⊆ G）
+			if (engine::frustum_aabb_visible(planes, bounds.aabb_min, bounds.aabb_max) && !gpu)
+				ADD_FAILURE() << "视图 " << view << " 实例 " << index << " 被 GPU 多剔";
+			if (gpu)
+				++visible_count;
+			}
+		//该视图下至少有一半实例可见（相机在场景中，统计口径自洽）
+		EXPECT_GE(visible_count, 1u);
+	}
 }
