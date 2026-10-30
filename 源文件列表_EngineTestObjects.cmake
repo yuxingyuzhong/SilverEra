@@ -101,6 +101,7 @@ target_sources(EngineTestObjects PRIVATE
     "src/单元测试/Renderer/渲染缓存与阴影范围测试.cpp"
     "src/单元测试/Renderer/渲染网格纹理测试.cpp"
     "src/单元测试/Renderer/渲染聚光灯测试.cpp"
+    "src/单元测试/Renderer/渲染计算测试.cpp"
     "src/单元测试/Renderer/渲染资源与链查询测试.cpp"
     "src/单元测试/Renderer/渲染超采样测试.cpp"
     "src/单元测试/Renderer/渲染逐绘制项纹理测试.cpp"

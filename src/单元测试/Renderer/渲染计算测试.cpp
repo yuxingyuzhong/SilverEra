@@ -100,3 +100,75 @@ TEST_F(Renderer_Compute_Test, 调度计数累加)
 	ASSERT_TRUE(renderer.compute_health_check(0x40490FDBu, read_back));
 	EXPECT_EQ(read_back, 0x40490FDBu);
 }
+
+/*
+存储缓冲 ＋ 计算管线 ＋ 门面调度（第二百四十三轮）
+口径：1 万个 float 初值 0，经「计算加一.comp」加一后逐个回读为 1.0；覆盖 SSBO 创建 / 绑定 / 调度 / 回读整链。
+*/
+TEST_F(Renderer_Compute_Test, 计算缓冲加一万)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	//不支持计算则跳过
+	if (!renderer.compute_supported())
+		GTEST_SKIP() << "本机图形队列族不支持计算路径";
+	constexpr uint32_t ELEMENT_COUNT = 10000;
+	std::vector<float> values(ELEMENT_COUNT, 0.0f);
+	//登记存储缓冲（带初值）
+	engine::Compute_Buffer_Handle buffer = 0;
+	ASSERT_TRUE(renderer.compute_buffer_load(buffer, static_cast<uint32_t>(values.size() * sizeof(float)), values.data()));
+	EXPECT_GE(buffer, 1u);
+	//登记「计算加一」管线
+	engine::Compute_Pipeline_Handle pipeline = 0;
+	ASSERT_TRUE(renderer.compute_pipeline_load(pipeline, "计算加一.comp.spv"));
+	EXPECT_GE(pipeline, 1u);
+	//绑定到 set0 binding 0
+	ASSERT_TRUE(renderer.compute_buffer_bind(buffer, 0));
+	//推送常量：元素数
+	uint32_t count = ELEMENT_COUNT;
+	ASSERT_TRUE(renderer.compute_dispatch(pipeline, ELEMENT_COUNT, 256, &count, sizeof(count)));
+	//回读并逐元素校验
+	std::vector<float> result(ELEMENT_COUNT, 0.0f);
+	ASSERT_TRUE(renderer.compute_buffer_read(buffer, result.data(), static_cast<uint32_t>(result.size() * sizeof(float))));
+	for (std::size_t index = 0; index < result.size(); ++index)
+		ASSERT_FLOAT_EQ(result[index], 1.0f) << "第 " << index << " 个元素未被加一";
+	//卸载幂等
+	renderer.compute_pipeline_unload(pipeline);
+	renderer.compute_pipeline_unload(pipeline);
+	renderer.compute_buffer_unload(buffer);
+	renderer.compute_buffer_unload(buffer);
+}
+
+//计算缓冲与管线的非法参数（第二百四十三轮）
+TEST_F(Renderer_Compute_Test, 计算资源非法参数)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.compute_supported())
+		GTEST_SKIP() << "本机图形队列族不支持计算路径";
+	//尺寸 0 与超上限拒绝
+	engine::Compute_Buffer_Handle zero = 7;
+	EXPECT_FALSE(renderer.compute_buffer_load(zero, 0));
+	EXPECT_EQ(zero, 0u);
+	engine::Compute_Buffer_Handle huge = 7;
+	EXPECT_FALSE(renderer.compute_buffer_load(huge, engine::COMPUTE_BUFFER_MAX_BYTES + 1u));
+	EXPECT_EQ(huge, 0u);
+	//合法缓冲
+	std::vector<float> seed(8, 2.0f);
+	engine::Compute_Buffer_Handle buffer = 0;
+	ASSERT_TRUE(renderer.compute_buffer_load(buffer, static_cast<uint32_t>(seed.size() * sizeof(float)), seed.data()));
+	//越界写入 / 读回拒绝
+	EXPECT_FALSE(renderer.compute_buffer_write(buffer, seed.data(), 8, static_cast<uint32_t>(seed.size() * sizeof(float))));
+	EXPECT_FALSE(renderer.compute_buffer_read(buffer, seed.data(), 8, static_cast<uint32_t>(seed.size() * sizeof(float))));
+	//无效句柄与越界 binding 拒绝
+	EXPECT_FALSE(renderer.compute_buffer_write(9999u, seed.data(), 4, 0));
+	EXPECT_FALSE(renderer.compute_buffer_bind(buffer, engine::COMPUTE_BINDING_MAX));
+	//不存在的着色器文件
+	engine::Compute_Pipeline_Handle missing = 9;
+	EXPECT_FALSE(renderer.compute_pipeline_load(missing, "不存在的计算着色器.comp.spv"));
+	EXPECT_EQ(missing, 0u);
+	//无效管线句柄调度拒绝；空元素数视为无需调度
+	EXPECT_FALSE(renderer.compute_dispatch(9999u, 8, 64));
+	EXPECT_TRUE(renderer.compute_dispatch(missing, 0, 64));
+	renderer.compute_buffer_unload(buffer);
+}
