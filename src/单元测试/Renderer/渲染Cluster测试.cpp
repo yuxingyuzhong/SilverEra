@@ -534,3 +534,65 @@ TEST(Renderer_Cluster_Test, 构建性能对照)
 			<< " ms / GPU " << gpu_best_ms << " ms | 条目 " << cpu_entries << std::endl;
 	}
 }
+
+/*
+组合矩阵：阴影与 MSAA（第二百七十八轮）
+口径：固定「阴影开关 × 采样数」下，`cluster_enable` 开 / 关两态画面逐字节一致；
+覆盖 1× / 4× MSAA 与阴影开 / 关四种环境（共八次出帧）。
+*/
+TEST(Renderer_Cluster_Test, 组合矩阵_阴影与MSAA)
+{
+	const uint32_t pixel_count = WINDOW_WIDTH * WINDOW_HEIGHT * 4u;
+	const uint32_t msaa_list[2] = { 1u, 4u };
+	for (uint32_t shadow_index = 0; shadow_index < 2; ++shadow_index)
+		for (uint32_t msaa_index = 0; msaa_index < 2; ++msaa_index)
+		{
+			//同一环境下的两态结果（下标 0 = Cluster 关、1 = Cluster 开）
+			std::vector<std::vector<uint8_t>> pair;
+			for (uint32_t cluster_index = 0; cluster_index < 2; ++cluster_index)
+			{
+				engine::Renderer_Config config = hidden_config();
+				config.msaa_samples = msaa_list[msaa_index];
+				engine::Renderer renderer;
+				ASSERT_TRUE(renderer.init(config));
+				if (cluster_index != 0)
+				{
+					if (!renderer.cluster_supported())
+						GTEST_SKIP() << "本机不支持计算路径，无法覆盖 Cluster 开启组合";
+					ASSERT_TRUE(renderer.cluster_enable_set(true));
+				}
+				renderer.shadow_enable_set(shadow_index != 0);
+				renderer.camera_position_set(0.0f, 0.0f, 5.0f);
+				renderer.camera_target_set(0.0f, 0.0f, 0.0f);
+				engine::Mesh_Handle mesh = 0;
+				ASSERT_TRUE(renderer.mesh_load(mesh, quad_data()));
+				//全屏墙（z = 3，放大 30 倍）＋ 墙后 10 实例
+				std::array<float, 16> wall = identity_matrix();
+				wall[0] = 30.0f;
+				wall[5] = 30.0f;
+				wall[14] = 3.0f;
+				std::vector<std::array<float, 16>> behind(10, identity_matrix());
+				for (uint32_t frame = 0; frame < 3; ++frame)
+				{
+					ASSERT_TRUE(renderer.mesh_draw_instanced(mesh, wall.data(), 1));
+					ASSERT_TRUE(renderer.mesh_draw_instanced(mesh, behind[0].data(),
+						static_cast<uint32_t>(behind.size())));
+					ASSERT_TRUE(renderer.frame_render());
+				}
+				//末帧回读
+				std::vector<uint8_t> pixels(pixel_count, 0u);
+				uint32_t width = 0;
+				uint32_t height = 0;
+				ASSERT_TRUE(renderer.frame_render(pixels.data(), pixel_count, &width, &height));
+				ASSERT_EQ(width, WINDOW_WIDTH);
+				ASSERT_EQ(height, WINDOW_HEIGHT);
+				pair.push_back(std::move(pixels));
+				renderer.mesh_unload(mesh);
+			}
+			//同一环境下 Cluster 开 / 关画面逐字节一致
+			const bool same = std::mismatch(pair[0].begin(), pair[0].end(), pair[1].begin()).first
+				== pair[0].end();
+			EXPECT_TRUE(same) << "阴影 " << shadow_index << " / MSAA " << msaa_list[msaa_index]
+				<< " 下 Cluster 开关改变了画面";
+		}
+}
