@@ -5,6 +5,7 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <array>
 #include <cstdint>
 #include <vector>
 
@@ -12,14 +13,45 @@
 
 namespace
 {
+	//隐藏窗口尺寸
+	constexpr uint32_t WINDOW_WIDTH = 64;
+	constexpr uint32_t WINDOW_HEIGHT = 36;
+	//小四边形半边长
+	constexpr float QUAD_HALF = 0.25f;
+
 	//构造隐藏窗口配置
 	engine::Renderer_Config hidden_config(void)
 	{
 		engine::Renderer_Config config;
-		config.width = 64;
-		config.height = 36;
+		config.width = WINDOW_WIDTH;
+		config.height = WINDOW_HEIGHT;
 		config.hidden = true;
 		return config;
+	}
+
+	//构造中心小四边形（两个三角形）
+	engine::Mesh_Data quad_data(void)
+	{
+		engine::Mesh_Data data;
+		data.vertices = {
+			{ { -QUAD_HALF, -QUAD_HALF, 0.0f }, { 0.0f, 0.0f } },
+			{ { QUAD_HALF, -QUAD_HALF, 0.0f }, { 1.0f, 0.0f } },
+			{ { QUAD_HALF, QUAD_HALF, 0.0f }, { 1.0f, 1.0f } },
+			{ { -QUAD_HALF, QUAD_HALF, 0.0f }, { 0.0f, 1.0f } },
+		};
+		data.indices = { 0, 1, 2, 0, 2, 3 };
+		return data;
+	}
+
+	//单位模型矩阵（列主序）
+	std::array<float, 16> identity_matrix(void)
+	{
+		return std::array<float, 16>{
+			1.0f, 0.0f, 0.0f, 0.0f,
+			0.0f, 1.0f, 0.0f, 0.0f,
+			0.0f, 0.0f, 1.0f, 0.0f,
+			0.0f, 0.0f, 0.0f, 1.0f
+		};
 	}
 }
 
@@ -381,4 +413,65 @@ TEST(Renderer_Cluster_Test, 帧内整备与统计)
 	ASSERT_TRUE(on.frame_render());
 	engine::Frame_Stats stats_closed = on.frame_stats_get();
 	EXPECT_EQ(stats_closed.cluster_entries, 0u);
+}
+
+/*
+开关组合矩阵（第二百七十四轮；为 16 组合降级矩阵预演）
+口径：`cluster_enable × gpu_cull_enable × hiz_enable` 八种组合在静态场景（全屏墙 ＋ 墙后实例）下均正常出帧，
+且最终画面逐字节一致（三项能力都不改变被墙完全覆盖的像素）。
+*/
+TEST(Renderer_Cluster_Test, 开关组合矩阵)
+{
+	const uint32_t pixel_count = WINDOW_WIDTH * WINDOW_HEIGHT * 4u;
+	std::vector<std::vector<uint8_t>> results;
+	//八种组合
+	for (uint32_t combo = 0; combo < 8; ++combo)
+	{
+		engine::Renderer_Config config = hidden_config();
+		config.msaa_samples = 1;
+		config.gpu_cull_enable = (combo & 1u) != 0;
+		config.hiz_enable = (combo & 2u) != 0;
+		config.cluster_enable = (combo & 4u) != 0;
+		engine::Renderer renderer;
+		ASSERT_TRUE(renderer.init(config));
+		//请求 Cluster 但不支持时跳过（降级矩阵口径）
+		if (config.cluster_enable)
+		{
+			if (!renderer.cluster_supported())
+				GTEST_SKIP() << "本机不支持计算路径，无法覆盖 Cluster 开启组合";
+			ASSERT_TRUE(renderer.cluster_enable_set(true));
+		}
+		renderer.camera_position_set(0.0f, 0.0f, 5.0f);
+		renderer.camera_target_set(0.0f, 0.0f, 0.0f);
+		engine::Mesh_Handle mesh = 0;
+		ASSERT_TRUE(renderer.mesh_load(mesh, quad_data()));
+		//全屏墙（z = 3，放大 30 倍）＋ 墙后 10 实例
+		std::array<float, 16> wall = identity_matrix();
+		wall[0] = 30.0f;
+		wall[5] = 30.0f;
+		wall[14] = 3.0f;
+		std::vector<std::array<float, 16>> behind(10, identity_matrix());
+		for (uint32_t frame = 0; frame < 3; ++frame)
+		{
+			ASSERT_TRUE(renderer.mesh_draw_instanced(mesh, wall.data(), 1));
+			ASSERT_TRUE(renderer.mesh_draw_instanced(mesh, behind[0].data(), static_cast<uint32_t>(behind.size())));
+			ASSERT_TRUE(renderer.frame_render());
+		}
+		//末帧回读
+		std::vector<uint8_t> pixels(pixel_count, 0u);
+		uint32_t width = 0;
+		uint32_t height = 0;
+		ASSERT_TRUE(renderer.frame_render(pixels.data(), pixel_count, &width, &height));
+		ASSERT_EQ(width, WINDOW_WIDTH);
+		ASSERT_EQ(height, WINDOW_HEIGHT);
+		results.push_back(std::move(pixels));
+		renderer.mesh_unload(mesh);
+	}
+	//八种组合画面逐字节一致
+	for (uint32_t combo = 1; combo < results.size(); ++combo)
+	{
+		const bool same = std::mismatch(results[0].begin(), results[0].end(), results[combo].begin()).first
+			== results[0].end();
+		EXPECT_TRUE(same) << "组合 " << combo << " 与组合 0 画面不一致";
+	}
 }
