@@ -603,6 +603,90 @@ TEST_F(Renderer_HiZ_Test, 遮挡观测与三态)
 	renderer.mesh_unload(mesh);
 }
 
+/*
+Hi-Z 性能对照（第二百六十二轮）
+口径：1080p ＋ MSAA 4× ＋ 1 万实例、全屏墙（z = 2）遮挡；对照「关 Hi-Z（CPU 剔除）」
+与「开 Hi-Z ＋ GPU 剔除」的录制 / GPU 帧耗时，并打印相对差值与遮挡剔除数。
+断言只保证跑通与计数自洽，性能数值写入 `性能基线_方向一.md`。
+*/
+TEST_F(Renderer_HiZ_Test, 性能对照)
+{
+	constexpr uint32_t WIDTH = 1920;
+	constexpr uint32_t HEIGHT = 1080;
+	constexpr uint32_t INSTANCES = 10000;
+	constexpr uint32_t FRAMES = 6;
+	//实例矩阵：横向铺开 ±20 世界单位（大部分位于墙后）
+	std::vector<std::array<float, 16>> matrices(INSTANCES);
+	for (uint32_t index = 0; index < INSTANCES; ++index)
+	{
+		const float ratio = static_cast<float>(index) / static_cast<float>(INSTANCES - 1);
+		std::array<float, 16> matrix = identity_matrix();
+		matrix[12] = -20.0f + 40.0f * ratio;
+		matrices[index] = matrix;
+	}
+	//墙（z = 2，放大 60 倍）
+	std::array<float, 16> wall = identity_matrix();
+	wall[0] = 60.0f;
+	wall[5] = 60.0f;
+	wall[14] = 2.0f;
+	//两态渲染器
+	engine::Renderer off;
+	engine::Renderer on;
+	engine::Renderer_Config base;
+	base.width = WIDTH;
+	base.height = HEIGHT;
+	base.hidden = true;
+	base.msaa_samples = 4;
+	base.instance_capacity = INSTANCES;
+	ASSERT_TRUE(off.init(base));
+	engine::Renderer_Config hiz = base;
+	hiz.hiz_enable = true;
+	hiz.gpu_cull_enable = true;
+	ASSERT_TRUE(on.init(hiz));
+	engine::Mesh_Handle off_mesh = 0;
+	engine::Mesh_Handle on_mesh = 0;
+	ASSERT_TRUE(off.mesh_load(off_mesh, quad_data()));
+	ASSERT_TRUE(on.mesh_load(on_mesh, quad_data()));
+	//相机（两态一致）
+	off.camera_position_set(0.0f, 0.0f, 5.0f);
+	off.camera_target_set(0.0f, 0.0f, 0.0f);
+	on.camera_position_set(0.0f, 0.0f, 5.0f);
+	on.camera_target_set(0.0f, 0.0f, 0.0f);
+	double off_record = 0.0;
+	double off_gpu = 0.0;
+	double on_record = 0.0;
+	double on_gpu = 0.0;
+	uint64_t occluded = 0;
+	for (uint32_t frame = 0; frame < FRAMES; ++frame)
+	{
+		ASSERT_TRUE(off.mesh_draw_instanced(off_mesh, wall.data(), 1));
+		ASSERT_TRUE(off.mesh_draw_instanced(off_mesh, matrices[0].data(), INSTANCES));
+		ASSERT_TRUE(on.mesh_draw_instanced(on_mesh, wall.data(), 1));
+		ASSERT_TRUE(on.mesh_draw_instanced(on_mesh, matrices[0].data(), INSTANCES));
+		ASSERT_TRUE(off.frame_render());
+		ASSERT_TRUE(on.frame_render());
+		const engine::Frame_Stats off_stats = off.frame_stats_get();
+		const engine::Frame_Stats on_stats = on.frame_stats_get();
+		off_record += off_stats.host_record_ms;
+		off_gpu += off_stats.gpu_frame_ms;
+		on_record += on_stats.host_record_ms;
+		on_gpu += on_stats.gpu_frame_ms;
+		occluded = on_stats.gpu_occluded;
+	}
+	const double frames = static_cast<double>(FRAMES);
+	std::printf("[HiZ性能] 1080p MSAA4 实例 %u | 录制 关 %.3f / 开 %.3f ms（%+.1f%%）| GPU 帧 关 %.3f / 开 %.3f ms（%+.1f%%）| 遮挡剔除 %llu\n",
+		INSTANCES, off_record / frames, on_record / frames,
+		off_record > 0.0 ? (on_record - off_record) / off_record * 100.0 : 0.0,
+		off_gpu / frames, on_gpu / frames,
+		off_gpu > 0.0 ? (on_gpu - off_gpu) / off_gpu * 100.0 : 0.0,
+		static_cast<unsigned long long>(occluded));
+	//自洽性：开启态确有生成与遮挡剔除
+	EXPECT_GE(on.hiz_generation_count(), FRAMES);
+	EXPECT_GE(occluded, 1u);
+	off.mesh_unload(off_mesh);
+	on.mesh_unload(on_mesh);
+}
+
 TEST_F(Renderer_HiZ_Test, 开关切换前后出帧守恒)
 {
 	engine::Renderer renderer;
