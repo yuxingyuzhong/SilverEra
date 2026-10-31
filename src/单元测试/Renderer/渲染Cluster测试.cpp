@@ -286,3 +286,64 @@ TEST(Renderer_Cluster_Test, 簇光源列表与CPU参考一致)
 		EXPECT_EQ(cpu_slice, gpu_slice);
 	}
 }
+
+//簇数据整备与观测（第二百七十二轮）
+TEST(Renderer_Cluster_Test, 簇数据整备与观测)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	constexpr uint32_t CLUSTERS = 3456;
+	//场景：主方向光 ＋ 点光 ＋ 聚光
+	const float position[3] = { 0.0f, 0.0f, 0.0f };
+	const float color[3] = { 1.0f, 1.0f, 1.0f };
+	const float spot_direction[3] = { 0.0f, -1.0f, 0.0f };
+	ASSERT_TRUE(renderer.light_add_point(position, color, 10.0f, 0.5f, 0.1f));
+	ASSERT_TRUE(renderer.light_add_spot(position, spot_direction, color, 10.0f, 0.5f, 25.0f, 40.0f, 0.1f));
+	//参考计数与条目数
+	std::vector<uint32_t> reference_counts(CLUSTERS);
+	uint32_t total = 0;
+	ASSERT_TRUE(renderer.cluster_counts_reference_ex(reference_counts.data(), CLUSTERS, &total));
+	uint32_t entries = 0;
+	for (uint32_t cluster = 0; cluster < CLUSTERS; ++cluster)
+		entries += reference_counts[cluster];
+	ASSERT_GT(entries, 0u);
+
+	//簇容量不足被拒
+	std::vector<uint32_t> counts_cpu(CLUSTERS);
+	std::vector<uint32_t> offsets_cpu(CLUSTERS);
+	std::vector<uint32_t> list_cpu(entries);
+	uint32_t built_entries = 0;
+	EXPECT_FALSE(renderer.cluster_data_build(counts_cpu.data(), offsets_cpu.data(), list_cpu.data(),
+		100, entries, &built_entries, false));
+	//CPU 路径整备：计数与参考一致、条目与观测一致
+	ASSERT_TRUE(renderer.cluster_data_build(counts_cpu.data(), offsets_cpu.data(), list_cpu.data(),
+		CLUSTERS, entries, &built_entries, false));
+	EXPECT_EQ(built_entries, entries);
+	EXPECT_EQ(renderer.cluster_entries_get(), entries);
+	EXPECT_GE(renderer.cluster_build_ms_get(), 0.0);
+	for (uint32_t cluster = 0; cluster < CLUSTERS; ++cluster)
+		EXPECT_EQ(counts_cpu[cluster], reference_counts[cluster]);
+	//列表容量不足被拒
+	EXPECT_FALSE(renderer.cluster_data_build(counts_cpu.data(), offsets_cpu.data(), list_cpu.data(),
+		CLUSTERS, entries - 1, &built_entries, false));
+
+	//本机不支持计算路径时跳过（GPU 整备降级口径）
+	if (!renderer.compute_supported())
+	{
+		GTEST_SKIP() << "本机不支持计算路径，GPU 簇数据整备不可用";
+	}
+	//GPU 路径整备：计数 / 偏移 / 条目与 CPU 一致
+	std::vector<uint32_t> counts_gpu(CLUSTERS);
+	std::vector<uint32_t> offsets_gpu(CLUSTERS);
+	std::vector<uint32_t> list_gpu(entries);
+	uint32_t gpu_entries = 0;
+	ASSERT_TRUE(renderer.cluster_data_build(counts_gpu.data(), offsets_gpu.data(), list_gpu.data(),
+		CLUSTERS, entries, &gpu_entries, true));
+	EXPECT_EQ(gpu_entries, entries);
+	EXPECT_EQ(renderer.cluster_entries_get(), entries);
+	for (uint32_t cluster = 0; cluster < CLUSTERS; ++cluster)
+	{
+		EXPECT_EQ(counts_gpu[cluster], counts_cpu[cluster]);
+		EXPECT_EQ(offsets_gpu[cluster], offsets_cpu[cluster]);
+	}
+}
