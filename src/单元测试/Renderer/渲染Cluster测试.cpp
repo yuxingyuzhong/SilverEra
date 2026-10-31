@@ -121,3 +121,38 @@ TEST(Renderer_Cluster_Test, 分簇网格与逐簇计数参考)
 	for (uint32_t index = 0; index < 3456; ++index)
 		EXPECT_EQ(counts[index], 1u);
 }
+
+//GPU 逐簇计数与 CPU 参考一致（第二百六十八轮）
+TEST(Renderer_Cluster_Test, GPU逐簇计数与CPU参考一致)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	std::vector<uint32_t> cpu_counts(4096);
+	std::vector<uint32_t> gpu_counts(4096);
+	uint32_t cpu_total = 0;
+	uint32_t gpu_total = 0;
+	//容量不足被拒
+	EXPECT_FALSE(renderer.cluster_counts_gpu(gpu_counts.data(), 100, &gpu_total));
+	//本机不支持计算路径时跳过（GPU 计数降级口径）
+	if (!renderer.compute_supported())
+	{
+		GTEST_SKIP() << "本机不支持计算路径，GPU 逐簇计数不可用";
+	}
+
+	//仅主方向光：GPU 与 CPU 逐簇一致
+	ASSERT_TRUE(renderer.cluster_counts_reference_ex(cpu_counts.data(), 3456, &cpu_total));
+	ASSERT_TRUE(renderer.cluster_counts_gpu(gpu_counts.data(), 3456, &gpu_total));
+	ASSERT_EQ(cpu_total, gpu_total);
+	for (uint32_t index = 0; index < cpu_total; ++index)
+		EXPECT_EQ(cpu_counts[index], gpu_counts[index]);
+
+	//一盏大半径点光（全屏全深度）：GPU 与 CPU 仍逐簇一致
+	const float position[3] = { 0.0f, 0.0f, 0.0f };
+	const float color[3] = { 1.0f, 1.0f, 1.0f };
+	ASSERT_TRUE(renderer.light_add_point(position, color, 100.0f, 0.5f, 0.1f));
+	ASSERT_TRUE(renderer.cluster_counts_reference_ex(cpu_counts.data(), 3456, &cpu_total));
+	ASSERT_TRUE(renderer.cluster_counts_gpu(gpu_counts.data(), 3456, &gpu_total));
+	ASSERT_EQ(cpu_total, gpu_total);
+	for (uint32_t index = 0; index < cpu_total; ++index)
+		EXPECT_EQ(cpu_counts[index], gpu_counts[index]);
+}
