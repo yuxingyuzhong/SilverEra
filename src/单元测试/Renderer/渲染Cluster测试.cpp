@@ -469,17 +469,16 @@ TEST(Renderer_Cluster_Test, 开关组合矩阵)
 		wall[5] = 30.0f;
 		wall[14] = 3.0f;
 		std::vector<std::array<float, 16>> behind(10, identity_matrix());
+		//逐帧回读（无回读帧后再请求回读会得到清屏色，故每帧都带回读；第二百九十三轮）
+		std::vector<uint8_t> pixels(pixel_count, 0u);
+		uint32_t width = 0;
+		uint32_t height = 0;
 		for (uint32_t frame = 0; frame < 3; ++frame)
 		{
 			ASSERT_TRUE(renderer.mesh_draw_instanced(mesh, wall.data(), 1));
 			ASSERT_TRUE(renderer.mesh_draw_instanced(mesh, behind[0].data(), static_cast<uint32_t>(behind.size())));
-			ASSERT_TRUE(renderer.frame_render());
+			ASSERT_TRUE(renderer.frame_render(pixels.data(), pixel_count, &width, &height));
 		}
-		//末帧回读
-		std::vector<uint8_t> pixels(pixel_count, 0u);
-		uint32_t width = 0;
-		uint32_t height = 0;
-		ASSERT_TRUE(renderer.frame_render(pixels.data(), pixel_count, &width, &height));
 		ASSERT_EQ(width, WINDOW_WIDTH);
 		ASSERT_EQ(height, WINDOW_HEIGHT);
 		results.push_back(std::move(pixels));
@@ -591,18 +590,17 @@ TEST(Renderer_Cluster_Test, 组合矩阵_阴影与MSAA)
 				wall[5] = 30.0f;
 				wall[14] = 3.0f;
 				std::vector<std::array<float, 16>> behind(10, identity_matrix());
+				//逐帧回读（无回读帧后再请求回读会得到清屏色，故每帧都带回读；第二百九十三轮）
+				std::vector<uint8_t> pixels(pixel_count, 0u);
+				uint32_t width = 0;
+				uint32_t height = 0;
 				for (uint32_t frame = 0; frame < 3; ++frame)
 				{
 					ASSERT_TRUE(renderer.mesh_draw_instanced(mesh, wall.data(), 1));
 					ASSERT_TRUE(renderer.mesh_draw_instanced(mesh, behind[0].data(),
 						static_cast<uint32_t>(behind.size())));
-					ASSERT_TRUE(renderer.frame_render());
+					ASSERT_TRUE(renderer.frame_render(pixels.data(), pixel_count, &width, &height));
 				}
-				//末帧回读
-				std::vector<uint8_t> pixels(pixel_count, 0u);
-				uint32_t width = 0;
-				uint32_t height = 0;
-				ASSERT_TRUE(renderer.frame_render(pixels.data(), pixel_count, &width, &height));
 				ASSERT_EQ(width, WINDOW_WIDTH);
 				ASSERT_EQ(height, WINDOW_HEIGHT);
 				pair.push_back(std::move(pixels));
