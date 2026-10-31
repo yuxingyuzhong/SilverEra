@@ -49,6 +49,7 @@ target_sources(EngineTestObjects PRIVATE
     "src/单元测试/EngineCore/核心/碰撞测试.cpp"
     "src/单元测试/EngineCore/核心/配置加载器测试.cpp"
     "src/单元测试/Renderer/渲染Alpha覆盖测试.cpp"
+    "src/单元测试/Renderer/渲染Cluster测试.cpp"
     "src/单元测试/Renderer/渲染GPU耗时测试.cpp"
     "src/单元测试/Renderer/渲染GPU驱动测试.cpp"
     "src/单元测试/Renderer/渲染HiZ测试.cpp"

@@ -679,3 +679,64 @@ TEST(Renderer_Cluster_Test, 光源容量边界)
 	EXPECT_EQ(renderer.point_light_count(), 0u);
 	EXPECT_EQ(renderer.light_record_count(), 2u);
 }
+
+/*
+图形 set0 簇数据缓冲上传（第二百八十八轮）
+口径：本轮着色器尚未读取簇缓冲，开 / 关两态画面逐字节一致；
+开启时 cluster_gpu_bytes 反映「计数 ＋ 偏移整块 ＋ 列表条目」的上传量，关闭时恒 0。
+*/
+TEST(Renderer_Cluster_Test, 图形set0簇缓冲上传)
+{
+	const uint32_t pixel_count = WINDOW_WIDTH * WINDOW_HEIGHT * 4u;
+	//两态（下标 0 = 关闭、1 = 开启）
+	std::vector<std::vector<uint8_t>> results;
+	for (uint32_t cluster_index = 0; cluster_index < 2; ++cluster_index)
+	{
+		engine::Renderer_Config config = hidden_config();
+		config.cluster_enable = cluster_index != 0;
+		engine::Renderer renderer;
+		ASSERT_TRUE(renderer.init(config));
+		//开启态需要计算路径
+		if (config.cluster_enable)
+		{
+			if (!renderer.cluster_supported())
+				GTEST_SKIP() << "本机不支持计算路径，无法覆盖簇缓冲上传";
+			ASSERT_TRUE(renderer.cluster_enable_set(true));
+		}
+		renderer.camera_position_set(0.0f, 0.0f, 5.0f);
+		renderer.camera_target_set(0.0f, 0.0f, 0.0f);
+		engine::Mesh_Handle mesh = 0;
+		ASSERT_TRUE(renderer.mesh_load(mesh, quad_data()));
+		//一盏点光（半径 10 保守覆盖全簇）
+		const float position[3] = { 0.0f, 0.0f, 0.0f };
+		const float color[3] = { 1.0f, 1.0f, 1.0f };
+		ASSERT_TRUE(renderer.light_add_point(position, color, 10.0f, 0.5f, 0.1f));
+		std::array<float, 16> transform = identity_matrix();
+		for (uint32_t frame = 0; frame < 3; ++frame)
+		{
+			ASSERT_TRUE(renderer.mesh_draw_instanced(mesh, transform.data(), 1));
+			ASSERT_TRUE(renderer.frame_render());
+		}
+		//末帧回读
+		std::vector<uint8_t> pixels(pixel_count, 0u);
+		uint32_t width = 0;
+		uint32_t height = 0;
+		ASSERT_TRUE(renderer.frame_render(pixels.data(), pixel_count, &width, &height));
+		engine::Frame_Stats stats = renderer.frame_stats_get();
+		//关闭：零上传
+		if (cluster_index == 0)
+			EXPECT_EQ(stats.cluster_gpu_bytes, 0u);
+		else
+		{
+			//开启：条目 > 0，上传量 = 计数 ＋ 偏移（各 3456 × 4）＋ 列表（条目 × 4）
+			EXPECT_GT(stats.cluster_entries, 0u);
+			EXPECT_EQ(stats.cluster_gpu_bytes, 3456u * 8u + stats.cluster_entries * 4u);
+		}
+		results.push_back(std::move(pixels));
+		renderer.mesh_unload(mesh);
+	}
+	//两态画面逐字节一致（着色器本轮不读取簇缓冲）
+	const bool same = std::mismatch(results[0].begin(), results[0].end(), results[1].begin()).first
+		== results[0].end();
+	EXPECT_TRUE(same) << "簇缓冲接入后开 / 关两态画面不一致";
+}
