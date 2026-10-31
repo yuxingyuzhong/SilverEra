@@ -64,3 +64,12 @@ Cluster/
 `Renderer::cluster_counts_reference_ex` → 取当前相机（`view_proj_get` / `position_get` / `fov_get` /
 `aspect_effective_get` / `clip_get`）＋ `light_records_get` 快照 → `cluster_counts_reference`
 → 线性逐簇计数写入调用方缓冲（供测试对数和 268 轮 GPU 回读比较）。
+
+## 本版次内更新（第二百六十八轮：GPU 逐簇计数）
+
+1. `assets/shaders/Cluster计数.comp`：local_size 64；binding 0 只读 `Light_Record` 数组、binding 1 `uint` 计数数组；
+   推送常量 112 字节（`view_proj[4]` / `uvec4 grid`（x,y,z,记录数）/ 相机位置 / `(fov, aspect, near, far)`）。
+2. 口径：方向光逐线程全簇 `atomicAdd`；点 / 聚光用与 §5.3 完全相同的屏幕矩形与深度区间公式，原子累加范围内簇。
+3. 门面 `Renderer::cluster_counts_gpu`（非 const）：记录快照 → 光源/计数缓冲 → 懒加载管线 → 绑定 0/1 →
+   `compute_dispatch(count, 64)` → `compute_buffer_read`；失败逐级回收。
+4. 验证：`Renderer_Cluster_Test.GPU逐簇计数与CPU参考一致` 断言两组场景逐簇**完全相等**（非仅总数）。
