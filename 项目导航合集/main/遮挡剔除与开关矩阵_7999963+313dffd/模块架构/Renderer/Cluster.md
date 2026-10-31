@@ -104,3 +104,9 @@ Cluster/
 1. 门面 `cluster_data_build`：计数 → 条目统计 → 列表（CPU/GPU 同路径到底），容量校验与计时。
 2. 观测：`cluster_entries_get` / `cluster_build_ms_get`（Impl 记录 `last_cluster_entries` / `last_cluster_build_ms`）。
 3. 验证：CPU 计数与参考一致；GPU 计数与偏移与 CPU 一致；容量拒绝。
+
+## 本版次内更新（第二百七十三轮：帧内整备与统计）
+
+1. `frame_render` ⑤b：光源上传之后整备（仅开启）；scratch 三块复用；列表容量 = 簇数 × 光源记录数。
+2. `Frame_Stats.cluster_entries` 与 `cluster_build_ms`；关闭帧清零。
+3. 验证：关闭两项恒 0；开启后条目 > 0、耗时 ≥ 0、门面观测与统计一致。
