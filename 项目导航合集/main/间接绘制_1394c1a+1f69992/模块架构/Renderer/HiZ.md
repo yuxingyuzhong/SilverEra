@@ -106,3 +106,10 @@ HiZ/
 | `hiz_pyramid_downsample(src, sw, sh, dst, dw, dh)` | 2×2 取最大、越界钳到末行 / 列（与 `HiZ降采样.comp` 同口径） |
 
 口径：深度 0..1（越小越近），金字塔存最远面；同尺寸降采样并非逐纹素恒等（邻域为 `(2x,2x+1)×(2y,2y+1)`，偏保守）。256 轮着色器按同一口径实现，并以「CPU 与 GPU 遮挡结果一致」用例验收。
+
+## 增补（第二百五十六轮：遮挡接入剔除）
+
+- 宽高覆盖口径：两个生成着色器改用 `imageSize()` 取范围，不再依赖推送常量（避免推送 / 绑定错位导致静默截断）。
+- 新增 `pyramid_full_view(slot)`（完整 mip 链视图）与 `depth_sampler_get()`：供剔除着色器绑定为 `sampler2D`，按级 `texelFetch`。
+- 关键前提：交换链深度图像必须带 `VK_IMAGE_USAGE_SAMPLED_BIT`（此前缺失，采样恒为 0，已于本轮回补）。
+- 接入方式：`实例压缩.comp` 视锥判定后做遮挡测试（与 `hiz_occlusion_test` 同口径）；门面仅在 `hiz_enable` ＋ 资源 ＋ 最近生成槽有效时启用，首帧自动跳过。
