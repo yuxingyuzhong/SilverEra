@@ -117,7 +117,8 @@ TEST_F(Renderer_HiZ_Occlusion_Test, 矩形级选择)
 {
 	EXPECT_EQ(engine::hiz_level_for_rect(1.0f, 1.0f, PYRAMID_LEVELS), 0u);
 	EXPECT_EQ(engine::hiz_level_for_rect(2.5f, 2.5f, PYRAMID_LEVELS), 2u);
-	EXPECT_EQ(engine::hiz_level_for_rect(64.0f, 64.0f, PYRAMID_LEVELS), PYRAMID_LEVELS - 1);
+	//超上限钳到 levels-2（末两级不采样）
+	EXPECT_EQ(engine::hiz_level_for_rect(64.0f, 64.0f, PYRAMID_LEVELS), PYRAMID_LEVELS - 2);
 	//0 级金字塔恒取 0
 	EXPECT_EQ(engine::hiz_level_for_rect(64.0f, 64.0f, 1u), 0u);
 }
@@ -152,6 +153,50 @@ TEST_F(Renderer_HiZ_Occlusion_Test, 遮挡判定三态)
 	const float near_min[3] = { -0.02f, -0.02f, 0.201f };
 	const float near_max[3] = { 0.02f, 0.02f, 0.201f };
 	ASSERT_TRUE(engine::hiz_screen_rect_build(rect, matrix.data(), near_min, near_max, PYRAMID_WIDTH, PYRAMID_HEIGHT));
+	EXPECT_EQ(engine::hiz_occlusion_test(pyramid, rect), engine::HiZ_Visibility::Visible);
+}
+
+/*
+矩形保守外扩
+口径：金字塔左半 0.1（近面）、右半 0.9（远面）；对象窄矩形紧贴分界、最近深度 0.5。
+外扩后覆盖到远面一侧（0.9），故判可见；若无外扩仅覆盖近面一侧则会被误剔。
+*/
+TEST_F(Renderer_HiZ_Occlusion_Test, 矩形保守外扩)
+{
+	//64×64 第 0 级：左半 0.1、右半 0.9
+	std::vector<float> data(pyramid_total_count(PYRAMID_WIDTH, PYRAMID_HEIGHT, PYRAMID_LEVELS), 0.0f);
+	for (uint32_t y = 0; y < PYRAMID_HEIGHT; ++y)
+		for (uint32_t x = 0; x < PYRAMID_WIDTH; ++x)
+			data[y * PYRAMID_WIDTH + x] = x < PYRAMID_WIDTH / 2 ? 0.1f : 0.9f;
+	//其余级用 CPU 降采样生成
+	uint32_t offset = 0;
+	uint32_t source_width = PYRAMID_WIDTH;
+	uint32_t source_height = PYRAMID_HEIGHT;
+	for (uint32_t level = 1; level < PYRAMID_LEVELS; ++level)
+	{
+		const uint32_t dest_width = (std::max)(1u, PYRAMID_WIDTH >> level);
+		const uint32_t dest_height = (std::max)(1u, PYRAMID_HEIGHT >> level);
+		const uint32_t source_offset = offset;
+		offset += source_width * source_height;
+		ASSERT_TRUE(engine::hiz_pyramid_downsample(data.data() + source_offset, source_width, source_height,
+			data.data() + offset, dest_width, dest_height));
+		source_width = dest_width;
+		source_height = dest_height;
+	}
+	engine::HiZ_Pyramid_View pyramid{};
+	pyramid.data = data.data();
+	pyramid.width = PYRAMID_WIDTH;
+	pyramid.height = PYRAMID_HEIGHT;
+	pyramid.levels = PYRAMID_LEVELS;
+	//投影矩形紧贴分界（x ≈ 31.5，宽 1 像素）
+	engine::HiZ_Screen_Rect rect;
+	rect.min_x = 31.5f;
+	rect.max_x = 32.5f;
+	rect.min_y = 30.0f;
+	rect.max_y = 34.0f;
+	rect.nearest_depth = 0.5f;
+	rect.cross_near = false;
+	//外扩后覆盖右半（0.9 > 0.5）→ 可见
 	EXPECT_EQ(engine::hiz_occlusion_test(pyramid, rect), engine::HiZ_Visibility::Visible);
 }
 

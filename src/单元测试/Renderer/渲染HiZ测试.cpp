@@ -294,6 +294,61 @@ TEST_F(Renderer_HiZ_Test, 遮挡剔除墙后实例)
 	renderer.mesh_unload(mesh);
 }
 
+/*
+部分遮挡场景：缝隙内实例不误剔（第二百五十七轮）
+口径：左右两堵墙在 z = 3（覆盖屏幕两侧），中央留缝；缝内实例（z = 0，墙后）应全部可见（缝隙深度为清屏 1.0），
+墙正后方实例应全部剔除。用于验证保守口径在「部分遮挡」场景下不产生误剔。
+*/
+TEST_F(Renderer_HiZ_Test, 部分遮挡场景不误剔)
+{
+	engine::Renderer_Config config = hidden_config();
+	config.hiz_enable = true;
+	config.msaa_samples = 1;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(config));
+	if (!renderer.hiz_supported())
+		GTEST_SKIP() << "本机不支持 Hi-Z 所需能力";
+	renderer.camera_position_set(0.0f, 0.0f, 5.0f);
+	renderer.camera_target_set(0.0f, 0.0f, 0.0f);
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, quad_data()));
+	//左右两堵墙：半宽 0.5、半高 1.5（世界），平移 x = ±0.9、z = 3
+	std::array<float, 16> left_wall = identity_matrix();
+	left_wall[0] = 2.0f;
+	left_wall[5] = 6.0f;
+	left_wall[12] = -0.9f;
+	left_wall[14] = 3.0f;
+	std::array<float, 16> right_wall = left_wall;
+	right_wall[12] = 0.9f;
+	std::vector<std::array<float, 16>> walls = { left_wall, right_wall };
+	//两帧：写深度并生成金字塔
+	for (uint32_t frame = 0; frame < 2; ++frame)
+	{
+		ASSERT_TRUE(renderer.mesh_draw_instanced(mesh, walls[0].data(), static_cast<uint32_t>(walls.size())));
+		ASSERT_TRUE(renderer.frame_render());
+	}
+	//缝隙内实例（x = 0，墙后 z = 0）
+	constexpr uint32_t COUNT = 200;
+	std::vector<std::array<float, 16>> gap(COUNT);
+	for (uint32_t index = 0; index < COUNT; ++index)
+	{
+		std::array<float, 16> matrix = identity_matrix();
+		matrix[14] = 0.0f;
+		gap[index] = matrix;
+	}
+	const float local_min[3] = { -QUAD_HALF, -QUAD_HALF, 0.0f };
+	const float local_max[3] = { QUAD_HALF, QUAD_HALF, 0.0f };
+	const float camera[3] = { 0.0f, 0.0f, 5.0f };
+	const float forward[3] = { 0.0f, 0.0f, -1.0f };
+	std::vector<std::array<float, 16>> compacted(COUNT);
+	uint32_t gap_visible = 0;
+	ASSERT_TRUE(renderer.gpu_instance_compact_ex(gap[0].data(), COUNT, local_min, local_max,
+		camera, forward, 0.0f, false, compacted[0].data(), &gap_visible));
+	//缝隙内全部可见（部分遮挡场景零误剔）
+	EXPECT_EQ(gap_visible, COUNT);
+	renderer.mesh_unload(mesh);
+}
+
 TEST_F(Renderer_HiZ_Test, 开关切换前后出帧守恒)
 {
 	engine::Renderer renderer;
