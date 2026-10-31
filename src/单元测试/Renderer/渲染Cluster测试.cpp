@@ -1,4 +1,4 @@
-/*
+﻿/*
 渲染Cluster光照测试（第二百六十六轮）
 覆盖：光源记录 SSBO 上传（未初始化拒绝 / 默认关闭不上传 / 开启后按帧上传 / 光源增减即时反映 / 关闭归零）。
 */
@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <iostream>
 #include <vector>
 
 #include "Application/Renderer/src/render/Renderer/渲染器.h"
@@ -473,5 +474,63 @@ TEST(Renderer_Cluster_Test, 开关组合矩阵)
 		const bool same = std::mismatch(results[0].begin(), results[0].end(), results[combo].begin()).first
 			== results[0].end();
 		EXPECT_TRUE(same) << "组合 " << combo << " 与组合 0 画面不一致";
+	}
+}
+
+//构建性能对照（第二百七十六轮；CPU / GPU 整备耗时基线）
+TEST(Renderer_Cluster_Test, 构建性能对照)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	constexpr uint32_t CLUSTERS = 3456;
+	constexpr uint32_t LIST_CAPACITY = CLUSTERS * 10u;
+	constexpr uint32_t RUNS = 5;
+	//本机不支持计算路径时跳过（GPU 基线不可测）
+	if (!renderer.compute_supported())
+	{
+		GTEST_SKIP() << "本机不支持计算路径，GPU 构建基线不可测";
+	}
+
+	std::vector<uint32_t> counts_cpu(CLUSTERS);
+	std::vector<uint32_t> offsets_cpu(CLUSTERS);
+	std::vector<uint32_t> list_cpu(LIST_CAPACITY);
+	std::vector<uint32_t> counts_gpu(CLUSTERS);
+	std::vector<uint32_t> offsets_gpu(CLUSTERS);
+	std::vector<uint32_t> list_gpu(LIST_CAPACITY);
+	//三档光源规模：基础 2 条 / ＋2 点光 / ＋6 点光
+	for (uint32_t stage = 0; stage < 3; ++stage)
+	{
+		uint32_t add_count = stage == 0 ? 0u : (stage == 1 ? 2u : 6u);
+		for (uint32_t index = 0; index < add_count; ++index)
+		{
+			const float position[3] = { static_cast<float>(index) * 0.5f - 1.0f, 0.0f, 0.0f };
+			const float color[3] = { 1.0f, 0.6f, 0.3f };
+			ASSERT_TRUE(renderer.light_add_point(position, color, 8.0f, 0.5f, 0.1f));
+		}
+		//CPU 路径：5 次取最小耗时
+		uint32_t cpu_entries = 0;
+		double cpu_best_ms = 1e9;
+		for (uint32_t run = 0; run < RUNS; ++run)
+		{
+			ASSERT_TRUE(renderer.cluster_data_build(counts_cpu.data(), offsets_cpu.data(), list_cpu.data(),
+				CLUSTERS, LIST_CAPACITY, &cpu_entries, false));
+			cpu_best_ms = (std::min)(cpu_best_ms, renderer.cluster_build_ms_get());
+		}
+		//GPU 路径：5 次取最小耗时
+		uint32_t gpu_entries = 0;
+		double gpu_best_ms = 1e9;
+		for (uint32_t run = 0; run < RUNS; ++run)
+		{
+			ASSERT_TRUE(renderer.cluster_data_build(counts_gpu.data(), offsets_gpu.data(), list_gpu.data(),
+				CLUSTERS, LIST_CAPACITY, &gpu_entries, true));
+			gpu_best_ms = (std::min)(gpu_best_ms, renderer.cluster_build_ms_get());
+		}
+		//两条路径结果一致
+		EXPECT_EQ(cpu_entries, gpu_entries);
+		for (uint32_t cluster = 0; cluster < CLUSTERS; ++cluster)
+			EXPECT_EQ(counts_cpu[cluster], counts_gpu[cluster]);
+		//输出基线
+		std::cout << "[Cluster构建] 光源 " << (2u + add_count) << " | CPU " << cpu_best_ms
+			<< " ms / GPU " << gpu_best_ms << " ms | 条目 " << cpu_entries << std::endl;
 	}
 }
