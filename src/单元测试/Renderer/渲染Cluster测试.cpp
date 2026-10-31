@@ -1025,3 +1025,53 @@ TEST(Renderer_Cluster_Test, 大光源场景_五百一十二盏)
 	renderer.mesh_unload(mesh);
 	renderer.texture_unload(texture);
 }
+
+/*
+簇网格切换与缓冲重建（第二百九十二轮）
+口径：运行期切换网格（3456 → 512 → 4032 簇），图形 set0 簇缓冲按容量增长重建并重写绑定；
+每档出帧后 `cluster_gpu_bytes = 簇数 × 8 ＋ 条目 × 4`，且条目 > 0。
+*/
+TEST(Renderer_Cluster_Test, 簇网格切换与缓冲重建)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.cluster_supported())
+	{
+		GTEST_SKIP() << "本机不支持计算路径，簇缓冲重建不可用";
+	}
+	ASSERT_TRUE(renderer.cluster_enable_set(true));
+	//一盏点光（半径 10 保守覆盖全簇）
+	const float position[3] = { 0.0f, 0.0f, 0.0f };
+	const float color[3] = { 1.0f, 1.0f, 1.0f };
+	ASSERT_TRUE(renderer.light_add_point(position, color, 10.0f, 0.5f, 0.1f));
+	uint64_t texture = 0;
+	std::vector<uint8_t> texels(2u * 2u * 4u, 255u);
+	ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 2, 2));
+	renderer.texture_bind_set(texture);
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, quad_data_lit()));
+	//三档网格：默认 3456 → 缩小 512 → 超出总簇上限被收缩到 4032（32 × 18 × 7）
+	const uint32_t grid_sets[3][3] = {
+		{ 16, 9, 24 },
+		{ 8, 8, 8 },
+		{ 32, 18, 24 },
+	};
+	const uint32_t expected_total[3] = { 3456u, 512u, 4032u };
+	const uint32_t pixel_count = WINDOW_WIDTH * WINDOW_HEIGHT * 4u;
+	std::vector<uint8_t> pixels(pixel_count, 0u);
+	for (uint32_t stage = 0; stage < 3; ++stage)
+	{
+		ASSERT_TRUE(renderer.cluster_grid_set(grid_sets[stage][0], grid_sets[stage][1], grid_sets[stage][2]));
+		EXPECT_EQ(renderer.cluster_grid_cluster_count(), expected_total[stage]);
+		ASSERT_TRUE(renderer.mesh_draw(mesh, nullptr));
+		ASSERT_TRUE(renderer.frame_render(pixels.data(), pixel_count, nullptr, nullptr));
+		const engine::Frame_Stats stats = renderer.frame_stats_get();
+		//每档：条目 > 0 且上传量 = 簇数 × 8 ＋ 条目 × 4
+		EXPECT_GT(stats.cluster_entries, 0u);
+		EXPECT_EQ(stats.cluster_gpu_bytes, expected_total[stage] * 8u + stats.cluster_entries * 4u);
+	}
+	//恢复默认网格
+	ASSERT_TRUE(renderer.cluster_grid_set(16, 9, 24));
+	renderer.mesh_unload(mesh);
+	renderer.texture_unload(texture);
+}
