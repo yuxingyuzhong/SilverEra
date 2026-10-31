@@ -98,3 +98,9 @@ Cluster/
    方向光写全部簇；推送常量 116 字节（在前 112 字节后追加 `light_count`）。
 3. 门面 `cluster_list_build_cpu` / `cluster_list_build_gpu`。
 4. 验证：偏移逐簇一致、逐簇成员排序后与 CPU 一致（簇内顺序允许不同）。
+
+## 本版次内更新（第二百七十二轮：簇数据整备门面）
+
+1. 门面 `cluster_data_build`：计数 → 条目统计 → 列表（CPU/GPU 同路径到底），容量校验与计时。
+2. 观测：`cluster_entries_get` / `cluster_build_ms_get`（Impl 记录 `last_cluster_entries` / `last_cluster_build_ms`）。
+3. 验证：CPU 计数与参考一致；GPU 计数与偏移与 CPU 一致；容量拒绝。
