@@ -645,3 +645,37 @@ TEST(Renderer_Cluster_Test, 光源登记上限与截断)
 	ASSERT_TRUE(on.frame_render());
 	EXPECT_EQ(on.frame_stats_get().light_truncated, 1u);
 }
+
+//光源容量边界（第二百八十三轮）
+TEST(Renderer_Cluster_Test, 光源容量边界)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	//本机不支持计算路径时跳过（Cluster 开启路径不可用）
+	if (!renderer.cluster_supported())
+	{
+		GTEST_SKIP() << "本机不支持计算路径，Cluster 开启路径不可用";
+	}
+	ASSERT_TRUE(renderer.cluster_enable_set(true));
+	//登记到容量上限（1024 盏）
+	constexpr uint32_t CAPACITY = 1024;
+	for (uint32_t index = 0; index < CAPACITY; ++index)
+	{
+		const float position[3] = { static_cast<float>(index % 32) * 0.1f, 0.0f, 0.0f };
+		const float color[3] = { 1.0f, 1.0f, 1.0f };
+		ASSERT_TRUE(renderer.light_add_point(position, color, 4.0f, 0.2f, 0.1f));
+	}
+	EXPECT_EQ(renderer.point_light_count(), CAPACITY);
+	//记录数 = 主方向光 ＋ 补光 ＋ 逐盏（容量约束下有效数仍为 1024）
+	EXPECT_EQ(renderer.light_record_count(), CAPACITY + 2u);
+	EXPECT_EQ(engine::light_effective_count(CAPACITY + 2u, true), CAPACITY);
+	//第 1025 盏被拒
+	const float extra_position[3] = { 3.0f, 0.0f, 0.0f };
+	const float extra_color[3] = { 1.0f, 1.0f, 1.0f };
+	EXPECT_FALSE(renderer.light_add_point(extra_position, extra_color, 4.0f, 0.2f, 0.1f));
+	EXPECT_EQ(renderer.point_light_count(), CAPACITY);
+	//清空后归零
+	renderer.lights_clear();
+	EXPECT_EQ(renderer.point_light_count(), 0u);
+	EXPECT_EQ(renderer.light_record_count(), 2u);
+}
