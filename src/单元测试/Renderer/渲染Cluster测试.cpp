@@ -1084,6 +1084,52 @@ TEST(Renderer_Cluster_Test, 大光源场景_五百一十二盏聚光灯)
 	renderer.texture_unload(texture);
 }
 /*
+簇开关反复切换（第二百九十八轮）
+口径：开启 → 关闭 → 再开启，各出一帧均正常；开启帧条目 / 上传量 > 0，关闭帧两者为 0。
+覆盖「真实簇缓冲 ↔ 占位缓冲」的绑定切换与资源保留路径。
+*/
+TEST(Renderer_Cluster_Test, 簇开关反复切换)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.cluster_supported())
+	{
+		GTEST_SKIP() << "本机不支持计算路径，簇开关切换不可用";
+	}
+	uint64_t texture = 0;
+	std::vector<uint8_t> texels(2u * 2u * 4u, 255u);
+	ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 2, 2));
+	renderer.texture_bind_set(texture);
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, quad_data_lit()));
+	const uint32_t pixel_count = WINDOW_WIDTH * WINDOW_HEIGHT * 4u;
+	std::vector<uint8_t> pixels(pixel_count, 0u);
+	//三帧：开启 / 关闭 / 开启
+	const bool states[3] = { true, false, true };
+	for (uint32_t cycle = 0; cycle < 3; ++cycle)
+	{
+		ASSERT_TRUE(renderer.cluster_enable_set(states[cycle]));
+		ASSERT_TRUE(renderer.mesh_draw(mesh, nullptr));
+		ASSERT_TRUE(renderer.frame_render(pixels.data(), pixel_count, nullptr, nullptr));
+		const engine::Frame_Stats stats = renderer.frame_stats_get();
+		if (states[cycle])
+		{
+			EXPECT_GT(stats.cluster_entries, 0u);
+			EXPECT_GT(stats.cluster_gpu_bytes, 0u);
+		}
+		else
+		{
+			EXPECT_EQ(stats.cluster_entries, 0u);
+			EXPECT_EQ(stats.cluster_gpu_bytes, 0u);
+		}
+	}
+	//收尾：关闭并释放
+	ASSERT_TRUE(renderer.cluster_enable_set(false));
+	renderer.mesh_unload(mesh);
+	renderer.texture_unload(texture);
+}
+
+/*
 簇网格切换与缓冲重建（第二百九十二轮）
 口径：运行期切换网格（3456 → 512 → 4032 簇），图形 set0 簇缓冲按容量增长重建并重写绑定；
 每档出帧后 `cluster_gpu_bytes = 簇数 × 8 ＋ 条目 × 4`，且条目 > 0。
