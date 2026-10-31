@@ -73,3 +73,12 @@ Cluster/
 3. 门面 `Renderer::cluster_counts_gpu`（非 const）：记录快照 → 光源/计数缓冲 → 懒加载管线 → 绑定 0/1 →
    `compute_dispatch(count, 64)` → `compute_buffer_read`；失败逐级回收。
 4. 验证：`Renderer_Cluster_Test.GPU逐簇计数与CPU参考一致` 断言两组场景逐簇**完全相等**（非仅总数）。
+
+## 本版次内更新（第二百六十九轮：块内前缀和）
+
+1. 常量 `CLUSTER_SCAN_BLOCK = 256`（与着色器 `local_size` 一致）；块数 `ceil(count / 256)`。
+2. CPU 参考 `cluster_prefix_block_scan`：逐块**包含式**前缀和并写出 `block_totals[block]`。
+3. `Cluster块内扫描.comp`：binding 0 只读计数、binding 1 前缀输出、binding 2 块总和；越界线程填 0 参与屏障；
+   共享内存 Hillis-Steele 8 轮（offset 1..128），块尾线程写块总和。
+4. 门面 `cluster_prefix_block_scan_cpu` / `cluster_prefix_block_scan_gpu`（非 const）。
+5. 验证：14 块 3456 元素逐元素前缀和与逐块总和与 CPU 完全相等。
