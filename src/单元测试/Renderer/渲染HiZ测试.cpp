@@ -7,7 +7,9 @@
 #include <gtest/gtest.h>
 
 #include <array>
+#include <algorithm>
 #include <cstdint>
+#include <utility>
 #include <vector>
 
 //获取渲染器门面
@@ -346,6 +348,163 @@ TEST_F(Renderer_HiZ_Test, 部分遮挡场景不误剔)
 		camera, forward, 0.0f, false, compacted[0].data(), &gap_visible));
 	//缝隙内全部可见（部分遮挡场景零误剔）
 	EXPECT_EQ(gap_visible, COUNT);
+	renderer.mesh_unload(mesh);
+}
+
+/*
+多场景零误剔：远景墙与多层遮挡（第二百五十八轮）
+口径：同一相机下先后渲染远景墙（z = −5）与双层墙（z = 3 / −2），
+远景墙后的实例应被剔除、墙前实例应可见；两墙之后的实例应被剔除、两墙之间实例应可见。
+*/
+TEST_F(Renderer_HiZ_Test, 多场景零误剔)
+{
+	//相机与几何参数
+	const float camera_z = 5.0f;
+	const float local_min[3] = { -QUAD_HALF, -QUAD_HALF, 0.0f };
+	const float local_max[3] = { QUAD_HALF, QUAD_HALF, 0.0f };
+	const float camera[3] = { 0.0f, 0.0f, camera_z };
+	const float forward[3] = { 0.0f, 0.0f, -1.0f };
+	constexpr uint32_t COUNT = 200;
+	std::vector<std::array<float, 16>> matrices(COUNT);
+	std::vector<std::array<float, 16>> compacted(COUNT);
+	engine::Renderer_Config config = hidden_config();
+	config.hiz_enable = true;
+	config.msaa_samples = 1;
+	//场景一：远景墙（z = −5，放大 40 倍）
+	{
+		engine::Renderer renderer;
+		ASSERT_TRUE(renderer.init(config));
+		if (!renderer.hiz_supported())
+			GTEST_SKIP() << "本机不支持 Hi-Z 所需能力";
+		renderer.camera_position_set(0.0f, 0.0f, camera_z);
+		renderer.camera_target_set(0.0f, 0.0f, 0.0f);
+		engine::Mesh_Handle mesh = 0;
+		ASSERT_TRUE(renderer.mesh_load(mesh, quad_data()));
+		std::array<float, 16> wall = identity_matrix();
+		wall[0] = 40.0f;
+		wall[5] = 40.0f;
+		wall[14] = -5.0f;
+		for (uint32_t frame = 0; frame < 2; ++frame)
+		{
+			ASSERT_TRUE(renderer.mesh_draw_instanced(mesh, wall.data(), 1));
+			ASSERT_TRUE(renderer.frame_render());
+		}
+		//墙后（z = −8）全部剔除、墙前（z = −2）全部可见
+		for (uint32_t index = 0; index < COUNT; ++index)
+		{
+			std::array<float, 16> matrix = identity_matrix();
+			matrix[14] = -8.0f;
+			matrices[index] = matrix;
+		}
+		uint32_t behind_far = COUNT;
+		ASSERT_TRUE(renderer.gpu_instance_compact_ex(matrices[0].data(), COUNT, local_min, local_max,
+			camera, forward, 0.0f, false, compacted[0].data(), &behind_far));
+		for (uint32_t index = 0; index < COUNT; ++index)
+		{
+			std::array<float, 16> matrix = identity_matrix();
+			matrix[14] = -2.0f;
+			matrices[index] = matrix;
+		}
+		uint32_t front_far = 0;
+		ASSERT_TRUE(renderer.gpu_instance_compact_ex(matrices[0].data(), COUNT, local_min, local_max,
+			camera, forward, 0.0f, false, compacted[0].data(), &front_far));
+		EXPECT_EQ(behind_far, 0u);
+		EXPECT_EQ(front_far, COUNT);
+		renderer.mesh_unload(mesh);
+	}
+	//场景二：双层墙（z = 3 与 z = −2，各放大 40 倍）
+	{
+		engine::Renderer renderer;
+		ASSERT_TRUE(renderer.init(config));
+		if (!renderer.hiz_supported())
+			GTEST_SKIP() << "本机不支持 Hi-Z 所需能力";
+		renderer.camera_position_set(0.0f, 0.0f, camera_z);
+		renderer.camera_target_set(0.0f, 0.0f, 0.0f);
+		engine::Mesh_Handle mesh = 0;
+		ASSERT_TRUE(renderer.mesh_load(mesh, quad_data()));
+		std::array<float, 16> near_wall = identity_matrix();
+		near_wall[0] = 40.0f;
+		near_wall[5] = 40.0f;
+		near_wall[14] = 3.0f;
+		std::array<float, 16> far_wall = near_wall;
+		far_wall[14] = -2.0f;
+		std::vector<std::array<float, 16>> walls = { near_wall, far_wall };
+		for (uint32_t frame = 0; frame < 2; ++frame)
+		{
+			ASSERT_TRUE(renderer.mesh_draw_instanced(mesh, walls[0].data(), static_cast<uint32_t>(walls.size())));
+			ASSERT_TRUE(renderer.frame_render());
+		}
+		//两墙之后（z = −5）全部剔除、近墙之前（z = 4）全部可见
+		for (uint32_t index = 0; index < COUNT; ++index)
+		{
+			std::array<float, 16> matrix = identity_matrix();
+			matrix[14] = -5.0f;
+			matrices[index] = matrix;
+		}
+		uint32_t behind_both = COUNT;
+		ASSERT_TRUE(renderer.gpu_instance_compact_ex(matrices[0].data(), COUNT, local_min, local_max,
+			camera, forward, 0.0f, false, compacted[0].data(), &behind_both));
+		for (uint32_t index = 0; index < COUNT; ++index)
+		{
+			std::array<float, 16> matrix = identity_matrix();
+			matrix[14] = 4.0f;
+			matrices[index] = matrix;
+		}
+		uint32_t between = 0;
+		ASSERT_TRUE(renderer.gpu_instance_compact_ex(matrices[0].data(), COUNT, local_min, local_max,
+			camera, forward, 0.0f, false, compacted[0].data(), &between));
+		EXPECT_EQ(behind_both, 0u);
+		EXPECT_EQ(between, COUNT);
+		renderer.mesh_unload(mesh);
+	}
+}
+
+/*
+上一帧复用稳定性（第二百五十九轮）
+口径：静态场景（全屏墙 ＋ 墙后实例），开启 Hi-Z 后连续渲染 5 帧并逐帧回读颜色；
+第 1 帧起（金字塔已就绪、开始复用上一帧）与首帧逐字节一致，无闪烁。
+*/
+TEST_F(Renderer_HiZ_Test, 开启遮挡逐帧像素稳定)
+{
+	engine::Renderer_Config config = hidden_config();
+	config.hiz_enable = true;
+	config.msaa_samples = 1;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(config));
+	if (!renderer.hiz_supported())
+		GTEST_SKIP() << "本机不支持 Hi-Z 所需能力";
+	renderer.camera_position_set(0.0f, 0.0f, 5.0f);
+	renderer.camera_target_set(0.0f, 0.0f, 0.0f);
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, quad_data()));
+	//全屏墙（z = 3，放大 30 倍）＋ 墙后实例（z = 0，10 个）
+	std::array<float, 16> wall = identity_matrix();
+	wall[0] = 30.0f;
+	wall[5] = 30.0f;
+	wall[14] = 3.0f;
+	std::vector<std::array<float, 16>> behind(10, identity_matrix());
+	const uint32_t pixel_count = WINDOW_WIDTH * WINDOW_HEIGHT * 4u;
+	std::vector<std::vector<uint8_t>> frames;
+	for (uint32_t frame = 0; frame < 5; ++frame)
+	{
+		ASSERT_TRUE(renderer.mesh_draw_instanced(mesh, wall.data(), 1));
+		if (frame > 0)
+			ASSERT_TRUE(renderer.mesh_draw_instanced(mesh, behind[0].data(), static_cast<uint32_t>(behind.size())));
+		std::vector<uint8_t> pixels(pixel_count, 0u);
+		uint32_t width = 0;
+		uint32_t height = 0;
+		ASSERT_TRUE(renderer.frame_render(pixels.data(), pixel_count, &width, &height));
+		ASSERT_EQ(width, WINDOW_WIDTH);
+		ASSERT_EQ(height, WINDOW_HEIGHT);
+		frames.push_back(std::move(pixels));
+	}
+	//第 1..4 帧与首帧逐字节一致（复用上一帧不改变画面）；mismatch 返回尾迭代器表示完全相同
+	for (uint32_t frame = 1; frame < frames.size(); ++frame)
+	{
+		const bool same = std::mismatch(frames[0].begin(), frames[0].end(), frames[frame].begin()).first
+			== frames[0].end();
+		EXPECT_TRUE(same) << "帧 " << frame << " 与首帧存在差异";
+	}
 	renderer.mesh_unload(mesh);
 }
 
