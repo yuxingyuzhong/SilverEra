@@ -508,6 +508,54 @@ TEST_F(Renderer_HiZ_Test, 开启遮挡逐帧像素稳定)
 	renderer.mesh_unload(mesh);
 }
 
+/*
+MSAA 路径（第二百六十轮）
+口径：MSAA 4× 下场景只写多重采样深度，经深度解析（样本 0）写入单采样深度后参与 Hi-Z 生成；
+生成计数增长且墙后实例可被剔除（与单采样路径行为一致）。
+*/
+TEST_F(Renderer_HiZ_Test, MSAA路径生成与剔除)
+{
+	engine::Renderer_Config config = hidden_config();
+	config.hiz_enable = true;
+	config.msaa_samples = 4;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(config));
+	if (!renderer.hiz_supported())
+		GTEST_SKIP() << "本机不支持 Hi-Z 所需能力";
+	//设备未启用 4× 时本用例不适用
+	if (renderer.msaa_samples() < 4)
+		GTEST_SKIP() << "本机不支持 4× MSAA";
+	renderer.camera_position_set(0.0f, 0.0f, 5.0f);
+	renderer.camera_target_set(0.0f, 0.0f, 0.0f);
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, quad_data()));
+	//近墙（z = 3，放大 30 倍）
+	std::array<float, 16> wall = identity_matrix();
+	wall[0] = 30.0f;
+	wall[5] = 30.0f;
+	wall[14] = 3.0f;
+	for (uint32_t frame = 0; frame < 2; ++frame)
+	{
+		ASSERT_TRUE(renderer.mesh_draw_instanced(mesh, wall.data(), 1));
+		ASSERT_TRUE(renderer.frame_render());
+	}
+	//生成发生
+	EXPECT_GE(renderer.hiz_generation_count(), 2u);
+	//墙后实例全部剔除
+	constexpr uint32_t COUNT = 200;
+	std::vector<std::array<float, 16>> behind(COUNT, identity_matrix());
+	const float local_min[3] = { -QUAD_HALF, -QUAD_HALF, 0.0f };
+	const float local_max[3] = { QUAD_HALF, QUAD_HALF, 0.0f };
+	const float camera[3] = { 0.0f, 0.0f, 5.0f };
+	const float forward[3] = { 0.0f, 0.0f, -1.0f };
+	std::vector<std::array<float, 16>> compacted(COUNT);
+	uint32_t behind_visible = COUNT;
+	ASSERT_TRUE(renderer.gpu_instance_compact_ex(behind[0].data(), COUNT, local_min, local_max,
+		camera, forward, 0.0f, false, compacted[0].data(), &behind_visible));
+	EXPECT_EQ(behind_visible, 0u);
+	renderer.mesh_unload(mesh);
+}
+
 TEST_F(Renderer_HiZ_Test, 开关切换前后出帧守恒)
 {
 	engine::Renderer renderer;
