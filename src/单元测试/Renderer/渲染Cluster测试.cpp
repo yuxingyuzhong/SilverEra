@@ -4,6 +4,7 @@
 */
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <vector>
 
@@ -227,4 +228,61 @@ TEST(Renderer_Cluster_Test, 全量前缀和与CPU参考一致)
 		total_sum += counts[index];
 	}
 	EXPECT_EQ(gpu_prefix[COUNT - 1], static_cast<uint32_t>(total_sum));
+}
+
+//簇光源列表与 CPU 参考成员一致（第二百七十一轮）
+TEST(Renderer_Cluster_Test, 簇光源列表与CPU参考一致)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	constexpr uint32_t CLUSTERS = 3456;
+	//场景：主方向光 ＋ 一盏点光 ＋ 一盏聚光
+	const float position[3] = { 0.0f, 0.0f, 0.0f };
+	const float color[3] = { 1.0f, 1.0f, 1.0f };
+	const float spot_direction[3] = { 0.0f, -1.0f, 0.0f };
+	ASSERT_TRUE(renderer.light_add_point(position, color, 10.0f, 0.5f, 0.1f));
+	ASSERT_TRUE(renderer.light_add_spot(position, spot_direction, color, 10.0f, 0.5f, 25.0f, 40.0f, 0.1f));
+	//逐簇计数
+	std::vector<uint32_t> counts(CLUSTERS);
+	uint32_t total = 0;
+	ASSERT_TRUE(renderer.cluster_counts_reference_ex(counts.data(), CLUSTERS, &total));
+	ASSERT_EQ(total, CLUSTERS);
+	uint32_t entries = 0;
+	for (uint32_t cluster = 0; cluster < CLUSTERS; ++cluster)
+		entries += counts[cluster];
+	//本机不支持计算路径时跳过（GPU 列表降级口径）
+	if (!renderer.compute_supported())
+	{
+		GTEST_SKIP() << "本机不支持计算路径，GPU 簇列表不可用";
+	}
+
+	std::vector<uint32_t> cpu_list(entries);
+	std::vector<uint32_t> gpu_list(entries);
+	std::vector<uint32_t> cpu_offsets(CLUSTERS);
+	std::vector<uint32_t> gpu_offsets(CLUSTERS);
+	uint32_t cpu_entries = 0;
+	uint32_t gpu_entries = 0;
+	//容量不足被拒
+	EXPECT_FALSE(renderer.cluster_list_build_gpu(gpu_list.data(), entries - 1, gpu_offsets.data(),
+		counts.data(), CLUSTERS, &gpu_entries));
+	ASSERT_TRUE(renderer.cluster_list_build_cpu(cpu_list.data(), entries, cpu_offsets.data(),
+		counts.data(), CLUSTERS, &cpu_entries));
+	ASSERT_TRUE(renderer.cluster_list_build_gpu(gpu_list.data(), entries, gpu_offsets.data(),
+		counts.data(), CLUSTERS, &gpu_entries));
+	EXPECT_EQ(cpu_entries, entries);
+	EXPECT_EQ(gpu_entries, entries);
+	//偏移一致，且逐簇成员集合一致（簇内顺序由 GPU 原子竞争决定，故排序后比较）
+	for (uint32_t cluster = 0; cluster < CLUSTERS; ++cluster)
+		EXPECT_EQ(cpu_offsets[cluster], gpu_offsets[cluster]);
+	for (uint32_t cluster = 0; cluster < CLUSTERS; ++cluster)
+	{
+		uint32_t begin = cpu_offsets[cluster];
+		uint32_t end = begin + counts[cluster];
+		//取两侧同簇切片并排序
+		std::vector<uint32_t> cpu_slice(cpu_list.begin() + begin, cpu_list.begin() + end);
+		std::vector<uint32_t> gpu_slice(gpu_list.begin() + begin, gpu_list.begin() + end);
+		std::sort(cpu_slice.begin(), cpu_slice.end());
+		std::sort(gpu_slice.begin(), gpu_slice.end());
+		EXPECT_EQ(cpu_slice, gpu_slice);
+	}
 }
