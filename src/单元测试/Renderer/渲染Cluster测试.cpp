@@ -1178,3 +1178,114 @@ TEST(Renderer_Cluster_Test, 簇网格切换与缓冲重建)
 	renderer.mesh_unload(mesh);
 	renderer.texture_unload(texture);
 }
+
+/*
+512 盏整帧耗时对照（第三百零一轮）
+口径：1920×1080 ＋ MSAA 1 ＋ 全屏四边形（模型缩放 8×），每态渲染 5 帧取平均；
+三态对照：Cluster 关闭 8 盏（第 9 盏被拒）、开启 8 盏、开启 512 盏。
+目的：量化采样接入后的整帧 GPU / 录制成本，不设机器相关阈值，结果写入性能基线。
+*/
+TEST(Renderer_Cluster_Test, 大光源整帧耗时对照)
+{
+	constexpr uint32_t PERF_WIDTH = 1920;
+	constexpr uint32_t PERF_HEIGHT = 1080;
+	constexpr uint32_t PERF_FRAMES = 5;
+	constexpr uint32_t LIGHT_COUNT = 512;
+	//三态共用配置（1920 × 1080、隐藏窗口、MSAA 关闭）
+	engine::Renderer_Config config;
+	config.width = PERF_WIDTH;
+	config.height = PERF_HEIGHT;
+	config.hidden = true;
+	config.msaa_samples = 1;
+	engine::Renderer off;
+	engine::Renderer on_eight;
+	engine::Renderer on_many;
+	ASSERT_TRUE(off.init(config));
+	ASSERT_TRUE(on_eight.init(config));
+	ASSERT_TRUE(on_many.init(config));
+	//开启态需要计算路径
+	if (!on_many.cluster_supported())
+	{
+		GTEST_SKIP() << "本机不支持计算路径，整帧对照不可用";
+	}
+	ASSERT_TRUE(on_eight.cluster_enable_set(true));
+	ASSERT_TRUE(on_many.cluster_enable_set(true));
+	//全屏四边形（缩放 8×，法线朝 +Z）
+	engine::Mesh_Handle off_mesh = 0;
+	engine::Mesh_Handle on_eight_mesh = 0;
+	engine::Mesh_Handle on_many_mesh = 0;
+	ASSERT_TRUE(off.mesh_load(off_mesh, quad_data_lit()));
+	ASSERT_TRUE(on_eight.mesh_load(on_eight_mesh, quad_data_lit()));
+	ASSERT_TRUE(on_many.mesh_load(on_many_mesh, quad_data_lit()));
+	std::array<float, 16> model = identity_matrix();
+	model[0] = 8.0f;
+	model[5] = 8.0f;
+	//关闭主方向光（避免满照饱和，同时让片元成本由点光主导）
+	const float no_direction[3] = { 0.0f, 0.0f, -1.0f };
+	const float no_color[3] = { 1.0f, 1.0f, 1.0f };
+	off.light_set(no_direction, no_color, 0.0f, 0.0f);
+	on_eight.light_set(no_direction, no_color, 0.0f, 0.0f);
+	on_many.light_set(no_direction, no_color, 0.0f, 0.0f);
+	//三态光源：32 × 16 网格、半径 1.5（覆盖屏幕局部，列表长度接近真实场景）
+	const float light_color[3] = { 0.6f, 0.7f, 0.8f };
+	for (uint32_t index = 0; index < 8; ++index)
+	{
+		const float position[3] = { static_cast<float>(index % 32) * 0.4f - 6.4f,
+			static_cast<float>(index / 32) * 0.3f - 2.4f, 1.5f };
+		ASSERT_TRUE(off.light_add_point(position, light_color, 1.5f, 0.05f, 0.0f));
+		ASSERT_TRUE(on_eight.light_add_point(position, light_color, 1.5f, 0.05f, 0.0f));
+	}
+	//关闭态第 9 盏被拒（上限 8）
+	const float ninth_position[3] = { 0.0f, 0.0f, 1.5f };
+	EXPECT_FALSE(off.light_add_point(ninth_position, light_color, 1.5f, 0.05f, 0.0f));
+	for (uint32_t index = 0; index < LIGHT_COUNT; ++index)
+	{
+		const float position[3] = { static_cast<float>(index % 32) * 0.4f - 6.4f,
+			static_cast<float>(index / 32) * 0.3f - 2.4f, 1.5f };
+		ASSERT_TRUE(on_many.light_add_point(position, light_color, 1.5f, 0.05f, 0.0f));
+	}
+	EXPECT_EQ(on_many.point_light_count(), LIGHT_COUNT);
+	//三态各渲染 5 帧并累加 GPU 帧与录制耗时
+	double off_gpu = 0.0;
+	double off_record = 0.0;
+	double eight_gpu = 0.0;
+	double eight_record = 0.0;
+	double many_gpu = 0.0;
+	double many_record = 0.0;
+	for (uint32_t frame = 0; frame < PERF_FRAMES; ++frame)
+	{
+		ASSERT_TRUE(off.mesh_draw(off_mesh, model.data()));
+		ASSERT_TRUE(on_eight.mesh_draw(on_eight_mesh, model.data()));
+		ASSERT_TRUE(on_many.mesh_draw(on_many_mesh, model.data()));
+		ASSERT_TRUE(off.frame_render());
+		ASSERT_TRUE(on_eight.frame_render());
+		ASSERT_TRUE(on_many.frame_render());
+		off_gpu += off.frame_stats_get().gpu_frame_ms;
+		off_record += off.frame_stats_get().host_record_ms;
+		eight_gpu += on_eight.frame_stats_get().gpu_frame_ms;
+		eight_record += on_eight.frame_stats_get().host_record_ms;
+		many_gpu += on_many.frame_stats_get().gpu_frame_ms;
+		many_record += on_many.frame_stats_get().host_record_ms;
+	}
+	const double frames = static_cast<double>(PERF_FRAMES);
+	const double off_gpu_avg = off_gpu / frames;
+	const double eight_gpu_avg = eight_gpu / frames;
+	const double many_gpu_avg = many_gpu / frames;
+	const double off_record_avg = off_record / frames;
+	const double eight_record_avg = eight_record / frames;
+	const double many_record_avg = many_record / frames;
+	std::cout << "[大光源整帧301] 1920x1080 MSAA1 | GPU 关8盏 " << off_gpu_avg
+		<< " ms / 开8盏 " << eight_gpu_avg << " ms / 开512盏 " << many_gpu_avg
+		<< " ms | 录制 关8盏 " << off_record_avg << " ms / 开8盏 " << eight_record_avg
+		<< " ms / 开512盏 " << many_record_avg << " ms" << std::endl;
+	//有效性：三态均产生 GPU 时间戳样本；关闭态记录截断
+	EXPECT_GT(off_gpu_avg, 0.0);
+	EXPECT_GT(eight_gpu_avg, 0.0);
+	EXPECT_GT(many_gpu_avg, 0.0);
+	EXPECT_EQ(off.frame_stats_get().light_truncated, 1u);
+	//关闭态不做簇整备
+	EXPECT_EQ(off.frame_stats_get().cluster_entries, 0u);
+	off.mesh_unload(off_mesh);
+	on_eight.mesh_unload(on_eight_mesh);
+	on_many.mesh_unload(on_many_mesh);
+}
