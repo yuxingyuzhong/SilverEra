@@ -313,6 +313,76 @@ TEST_F(Renderer_GPU_Driven_Test, 性能基线采集)
 	EXPECT_GE(cpu_cull_sum, 0.0);
 	renderer.mesh_unload(mesh);
 }
+/*
+多批次合批基线采集（第二百五十二轮）
+口径：1080p ＋ MSAA 4× ＋ 1 万实例，切分为 100 批 × 100 实例（实例区连续），
+      对照「关 / 开间接绘制」的平均录制耗时与 GPU 帧耗时，并校验两态绘制实例数守恒。
+单批 1 万实例只有一条绘制命令，间接替换无收益；合批收益体现在多批次场景，故以此口径记录 ±%。
+*/
+TEST_F(Renderer_GPU_Driven_Test, 多批次合批基线采集)
+{
+	engine::Renderer_Config base_config;
+	base_config.width = BASELINE_WIDTH;
+	base_config.height = BASELINE_HEIGHT;
+	base_config.hidden = true;
+	base_config.msaa_samples = 4;
+	base_config.instance_capacity = BASELINE_INSTANCES;
+	constexpr uint32_t BATCHES = 100;
+	constexpr uint32_t PER_BATCH = BASELINE_INSTANCES / BATCHES;
+	std::vector<std::array<float, 16>> matrices = baseline_matrices(BASELINE_INSTANCES);
+	//两态渲染器（除间接开关外配置一致）
+	engine::Renderer off;
+	engine::Renderer on;
+	ASSERT_TRUE(off.init(base_config));
+	engine::Renderer_Config on_config = base_config;
+	on_config.gpu_indirect_enable = true;
+	ASSERT_TRUE(on.init(on_config));
+	engine::Mesh_Handle off_mesh = 0;
+	engine::Mesh_Handle on_mesh = 0;
+	ASSERT_TRUE(off.mesh_load(off_mesh, quad_data()));
+	ASSERT_TRUE(on.mesh_load(on_mesh, quad_data()));
+	double off_record_sum = 0.0;
+	double off_gpu_sum = 0.0;
+	double on_record_sum = 0.0;
+	double on_gpu_sum = 0.0;
+	uint64_t off_drawn = 0;
+	uint64_t on_drawn = 0;
+	for (uint32_t frame = 0; frame < BASELINE_FRAMES; ++frame)
+	{
+		for (uint32_t batch = 0; batch < BATCHES; ++batch)
+		{
+			const uint32_t offset = batch * PER_BATCH;
+			ASSERT_TRUE(off.mesh_draw_instanced(off_mesh, matrices[offset].data(), PER_BATCH));
+			ASSERT_TRUE(on.mesh_draw_instanced(on_mesh, matrices[offset].data(), PER_BATCH));
+		}
+		ASSERT_TRUE(off.frame_render());
+		ASSERT_TRUE(on.frame_render());
+		const engine::Frame_Stats off_stats = off.frame_stats_get();
+		const engine::Frame_Stats on_stats = on.frame_stats_get();
+		off_record_sum += off_stats.host_record_ms;
+		off_gpu_sum += off_stats.gpu_frame_ms;
+		on_record_sum += on_stats.host_record_ms;
+		on_gpu_sum += on_stats.gpu_frame_ms;
+		off_drawn = off_stats.drawn_instances;
+		on_drawn = on_stats.drawn_instances;
+	}
+	const double frames = static_cast<double>(BASELINE_FRAMES);
+	const double off_record = off_record_sum / frames;
+	const double on_record = on_record_sum / frames;
+	const double off_gpu = off_gpu_sum / frames;
+	const double on_gpu = on_gpu_sum / frames;
+	std::printf("[合批基线] %u 批 × %u 实例 | 录制 关 %.3f ms / 开 %.3f ms（%+.1f%%）| GPU 帧 关 %.3f ms / 开 %.3f ms（%+.1f%%）\n",
+		BATCHES, PER_BATCH, off_record, on_record,
+		off_record > 0.0 ? (on_record - off_record) / off_record * 100.0 : 0.0,
+		off_gpu, on_gpu,
+		off_gpu > 0.0 ? (on_gpu - off_gpu) / off_gpu * 100.0 : 0.0);
+	//两态绘制实例数守恒；开时确有间接命令
+	EXPECT_EQ(off_drawn, on_drawn);
+	EXPECT_GT(on.frame_stats_get().indirect_draws, 0u);
+	off.mesh_unload(off_mesh);
+	on.mesh_unload(on_mesh);
+}
+
 //视锥平面提取与球 / 盒判定（第二百四十八轮；纯 CPU 口径）
 TEST_F(Renderer_GPU_Driven_Test, 视锥平面与球判可见)
 {
@@ -729,4 +799,63 @@ TEST_F(Renderer_GPU_Driven_Test, 剔除三态统计单调)
 	EXPECT_EQ(gpu.frame_stats_get().gpu_cull_dispatches, 2u);
 	off.mesh_unload(off_mesh);
 	gpu.mesh_unload(gpu_mesh);
+}
+/*
+间接绘制开关画面等价（第二百五十二轮核心验收）
+口径：同一批 8 次实例化绘制（每次 32 实例、实例区连续），开/关间接绘制的像素逐字节一致，
+      关时 indirect_draws 恒 0，开时 > 0 且不超过实际绘制项数，绘制实例数守恒。
+*/
+TEST_F(Renderer_GPU_Driven_Test, 间接绘制开关画面等价)
+{
+	engine::Renderer_Config off_config = hidden_config();
+	off_config.instance_capacity = 512;
+	engine::Renderer off;
+	ASSERT_TRUE(off.init(off_config));
+	if (!off.readback_supported())
+		GTEST_SKIP() << "本机不支持像素回读";
+	engine::Renderer_Config on_config = off_config;
+	on_config.gpu_indirect_enable = true;
+	engine::Renderer on;
+	ASSERT_TRUE(on.init(on_config));
+	constexpr uint32_t CHUNKS = 8;
+	constexpr uint32_t PER_CHUNK = 32;
+	//实例横向连续铺开（相邻绘制项的实例区在实例缓冲内紧邻）
+	std::vector<std::array<float, 16>> transforms(CHUNKS * PER_CHUNK);
+	for (uint32_t index = 0; index < transforms.size(); ++index)
+	{
+		const float ratio = static_cast<float>(index) / static_cast<float>(transforms.size() - 1);
+		std::array<float, 16> matrix = identity_matrix();
+		matrix[12] = -6.0f + 12.0f * ratio;
+		transforms[index] = matrix;
+	}
+	engine::Mesh_Handle off_mesh = 0;
+	engine::Mesh_Handle on_mesh = 0;
+	ASSERT_TRUE(off.mesh_load(off_mesh, quad_data()));
+	ASSERT_TRUE(on.mesh_load(on_mesh, quad_data()));
+	for (uint32_t chunk = 0; chunk < CHUNKS; ++chunk)
+	{
+		const uint32_t base = chunk * PER_CHUNK;
+		ASSERT_TRUE(off.mesh_draw_instanced(off_mesh, transforms[base].data(), PER_CHUNK));
+		ASSERT_TRUE(on.mesh_draw_instanced(on_mesh, transforms[base].data(), PER_CHUNK));
+	}
+	std::vector<uint8_t> off_pixels(WINDOW_WIDTH * WINDOW_HEIGHT * 4, 0);
+	std::vector<uint8_t> on_pixels(off_pixels.size(), 0);
+	ASSERT_TRUE(off.frame_render(off_pixels.data(), static_cast<uint32_t>(off_pixels.size())));
+	ASSERT_TRUE(on.frame_render(on_pixels.data(), static_cast<uint32_t>(on_pixels.size())));
+	//像素逐字节一致
+	uint32_t diff = 0;
+	for (std::size_t offset = 0; offset < off_pixels.size(); ++offset)
+		if (off_pixels[offset] != on_pixels[offset])
+			++diff;
+	EXPECT_EQ(diff, 0u) << "开/关间接绘制的像素不一致";
+	const engine::Frame_Stats off_stats = off.frame_stats_get();
+	const engine::Frame_Stats on_stats = on.frame_stats_get();
+	//关时恒 0；开时确有间接命令，且命令数不多于实际绘制项数（合批只会减少）
+	EXPECT_EQ(off_stats.indirect_draws, 0u);
+	EXPECT_GT(on_stats.indirect_draws, 0u);
+	EXPECT_LE(on_stats.indirect_draws, on_stats.drawn_items);
+	//实例数守恒
+	EXPECT_EQ(off_stats.drawn_instances, on_stats.drawn_instances);
+	off.mesh_unload(off_mesh);
+	on.mesh_unload(on_mesh);
 }
