@@ -54,6 +54,23 @@ namespace
 			0.0f, 0.0f, 0.0f, 1.0f
 		};
 	}
+
+	/*
+	构造带法线的中心小四边形（第二百八十九轮）
+	光照分支需要法线（无法线时片元按满照处理，点光差异不可见），故簇采样用例统一使用本网格。
+	*/
+	engine::Mesh_Data quad_data_lit(void)
+	{
+		engine::Mesh_Data data;
+		data.vertices = {
+			{ { -1.0f, -1.0f, 0.0f }, { 0.0f, 0.0f }, { 0.0f, 0.0f, 1.0f } },
+			{ { 1.0f, -1.0f, 0.0f }, { 1.0f, 0.0f }, { 0.0f, 0.0f, 1.0f } },
+			{ { 1.0f, 1.0f, 0.0f }, { 1.0f, 1.0f }, { 0.0f, 0.0f, 1.0f } },
+			{ { -1.0f, 1.0f, 0.0f }, { 0.0f, 1.0f }, { 0.0f, 0.0f, 1.0f } },
+		};
+		data.indices = { 0, 1, 2, 0, 2, 3 };
+		return data;
+	}
 }
 
 TEST(Renderer_Cluster_Test, 光源记录上传与开关)
@@ -711,17 +728,13 @@ TEST(Renderer_Cluster_Test, 图形set0簇缓冲上传)
 		const float position[3] = { 0.0f, 0.0f, 0.0f };
 		const float color[3] = { 1.0f, 1.0f, 1.0f };
 		ASSERT_TRUE(renderer.light_add_point(position, color, 10.0f, 0.5f, 0.1f));
-		std::array<float, 16> transform = identity_matrix();
+		//逐帧绘制并回读（同上：每帧都带回读）
+		std::vector<uint8_t> pixels(pixel_count, 0u);
 		for (uint32_t frame = 0; frame < 3; ++frame)
 		{
-			ASSERT_TRUE(renderer.mesh_draw_instanced(mesh, transform.data(), 1));
-			ASSERT_TRUE(renderer.frame_render());
+			ASSERT_TRUE(renderer.mesh_draw(mesh, nullptr));
+			ASSERT_TRUE(renderer.frame_render(pixels.data(), pixel_count, nullptr, nullptr));
 		}
-		//末帧回读
-		std::vector<uint8_t> pixels(pixel_count, 0u);
-		uint32_t width = 0;
-		uint32_t height = 0;
-		ASSERT_TRUE(renderer.frame_render(pixels.data(), pixel_count, &width, &height));
 		engine::Frame_Stats stats = renderer.frame_stats_get();
 		//关闭：零上传
 		if (cluster_index == 0)
@@ -739,4 +752,136 @@ TEST(Renderer_Cluster_Test, 图形set0簇缓冲上传)
 	const bool same = std::mismatch(results[0].begin(), results[0].end(), results[1].begin()).first
 		== results[0].end();
 	EXPECT_TRUE(same) << "簇缓冲接入后开 / 关两态画面不一致";
+}
+
+
+/*
+片元簇采样：八盏光源等价（第二百八十九轮）
+口径：六盏点光 ＋ 两盏聚光（半径均大到保守覆盖全屏全深度），
+Cluster 开启时片元经逐簇列表累加，关闭时走原 8 盏 UBO 前向循环，两态画面须逐字节一致。
+*/
+TEST(Renderer_Cluster_Test, 片元簇采样_八盏等价)
+{
+	const uint32_t pixel_count = WINDOW_WIDTH * WINDOW_HEIGHT * 4u;
+	std::vector<std::vector<uint8_t>> results;
+	for (uint32_t cluster_index = 0; cluster_index < 2; ++cluster_index)
+	{
+		engine::Renderer_Config config = hidden_config();
+		config.msaa_samples = 1;
+		engine::Renderer renderer;
+		ASSERT_TRUE(renderer.init(config));
+		//开启态需要计算路径
+		if (cluster_index != 0)
+		{
+			if (!renderer.cluster_supported())
+				GTEST_SKIP() << "本机不支持计算路径，簇采样路径不可用";
+			ASSERT_TRUE(renderer.cluster_enable_set(true));
+		}
+		uint64_t texture = 0;
+		std::vector<uint8_t> texels(2u * 2u * 4u, 255u);
+		ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 2, 2));
+		renderer.texture_bind_set(texture);
+		//关闭主方向光（满照会饱和画面，掩盖点光差异）
+		const float no_direction[3] = { 0.0f, 0.0f, -1.0f };
+		const float no_color[3] = { 1.0f, 1.0f, 1.0f };
+		renderer.light_set(no_direction, no_color, 0.0f, 0.0f);
+		engine::Mesh_Handle mesh = 0;
+		ASSERT_TRUE(renderer.mesh_load(mesh, quad_data_lit()));
+		//六盏点光 ＋ 两盏聚光（半径 20，均保守覆盖全部簇）
+		const float color[3] = { 0.3f, 0.5f, 0.7f };
+		for (uint32_t index = 0; index < 6; ++index)
+		{
+			const float position[3] = { static_cast<float>(index) - 2.5f, 0.0f, 1.5f };
+			ASSERT_TRUE(renderer.light_add_point(position, color, 20.0f, 0.05f, 0.0f));
+		}
+		const float direction[3] = { 0.0f, 0.0f, -1.0f };
+		for (uint32_t index = 0; index < 2; ++index)
+		{
+			const float position[3] = { index == 0 ? -4.0f : 4.0f, 0.0f, 1.5f };
+			ASSERT_TRUE(renderer.light_add_spot(position, direction, color, 20.0f, 0.05f, 30.0f, 45.0f, 0.0f));
+		}
+		//逐帧绘制并回读（本机连续「无回读帧」后再请求回读会得到整幅清屏色，故每帧都带回读）
+		std::vector<uint8_t> pixels(pixel_count, 0u);
+		for (uint32_t frame = 0; frame < 3; ++frame)
+		{
+			ASSERT_TRUE(renderer.mesh_draw(mesh, nullptr));
+			ASSERT_TRUE(renderer.frame_render(pixels.data(), pixel_count, nullptr, nullptr));
+		}
+		//开启态：簇条目已整备并上传
+		if (cluster_index != 0)
+			EXPECT_GT(renderer.frame_stats_get().cluster_entries, 0u);
+		results.push_back(std::move(pixels));
+		renderer.mesh_unload(mesh);
+		renderer.texture_unload(texture);
+	}
+	//两态画面逐字节一致（同一 8 盏光源、同一累加顺序）
+	const bool same = std::mismatch(results[0].begin(), results[0].end(), results[1].begin()).first
+		== results[0].end();
+	EXPECT_TRUE(same) << "八盏光源下簇采样与原前向路径画面不一致";
+}
+
+/*
+片元簇采样：九盏光源扩展（第二百八十九轮）
+口径：Cluster 关闭时第 9 盏被拒并置 `light_truncated`；开启时第 9 盏参与照明，
+故两态画面必然不同（证明片元确实读取了簇列表与光源记录）。
+*/
+TEST(Renderer_Cluster_Test, 片元簇采样_九盏扩展)
+{
+	const uint32_t pixel_count = WINDOW_WIDTH * WINDOW_HEIGHT * 4u;
+	std::vector<std::vector<uint8_t>> results;
+	for (uint32_t cluster_index = 0; cluster_index < 2; ++cluster_index)
+	{
+		engine::Renderer_Config config = hidden_config();
+		config.msaa_samples = 1;
+		engine::Renderer renderer;
+		ASSERT_TRUE(renderer.init(config));
+		//开启态需要计算路径
+		if (cluster_index != 0)
+		{
+			if (!renderer.cluster_supported())
+				GTEST_SKIP() << "本机不支持计算路径，簇采样路径不可用";
+			ASSERT_TRUE(renderer.cluster_enable_set(true));
+		}
+		uint64_t texture = 0;
+		std::vector<uint8_t> texels(2u * 2u * 4u, 255u);
+		ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 2, 2));
+		renderer.texture_bind_set(texture);
+		//关闭主方向光（满照会饱和画面，掩盖第 9 盏差异）
+		const float no_direction[3] = { 0.0f, 0.0f, -1.0f };
+		const float no_color[3] = { 1.0f, 1.0f, 1.0f };
+		renderer.light_set(no_direction, no_color, 0.0f, 0.0f);
+		engine::Mesh_Handle mesh = 0;
+		ASSERT_TRUE(renderer.mesh_load(mesh, quad_data_lit()));
+		//前 8 盏（半径 20 覆盖全部簇；强度压低避免画面饱和后第 9 盏不可见）
+		const float color[3] = { 0.4f, 0.5f, 0.6f };
+		for (uint32_t index = 0; index < 8; ++index)
+		{
+			const float position[3] = { static_cast<float>(index) - 3.5f, 0.0f, 1.5f };
+			ASSERT_TRUE(renderer.light_add_point(position, color, 20.0f, 0.02f, 0.0f));
+		}
+		//第 9 盏：关闭时被拒，开启时接受（正前方高亮，确保产生可见照度差）
+		const float ninth_position[3] = { 0.0f, 0.0f, 3.0f };
+		const bool ninth_added = renderer.light_add_point(ninth_position, color, 20.0f, 0.5f, 0.0f);
+		if (cluster_index == 0)
+			EXPECT_FALSE(ninth_added);
+		else
+			ASSERT_TRUE(ninth_added);
+		//逐帧绘制并回读（本机连续「无回读帧」后再请求回读会得到整幅清屏色，故每帧都带回读）
+		std::vector<uint8_t> pixels(pixel_count, 0u);
+		for (uint32_t frame = 0; frame < 3; ++frame)
+		{
+			ASSERT_TRUE(renderer.mesh_draw(mesh, nullptr));
+			ASSERT_TRUE(renderer.frame_render(pixels.data(), pixel_count, nullptr, nullptr));
+		}
+		engine::Frame_Stats stats = renderer.frame_stats_get();
+		//关闭态：截断标志置 1；开启态：无截断
+		EXPECT_EQ(stats.light_truncated, cluster_index == 0 ? 1u : 0u);
+		results.push_back(std::move(pixels));
+		renderer.mesh_unload(mesh);
+		renderer.texture_unload(texture);
+	}
+	//两态画面不同（第 9 盏在开启态参与照明）
+	const bool same = std::mismatch(results[0].begin(), results[0].end(), results[1].begin()).first
+		== results[0].end();
+	EXPECT_FALSE(same) << "第 9 盏在簇采样开启态未产生可见差异";
 }
