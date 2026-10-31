@@ -947,3 +947,81 @@ TEST(Renderer_Cluster_Test, 片元簇采样_MSAA四倍等价)
 		== results[0].end();
 	EXPECT_TRUE(same) << "MSAA 4× 下簇采样与原前向路径画面不一致";
 }
+
+/*
+大光源场景：512 盏（第二百九十一轮）
+口径：Cluster 开启登记 512 盏点光（记录 514 条），场景正常出帧且簇条目 / 上传量非零；
+CPU 与 GPU 整备结果为同一份计数，并输出两路径耗时（每路径 2 次取最小）。
+*/
+TEST(Renderer_Cluster_Test, 大光源场景_五百一十二盏)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.cluster_supported())
+	{
+		GTEST_SKIP() << "本机不支持计算路径，大光源场景不可用";
+	}
+	ASSERT_TRUE(renderer.cluster_enable_set(true));
+	constexpr uint32_t LIGHT_COUNT = 512;
+	const float color[3] = { 0.6f, 0.7f, 0.8f };
+	//32 × 16 网格分布（相机前方，半径 2 覆盖局部簇）
+	for (uint32_t index = 0; index < LIGHT_COUNT; ++index)
+	{
+		const float position[3] = { static_cast<float>(index % 32) * 0.4f - 6.4f,
+			static_cast<float>(index / 32) * 0.3f - 2.4f, 1.0f };
+		ASSERT_TRUE(renderer.light_add_point(position, color, 2.0f, 0.05f, 0.0f));
+	}
+	EXPECT_EQ(renderer.point_light_count(), LIGHT_COUNT);
+	EXPECT_EQ(renderer.light_record_count(), LIGHT_COUNT + 2u);
+
+	//出帧（逐帧回读口径）
+	uint64_t texture = 0;
+	std::vector<uint8_t> texels(2u * 2u * 4u, 255u);
+	ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 2, 2));
+	renderer.texture_bind_set(texture);
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, quad_data_lit()));
+	const uint32_t pixel_count = WINDOW_WIDTH * WINDOW_HEIGHT * 4u;
+	std::vector<uint8_t> pixels(pixel_count, 0u);
+	for (uint32_t frame = 0; frame < 2; ++frame)
+	{
+		ASSERT_TRUE(renderer.mesh_draw(mesh, nullptr));
+		ASSERT_TRUE(renderer.frame_render(pixels.data(), pixel_count, nullptr, nullptr));
+	}
+	//簇条目与上传量非零
+	const engine::Frame_Stats stats = renderer.frame_stats_get();
+	EXPECT_GT(stats.cluster_entries, 0u);
+	EXPECT_GT(stats.cluster_gpu_bytes, 0u);
+
+	//CPU / GPU 整备对照（列表容量上界 = 簇数 × 记录数）
+	constexpr uint32_t CLUSTERS = 3456;
+	constexpr uint32_t LIST_CAPACITY = CLUSTERS * (LIGHT_COUNT + 2u);
+	std::vector<uint32_t> counts_cpu(CLUSTERS);
+	std::vector<uint32_t> offsets_cpu(CLUSTERS);
+	std::vector<uint32_t> list_cpu(LIST_CAPACITY);
+	std::vector<uint32_t> counts_gpu(CLUSTERS);
+	std::vector<uint32_t> offsets_gpu(CLUSTERS);
+	std::vector<uint32_t> list_gpu(LIST_CAPACITY);
+	uint32_t cpu_entries = 0;
+	uint32_t gpu_entries = 0;
+	double cpu_best_ms = 1e9;
+	double gpu_best_ms = 1e9;
+	for (uint32_t run = 0; run < 2; ++run)
+	{
+		ASSERT_TRUE(renderer.cluster_data_build(counts_cpu.data(), offsets_cpu.data(), list_cpu.data(),
+			CLUSTERS, LIST_CAPACITY, &cpu_entries, false));
+		cpu_best_ms = (std::min)(cpu_best_ms, renderer.cluster_build_ms_get());
+		ASSERT_TRUE(renderer.cluster_data_build(counts_gpu.data(), offsets_gpu.data(), list_gpu.data(),
+			CLUSTERS, LIST_CAPACITY, &gpu_entries, true));
+		gpu_best_ms = (std::min)(gpu_best_ms, renderer.cluster_build_ms_get());
+	}
+	//两路径同一份计数
+	EXPECT_EQ(cpu_entries, gpu_entries);
+	for (uint32_t cluster = 0; cluster < CLUSTERS; ++cluster)
+		EXPECT_EQ(counts_cpu[cluster], counts_gpu[cluster]);
+	std::cout << "[大光源512] CPU " << cpu_best_ms << " ms / GPU " << gpu_best_ms << " ms | 条目 "
+		<< cpu_entries << std::endl;
+
+	renderer.mesh_unload(mesh);
+	renderer.texture_unload(texture);
+}
