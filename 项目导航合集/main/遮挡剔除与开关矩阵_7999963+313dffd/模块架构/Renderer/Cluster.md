@@ -90,3 +90,11 @@ Cluster/
 3. `Cluster块偏移合成.comp`：`prefix[i] += offsets[i / 256]`。
 4. 门面 `cluster_prefix_scan_cpu` / `cluster_prefix_scan_gpu`（四缓冲 ＋ 三步调度 ＋ 回读）。
 5. 验证：4096 元素（16 块）逐元素与 CPU 相等；末项等于总计数。
+
+## 本版次内更新（第二百七十一轮：簇光源列表）
+
+1. CPU 参考 `cluster_list_offsets`（排他偏移 ＋ 总条目）与 `cluster_list_reference`（按光源顺序写索引）。
+2. `Cluster列表写入.comp`：binding 0 光源记录 / 1 计数 / 2 游标 / 3 列表；`atomicAdd(cursors[c], 1)` 取槽位；
+   方向光写全部簇；推送常量 116 字节（在前 112 字节后追加 `light_count`）。
+3. 门面 `cluster_list_build_cpu` / `cluster_list_build_gpu`。
+4. 验证：偏移逐簇一致、逐簇成员排序后与 CPU 一致（簇内顺序允许不同）。
