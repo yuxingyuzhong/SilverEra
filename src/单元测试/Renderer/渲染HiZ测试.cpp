@@ -556,6 +556,53 @@ TEST_F(Renderer_HiZ_Test, MSAA路径生成与剔除)
 	renderer.mesh_unload(mesh);
 }
 
+/*
+遮挡观测（第二百六十一轮）
+口径：GPU 压缩在 Hi-Z 完全遮挡时累加 `Counter_Block.occluded_count`，经 `Frame_Stats.gpu_occluded` 暴露；
+关闭 Hi-Z 时该计数恒 0（三态：关 / 开但无遮挡 / 开且遮挡）。
+*/
+TEST_F(Renderer_HiZ_Test, 遮挡观测与三态)
+{
+	engine::Renderer_Config config = hidden_config();
+	config.hiz_enable = true;
+	config.msaa_samples = 1;
+	config.gpu_cull_enable = true;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(config));
+	if (!renderer.hiz_supported() || !renderer.compute_supported())
+		GTEST_SKIP() << "本机不支持计算 / Hi-Z 所需能力";
+	renderer.camera_position_set(0.0f, 0.0f, 5.0f);
+	renderer.camera_target_set(0.0f, 0.0f, 0.0f);
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, quad_data()));
+	//近墙（z = 3）两帧预热
+	std::array<float, 16> wall = identity_matrix();
+	wall[0] = 30.0f;
+	wall[5] = 30.0f;
+	wall[14] = 3.0f;
+	for (uint32_t frame = 0; frame < 2; ++frame)
+	{
+		ASSERT_TRUE(renderer.mesh_draw_instanced(mesh, wall.data(), 1));
+		ASSERT_TRUE(renderer.frame_render());
+	}
+	//墙后 200 实例走 GPU 剔除路径：遮挡计数应大于 0
+	std::vector<std::array<float, 16>> behind(200, identity_matrix());
+	ASSERT_TRUE(renderer.mesh_draw_instanced(mesh, behind[0].data(), static_cast<uint32_t>(behind.size())));
+	ASSERT_TRUE(renderer.frame_render());
+	const engine::Frame_Stats stats = renderer.frame_stats_get();
+	EXPECT_GT(stats.gpu_occluded, 0u);
+	//关闭 Hi-Z 的对照：遮挡计数恒 0
+	engine::Renderer without;
+	engine::Renderer_Config plain = hidden_config();
+	plain.gpu_cull_enable = true;
+	ASSERT_TRUE(without.init(plain));
+	ASSERT_TRUE(without.mesh_load(mesh, quad_data()));
+	ASSERT_TRUE(without.mesh_draw_instanced(mesh, behind[0].data(), static_cast<uint32_t>(behind.size())));
+	ASSERT_TRUE(without.frame_render());
+	EXPECT_EQ(without.frame_stats_get().gpu_occluded, 0u);
+	renderer.mesh_unload(mesh);
+}
+
 TEST_F(Renderer_HiZ_Test, 开关切换前后出帧守恒)
 {
 	engine::Renderer renderer;
