@@ -88,3 +88,21 @@ HiZ/
 - 【待确认：254-1】`HIZ_LEVEL_MAX` 截断后末级仍大于 1×1（> 4096 窗口），遮挡查询的 clamp 口径待 255 轮定稿。
 - 【待确认：254-2】每级重写描述符集的成本未计时；若成为热点，272 轮改为预建逐级描述符集。
 - 【待确认：254-3】MSAA 与离屏 / 后处理链路径的生成接入（260 / 256 轮）尚未验证。
+
+## 增补（第二百五十五轮：遮挡测试 CPU 参考）
+
+新增 Vulkan-free 头 `src/render/HiZ/遮挡测试.h` 与实现 `core/遮挡测试.cpp`（不依赖 Vulkan / 内存 / 计算模块）：
+
+| 接口 | 语义 |
+| --- | --- |
+| `HIZ_OCCLUSION_LEVEL_MAX = 12` / `HIZ_OCCLUSION_BIAS = 0.002f` | 级数上限与判定容差 |
+| `struct HiZ_Pyramid_View { data; width; height; levels }` | 逐级紧排的金字塔视图 |
+| `struct HiZ_Screen_Rect { min_x/min_y/max_x/max_y; nearest_depth; cross_near }` | 屏幕矩形、对象最近深度、跨近平面标志 |
+| `enum class HiZ_Visibility { Visible, Occluded }` | 判定结果 |
+| `hiz_screen_rect_build(rect, view_proj, aabb_min, aabb_max, width, height)` | 8 角点投影；任一角点 `w ≤ 0` 置 `cross_near`；非法入参返回假 |
+| `hiz_level_for_rect(rect_w, rect_h, levels)` | `ceil(log2(max))` 截到 `[0, levels-1]` |
+| `hiz_pyramid_level_get(pyramid, level, data, w, h)` | 逐级紧排偏移换算 |
+| `hiz_occlusion_test(pyramid, rect, bias)` | 跨近平面 / 视图外 → 可见；覆盖纹素取最大，最近深度 > 最大 ＋ bias → 剔除 |
+| `hiz_pyramid_downsample(src, sw, sh, dst, dw, dh)` | 2×2 取最大、越界钳到末行 / 列（与 `HiZ降采样.comp` 同口径） |
+
+口径：深度 0..1（越小越近），金字塔存最远面；同尺寸降采样并非逐纹素恒等（邻域为 `(2x,2x+1)×(2y,2y+1)`，偏保守）。256 轮着色器按同一口径实现，并以「CPU 与 GPU 遮挡结果一致」用例验收。
