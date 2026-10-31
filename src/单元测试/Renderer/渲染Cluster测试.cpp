@@ -885,3 +885,65 @@ TEST(Renderer_Cluster_Test, 片元簇采样_九盏扩展)
 		== results[0].end();
 	EXPECT_FALSE(same) << "第 9 盏在簇采样开启态未产生可见差异";
 }
+
+/*
+片元簇采样：MSAA 4× 等价（第二百九十轮）
+口径：4× MSAA ＋ 六点光 ＋ 两聚光（覆盖全簇），真实光照下开 / 关两态画面逐字节一致；
+确认簇分支与多重采样渲染路径（含解析）组合后不产生像素差异。
+*/
+TEST(Renderer_Cluster_Test, 片元簇采样_MSAA四倍等价)
+{
+	const uint32_t pixel_count = WINDOW_WIDTH * WINDOW_HEIGHT * 4u;
+	std::vector<std::vector<uint8_t>> results;
+	for (uint32_t cluster_index = 0; cluster_index < 2; ++cluster_index)
+	{
+		engine::Renderer_Config config = hidden_config();
+		config.msaa_samples = 4;
+		engine::Renderer renderer;
+		ASSERT_TRUE(renderer.init(config));
+		//开启态需要计算路径
+		if (cluster_index != 0)
+		{
+			if (!renderer.cluster_supported())
+				GTEST_SKIP() << "本机不支持计算路径，簇采样路径不可用";
+			ASSERT_TRUE(renderer.cluster_enable_set(true));
+		}
+		uint64_t texture = 0;
+		std::vector<uint8_t> texels(2u * 2u * 4u, 255u);
+		ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 2, 2));
+		renderer.texture_bind_set(texture);
+		//关闭主方向光（满照会饱和画面）
+		const float no_direction[3] = { 0.0f, 0.0f, -1.0f };
+		const float no_color[3] = { 1.0f, 1.0f, 1.0f };
+		renderer.light_set(no_direction, no_color, 0.0f, 0.0f);
+		engine::Mesh_Handle mesh = 0;
+		ASSERT_TRUE(renderer.mesh_load(mesh, quad_data_lit()));
+		//六盏点光 ＋ 两盏聚光（半径 20，均保守覆盖全部簇）
+		const float color[3] = { 0.3f, 0.5f, 0.7f };
+		for (uint32_t index = 0; index < 6; ++index)
+		{
+			const float position[3] = { static_cast<float>(index) - 2.5f, 0.0f, 1.5f };
+			ASSERT_TRUE(renderer.light_add_point(position, color, 20.0f, 0.05f, 0.0f));
+		}
+		const float direction[3] = { 0.0f, 0.0f, -1.0f };
+		for (uint32_t index = 0; index < 2; ++index)
+		{
+			const float position[3] = { index == 0 ? -4.0f : 4.0f, 0.0f, 1.5f };
+			ASSERT_TRUE(renderer.light_add_spot(position, direction, color, 20.0f, 0.05f, 30.0f, 45.0f, 0.0f));
+		}
+		//逐帧绘制并回读
+		std::vector<uint8_t> pixels(pixel_count, 0u);
+		for (uint32_t frame = 0; frame < 3; ++frame)
+		{
+			ASSERT_TRUE(renderer.mesh_draw(mesh, nullptr));
+			ASSERT_TRUE(renderer.frame_render(pixels.data(), pixel_count, nullptr, nullptr));
+		}
+		results.push_back(std::move(pixels));
+		renderer.mesh_unload(mesh);
+		renderer.texture_unload(texture);
+	}
+	//两态画面逐字节一致（4× MSAA 解析后）
+	const bool same = std::mismatch(results[0].begin(), results[0].end(), results[1].begin()).first
+		== results[0].end();
+	EXPECT_TRUE(same) << "MSAA 4× 下簇采样与原前向路径画面不一致";
+}
