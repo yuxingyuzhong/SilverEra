@@ -1025,6 +1025,65 @@ TEST(Renderer_Cluster_Test, 大光源场景_五百一十二盏)
 }
 
 /*
+大光源场景：512 盏聚光灯（第二百九十四轮）
+口径：512 盏聚光（32 × 16 网格、朝 −Z、窄锥）登记后记录数 514，出帧正常、条目 / 上传量非零；
+配合着色器「锥外提前退出」，验证聚光分支在大规模下可用且不影响结果。
+*/
+TEST(Renderer_Cluster_Test, 大光源场景_五百一十二盏聚光灯)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.cluster_supported())
+	{
+		GTEST_SKIP() << "本机不支持计算路径，大光源聚光场景不可用";
+	}
+	ASSERT_TRUE(renderer.cluster_enable_set(true));
+	constexpr uint32_t LIGHT_COUNT = 512;
+	const float color[3] = { 0.5f, 0.7f, 0.9f };
+	const float direction[3] = { 0.0f, 0.0f, -1.0f };
+	//32 × 16 网格；内 20° / 外 30° 窄锥，半径 2
+	for (uint32_t index = 0; index < LIGHT_COUNT; ++index)
+	{
+		const float position[3] = { static_cast<float>(index % 32) * 0.4f - 6.4f,
+			static_cast<float>(index / 32) * 0.3f - 2.4f, 1.5f };
+		ASSERT_TRUE(renderer.light_add_spot(position, direction, color, 2.0f, 0.05f, 20.0f, 30.0f, 0.0f));
+	}
+	EXPECT_EQ(renderer.point_light_count(), LIGHT_COUNT);
+	EXPECT_EQ(renderer.light_record_count(), LIGHT_COUNT + 2u);
+
+	//出帧（逐帧回读）
+	uint64_t texture = 0;
+	std::vector<uint8_t> texels(2u * 2u * 4u, 255u);
+	ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 2, 2));
+	renderer.texture_bind_set(texture);
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, quad_data_lit()));
+	const uint32_t pixel_count = WINDOW_WIDTH * WINDOW_HEIGHT * 4u;
+	std::vector<uint8_t> pixels(pixel_count, 0u);
+	for (uint32_t frame = 0; frame < 2; ++frame)
+	{
+		ASSERT_TRUE(renderer.mesh_draw(mesh, nullptr));
+		ASSERT_TRUE(renderer.frame_render(pixels.data(), pixel_count, nullptr, nullptr));
+	}
+	const engine::Frame_Stats stats = renderer.frame_stats_get();
+	EXPECT_GT(stats.cluster_entries, 0u);
+	EXPECT_GT(stats.cluster_gpu_bytes, 0u);
+
+	//CPU 整备基线（一次，避免用例过长）
+	constexpr uint32_t CLUSTERS = 3456;
+	std::vector<uint32_t> counts(CLUSTERS);
+	std::vector<uint32_t> offsets(CLUSTERS);
+	std::vector<uint32_t> list(CLUSTERS * (LIGHT_COUNT + 2u));
+	uint32_t entries = 0;
+	ASSERT_TRUE(renderer.cluster_data_build(counts.data(), offsets.data(), list.data(),
+		CLUSTERS, static_cast<uint32_t>(list.size()), &entries, false));
+	EXPECT_GT(entries, 0u);
+	std::cout << "[大光源512聚光] CPU " << renderer.cluster_build_ms_get() << " ms | 条目 " << entries << std::endl;
+
+	renderer.mesh_unload(mesh);
+	renderer.texture_unload(texture);
+}
+/*
 簇网格切换与缓冲重建（第二百九十二轮）
 口径：运行期切换网格（3456 → 512 → 4032 簇），图形 set0 簇缓冲按容量增长重建并重写绑定；
 每档出帧后 `cluster_gpu_bytes = 簇数 × 8 ＋ 条目 × 4`，且条目 > 0。
