@@ -158,9 +158,59 @@ TEST_F(Renderer_HiZ_Test, 计算关闭时不可用)
 }
 
 /*
-开关切换前后出帧守恒
-口径：资源只创建不参与录制，故开 / 关两态均正常出帧，且实际绘制实例数一致。
+金字塔逐帧生成（第二百五十四轮）
+口径：单采样路径开启 Hi-Z 后，每帧场景退场时录制「深度拷贝 ＋ 逐级降采样」；
+生成次数随帧数增长，且在途帧槽均在两帧内各自生成过一次。
 */
+TEST_F(Renderer_HiZ_Test, 金字塔逐帧生成)
+{
+	engine::Renderer_Config config = hidden_config();
+	config.hiz_enable = true;
+	config.msaa_samples = 1;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(config));
+	if (!renderer.hiz_supported())
+		GTEST_SKIP() << "本机不支持 Hi-Z 所需能力";
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, quad_data()));
+	//三个实例（同一网格三批）
+	std::array<float, 16> identity = identity_matrix();
+	std::vector<std::array<float, 16>> matrices = { identity, identity, identity };
+	for (uint32_t frame = 0; frame < 3; ++frame)
+	{
+		ASSERT_TRUE(renderer.mesh_draw_instanced(mesh, matrices[0].data(), static_cast<uint32_t>(matrices.size())));
+		ASSERT_TRUE(renderer.frame_render());
+	}
+	//三帧均完成生成
+	EXPECT_GE(renderer.hiz_generation_count(), 3u);
+	//两个在途帧槽均已有有效历史
+	for (uint32_t slot = 0; slot < 2; ++slot)
+		EXPECT_TRUE(renderer.hiz_history_ready(slot)) << "帧槽 " << slot;
+	renderer.mesh_unload(mesh);
+}
+
+/*
+关闭时不生成
+口径：默认关闭时全部帧均不录制生成命令，历史保持无效、生成计数为 0。
+*/
+TEST_F(Renderer_HiZ_Test, 关闭时不生成)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, quad_data()));
+	std::array<float, 16> identity = identity_matrix();
+	for (uint32_t frame = 0; frame < 3; ++frame)
+	{
+		ASSERT_TRUE(renderer.mesh_draw_instanced(mesh, identity.data(), 1));
+		ASSERT_TRUE(renderer.frame_render());
+	}
+	EXPECT_EQ(renderer.hiz_generation_count(), 0u);
+	EXPECT_FALSE(renderer.hiz_history_ready(0));
+	EXPECT_FALSE(renderer.hiz_history_ready(1));
+	renderer.mesh_unload(mesh);
+}
+
 TEST_F(Renderer_HiZ_Test, 开关切换前后出帧守恒)
 {
 	engine::Renderer renderer;
