@@ -156,3 +156,45 @@ TEST(Renderer_Cluster_Test, GPU逐簇计数与CPU参考一致)
 	for (uint32_t index = 0; index < cpu_total; ++index)
 		EXPECT_EQ(cpu_counts[index], gpu_counts[index]);
 }
+
+//块内前缀和与 CPU 参考一致（第二百六十九轮）
+TEST(Renderer_Cluster_Test, 块内前缀和与CPU参考一致)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	//固定计数序列（3456 簇；值域 0..19，便于人工对数）
+	constexpr uint32_t COUNT = 3456;
+	constexpr uint32_t BLOCKS = 14;
+	std::vector<uint32_t> counts(COUNT);
+	for (uint32_t index = 0; index < COUNT; ++index)
+		counts[index] = index % 7u + index % 13u;
+	std::vector<uint32_t> cpu_prefix(COUNT);
+	std::vector<uint32_t> gpu_prefix(COUNT);
+	std::vector<uint32_t> cpu_totals(BLOCKS);
+	std::vector<uint32_t> gpu_totals(BLOCKS);
+	uint32_t cpu_blocks = 0;
+	uint32_t gpu_blocks = 0;
+	//CPU 参考：容量不足被拒
+	EXPECT_FALSE(renderer.cluster_prefix_block_scan_cpu(counts.data(), COUNT, cpu_prefix.data(),
+		cpu_totals.data(), 4, &cpu_blocks));
+	//GPU：容量不足被拒
+	EXPECT_FALSE(renderer.cluster_prefix_block_scan_gpu(counts.data(), COUNT, gpu_prefix.data(),
+		gpu_totals.data(), 4, &gpu_blocks));
+	//本机不支持计算路径时跳过（GPU 扫描降级口径）
+	if (!renderer.compute_supported())
+	{
+		GTEST_SKIP() << "本机不支持计算路径，GPU 块内扫描不可用";
+	}
+
+	ASSERT_TRUE(renderer.cluster_prefix_block_scan_cpu(counts.data(), COUNT, cpu_prefix.data(),
+		cpu_totals.data(), BLOCKS, &cpu_blocks));
+	ASSERT_EQ(cpu_blocks, BLOCKS);
+	ASSERT_TRUE(renderer.cluster_prefix_block_scan_gpu(counts.data(), COUNT, gpu_prefix.data(),
+		gpu_totals.data(), BLOCKS, &gpu_blocks));
+	ASSERT_EQ(gpu_blocks, BLOCKS);
+	//逐元素前缀和与逐块总和一致
+	for (uint32_t index = 0; index < COUNT; ++index)
+		EXPECT_EQ(cpu_prefix[index], gpu_prefix[index]);
+	for (uint32_t block = 0; block < BLOCKS; ++block)
+		EXPECT_EQ(cpu_totals[block], gpu_totals[block]);
+}
