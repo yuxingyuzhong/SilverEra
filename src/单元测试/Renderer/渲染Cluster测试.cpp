@@ -198,3 +198,33 @@ TEST(Renderer_Cluster_Test, 块内前缀和与CPU参考一致)
 	for (uint32_t block = 0; block < BLOCKS; ++block)
 		EXPECT_EQ(cpu_totals[block], gpu_totals[block]);
 }
+
+//全量前缀和与 CPU 参考一致（第二百七十轮）
+TEST(Renderer_Cluster_Test, 全量前缀和与CPU参考一致)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	//固定计数序列（4096 簇 = 16 块，覆盖块上限）
+	constexpr uint32_t COUNT = 4096;
+	std::vector<uint32_t> counts(COUNT);
+	for (uint32_t index = 0; index < COUNT; ++index)
+		counts[index] = index % 9u + index % 5u;
+	std::vector<uint32_t> cpu_prefix(COUNT);
+	std::vector<uint32_t> gpu_prefix(COUNT);
+	//本机不支持计算路径时跳过（GPU 全量扫描降级口径）
+	if (!renderer.compute_supported())
+	{
+		GTEST_SKIP() << "本机不支持计算路径，GPU 全量扫描不可用";
+	}
+
+	ASSERT_TRUE(renderer.cluster_prefix_scan_cpu(counts.data(), COUNT, cpu_prefix.data()));
+	ASSERT_TRUE(renderer.cluster_prefix_scan_gpu(counts.data(), COUNT, gpu_prefix.data()));
+	//逐元素一致，且单调不减、末项等于全量总和
+	uint64_t total_sum = 0;
+	for (uint32_t index = 0; index < COUNT; ++index)
+	{
+		EXPECT_EQ(cpu_prefix[index], gpu_prefix[index]);
+		total_sum += counts[index];
+	}
+	EXPECT_EQ(gpu_prefix[COUNT - 1], static_cast<uint32_t>(total_sum));
+}
