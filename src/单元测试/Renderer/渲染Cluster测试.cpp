@@ -483,7 +483,7 @@ TEST(Renderer_Cluster_Test, 构建性能对照)
 	engine::Renderer renderer;
 	ASSERT_TRUE(renderer.init(hidden_config()));
 	constexpr uint32_t CLUSTERS = 3456;
-	constexpr uint32_t LIST_CAPACITY = CLUSTERS * 10u;
+	constexpr uint32_t LIST_CAPACITY = CLUSTERS * 70u;
 	constexpr uint32_t RUNS = 5;
 	//本机不支持计算路径时跳过（GPU 基线不可测）
 	if (!renderer.compute_supported())
@@ -497,10 +497,12 @@ TEST(Renderer_Cluster_Test, 构建性能对照)
 	std::vector<uint32_t> counts_gpu(CLUSTERS);
 	std::vector<uint32_t> offsets_gpu(CLUSTERS);
 	std::vector<uint32_t> list_gpu(LIST_CAPACITY);
-	//三档光源规模：基础 2 条 / ＋2 点光 / ＋6 点光
-	for (uint32_t stage = 0; stage < 3; ++stage)
+	//开启 Cluster 以解除 8 盏登记上限（第二百八十轮）
+	ASSERT_TRUE(renderer.cluster_enable_set(true));
+	//四档光源规模：2 条基础 / ＋2 / ＋6 / ＋62（对应 2 / 4 / 8 / 64 条记录）
+	for (uint32_t stage = 0; stage < 4; ++stage)
 	{
-		uint32_t add_count = stage == 0 ? 0u : (stage == 1 ? 2u : 6u);
+		uint32_t add_count = stage == 0 ? 0u : (stage == 1 ? 2u : (stage == 2 ? 6u : 62u));
 		for (uint32_t index = 0; index < add_count; ++index)
 		{
 			const float position[3] = { static_cast<float>(index) * 0.5f - 1.0f, 0.0f, 0.0f };
@@ -595,4 +597,51 @@ TEST(Renderer_Cluster_Test, 组合矩阵_阴影与MSAA)
 			EXPECT_TRUE(same) << "阴影 " << shadow_index << " / MSAA " << msaa_list[msaa_index]
 				<< " 下 Cluster 开关改变了画面";
 		}
+}
+
+//光源登记上限与截断（第二百八十轮）
+TEST(Renderer_Cluster_Test, 光源登记上限与截断)
+{
+	//关闭 Cluster：登记上限 8 盏，第 9 盏被拒并置截断标志
+	engine::Renderer off;
+	ASSERT_TRUE(off.init(hidden_config()));
+	for (uint32_t index = 0; index < 8; ++index)
+	{
+		const float position[3] = { static_cast<float>(index) * 0.4f - 1.4f, 0.0f, 0.0f };
+		const float color[3] = { 1.0f, 1.0f, 1.0f };
+		ASSERT_TRUE(off.light_add_point(position, color, 6.0f, 0.4f, 0.1f));
+	}
+	const float extra_position[3] = { 2.0f, 0.0f, 0.0f };
+	const float extra_color[3] = { 1.0f, 1.0f, 1.0f };
+	EXPECT_FALSE(off.light_add_point(extra_position, extra_color, 6.0f, 0.4f, 0.1f));
+	ASSERT_TRUE(off.frame_render());
+	EXPECT_EQ(off.frame_stats_get().light_truncated, 1u);
+	EXPECT_EQ(off.point_light_count(), 8u);
+	off.lights_clear();
+	EXPECT_EQ(off.point_light_count(), 0u);
+
+	//开启 Cluster：可登记超过 8 盏（本用例登记 16 盏）
+	engine::Renderer on;
+	ASSERT_TRUE(on.init(hidden_config()));
+	if (!on.cluster_supported())
+	{
+		GTEST_SKIP() << "本机不支持计算路径，Cluster 开启路径不可用";
+	}
+	ASSERT_TRUE(on.cluster_enable_set(true));
+	for (uint32_t index = 0; index < 16; ++index)
+	{
+		const float position[3] = { static_cast<float>(index) * 0.25f - 2.0f, 0.0f, 0.0f };
+		const float color[3] = { 0.8f, 0.8f, 1.0f };
+		ASSERT_TRUE(on.light_add_point(position, color, 6.0f, 0.4f, 0.1f));
+	}
+	EXPECT_EQ(on.point_light_count(), 16u);
+	EXPECT_EQ(on.light_record_count(), 18u);
+	ASSERT_TRUE(on.frame_render());
+	EXPECT_EQ(on.frame_stats_get().light_truncated, 0u);
+
+	//关闭 Cluster 后再次登记被拒，并置截断标志
+	ASSERT_TRUE(on.cluster_enable_set(false));
+	EXPECT_FALSE(on.light_add_point(extra_position, extra_color, 6.0f, 0.4f, 0.1f));
+	ASSERT_TRUE(on.frame_render());
+	EXPECT_EQ(on.frame_stats_get().light_truncated, 1u);
 }
