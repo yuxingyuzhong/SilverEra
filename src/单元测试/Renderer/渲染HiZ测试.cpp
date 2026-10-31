@@ -687,6 +687,59 @@ TEST_F(Renderer_HiZ_Test, 性能对照)
 	on.mesh_unload(on_mesh);
 }
 
+/*
+开关组合矩阵（第二百六十四轮；为 274 轮收口预演）
+口径：`gpu_cull_enable` × `hiz_enable` 四种组合在静态场景（全屏墙 ＋ 墙后实例）下均正常出帧，
+且最终画面逐字节一致（遮挡与剔除不影响被墙完全覆盖的像素）。
+*/
+TEST_F(Renderer_HiZ_Test, 开关组合矩阵)
+{
+	const uint32_t pixel_count = WINDOW_WIDTH * WINDOW_HEIGHT * 4u;
+	std::vector<std::vector<uint8_t>> results;
+	//四种组合
+	for (uint32_t combo = 0; combo < 4; ++combo)
+	{
+		engine::Renderer_Config config = hidden_config();
+		config.msaa_samples = 1;
+		config.gpu_cull_enable = (combo & 1u) != 0;
+		config.hiz_enable = (combo & 2u) != 0;
+		engine::Renderer renderer;
+		ASSERT_TRUE(renderer.init(config));
+		renderer.camera_position_set(0.0f, 0.0f, 5.0f);
+		renderer.camera_target_set(0.0f, 0.0f, 0.0f);
+		engine::Mesh_Handle mesh = 0;
+		ASSERT_TRUE(renderer.mesh_load(mesh, quad_data()));
+		//全屏墙（z = 3，放大 30 倍）＋ 墙后 10 实例
+		std::array<float, 16> wall = identity_matrix();
+		wall[0] = 30.0f;
+		wall[5] = 30.0f;
+		wall[14] = 3.0f;
+		std::vector<std::array<float, 16>> behind(10, identity_matrix());
+		for (uint32_t frame = 0; frame < 3; ++frame)
+		{
+			ASSERT_TRUE(renderer.mesh_draw_instanced(mesh, wall.data(), 1));
+			ASSERT_TRUE(renderer.mesh_draw_instanced(mesh, behind[0].data(), static_cast<uint32_t>(behind.size())));
+			ASSERT_TRUE(renderer.frame_render());
+		}
+		//末帧回读
+		std::vector<uint8_t> pixels(pixel_count, 0u);
+		uint32_t width = 0;
+		uint32_t height = 0;
+		ASSERT_TRUE(renderer.frame_render(pixels.data(), pixel_count, &width, &height));
+		ASSERT_EQ(width, WINDOW_WIDTH);
+		ASSERT_EQ(height, WINDOW_HEIGHT);
+		results.push_back(std::move(pixels));
+		renderer.mesh_unload(mesh);
+	}
+	//四种组合画面逐字节一致
+	for (uint32_t combo = 1; combo < results.size(); ++combo)
+	{
+		const bool same = std::mismatch(results[0].begin(), results[0].end(), results[combo].begin()).first
+			== results[0].end();
+		EXPECT_TRUE(same) << "组合 " << combo << " 与组合 0 画面不一致";
+	}
+}
+
 TEST_F(Renderer_HiZ_Test, 开关切换前后出帧守恒)
 {
 	engine::Renderer renderer;
