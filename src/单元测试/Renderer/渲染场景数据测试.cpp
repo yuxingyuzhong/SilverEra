@@ -1,4 +1,4 @@
-/*
+﻿/*
 渲染场景数据测试（L2 隐藏窗口 + 像素回读）：场景描述与清屏色、三组入参、正交投影
 （第五十七轮按功能域拆分：光照用例移至「渲染光照测试.cpp」、雾 / 环境光 / 高光与文字可见性移至
 「渲染场景效果测试.cpp」、阴影用例移至「渲染阴影测试.cpp」；本文件逻辑未改）
@@ -425,9 +425,9 @@ TEST_F(Renderer_Scene_Test, 三组入参相机非法整次拒绝)
 */
 
 /*
-场景 UBO 按需写入（第六十轮；第一百二十五轮整块由 1072 扩为 1088 字节；第一百七十九轮 1184 字节）
-口径：frame_overlap = 2；各帧槽首次使用各整块上传 1184 字节，之后输入不变则上传 0 字节；
-     修改一个光照参数后单帧上传 >0 且 ≤1184（仅变化区间），随后一帧又回到 0。
+场景 UBO 按需写入（第六十轮；第一百二十五轮整块由 1072 扩为 1088 字节；第二百八十五轮 1200 字节）
+口径：frame_overlap = 2；各帧槽首次使用各整块上传 1200 字节，之后输入不变则上传 0 字节；
+     修改一个光照参数后单帧上传 >0 且 ≤1200（仅变化区间），随后一帧又回到 0。
 */
 TEST_F(Renderer_Scene_Test, 场景UBO按需写入)
 {
@@ -444,8 +444,8 @@ TEST_F(Renderer_Scene_Test, 场景UBO按需写入)
 		ASSERT_TRUE(renderer.frame_render());
 		uint64_t current = renderer.scene_upload_bytes();
 		uint64_t delta = current - previous;
-		//单帧上传不得超过整块大小（第一百七十九轮起 1184 字节）
-		EXPECT_LE(delta, 1184u) << "第 " << frame + 1 << " 帧上传超出整块";
+		//单帧上传不得超过整块大小（第二百八十五轮起 1200 字节）
+		EXPECT_LE(delta, 1200u) << "第 " << frame + 1 << " 帧上传超出整块";
 		deltas.push_back(delta);
 		previous = current;
 	}
@@ -454,7 +454,7 @@ TEST_F(Renderer_Scene_Test, 场景UBO按需写入)
 	RecordProperty("scene_upload_frame3", static_cast<int>(deltas[2]));
 	RecordProperty("scene_upload_frame4", static_cast<int>(deltas[3]));
 	//首帧必整块写入
-	EXPECT_EQ(deltas[0], 1184u) << "首帧未整块写入场景 UBO";
+	EXPECT_EQ(deltas[0], 1200u) << "首帧未整块写入场景 UBO";
 	//静止场景下应出现 0 字节上传（各帧槽预热完成后）
 	EXPECT_EQ(*std::min_element(deltas.begin(), deltas.end()), 0u) << "静止场景仍整块上传";
 
@@ -471,7 +471,7 @@ TEST_F(Renderer_Scene_Test, 场景UBO按需写入)
 		uint64_t current = renderer.scene_upload_bytes();
 		last_delta = current - previous;
 		previous = current;
-		EXPECT_LE(last_delta, 1184u) << "变化后第 " << frame + 1 << " 帧上传超出整块";
+		EXPECT_LE(last_delta, 1200u) << "变化后第 " << frame + 1 << " 帧上传超出整块";
 		changed_total += last_delta;
 	}
 	RecordProperty("scene_upload_changed", static_cast<int>(changed_total));
