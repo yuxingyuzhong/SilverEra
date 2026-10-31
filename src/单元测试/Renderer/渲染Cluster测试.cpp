@@ -347,3 +347,38 @@ TEST(Renderer_Cluster_Test, 簇数据整备与观测)
 		EXPECT_EQ(offsets_gpu[cluster], offsets_cpu[cluster]);
 	}
 }
+
+//帧内整备与统计（第二百七十三轮）
+TEST(Renderer_Cluster_Test, 帧内整备与统计)
+{
+	//默认关闭：帧统计簇字段为零（零开销）
+	engine::Renderer off;
+	ASSERT_TRUE(off.init(hidden_config()));
+	ASSERT_TRUE(off.frame_render());
+	engine::Frame_Stats stats_off = off.frame_stats_get();
+	EXPECT_DOUBLE_EQ(stats_off.cluster_build_ms, 0.0);
+	EXPECT_EQ(stats_off.cluster_entries, 0u);
+
+	//开启：需要计算能力（不支持时跳过）
+	engine::Renderer on;
+	ASSERT_TRUE(on.init(hidden_config()));
+	if (!on.cluster_supported())
+	{
+		GTEST_SKIP() << "本机不支持计算路径，帧内簇整备不可用";
+	}
+	ASSERT_TRUE(on.cluster_enable_set(true));
+	const float position[3] = { 0.0f, 0.0f, 0.0f };
+	const float color[3] = { 1.0f, 1.0f, 1.0f };
+	ASSERT_TRUE(on.light_add_point(position, color, 10.0f, 0.5f, 0.1f));
+	ASSERT_TRUE(on.frame_render());
+	engine::Frame_Stats stats_on = on.frame_stats_get();
+	EXPECT_GT(stats_on.cluster_entries, 0u);
+	EXPECT_GE(stats_on.cluster_build_ms, 0.0);
+	EXPECT_EQ(on.cluster_entries_get(), stats_on.cluster_entries);
+
+	//关闭后观测清零
+	ASSERT_TRUE(on.cluster_enable_set(false));
+	ASSERT_TRUE(on.frame_render());
+	engine::Frame_Stats stats_closed = on.frame_stats_get();
+	EXPECT_EQ(stats_closed.cluster_entries, 0u);
+}
