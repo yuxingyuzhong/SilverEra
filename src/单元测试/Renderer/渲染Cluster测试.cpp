@@ -5,6 +5,7 @@
 #include <gtest/gtest.h>
 
 #include <cstdint>
+#include <vector>
 
 #include "Application/Renderer/src/render/Renderer/渲染器.h"
 
@@ -64,4 +65,59 @@ TEST(Renderer_Cluster_Test, 光源记录上传与开关)
 	ASSERT_TRUE(renderer.cluster_enable_set(false));
 	EXPECT_FALSE(renderer.cluster_enable_get());
 	EXPECT_EQ(renderer.cluster_light_count(), 0u);
+}
+
+//分簇网格与 CPU 逐簇计数参考（第二百六十七轮）
+TEST(Renderer_Cluster_Test, 分簇网格与逐簇计数参考)
+{
+	engine::Renderer renderer;
+	//未初始化：网格查询失败、设置被拒、计数失败
+	uint32_t grid_x = 1;
+	uint32_t grid_y = 1;
+	uint32_t grid_z = 1;
+	EXPECT_FALSE(renderer.cluster_grid_get(grid_x, grid_y, grid_z));
+	EXPECT_EQ(renderer.cluster_grid_cluster_count(), 0u);
+	EXPECT_FALSE(renderer.cluster_grid_set(16, 9, 24));
+	std::vector<uint32_t> counts(4096);
+	uint32_t total = 0;
+	EXPECT_FALSE(renderer.cluster_counts_reference_ex(counts.data(), static_cast<uint32_t>(counts.size()), &total));
+
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	//默认网格 16 × 9 × 24 = 3456 簇
+	ASSERT_TRUE(renderer.cluster_grid_get(grid_x, grid_y, grid_z));
+	EXPECT_EQ(grid_x, 16u);
+	EXPECT_EQ(grid_y, 9u);
+	EXPECT_EQ(grid_z, 24u);
+	EXPECT_EQ(renderer.cluster_grid_cluster_count(), 3456u);
+
+	//网格钳制：全 0 → 每轴 1；100 × 100 × 100 → 总簇数不超过 4096
+	ASSERT_TRUE(renderer.cluster_grid_set(0, 0, 0));
+	EXPECT_EQ(renderer.cluster_grid_cluster_count(), 1u);
+	ASSERT_TRUE(renderer.cluster_grid_set(100, 100, 100));
+	EXPECT_LE(renderer.cluster_grid_cluster_count(), 4096u);
+	//恢复默认网格
+	ASSERT_TRUE(renderer.cluster_grid_set(16, 9, 24));
+
+	//容量不足被拒
+	EXPECT_FALSE(renderer.cluster_counts_reference_ex(counts.data(), 100, &total));
+
+	//仅主方向光（补光强度 0 不计）：全部簇计数 1
+	ASSERT_TRUE(renderer.cluster_counts_reference_ex(counts.data(), 3456, &total));
+	EXPECT_EQ(total, 3456u);
+	for (uint32_t index = 0; index < 3456; ++index)
+		EXPECT_EQ(counts[index], 1u);
+
+	//一盏大半径点光（跨近平面 → 整屏全深度保守覆盖）：全部簇计数 2
+	const float position[3] = { 0.0f, 0.0f, 0.0f };
+	const float color[3] = { 1.0f, 1.0f, 1.0f };
+	ASSERT_TRUE(renderer.light_add_point(position, color, 100.0f, 0.5f, 0.1f));
+	ASSERT_TRUE(renderer.cluster_counts_reference_ex(counts.data(), 3456, &total));
+	for (uint32_t index = 0; index < 3456; ++index)
+		EXPECT_EQ(counts[index], 2u);
+
+	//清空点光后回到 1
+	renderer.lights_clear();
+	ASSERT_TRUE(renderer.cluster_counts_reference_ex(counts.data(), 3456, &total));
+	for (uint32_t index = 0; index < 3456; ++index)
+		EXPECT_EQ(counts[index], 1u);
 }
