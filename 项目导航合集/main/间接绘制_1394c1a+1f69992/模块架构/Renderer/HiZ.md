@@ -113,3 +113,9 @@ HiZ/
 - 新增 `pyramid_full_view(slot)`（完整 mip 链视图）与 `depth_sampler_get()`：供剔除着色器绑定为 `sampler2D`，按级 `texelFetch`。
 - 关键前提：交换链深度图像必须带 `VK_IMAGE_USAGE_SAMPLED_BIT`（此前缺失，采样恒为 0，已于本轮回补）。
 - 接入方式：`实例压缩.comp` 视锥判定后做遮挡测试（与 `hiz_occlusion_test` 同口径）；门面仅在 `hiz_enable` ＋ 资源 ＋ 最近生成槽有效时启用，首帧自动跳过。
+
+## 增补（第二百五十七轮：保守性初版）
+
+- `HIZ_RECT_DILATE_PIXELS = 1.0f`：屏幕矩形每边外扩 1 像素后选级与映射纹素（CPU 参考与 `实例压缩.comp` 同步）。
+- 采样级上限由 `levels-1` 改为 `levels-2`：末两级（1×1 / 2×1）不采样，规避本机实测「末级内容不可用 → 粗级采样为 0 → 整批误剔」的风险。
+- 新增用例：CPU `矩形保守外扩`；GPU `部分遮挡场景不误剔`（左右两墙留缝、缝内实例全可见）。
