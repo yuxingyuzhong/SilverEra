@@ -1,4 +1,4 @@
-/*
+﻿/*
 渲染 Hi-Z 测试（第二百五十三轮）
 覆盖：资源惰性构建（默认关闭不分配）、开关可反复切换且资源保留、金字塔级数 / 逐级尺寸、
       计算路径强制关闭时的能力降级，以及开关切换前后出帧与绘制实例数守恒。
@@ -208,6 +208,89 @@ TEST_F(Renderer_HiZ_Test, 关闭时不生成)
 	EXPECT_EQ(renderer.hiz_generation_count(), 0u);
 	EXPECT_FALSE(renderer.hiz_history_ready(0));
 	EXPECT_FALSE(renderer.hiz_history_ready(1));
+	renderer.mesh_unload(mesh);
+}
+
+/*
+遮挡剔除：墙后实例被剔除（第二百五十六轮）
+口径：先渲染一面覆盖屏幕的近墙（两帧），再对墙后 / 墙前两批实例调用 GPU 压缩：
+墙后应全部剔除、墙前应全部可见；关闭 Hi-Z 时墙后实例不因遮挡被剔除。
+*/
+TEST_F(Renderer_HiZ_Test, 遮挡剔除墙后实例)
+{
+	engine::Renderer_Config config = hidden_config();
+	config.hiz_enable = true;
+	config.msaa_samples = 1;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(config));
+	if (!renderer.hiz_supported())
+		GTEST_SKIP() << "本机不支持 Hi-Z 所需能力";
+	//相机与朝向（沿 −Z 观察；墙在 z = 3，实例在 z = 0 / 4.5）
+	renderer.camera_position_set(0.0f, 0.0f, 5.0f);
+	renderer.camera_target_set(0.0f, 0.0f, 0.0f);
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, quad_data()));
+	//近墙：放大 30 倍并平移到 z = 3
+	std::array<float, 16> wall = identity_matrix();
+	wall[0] = 30.0f;
+	wall[5] = 30.0f;
+	wall[14] = 3.0f;
+	//两帧：第 0 帧写深度并生成金字塔，第 1 帧再次生成（保证在途槽就绪）
+	for (uint32_t frame = 0; frame < 2; ++frame)
+	{
+		ASSERT_TRUE(renderer.mesh_draw_instanced(mesh, wall.data(), 1));
+		ASSERT_TRUE(renderer.frame_render());
+	}
+	//实例批次（墙后 z = 0 / 墙前 z = 4.5）
+	constexpr uint32_t COUNT = 200;
+	std::vector<std::array<float, 16>> behind(COUNT);
+	std::vector<std::array<float, 16>> front(COUNT);
+	for (uint32_t index = 0; index < COUNT; ++index)
+	{
+		std::array<float, 16> matrix = identity_matrix();
+		matrix[14] = 0.0f;
+		behind[index] = matrix;
+		matrix[14] = 4.5f;
+		front[index] = matrix;
+	}
+	const float local_min[3] = { -QUAD_HALF, -QUAD_HALF, 0.0f };
+	const float local_max[3] = { QUAD_HALF, QUAD_HALF, 0.0f };
+	const float camera[3] = { 0.0f, 0.0f, 5.0f };
+	const float forward[3] = { 0.0f, 0.0f, -1.0f };
+	std::vector<std::array<float, 16>> compacted(COUNT);
+	uint32_t behind_visible = COUNT;
+	uint32_t front_visible = 0;
+	ASSERT_TRUE(renderer.gpu_instance_compact_ex(behind[0].data(), COUNT, local_min, local_max,
+		camera, forward, 0.0f, false, compacted[0].data(), &behind_visible));
+	ASSERT_TRUE(renderer.gpu_instance_compact_ex(front[0].data(), COUNT, local_min, local_max,
+		camera, forward, 0.0f, false, compacted[0].data(), &front_visible));
+	//屏幕两侧边缘（NDC x ≈ ±0.45）的墙后实例也应被剔除（覆盖边缘的有效性检查）
+	std::vector<std::array<float, 16>> corner(COUNT);
+	for (uint32_t index = 0; index < COUNT; ++index)
+	{
+		std::array<float, 16> matrix = identity_matrix();
+		matrix[12] = (index % 2 == 0) ? 1.1f : -1.1f;
+		matrix[14] = 0.0f;
+		corner[index] = matrix;
+	}
+	uint32_t corner_visible = COUNT;
+	ASSERT_TRUE(renderer.gpu_instance_compact_ex(corner[0].data(), COUNT, local_min, local_max,
+		camera, forward, 0.0f, false, compacted[0].data(), &corner_visible));
+	//墙后全部剔除（含屏幕两侧边缘）、墙前全部可见
+	EXPECT_EQ(corner_visible, 0u);
+	//关闭 Hi-Z 的对照：墙后实例不应因遮挡被剔除
+	engine::Renderer without;
+	ASSERT_TRUE(without.init(hidden_config()));
+	without.camera_position_set(0.0f, 0.0f, 5.0f);
+	without.camera_target_set(0.0f, 0.0f, 0.0f);
+	uint32_t without_visible = 0;
+	ASSERT_TRUE(without.gpu_instance_compact_ex(behind[0].data(), COUNT, local_min, local_max,
+		camera, forward, 0.0f, false, compacted[0].data(), &without_visible));
+	EXPECT_EQ(behind_visible, 0u);
+	EXPECT_EQ(front_visible, COUNT);
+	//生成确实发生
+	EXPECT_GE(renderer.hiz_generation_count(), 2u);
+	EXPECT_EQ(without_visible, COUNT);
 	renderer.mesh_unload(mesh);
 }
 
