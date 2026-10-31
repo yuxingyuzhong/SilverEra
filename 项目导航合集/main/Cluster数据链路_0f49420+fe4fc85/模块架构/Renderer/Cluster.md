@@ -110,3 +110,15 @@ Cluster/
 1. `frame_render` ⑤b：光源上传之后整备（仅开启）；scratch 三块复用；列表容量 = 簇数 × 光源记录数。
 2. `Frame_Stats.cluster_entries` 与 `cluster_build_ms`；关闭帧清零。
 3. 验证：关闭两项恒 0；开启后条目 > 0、耗时 ≥ 0、门面观测与统计一致。
+
+## 下一窗口接入清单（第二百八十七轮·文档整备）
+
+1. **图形描述符布局**：`Pipeline_Context` 场景 set0 在 binding 0（UBO）之后追加
+   binding 1 = 光源记录 SSBO、binding 2 = 逐簇计数、binding 3 = 逐簇排他偏移、binding 4 = 光源列表（只读）。
+2. **每帧槽缓冲**：光源 SSBO 已在 `Impl::light_buffers`（266 轮）；计数 / 偏移 / 列表需按 `cluster_enable` 惰性建
+   图形可见存储缓冲，并在 `frame_render` 整备（`cluster_data_build`，CPU 路径）后写入。
+3. **描述符写入**：仿 `pipeline.scene_bind` 增加 `scene_cluster_bind(slot, counts, offsets, list)`，开关切换时重写全部帧槽（等尽在途帧）。
+4. **着色器分支**：`场景.frag` 读取 UBO 296–299；`cluster_enabled > 0.5` 时按片元位置换算簇索引，
+   从 `counts/offsets/list` 取本簇光源索引，按 `Light_Record` 计算点 / 聚光贡献，替代原 8 盏循环；关闭时走原路径。
+5. **验收**：≤8 盏且开启 Cluster 时与旧路径逐像素一致；>8 盏时新增光源可见；关闭时零开销、画面逐字节不变。 
+6. **风险**：set0 布局变更需同步全部图形管线（场景 / 阴影 / 文字 / 后处理）；建议先加 binding 但不被着色器静态使用，验证出帧与校验层后再接分支。
