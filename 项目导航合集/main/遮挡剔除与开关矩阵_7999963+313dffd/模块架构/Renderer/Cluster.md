@@ -82,3 +82,11 @@ Cluster/
    共享内存 Hillis-Steele 8 轮（offset 1..128），块尾线程写块总和。
 4. 门面 `cluster_prefix_block_scan_cpu` / `cluster_prefix_block_scan_gpu`（非 const）。
 5. 验证：14 块 3456 元素逐元素前缀和与逐块总和与 CPU 完全相等。
+
+## 本版次内更新（第二百七十轮：全量前缀和）
+
+1. CPU 参考 `cluster_prefix_scan`：全局包含式前缀和。
+2. `Cluster块间扫描.comp`：单线程串行扫描块总和写排他偏移（总簇 ≤ 4096 → 最多 16 块）。
+3. `Cluster块偏移合成.comp`：`prefix[i] += offsets[i / 256]`。
+4. 门面 `cluster_prefix_scan_cpu` / `cluster_prefix_scan_gpu`（四缓冲 ＋ 三步调度 ＋ 回读）。
+5. 验证：4096 元素（16 块）逐元素与 CPU 相等；末项等于总计数。
