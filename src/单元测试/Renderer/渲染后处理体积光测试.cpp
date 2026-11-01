@@ -295,3 +295,45 @@ TEST_F(Renderer_Post_Chain_Test, 体积光采样开销)
 	EXPECT_GT(full_24_gpu, full_12_gpu * 0.5);
 	EXPECT_GT(full_48_gpu, full_24_gpu * 0.5);
 }
+
+/*
+体积光光源位置可配（第三百九十轮）
+颜色第四分量作为光源屏幕 uv 的 x（≤ 0 回落 0.5）；同一强度下光源左右移动应产生不同光束（差异像素 > 20）。
+*/
+TEST_F(Renderer_Post_Chain_Test, 体积光光源位置可配)
+{
+	engine::Renderer probe;
+	ASSERT_TRUE(probe.init(hidden_config()));
+	if (!probe.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+
+	//光源 x 进 / 像素出（其余参数固定：强度 0.6、衰减 0.9、24 步、光源 y 0.9）
+	auto render_light_x = [&](float light_x) -> std::vector<uint8_t>
+	{
+		engine::Renderer renderer;
+		EXPECT_TRUE(renderer.init(hidden_config()));
+		uint64_t scene_target = 0;
+		EXPECT_TRUE(renderer.render_target_create(scene_target, renderer.extent_width(), renderer.extent_height()));
+		uint64_t pass = post_pipeline_register(renderer, "体积光.frag.spv");
+		EXPECT_NE(pass, 0u);
+		EXPECT_TRUE(renderer.post_chain_set(&pass, 1));
+		renderer.post_stage_vec4_set(0, 0.6f, 0.9f, 0.5f, 0.9f);
+		renderer.post_stage_color4_set(0, SHAFT_COLOR[0], SHAFT_COLOR[1], SHAFT_COLOR[2], light_x);
+		renderer.render_target_present_set(scene_target);
+		engine::Mesh_Handle plane = 0;
+		EXPECT_TRUE(renderer.mesh_load(plane, quad_data()));
+		EXPECT_TRUE(renderer.mesh_draw(plane, nullptr));
+		renderer.mesh_unload(plane);
+		std::vector<uint8_t> pixels(pixel_bytes());
+		EXPECT_TRUE(renderer.frame_render(pixels.data(), static_cast<uint32_t>(pixels.size())));
+		renderer.pipeline_unload(pass);
+		renderer.render_target_destroy(scene_target);
+		return pixels;
+	};
+	std::vector<uint8_t> left = render_light_x(0.2f);
+	std::vector<uint8_t> right = render_light_x(0.8f);
+	uint32_t changed = differing_pixels(left, right, 4);
+	RecordProperty("shaft_light_x_changed_pixels", static_cast<int>(changed));
+	std::cout << "[体积光光源] 左 vs 右 差异像素=" << changed << std::endl;
+	EXPECT_GT(changed, 20u) << "光源屏幕 x 未生效（左右两帧几乎一致）";
+}
