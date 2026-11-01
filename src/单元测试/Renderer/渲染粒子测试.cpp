@@ -882,7 +882,8 @@ TEST(Renderer_Particle_Test, 超大容量与重建)
 	ASSERT_TRUE(renderer.particle_gpu_available());
 	const uint64_t expected_maximum = static_cast<uint64_t>(engine::PARTICLE_CAPACITY_MAX)
 		* engine::PARTICLE_STRIDE * 2u + static_cast<uint64_t>(engine::PARTICLE_FORCE_MAX) * engine::PARTICLE_FORCE_STRIDE
-		+ (8u + (static_cast<uint64_t>(engine::PARTICLE_CAPACITY_MAX) + 31u) / 32u * 4u);
+		+ (8u + (static_cast<uint64_t>(engine::PARTICLE_CAPACITY_MAX) + 31u) / 32u * 4u)
+		+ static_cast<uint64_t>(engine::PARTICLE_CAPACITY_MAX) * 4u + 4u;
 	EXPECT_EQ(renderer.particle_gpu_bytes(), expected_maximum);
 	EXPECT_TRUE(renderer.particle_gpu_probe());
 	//同值重复设置：不重建、字节不变
@@ -898,7 +899,7 @@ TEST(Renderer_Particle_Test, 超大容量与重建)
 	ASSERT_TRUE(renderer.particle_gpu_available());
 	const uint64_t expected_small = static_cast<uint64_t>(64) * engine::PARTICLE_STRIDE * 2u
 		+ static_cast<uint64_t>(engine::PARTICLE_FORCE_MAX) * engine::PARTICLE_FORCE_STRIDE
-		+ (8u + (64u + 31u) / 32u * 4u);
+		+ (8u + (64u + 31u) / 32u * 4u) + static_cast<uint64_t>(64) * 4u + 4u;
 	EXPECT_EQ(renderer.particle_gpu_bytes(), expected_small);
 	EXPECT_TRUE(renderer.particle_gpu_probe());
 }
@@ -1193,7 +1194,8 @@ TEST(Renderer_Particle_Test, 粒子性能基线)
 	EXPECT_EQ(renderer.particle_gpu_bytes(),
 		static_cast<uint64_t>(engine::PARTICLE_CAPACITY_MAX) * engine::PARTICLE_STRIDE * 2u
 			+ static_cast<uint64_t>(engine::PARTICLE_FORCE_MAX) * engine::PARTICLE_FORCE_STRIDE
-			+ (8u + (static_cast<uint64_t>(engine::PARTICLE_CAPACITY_MAX) + 31u) / 32u * 4u));
+			+ (8u + (static_cast<uint64_t>(engine::PARTICLE_CAPACITY_MAX) + 31u) / 32u * 4u)
+			+ static_cast<uint64_t>(engine::PARTICLE_CAPACITY_MAX) * 4u + 4u);
 	const auto probe_begin = std::chrono::high_resolution_clock::now();
 	EXPECT_TRUE(renderer.particle_gpu_probe());
 	const auto probe_end = std::chrono::high_resolution_clock::now();
@@ -1431,6 +1433,56 @@ TEST(Renderer_Particle_Test, 常驻绘制)
 	EXPECT_FALSE(renderer.particle_draw(0.1f));
 	renderer.render_target_set(0);
 	renderer.render_target_destroy(target);
+}
+
+/*
+常驻紧凑索引（第三百三十三轮；阶段 D）
+常驻发射 96 个后紧凑：索引数等于活跃数、索引按池索引升序且互异；
+死亡后（推进至寿命结束）紧凑数下降；未开启常驻时紧凑被拒。
+*/
+TEST(Renderer_Particle_Test, 常驻紧凑索引)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	ASSERT_TRUE(renderer.particle_enable_set(true));
+	ASSERT_TRUE(renderer.particle_capacity_set(1024));
+	engine::Particle_Emitter emitter{};
+	emitter.direction[1] = 1.0f;
+	emitter.speed_min = 0.2f;
+	emitter.speed_max = 0.4f;
+	emitter.lifetime_min = 0.5f;
+	emitter.lifetime_max = 0.6f;
+	emitter.count = 96;
+	engine::Particle_Params params{};
+	params.damping = 1.0f;
+	ASSERT_TRUE(renderer.particle_emitter_set(emitter));
+	ASSERT_TRUE(renderer.particle_params_set(params));
+	//未开启常驻：紧凑被拒
+	EXPECT_FALSE(renderer.particle_gpu_compact());
+	EXPECT_EQ(renderer.particle_compact_count_get(), 0u);
+	ASSERT_TRUE(renderer.particle_resident_set(true));
+	ASSERT_EQ(renderer.particle_gpu_emit(96), 96u);
+	//紧凑：索引数与活跃数一致
+	ASSERT_TRUE(renderer.particle_gpu_compact());
+	EXPECT_EQ(renderer.particle_compact_count_get(), 96u);
+	EXPECT_EQ(renderer.particle_compact_count_get(), renderer.particle_active_count());
+	std::vector<uint32_t> indices(96, 0xFFFFFFFFu);
+	ASSERT_EQ(renderer.particle_compact_indices_get(indices.data(), 96), 96u);
+	//互异且恰好覆盖 0..95（原子取位顺序不保证与池索引顺序一致）
+	std::vector<uint8_t> seen(96, 0u);
+	for (uint32_t slot = 0; slot < 96; ++slot)
+	{
+		ASSERT_LT(indices[slot], 96u);
+		EXPECT_EQ(seen[indices[slot]], 0u);
+		seen[indices[slot]] = 1u;
+	}
+	EXPECT_EQ(std::count(seen.begin(), seen.end(), static_cast<uint8_t>(1)), 96);
+	//推进至全部死亡：紧凑数归零
+	for (uint32_t step = 0; step < 14; ++step)
+		ASSERT_TRUE(renderer.particle_gpu_step_resident(0.05f));
+	EXPECT_EQ(renderer.particle_active_count(), 0u);
+	ASSERT_TRUE(renderer.particle_gpu_compact());
+	EXPECT_EQ(renderer.particle_compact_count_get(), 0u);
 }
 
 /*
