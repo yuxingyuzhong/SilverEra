@@ -571,3 +571,125 @@ TEST(Renderer_Particle_Test, 粒子深度分桶稳定性)
 	renderer.render_target_set(0);
 	renderer.render_target_destroy(target);
 }
+
+/*
+力场（第三百一十八轮）
+校验：力场数与类型 / 方向非法拒绝；风场解析解（vx = 强度 × 时间、位移 = ½ 加速度 × 时间²）；
+GPU 对照：风场 ＋ 引力点 ＋ 涡流十步逐粒子 1e-5。
+*/
+TEST(Renderer_Particle_Test, 力场校验与解析)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	ASSERT_TRUE(renderer.particle_enable_set(true));
+	ASSERT_TRUE(renderer.particle_capacity_set(8));
+	engine::Particle_Emitter emitter = point_emitter();
+	emitter.speed_min = 0.0f;
+	emitter.speed_max = 0.0f;
+	emitter.direction[0] = 1.0f;
+	emitter.direction[1] = 0.0f;
+	emitter.direction[2] = 0.0f;
+	emitter.lifetime_min = 5.0f;
+	emitter.lifetime_max = 5.0f;
+	emitter.count = 1;
+	engine::Particle_Params params{};
+	params.damping = 1.0f;
+	//力场数越界
+	params.force_count = 9;
+	EXPECT_FALSE(renderer.particle_params_set(params));
+	//涡流方向为零
+	params.force_count = 1;
+	params.forces[0].type = static_cast<uint32_t>(engine::Force_Type::Vortex);
+	EXPECT_FALSE(renderer.particle_params_set(params));
+	//风场（+X、强度 2）
+	params.forces[0].type = static_cast<uint32_t>(engine::Force_Type::Wind);
+	params.forces[0].strength = 2.0f;
+	params.forces[0].direction[0] = 1.0f;
+	ASSERT_TRUE(renderer.particle_params_set(params));
+	ASSERT_TRUE(renderer.particle_emitter_set(emitter));
+	ASSERT_EQ(renderer.particle_emit(1), 1u);
+	//十步 × 0.1 s：vx = 2.0、px = 0.5 × 2.0 × 1.0 = 1.0（离散积分与解析差 ≤ 1e-3）
+	for (uint32_t step = 0; step < 10; ++step)
+		renderer.particle_step(0.1f);
+	engine::Particle_State state{};
+	uint32_t readable = 0;
+	for (uint32_t index = 0; index < 8; ++index)
+		if (renderer.particle_state_get(index, state))
+			++readable;
+	ASSERT_EQ(readable, 1u);
+	EXPECT_NEAR(state.velocity[0], 2.0f, 1e-4f);
+	EXPECT_NEAR(state.position[0], 1.1f, 1e-4f);
+	EXPECT_NEAR(state.velocity[1], 0.0f, 1e-5f);
+	EXPECT_NEAR(state.velocity[2], 0.0f, 1e-5f);
+}
+
+/*
+力场 GPU 对照（第三百一十八轮）
+风场 ＋ 引力点 ＋ 涡流三场同时生效：CPU 参考与 GPU 推进十步，逐活跃粒子 1e-5。
+*/
+TEST(Renderer_Particle_Test, 力场GPU对照)
+{
+	engine::Particle_Params params{};
+	params.damping = 0.95f;
+	params.force_count = 3;
+	//风场：+X 方向强度 1
+	params.forces[0].type = static_cast<uint32_t>(engine::Force_Type::Wind);
+	params.forces[0].strength = 1.0f;
+	params.forces[0].direction[0] = 1.0f;
+	//引力点：原点、半径 2、强度 1
+	params.forces[1].type = static_cast<uint32_t>(engine::Force_Type::Attractor);
+	params.forces[1].radius = 2.0f;
+	params.forces[1].strength = 1.0f;
+	//涡流：绕 +Y 轴、半径 2、强度 1
+	params.forces[2].type = static_cast<uint32_t>(engine::Force_Type::Vortex);
+	params.forces[2].radius = 2.0f;
+	params.forces[2].strength = 1.0f;
+	params.forces[2].direction[1] = 1.0f;
+	engine::Particle_Emitter emitter = point_emitter();
+	emitter.position[0] = 1.0f;
+	emitter.position[1] = 0.0f;
+	emitter.position[2] = 0.0f;
+	emitter.speed_min = 0.0f;
+	emitter.speed_max = 0.0f;
+	emitter.lifetime_min = 5.0f;
+	emitter.lifetime_max = 5.0f;
+	emitter.count = 4;
+	engine::Renderer cpu;
+	engine::Renderer gpu;
+	ASSERT_TRUE(cpu.init(hidden_config()));
+	ASSERT_TRUE(gpu.init(hidden_config()));
+	ASSERT_TRUE(cpu.particle_enable_set(true));
+	ASSERT_TRUE(gpu.particle_enable_set(true));
+	ASSERT_TRUE(cpu.particle_capacity_set(8));
+	ASSERT_TRUE(gpu.particle_capacity_set(8));
+	ASSERT_TRUE(cpu.particle_emitter_set(emitter));
+	ASSERT_TRUE(gpu.particle_emitter_set(emitter));
+	ASSERT_TRUE(cpu.particle_params_set(params));
+	ASSERT_TRUE(gpu.particle_params_set(params));
+	ASSERT_EQ(cpu.particle_emit(4), 4u);
+	ASSERT_EQ(gpu.particle_emit(4), 4u);
+	ASSERT_TRUE(gpu.particle_gpu_available());
+	//十步推进
+	for (uint32_t step = 0; step < 10; ++step)
+	{
+		cpu.particle_step(0.05f);
+		ASSERT_TRUE(gpu.particle_gpu_step(0.05f));
+	}
+	//逐活跃索引比对
+	uint32_t compared = 0;
+	for (uint32_t index = 0; index < 8; ++index)
+	{
+		engine::Particle_State expected{};
+		engine::Particle_State actual{};
+		if (!cpu.particle_state_get(index, expected))
+			continue;
+		ASSERT_TRUE(gpu.particle_state_get(index, actual));
+		for (uint32_t axis = 0; axis < 3; ++axis)
+		{
+			EXPECT_NEAR(expected.position[axis], actual.position[axis], 1e-5f);
+			EXPECT_NEAR(expected.velocity[axis], actual.velocity[axis], 1e-5f);
+		}
+		++compared;
+	}
+	EXPECT_EQ(compared, 4u);
+}
