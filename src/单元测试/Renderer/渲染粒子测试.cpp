@@ -957,3 +957,149 @@ TEST(Renderer_Particle_Test, 粒子模拟统计)
 	else
 		EXPECT_EQ(stats.particle_gpu_ms, -1.0);
 }
+
+/*
+粒子降级矩阵（第三百二十三轮）
+四组环境（计算关闭 / 计算开启 × 粒子关闭 / 粒子开启）：
+(i) 粒子关闭与计算开关均不改变既有画面（逐字节一致）；
+(ii) 计算关闭时 CPU 镜像路径仍可绘制（与计算开启时的 CPU 绘制逐字节一致）；
+(iii) 开启粒子的绘制与关闭态画面不同（确实生效）。
+*/
+TEST(Renderer_Particle_Test, 粒子降级矩阵)
+{
+	//离屏渲染到 64×64 目标并读回（BGRA）
+	auto render_once = [](engine::Renderer& renderer, engine::Mesh_Handle plane, uint64_t target,
+		bool with_particle, std::vector<uint8_t>& out)
+	{
+		renderer.render_target_set(target);
+		float transform[16] = { 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
+			0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f };
+		renderer.mesh_draw(plane, transform);
+		//可选的粒子绘制
+		if (with_particle)
+			renderer.particle_draw(0.4f);
+		EXPECT_TRUE(renderer.frame_render());
+		out.assign(64 * 64 * 4, 0);
+		uint32_t width = 0;
+		uint32_t height = 0;
+		EXPECT_TRUE(renderer.render_target_readback(target, out.data(), static_cast<uint32_t>(out.size()),
+			&width, &height));
+	};
+	//初始化配置（可切换计算路径）
+	auto make_config = [](bool compute_enable)
+	{
+		engine::Renderer_Config config;
+		config.width = 64;
+		config.height = 64;
+		config.hidden = true;
+		config.compute_enable = compute_enable;
+		return config;
+	};
+	engine::Renderer_Config config_off = make_config(false);
+	engine::Renderer_Config config_on = make_config(true);
+	std::vector<uint8_t> plain_off;
+	std::vector<uint8_t> plain_off_particles_enabled;
+	std::vector<uint8_t> plain_on;
+	//(1) 计算关闭 ＋ 粒子关闭
+	{
+		engine::Renderer renderer;
+		ASSERT_TRUE(renderer.init(config_off));
+		engine::Mesh_Handle plane = 0;
+		ASSERT_TRUE(renderer.mesh_plane_load(plane, 1.0f, 1.0f));
+		uint64_t target = 0;
+		ASSERT_TRUE(renderer.render_target_create(target, 64, 64));
+		render_once(renderer, plane, target, false, plain_off);
+		renderer.render_target_destroy(target);
+		renderer.mesh_unload(plane);
+	}
+	//(2) 计算关闭 ＋ 粒子开启（不绘制）
+	{
+		engine::Renderer renderer;
+		ASSERT_TRUE(renderer.init(config_off));
+		ASSERT_TRUE(renderer.particle_enable_set(true));
+		engine::Mesh_Handle plane = 0;
+		ASSERT_TRUE(renderer.mesh_plane_load(plane, 1.0f, 1.0f));
+		uint64_t target = 0;
+		ASSERT_TRUE(renderer.render_target_create(target, 64, 64));
+		render_once(renderer, plane, target, false, plain_off_particles_enabled);
+		renderer.render_target_destroy(target);
+		renderer.mesh_unload(plane);
+	}
+	EXPECT_EQ(plain_off, plain_off_particles_enabled);
+	//(3) 计算开启 ＋ 粒子关闭
+	{
+		engine::Renderer renderer;
+		ASSERT_TRUE(renderer.init(config_on));
+		engine::Mesh_Handle plane = 0;
+		ASSERT_TRUE(renderer.mesh_plane_load(plane, 1.0f, 1.0f));
+		uint64_t target = 0;
+		ASSERT_TRUE(renderer.render_target_create(target, 64, 64));
+		render_once(renderer, plane, target, false, plain_on);
+		renderer.render_target_destroy(target);
+		renderer.mesh_unload(plane);
+	}
+	EXPECT_EQ(plain_off, plain_on);
+	//参数：单粒子（原点、速度 0、寿命 1）
+	engine::Particle_Emitter emitter{};
+	emitter.direction[2] = -1.0f;
+	emitter.speed_min = 0.0f;
+	emitter.speed_max = 0.0f;
+	emitter.lifetime_min = 1.0f;
+	emitter.lifetime_max = 1.0f;
+	emitter.shape = static_cast<uint32_t>(engine::Emit_Shape::Point);
+	emitter.count = 1;
+	engine::Particle_Params params{};
+	params.damping = 1.0f;
+	std::vector<uint8_t> particle_off;
+	std::vector<uint8_t> particle_on;
+	//(4) 计算关闭 ＋ 粒子开启 ＋ 绘制
+	{
+		engine::Renderer renderer;
+		ASSERT_TRUE(renderer.init(config_off));
+		ASSERT_TRUE(renderer.particle_enable_set(true));
+		ASSERT_TRUE(renderer.particle_capacity_set(8));
+		ASSERT_TRUE(renderer.particle_emitter_set(emitter));
+		ASSERT_TRUE(renderer.particle_params_set(params));
+		ASSERT_EQ(renderer.particle_emit(1), 1u);
+		//计算不可用：GPU 路径关闭，CPU 镜像仍可用
+		EXPECT_FALSE(renderer.particle_gpu_available());
+		EXPECT_FALSE(renderer.particle_gpu_step(0.1f));
+		EXPECT_FALSE(renderer.particle_supported());
+		renderer.camera_position_set(0.0f, 0.0f, 3.0f);
+		renderer.camera_target_set(0.0f, 0.0f, 0.0f);
+		engine::Mesh_Handle plane = 0;
+		ASSERT_TRUE(renderer.mesh_plane_load(plane, 4.0f, 4.0f));
+		uint64_t target = 0;
+		ASSERT_TRUE(renderer.render_target_create(target, 64, 64));
+		render_once(renderer, plane, target, true, particle_off);
+		renderer.render_target_destroy(target);
+		renderer.mesh_unload(plane);
+	}
+	//(5) 计算开启 ＋ 粒子开启 ＋ 绘制（同一 CPU 状态）
+	{
+		engine::Renderer renderer;
+		ASSERT_TRUE(renderer.init(config_on));
+		ASSERT_TRUE(renderer.particle_enable_set(true));
+		ASSERT_TRUE(renderer.particle_capacity_set(8));
+		ASSERT_TRUE(renderer.particle_emitter_set(emitter));
+		ASSERT_TRUE(renderer.particle_params_set(params));
+		ASSERT_EQ(renderer.particle_emit(1), 1u);
+		EXPECT_TRUE(renderer.particle_supported());
+		renderer.camera_position_set(0.0f, 0.0f, 3.0f);
+		renderer.camera_target_set(0.0f, 0.0f, 0.0f);
+		engine::Mesh_Handle plane = 0;
+		ASSERT_TRUE(renderer.mesh_plane_load(plane, 4.0f, 4.0f));
+		uint64_t target = 0;
+		ASSERT_TRUE(renderer.render_target_create(target, 64, 64));
+		render_once(renderer, plane, target, true, particle_on);
+		renderer.render_target_destroy(target);
+		renderer.mesh_unload(plane);
+	}
+	//(6) 计算开关不影响 CPU 绘制结果；粒子确实改变画面
+	EXPECT_EQ(particle_off, particle_on);
+	uint32_t changed = 0;
+	for (std::size_t index = 0; index < plain_off.size(); ++index)
+		if (plain_off[index] != particle_off[index])
+			++changed;
+	EXPECT_GT(changed, 20u);
+}
