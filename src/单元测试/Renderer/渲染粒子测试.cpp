@@ -231,3 +231,71 @@ TEST(Renderer_Particle_Test, GPU推进单步对照)
 	EXPECT_EQ(compared, 32u);
 	EXPECT_EQ(gpu.particle_active_count(), 32u);
 }
+
+/*
+GPU 生命周期与死亡同步（第三百一十三轮）
+寿命 0.25..0.3、步长 0.05 的 32 个粒子：逐步比对 CPU / GPU 死亡数与活跃数，
+全部死亡后确认无幽灵粒子、继续推进不复活、再次发射沿用回收索引。
+*/
+TEST(Renderer_Particle_Test, GPU生命周期与死亡同步)
+{
+	engine::Particle_Emitter emitter = point_emitter();
+	emitter.lifetime_min = 0.25f;
+	emitter.lifetime_max = 0.3f;
+	engine::Particle_Params params{};
+	params.gravity[1] = -1.0f;
+	params.damping = 0.9f;
+	params.restitution = 0.4f;
+	params.friction = 0.2f;
+	engine::Renderer cpu;
+	engine::Renderer gpu;
+	ASSERT_TRUE(cpu.init(hidden_config()));
+	ASSERT_TRUE(gpu.init(hidden_config()));
+	ASSERT_TRUE(cpu.particle_enable_set(true));
+	ASSERT_TRUE(gpu.particle_enable_set(true));
+	ASSERT_TRUE(cpu.particle_capacity_set(64));
+	ASSERT_TRUE(gpu.particle_capacity_set(64));
+	ASSERT_TRUE(cpu.particle_emitter_set(emitter));
+	ASSERT_TRUE(gpu.particle_emitter_set(emitter));
+	ASSERT_TRUE(cpu.particle_params_set(params));
+	ASSERT_TRUE(gpu.particle_params_set(params));
+	ASSERT_EQ(cpu.particle_emit(32), 32u);
+	ASSERT_EQ(gpu.particle_emit(32), 32u);
+	ASSERT_TRUE(gpu.particle_gpu_available());
+	//逐步比对死亡数与活跃数
+	uint32_t total_died = 0;
+	for (uint32_t step = 0; step < 10; ++step)
+	{
+		uint32_t cpu_died = cpu.particle_step(0.05f);
+		ASSERT_TRUE(gpu.particle_gpu_step(0.05f));
+		EXPECT_EQ(cpu_died, gpu.particle_gpu_died_last());
+		EXPECT_EQ(cpu.particle_active_count(), gpu.particle_active_count());
+		total_died += gpu.particle_gpu_died_last();
+	}
+	EXPECT_EQ(total_died, 32u);
+	EXPECT_EQ(gpu.particle_active_count(), 0u);
+	//无幽灵粒子：全部索引不可读
+	uint32_t readable = 0;
+	for (uint32_t index = 0; index < 64; ++index)
+	{
+		engine::Particle_State state{};
+		if (gpu.particle_state_get(index, state))
+			++readable;
+	}
+	EXPECT_EQ(readable, 0u);
+	//全部死亡后继续推进不复活
+	ASSERT_TRUE(gpu.particle_gpu_step(0.05f));
+	EXPECT_EQ(gpu.particle_gpu_died_last(), 0u);
+	EXPECT_EQ(gpu.particle_active_count(), 0u);
+	//再次发射沿用回收索引，且状态可读
+	EXPECT_EQ(gpu.particle_emit(32), 32u);
+	EXPECT_EQ(gpu.particle_active_count(), 32u);
+	readable = 0;
+	for (uint32_t index = 0; index < 64; ++index)
+	{
+		engine::Particle_State state{};
+		if (gpu.particle_state_get(index, state))
+			++readable;
+	}
+	EXPECT_EQ(readable, 32u);
+}
