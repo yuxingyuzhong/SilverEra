@@ -520,3 +520,42 @@ TEST_F(Renderer_Post_Chain_Test, 链参数可批量读回)
 	renderer.pipeline_unload(invert);
 	renderer.pipeline_unload(threshold);
 }
+
+/*
+逐级额外四参（第四百零一轮）
+单级「反色」链：写入合法 extra / 非有限值 / 链外级序后，画面都应逐字节不变
+（既有片元均未声明 offset 128，故该组只占位、不参与着色）。
+*/
+TEST_F(Renderer_Post_Chain_Test, 逐级额外四参不改变画面)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	uint64_t invert = post_pipeline_register(renderer, "反色.frag.spv");
+	ASSERT_NE(invert, 0u);
+	engine::Mesh_Handle quad = 0;
+	scene_register(renderer, quad);
+	//基线（未写 extra）：先出一帧完成目标布局预热，再取基线
+	const uint64_t 链[1] = { invert };
+	ASSERT_TRUE(renderer.post_chain_set(链, 1));
+	std::vector<uint8_t> 预热(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(预热.data(), static_cast<uint32_t>(预热.size())));
+	std::vector<uint8_t> 基线(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(基线.data(), static_cast<uint32_t>(基线.size())));
+	//写入合法 extra 后再渲染：画面应完全一致
+	renderer.post_stage_extra_set(0, 1.0f, -2.5f, 3.75f, 0.5f);
+	std::vector<uint8_t> 写入后(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(写入后.data(), static_cast<uint32_t>(写入后.size())));
+	EXPECT_EQ(max_channel_diff(基线, 写入后), 0) << "额外四参影响了画面";
+	//非有限值整次忽略（保持原值）
+	renderer.post_stage_extra_set(0, std::nanf(""), 1.0f, 1.0f, 1.0f);
+	std::vector<uint8_t> 非法后(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(非法后.data(), static_cast<uint32_t>(非法后.size())));
+	EXPECT_EQ(max_channel_diff(写入后, 非法后), 0);
+	//链外级序被拒绝（不崩溃且画面一致）
+	renderer.post_stage_extra_set(5, 1.0f, 1.0f, 1.0f, 1.0f);
+	std::vector<uint8_t> 越界后(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(越界后.data(), static_cast<uint32_t>(越界后.size())));
+	EXPECT_EQ(max_channel_diff(非法后, 越界后), 0);
+	renderer.pipeline_unload(invert);
+	renderer.mesh_unload(quad);
+}
