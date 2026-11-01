@@ -1319,3 +1319,54 @@ TEST(Renderer_Particle_Test, 常驻推进与死亡压缩)
 	std::cout << "[常驻推进] 单步主机耗时=" << per_step_ms << " ms" << std::endl;
 	EXPECT_LT(per_step_ms, 5.0);
 }
+
+/*
+常驻百万粒子基线（第三百二十九轮；方向二阶段 C 收口）
+容量 1 048 576：常驻 GPU 发射 100 万 → 五步常驻推进（寿命 100 不死亡）→ 活跃计数守恒；
+记录发射与单步耗时（主机侧），并断言合理上限。
+*/
+TEST(Renderer_Particle_Test, 常驻百万粒子基线)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	ASSERT_TRUE(renderer.particle_enable_set(true));
+	ASSERT_TRUE(renderer.particle_capacity_set(engine::PARTICLE_CAPACITY_MAX));
+	engine::Particle_Emitter emitter{};
+	emitter.direction[1] = 1.0f;
+	emitter.speed_min = 0.5f;
+	emitter.speed_max = 1.0f;
+	emitter.lifetime_min = 100.0f;
+	emitter.lifetime_max = 100.0f;
+	emitter.shape = static_cast<uint32_t>(engine::Emit_Shape::Sphere_Shell);
+	emitter.extents[0] = 1.0f;
+	emitter.count = engine::PARTICLE_EMIT_COUNT_MAX;
+	engine::Particle_Params params{};
+	params.gravity[1] = -0.5f;
+	params.damping = 0.99f;
+	ASSERT_TRUE(renderer.particle_emitter_set(emitter));
+	ASSERT_TRUE(renderer.particle_params_set(params));
+	ASSERT_TRUE(renderer.particle_resident_set(true));
+	//一次发射 1 048 576（分 16 批，每批 ≤ 65536 上限）
+	const auto emit_begin = std::chrono::high_resolution_clock::now();
+	uint32_t total = 0;
+	for (uint32_t batch = 0; batch < 16; ++batch)
+		total += renderer.particle_gpu_emit(engine::PARTICLE_EMIT_COUNT_MAX);
+	const auto emit_end = std::chrono::high_resolution_clock::now();
+	double emit_ms = std::chrono::duration<double, std::milli>(emit_end - emit_begin).count();
+	EXPECT_EQ(total, engine::PARTICLE_CAPACITY_MAX);
+	EXPECT_EQ(renderer.particle_active_count(), engine::PARTICLE_CAPACITY_MAX);
+	//五步常驻推进
+	const auto step_begin = std::chrono::high_resolution_clock::now();
+	for (uint32_t step = 0; step < 5; ++step)
+		ASSERT_TRUE(renderer.particle_gpu_step_resident(1.0f / 60.0f));
+	const auto step_end = std::chrono::high_resolution_clock::now();
+	double per_step_ms = std::chrono::duration<double, std::milli>(step_end - step_begin).count() / 5.0;
+	//寿命 100 s 内不死亡 → 活跃守恒
+	EXPECT_EQ(renderer.particle_active_count(), engine::PARTICLE_CAPACITY_MAX);
+	EXPECT_EQ(renderer.particle_gpu_died_last(), 0u);
+	std::cout << "[常驻百万] 发射16批=" << emit_ms << " ms  单步=" << per_step_ms << " ms" << std::endl;
+	//百万粒子单步为 GPU 吞吐口径（实测约 100 ms 量级，见性能基线）
+	EXPECT_LT(per_step_ms, 1000.0);
+	EXPECT_LT(emit_ms, 10000.0);
+}
+
