@@ -219,3 +219,79 @@ TEST_F(Renderer_Post_Chain_Test, 体积雾与体积光组合)
 	EXPECT_GT(changed, 20u) << "雾与体积光组合未生效";
 	EXPECT_GT(luma_on, luma_off + 2.0f);
 }
+
+/*
+体积光采样开销（第三百八十五轮）
+同一场景（覆盖视口的四边形 ＋ 天空），单级体积光链；分辨率与采样步数三档对照，
+记录稳定段（第 3..8 帧）的主机录制与 GPU 帧均值；不设硬上限，只输出与粗检。
+*/
+TEST_F(Renderer_Post_Chain_Test, 体积光采样开销)
+{
+	engine::Renderer probe;
+	ASSERT_TRUE(probe.init(hidden_config()));
+	if (!probe.gpu_timestamp_supported())
+		GTEST_SKIP() << "本机不支持 GPU 时间戳";
+
+	//单次测量（分辨率 / 采样缩放 / 分辨率标称进 / 录制与 GPU 帧出）
+	auto measure = [&](uint32_t width, uint32_t height, float sample_scale,
+		double& record_out, double& gpu_out) -> void
+	{
+		record_out = 0.0;
+		gpu_out = 0.0;
+		engine::Renderer_Config config;
+		config.width = width;
+		config.height = height;
+		config.hidden = true;
+		engine::Renderer renderer;
+		ASSERT_TRUE(renderer.init(config));
+		uint64_t scene_target = 0;
+		ASSERT_TRUE(renderer.render_target_create(scene_target, renderer.extent_width(), renderer.extent_height()));
+		uint64_t pass = post_pipeline_register(renderer, "体积光.frag.spv");
+		ASSERT_NE(pass, 0u);
+		ASSERT_TRUE(renderer.post_chain_set(&pass, 1));
+		renderer.post_stage_vec4_set(0, 0.6f, 0.9f, sample_scale, 0.9f);
+		renderer.post_stage_color_set(0, SHAFT_COLOR[0], SHAFT_COLOR[1], SHAFT_COLOR[2]);
+		renderer.render_target_present_set(scene_target);
+		engine::Mesh_Handle plane = 0;
+		ASSERT_TRUE(renderer.mesh_load(plane, quad_data()));
+		//八帧：前两帧预热，取第 3..8 帧均值
+		double record_sum = 0.0;
+		double gpu_sum = 0.0;
+		uint32_t samples = 0;
+		for (uint32_t frame = 0; frame < 8; ++frame)
+		{
+			ASSERT_TRUE(renderer.mesh_draw(plane, nullptr));
+			ASSERT_TRUE(renderer.frame_render());
+			if (frame >= 2)
+			{
+				const engine::Frame_Stats stats = renderer.frame_stats_get();
+				record_sum += stats.host_record_ms;
+				gpu_sum += stats.gpu_frame_ms;
+				++samples;
+			}
+		}
+		record_out = record_sum / samples;
+		gpu_out = gpu_sum / samples;
+		renderer.mesh_unload(plane);
+		renderer.pipeline_unload(pass);
+		renderer.render_target_destroy(scene_target);
+	};
+	double small_12_record = 0.0, small_12_gpu = 0.0;
+	double full_12_record = 0.0, full_12_gpu = 0.0;
+	double full_24_record = 0.0, full_24_gpu = 0.0;
+	double full_48_record = 0.0, full_48_gpu = 0.0;
+	measure(64, 36, 0.25f, small_12_record, small_12_gpu);
+	//采样缩放 0.25 / 0.5 / 1.0 → 12 / 24 / 48 步（上限 48）
+	measure(1280, 720, 0.25f, full_12_record, full_12_gpu);
+	measure(1280, 720, 0.5f, full_24_record, full_24_gpu);
+	measure(1280, 720, 1.0f, full_48_record, full_48_gpu);
+	std::cout << "[体积光开销] 64×36 12步 录制=" << small_12_record << " GPU帧=" << small_12_gpu
+		<< " ms；1280×720 12步 录制=" << full_12_record << " GPU帧=" << full_12_gpu
+		<< " ms；24步 录制=" << full_24_record << " GPU帧=" << full_24_gpu
+		<< " ms；48步 录制=" << full_48_record << " GPU帧=" << full_48_gpu << " ms" << std::endl;
+	//粗检：主机录制非零；GPU 帧耗时随采样数方向合理（24 步 ≥ 12 步的一半）
+	EXPECT_GT(small_12_record, 0.0);
+	EXPECT_GT(full_12_record, 0.0);
+	EXPECT_GT(full_24_gpu, full_12_gpu * 0.5);
+	EXPECT_GT(full_48_gpu, full_24_gpu * 0.5);
+}
