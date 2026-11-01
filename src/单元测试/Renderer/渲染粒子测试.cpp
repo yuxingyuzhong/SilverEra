@@ -885,7 +885,9 @@ TEST(Renderer_Particle_Test, 超大容量与重建)
 	const uint64_t expected_maximum = static_cast<uint64_t>(engine::PARTICLE_CAPACITY_MAX)
 		* engine::PARTICLE_STRIDE * 2u + static_cast<uint64_t>(engine::PARTICLE_FORCE_MAX) * engine::PARTICLE_FORCE_STRIDE
 		+ (8u + (static_cast<uint64_t>(engine::PARTICLE_CAPACITY_MAX) + 31u) / 32u * 4u)
-		+ static_cast<uint64_t>(engine::PARTICLE_CAPACITY_MAX) * 4u + 4u;
+		+ static_cast<uint64_t>(engine::PARTICLE_CAPACITY_MAX) * 4u + 4u
+		//间接命令缓冲：在途帧数 2 × 20 B（第三百五十二轮）
+		+ 2u * 20u;
 	EXPECT_EQ(renderer.particle_gpu_bytes(), expected_maximum);
 	EXPECT_TRUE(renderer.particle_gpu_probe());
 	//同值重复设置：不重建、字节不变
@@ -901,7 +903,9 @@ TEST(Renderer_Particle_Test, 超大容量与重建)
 	ASSERT_TRUE(renderer.particle_gpu_available());
 	const uint64_t expected_small = static_cast<uint64_t>(64) * engine::PARTICLE_STRIDE * 2u
 		+ static_cast<uint64_t>(engine::PARTICLE_FORCE_MAX) * engine::PARTICLE_FORCE_STRIDE
-		+ (8u + (64u + 31u) / 32u * 4u) + static_cast<uint64_t>(64) * 4u + 4u;
+		+ (8u + (64u + 31u) / 32u * 4u) + static_cast<uint64_t>(64) * 4u + 4u
+		//间接命令缓冲：在途帧数 2 × 20 B（第三百五十二轮）
+		+ 2u * 20u;
 	EXPECT_EQ(renderer.particle_gpu_bytes(), expected_small);
 	EXPECT_TRUE(renderer.particle_gpu_probe());
 }
@@ -1197,7 +1201,9 @@ TEST(Renderer_Particle_Test, 粒子性能基线)
 		static_cast<uint64_t>(engine::PARTICLE_CAPACITY_MAX) * engine::PARTICLE_STRIDE * 2u
 			+ static_cast<uint64_t>(engine::PARTICLE_FORCE_MAX) * engine::PARTICLE_FORCE_STRIDE
 			+ (8u + (static_cast<uint64_t>(engine::PARTICLE_CAPACITY_MAX) + 31u) / 32u * 4u)
-			+ static_cast<uint64_t>(engine::PARTICLE_CAPACITY_MAX) * 4u + 4u);
+			+ static_cast<uint64_t>(engine::PARTICLE_CAPACITY_MAX) * 4u + 4u
+			//间接命令缓冲：在途帧数 2 × 20 B（第三百五十二轮）
+			+ 2u * 20u);
 	const auto probe_begin = std::chrono::high_resolution_clock::now();
 	EXPECT_TRUE(renderer.particle_gpu_probe());
 	const auto probe_end = std::chrono::high_resolution_clock::now();
