@@ -425,3 +425,74 @@ TEST_F(Renderer_Post_Chain_Test, 体积雾与深度描边组合)
 	EXPECT_EQ(stages, 2u);
 	EXPECT_GT(changed, 20u) << "雾与描边组合未生效";
 }
+
+/*
+四级链目标轮转（第三百八十一轮）
+口径：四级链「体积雾 → 深度描边 → 灰度 → 反色」，靶只用两块中间目标（ping-pong 轮转两圈）。
+1. 四级全部执行（post_stages = 4）；
+2. 雾关闭 ＋ 描边强度 0 时首两级恒等，整链应与「直通 → 直通 → 灰度 → 反色」逐通道差 ≤ 4；
+3. 雾 0.2 ＋ 描边 0.5 时与前者差异像素 > 20。
+*/
+TEST_F(Renderer_Post_Chain_Test, 四级链目标轮转)
+{
+	engine::Renderer probe;
+	ASSERT_TRUE(probe.init(hidden_config()));
+	if (!probe.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+
+	//四级链渲染（fog 为密度；outline 为描边强度；outline > 0 才设描边参数）
+	auto render_four = [&](const char* first_shader, float fog, float outline, uint32_t* stages_out) -> std::vector<uint8_t>
+	{
+		engine::Renderer renderer;
+		EXPECT_TRUE(renderer.init(hidden_config()));
+		uint64_t target0 = 0;
+		uint64_t target1 = 0;
+		EXPECT_TRUE(renderer.render_target_create(target0, renderer.extent_width(), renderer.extent_height()));
+		EXPECT_TRUE(renderer.render_target_create(target1, renderer.extent_width(), renderer.extent_height()));
+		uint64_t first = post_pipeline_register(renderer, first_shader);
+		uint64_t outline_pass = post_pipeline_register(renderer, "深度描边.frag.spv");
+		uint64_t gray = post_pipeline_register(renderer, "灰度.frag.spv");
+		uint64_t invert = post_pipeline_register(renderer, "反色.frag.spv");
+		EXPECT_NE(first, 0u);
+		EXPECT_NE(outline_pass, 0u);
+		EXPECT_NE(gray, 0u);
+		EXPECT_NE(invert, 0u);
+		uint64_t chain[4] = { first, outline_pass, gray, invert };
+		EXPECT_TRUE(renderer.post_chain_set(chain, 4));
+		renderer.post_stage_vec4_set(0, fog, 0.0f, 20.0f, 1.0f);
+		renderer.post_stage_color4_set(0, FOG_COLOR[0], FOG_COLOR[1], FOG_COLOR[2], 0.0f);
+		//描边参数只在需要时设置（默认强度 0 与「不设」在首两级恒等的判据内等价）
+		if (outline > 0.0f)
+			renderer.post_stage_param4_set(1, outline, 1.0f, 1.0f, 1.0f);
+		uint64_t targets[2] = { target0, target1 };
+		EXPECT_TRUE(renderer.render_target_present_chain_set(targets, 2));
+		engine::Mesh_Handle plane = 0;
+		EXPECT_TRUE(renderer.mesh_load(plane, quad_data()));
+		EXPECT_TRUE(renderer.mesh_draw(plane, nullptr));
+		renderer.mesh_unload(plane);
+		std::vector<uint8_t> pixels(pixel_bytes());
+		EXPECT_TRUE(renderer.frame_render(pixels.data(), static_cast<uint32_t>(pixels.size())));
+		if (stages_out != nullptr)
+			*stages_out = renderer.frame_stats_get().post_stages;
+		renderer.pipeline_unload(first);
+		renderer.pipeline_unload(outline_pass);
+		renderer.pipeline_unload(gray);
+		renderer.pipeline_unload(invert);
+		renderer.render_target_destroy(target1);
+		renderer.render_target_destroy(target0);
+		return pixels;
+	};
+	uint32_t stages = 0;
+	std::vector<uint8_t> reference = render_four("后处理.frag.spv", 0.0f, 0.0f, &stages);
+	std::vector<uint8_t> fog_off = render_four("体积雾.frag.spv", 0.0f, 0.0f, nullptr);
+	std::vector<uint8_t> combined = render_four("体积雾.frag.spv", 0.2f, 0.5f, nullptr);
+	EXPECT_EQ(stages, 4u);
+	//四轮编码取整：容差按级数放宽（每级 ±1）
+	int identity_diff = max_channel_diff(reference, fog_off);
+	RecordProperty("chain4_identity_diff", identity_diff);
+	EXPECT_LE(identity_diff, CHAIN_TOLERANCE) << "前两级未恒等（最大差 " << identity_diff << "）";
+	uint32_t changed = differing_pixels(fog_off, combined, 8);
+	RecordProperty("chain4_changed_pixels", static_cast<int>(changed));
+	std::cout << "[四级链] 恒等差=" << identity_diff << " 组合差异像素=" << changed << std::endl;
+	EXPECT_GT(changed, 20u) << "四级链中雾与描边未生效";
+}
