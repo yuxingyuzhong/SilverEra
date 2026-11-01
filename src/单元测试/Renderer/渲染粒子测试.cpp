@@ -1339,6 +1339,7 @@ TEST(Renderer_Particle_Test, 粒子降级矩阵)
 展廊第九区接入（第三百二十四轮）
 隐藏窗口初始化能力展示场景：粒子容量预置 65 536（第三百四十六轮由 4096 上调）、默认关闭；
 第三百五十六轮预配置接入配色（冷青 → 暖橙）与柔边 0.35（参数经同一 `particle_params_set` 校验）；
+第三百六十七轮接入软粒子档位 0.01 并请求 Hi-Z（支持时开启，不支持时档位自动失效）；
 手动开启后发射 64 个并逐帧绘制出帧，出生累计与绘制项均增长。
 */
 TEST(Renderer_Particle_Test, 展廊粒子喷泉接入)
@@ -1350,6 +1351,9 @@ TEST(Renderer_Particle_Test, 展廊粒子喷泉接入)
 	//预配置：容量 65 536、默认关闭
 	EXPECT_EQ(renderer.particle_capacity_get(), 65536u);
 	EXPECT_FALSE(renderer.particle_enable_get());
+	//软粒子前置：场景 init 请求 Hi-Z（不支持时保持关闭）
+	if (renderer.hiz_supported())
+		EXPECT_TRUE(renderer.hiz_enable_get());
 	//手动开启并模拟区内一帧
 	ASSERT_TRUE(renderer.particle_enable_set(true));
 	ASSERT_EQ(renderer.particle_emit(64), 64u);
