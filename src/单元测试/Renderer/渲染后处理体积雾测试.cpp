@@ -12,8 +12,8 @@ namespace
 	//雾色（亮蓝；开启后整体亮度上升）
 	const std::array<float, 3> FOG_COLOR = { 0.6f, 0.7f, 0.9f };
 
-	//渲染一帧：单级体积雾链 ＋ 中央四边形（返回回读像素）
-	std::vector<uint8_t> render_fog(const std::array<float, 4>& params)
+	//渲染一帧：单级体积雾链 ＋ 中央四边形（返回回读像素；noise 为密度噪声强度 0..1）
+	std::vector<uint8_t> render_fog(const std::array<float, 4>& params, float noise = 0.0f)
 	{
 		engine::Renderer renderer;
 		EXPECT_TRUE(renderer.init(hidden_config()));
@@ -25,7 +25,7 @@ namespace
 		EXPECT_TRUE(renderer.post_chain_set(&pass, 1));
 		//体积雾参数走通用四参入口（第三百七十三轮；密度 / 高度衰减 / 最大距离 / 步数缩放）
 		renderer.post_stage_vec4_set(0, params[0], params[1], params[2], params[3]);
-		renderer.post_stage_color_set(0, FOG_COLOR[0], FOG_COLOR[1], FOG_COLOR[2]);
+		renderer.post_stage_color4_set(0, FOG_COLOR[0], FOG_COLOR[1], FOG_COLOR[2], noise);
 		renderer.render_target_present_set(scene_target);
 		engine::Mesh_Handle plane = 0;
 		EXPECT_TRUE(renderer.mesh_load(plane, quad_data()));
@@ -291,4 +291,71 @@ TEST_F(Renderer_Post_Chain_Test, 体积雾步数开销)
 	EXPECT_GT(large_24_record, 0.0);
 	EXPECT_GT(small_24_gpu, small_12_gpu * 0.5);
 	EXPECT_GT(small_48_gpu, small_24_gpu * 0.5);
+}
+
+/*
+体积雾密度噪声（第三百七十六轮）
+第三组推送 alpha 作为噪声强度：0 = 均匀雾（与引入噪声前一致）、0.8 = 絮状浓淡（画面出现可见差异）；
+同时对照 720p 下噪声开关的 GPU 帧耗时（解析式噪声，预期增幅有限）。
+*/
+TEST_F(Renderer_Post_Chain_Test, 体积雾密度噪声)
+{
+	engine::Renderer probe;
+	ASSERT_TRUE(probe.init(hidden_config()));
+	if (!probe.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+
+	std::vector<uint8_t> smooth = render_fog({ 0.2f, 0.0f, 20.0f, 1.0f }, 0.0f);
+	std::vector<uint8_t> noisy = render_fog({ 0.2f, 0.0f, 20.0f, 1.0f }, 0.8f);
+	uint32_t changed = differing_pixels(smooth, noisy, 2);
+	RecordProperty("fog_noise_changed_pixels", static_cast<int>(changed));
+	std::cout << "[体积雾噪声] 差异像素=" << changed << std::endl;
+	EXPECT_GT(changed, 20u) << "密度噪声未生效（噪声 0 与 0.8 画面几乎一致）";
+
+	//全高清 24 步下噪声开关的 GPU 帧对照
+	auto measure_noise = [&](float noise, double& gpu_out) -> void
+	{
+		gpu_out = 0.0;
+		engine::Renderer_Config config;
+		config.width = 1280;
+		config.height = 720;
+		config.hidden = true;
+		engine::Renderer renderer;
+		ASSERT_TRUE(renderer.init(config));
+		uint64_t scene_target = 0;
+		ASSERT_TRUE(renderer.render_target_create(scene_target, renderer.extent_width(), renderer.extent_height()));
+		uint64_t pass = post_pipeline_register(renderer, "体积雾.frag.spv");
+		ASSERT_NE(pass, 0u);
+		ASSERT_TRUE(renderer.post_chain_set(&pass, 1));
+		renderer.post_stage_vec4_set(0, 0.1f, 0.0f, 30.0f, 1.0f);
+		renderer.post_stage_color4_set(0, FOG_COLOR[0], FOG_COLOR[1], FOG_COLOR[2], noise);
+		renderer.render_target_present_set(scene_target);
+		engine::Mesh_Handle plane = 0;
+		ASSERT_TRUE(renderer.mesh_load(plane, quad_data()));
+		double gpu_sum = 0.0;
+		uint32_t samples = 0;
+		for (uint32_t frame = 0; frame < 8; ++frame)
+		{
+			ASSERT_TRUE(renderer.mesh_draw(plane, nullptr));
+			ASSERT_TRUE(renderer.frame_render());
+			if (frame >= 2)
+			{
+				gpu_sum += renderer.frame_stats_get().gpu_frame_ms;
+				++samples;
+			}
+		}
+		gpu_out = gpu_sum / samples;
+		renderer.mesh_unload(plane);
+		renderer.pipeline_unload(pass);
+		renderer.render_target_destroy(scene_target);
+	};
+	double smooth_gpu = 0.0;
+	double noisy_gpu = 0.0;
+	measure_noise(0.0f, smooth_gpu);
+	measure_noise(0.8f, noisy_gpu);
+	std::cout << "[体积雾噪声开销] 720p 24步 均匀 GPU帧=" << smooth_gpu
+		<< " ms 噪声 GPU帧=" << noisy_gpu << " ms" << std::endl;
+	EXPECT_GT(smooth_gpu, 0.0);
+	//解析式噪声的增量有限（不超过均匀雾的 4 倍＋0.5 ms）
+	EXPECT_LT(noisy_gpu, smooth_gpu * 4.0 + 0.5);
 }
