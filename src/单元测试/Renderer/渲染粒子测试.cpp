@@ -1374,6 +1374,64 @@ TEST(Renderer_Particle_Test, 常驻百万粒子基线)
 
 
 /*
+常驻绘制与 CPU 绘制统计等价（第三百三十八轮）
+用两个独立渲染器各走一条路径（避免同类渲染器连续两帧的绘制项登记偏移）：
+同一发射器 / 参数下发射 64 个并推进五步，绘制项数与实际绘制实例数须一致。
+*/
+TEST(Renderer_Particle_Test, 常驻绘制统计等价)
+{
+	//公共发射器与参数（两路径同配置）
+	engine::Particle_Emitter emitter{};
+	emitter.direction[1] = 1.0f;
+	emitter.speed_min = 0.3f;
+	emitter.speed_max = 0.5f;
+	emitter.lifetime_min = 2.0f;
+	emitter.lifetime_max = 2.0f;
+	emitter.count = 64;
+	engine::Particle_Params params{};
+	params.damping = 1.0f;
+	//CPU 路径
+	engine::Frame_Stats cpu_stats{};
+	{
+		engine::Renderer renderer;
+		ASSERT_TRUE(renderer.init(hidden_config()));
+		ASSERT_TRUE(renderer.particle_enable_set(true));
+		ASSERT_TRUE(renderer.particle_capacity_set(256));
+		ASSERT_TRUE(renderer.particle_emitter_set(emitter));
+		ASSERT_TRUE(renderer.particle_params_set(params));
+		ASSERT_EQ(renderer.particle_emit(64), 64u);
+		for (uint32_t step = 0; step < 5; ++step)
+			(void)renderer.particle_step(0.05f);
+		ASSERT_TRUE(renderer.particle_draw(0.1f));
+		ASSERT_TRUE(renderer.frame_render());
+		cpu_stats = renderer.frame_stats_get();
+	}
+	//常驻路径
+	engine::Frame_Stats resident_stats{};
+	{
+		engine::Renderer renderer;
+		ASSERT_TRUE(renderer.init(hidden_config()));
+		ASSERT_TRUE(renderer.particle_enable_set(true));
+		ASSERT_TRUE(renderer.particle_capacity_set(256));
+		ASSERT_TRUE(renderer.particle_emitter_set(emitter));
+		ASSERT_TRUE(renderer.particle_params_set(params));
+		ASSERT_TRUE(renderer.particle_resident_set(true));
+		ASSERT_EQ(renderer.particle_gpu_emit(64), 64u);
+		for (uint32_t step = 0; step < 5; ++step)
+			ASSERT_TRUE(renderer.particle_gpu_step_resident(0.05f));
+		EXPECT_EQ(renderer.particle_active_count(), 64u);
+		ASSERT_TRUE(renderer.particle_draw(0.1f));
+		ASSERT_TRUE(renderer.frame_render());
+		resident_stats = renderer.frame_stats_get();
+	}
+	//两路径绘制登记口径一致（绘制项数 / 实例数）
+	EXPECT_EQ(resident_stats.drawn_items, cpu_stats.drawn_items);
+	EXPECT_EQ(resident_stats.drawn_instances, cpu_stats.drawn_instances);
+	std::cout << "[绘制等价] CPU项=" << cpu_stats.drawn_items << " 实例=" << cpu_stats.drawn_instances
+		<< "  常驻项=" << resident_stats.drawn_items << " 实例=" << resident_stats.drawn_instances << std::endl;
+}
+
+/*
 常驻紧凑百万基线（第三百三十四轮；阶段 D）
 容量 1 048 576 全活跃时紧凑索引：计数等于活跃数（1 048 576），记录三次紧凑的主机侧耗时并断言上限。
 */
