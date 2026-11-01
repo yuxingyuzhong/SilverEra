@@ -165,4 +165,17 @@ TEST(Particle_Data_Test, 模拟参数校验)
 	params = base_params();
 	params.edge_softness = 0.5f;
 	EXPECT_TRUE(engine::particle_params_valid(params));
+	/*
+	软粒子深度档位（第三百六十六轮）
+	落在 [0, 1]：越界 / 非有限拒绝，区间内接受（0 = 关闭）。
+	*/
+	params = base_params();
+	params.soft_depth_range = 1.5f;
+	EXPECT_FALSE(engine::particle_params_valid(params));
+	params = base_params();
+	params.soft_depth_range = std::numeric_limits<float>::quiet_NaN();
+	EXPECT_FALSE(engine::particle_params_valid(params));
+	params = base_params();
+	params.soft_depth_range = 0.005f;
+	EXPECT_TRUE(engine::particle_params_valid(params));
 }

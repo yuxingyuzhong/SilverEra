@@ -2320,3 +2320,99 @@ TEST(Renderer_Particle_Test, 粒子三路径绘制对照)
 	renderer.render_target_set(0);
 	renderer.render_target_destroy(target);
 }
+
+/*
+粒子软粒子深度淡化（第三百六十六轮；阶段 E）
+同一 64×36 目标、同一枚纯蓝粒子（z=0.6）与同一面黑墙（z=0.58，粒子后方 0.02）：
+墙面染黑后蓝通道累加近似只反映粒子；开档位（0.005）后粒子贴近墙面处的 Alpha 被按深度差淡出，
+蓝和明显低于关闭档位的同场景。每场景先画三帧让该帧槽历史就绪，再取最后一帧像素累加。
+*/
+TEST(Renderer_Particle_Test, 粒子软粒子深度淡化)
+{
+	const float clear[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
+	bool hiz_ok = true;
+	//单场景测量（soft_range 为 0 表示关闭软粒子）
+	auto run_scene = [&](float soft_range, uint64_t& blue_sum_out) -> void
+	{
+		engine::Renderer_Config config;
+		config.width = 64;
+		config.height = 36;
+		config.hidden = true;
+		config.hiz_enable = true;
+		config.msaa_samples = 1;
+		engine::Renderer renderer;
+		ASSERT_TRUE(renderer.init(config));
+		//能力不足：交由测试体统一跳过
+		if (!renderer.hiz_supported())
+		{
+			hiz_ok = false;
+			return;
+		}
+		renderer.clear_color_set(clear);
+		renderer.camera_position_set(0.0f, 0.0f, 3.0f);
+		renderer.camera_target_set(0.0f, 0.0f, 0.0f);
+		ASSERT_TRUE(renderer.particle_enable_set(true));
+		ASSERT_TRUE(renderer.particle_capacity_set(8));
+		engine::Particle_Emitter emitter{};
+		emitter.position[2] = 0.6f;
+		emitter.direction[2] = -1.0f;
+		emitter.speed_min = 0.0f;
+		emitter.speed_max = 0.0f;
+		emitter.lifetime_min = 10.0f;
+		emitter.lifetime_max = 10.0f;
+		emitter.shape = static_cast<uint32_t>(engine::Emit_Shape::Point);
+		emitter.count = 1;
+		engine::Particle_Params params{};
+		params.damping = 1.0f;
+		params.color_start[2] = 1.0f;
+		params.color_end[2] = 1.0f;
+		params.color_enabled = 1;
+		params.soft_depth_range = soft_range;
+		ASSERT_TRUE(renderer.particle_emitter_set(emitter));
+		ASSERT_TRUE(renderer.particle_params_set(params));
+		ASSERT_EQ(renderer.particle_emit(1), 1u);
+		//墙面（4×4，向相机方向平移到 z=0.58；染黑避免其蓝通道遮挡比较）
+		engine::Mesh_Handle wall = 0;
+		ASSERT_TRUE(renderer.mesh_plane_load(wall, 4.0f, 4.0f));
+		ASSERT_TRUE(renderer.material_tint_set(0.0f, 0.0f, 0.0f, 1.0f));
+		/*
+		走交换链路径（Hi-Z 生成只挂在交换链场景退场上；离屏目标不生成历史）；
+		最后一帧顺带回读像素（隐藏窗口回读，BGRA）。
+		*/
+		std::vector<uint8_t> pixels(64 * 36 * 4, 0);
+		uint32_t width = 0;
+		uint32_t height = 0;
+		for (uint32_t frame = 0; frame < 3; ++frame)
+		{
+			float transform[16] = { 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
+				0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.58f, 1.0f };
+			ASSERT_TRUE(renderer.mesh_draw(wall, transform));
+			ASSERT_TRUE(renderer.particle_draw(1.0f));
+			if (frame + 1 == 3)
+				ASSERT_TRUE(renderer.frame_render(pixels.data(), static_cast<uint32_t>(pixels.size()),
+					&width, &height));
+			else
+				ASSERT_TRUE(renderer.frame_render());
+		}
+		//诊断口径：生成次数与两个在途帧槽的历史就绪状态
+		uint64_t debug_view = 0;
+		uint64_t debug_sampler = 0;
+		EXPECT_GT(renderer.hiz_generation_count(), 0u);
+		EXPECT_TRUE(renderer.hiz_history_ready(0));
+		EXPECT_TRUE(renderer.hiz_history_sample_get(0, debug_view, debug_sampler));
+		uint64_t sum = 0;
+		for (std::size_t index = 0; index + 3 < pixels.size(); index += 4)
+			sum += pixels[index];
+		blue_sum_out = sum;
+		renderer.mesh_unload(wall);
+	};
+	uint64_t off_sum = 0;
+	uint64_t on_sum = 0;
+	run_scene(0.0f, off_sum);
+	run_scene(0.005f, on_sum);
+	if (!hiz_ok)
+		GTEST_SKIP() << "本机不支持 Hi-Z 所需能力";
+	std::cout << "[软粒子] 关闭档位蓝和=" << off_sum << " 开启档位蓝和=" << on_sum << std::endl;
+	EXPECT_GT(off_sum, 0u);
+	EXPECT_LT(on_sum * 100u, off_sum * 85u);
+}
