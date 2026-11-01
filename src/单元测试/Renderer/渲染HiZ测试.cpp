@@ -192,6 +192,52 @@ TEST_F(Renderer_HiZ_Test, 金字塔逐帧生成)
 }
 
 /*
+深度历史采样句柄（第三百六十五轮）
+口径：开启 Hi-Z 后，历史在逐帧生成结束时转为采样布局；句柄查询仅在「启用 ＋ 资源就绪 ＋ 该槽有历史」时为真。
+未生成前 / 关闭开关后 / 越界槽位均返回假且出参归零。
+*/
+TEST_F(Renderer_HiZ_Test, 深度历史采样句柄)
+{
+	engine::Renderer_Config config = hidden_config();
+	config.hiz_enable = true;
+	config.msaa_samples = 1;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(config));
+	if (!renderer.hiz_supported())
+		GTEST_SKIP() << "本机不支持 Hi-Z 所需能力";
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, quad_data()));
+	//未生成前：句柄为假且出参归零
+	uint64_t view = 0;
+	uint64_t sampler = 0;
+	EXPECT_FALSE(renderer.hiz_history_sample_get(0, view, sampler));
+	EXPECT_EQ(view, 0u);
+	EXPECT_EQ(sampler, 0u);
+	//三帧后两个在途帧槽均可取句柄
+	std::array<float, 16> identity = identity_matrix();
+	for (uint32_t frame = 0; frame < 3; ++frame)
+	{
+		ASSERT_TRUE(renderer.mesh_draw_instanced(mesh, identity.data(), 1));
+		ASSERT_TRUE(renderer.frame_render());
+	}
+	for (uint32_t slot = 0; slot < 2; ++slot)
+	{
+		uint64_t slot_view = 0;
+		uint64_t slot_sampler = 0;
+		EXPECT_TRUE(renderer.hiz_history_sample_get(slot, slot_view, slot_sampler)) << "帧槽 " << slot;
+		EXPECT_NE(slot_view, 0u);
+		EXPECT_NE(slot_sampler, 0u);
+	}
+	//越界槽位与关闭开关后均不可取
+	uint64_t out_view = 0;
+	uint64_t out_sampler = 0;
+	EXPECT_FALSE(renderer.hiz_history_sample_get(8, out_view, out_sampler));
+	EXPECT_TRUE(renderer.hiz_enable_set(false));
+	EXPECT_FALSE(renderer.hiz_history_sample_get(0, out_view, out_sampler));
+	renderer.mesh_unload(mesh);
+}
+
+/*
 关闭时不生成
 口径：默认关闭时全部帧均不录制生成命令，历史保持无效、生成计数为 0。
 */
