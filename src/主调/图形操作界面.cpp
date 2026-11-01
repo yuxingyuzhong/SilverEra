@@ -9,7 +9,7 @@
 #include "src/主调/测试运行器.h"
 #include "src/主调/测试界面.h"
 //能力展示场景（测试层入口：单场景集中呈现渲染层能力，相机可漫游）
-#include "src/主调/能力展示场景.h"
+#include "src/主调/能力展示/能力展示场景.h"
 
 //Dear ImGui 与两条后端（平台后端用 SDL3、渲染后端用 Vulkan）
 #include "imgui.h"
@@ -191,6 +191,8 @@ namespace engine
             展示输入 输入{};
 			//能力展示场景（非空即表示已搭建）
 			能力展示场景* 展示场景 = nullptr;
+			//展示叠加层是否展开（关闭后只在左上角留「?」小按钮，避免遮挡画面）
+			bool 展示面板可见 = true;
 			//展示模式的原生输入状态（SDL 事件直采；不依赖 ImGui 焦点与面板可见性）
 			bool 键前 = false;
 			bool 键后 = false;
@@ -210,6 +212,27 @@ namespace engine
         {
             //左上角信息面板（宽度按最长说明行折行；第二百一十八轮修正文字被裁剪问题）
             const ImGuiViewport* 视口 = ImGui::GetMainViewport();
+            /*
+            面板已关闭：只在左上角留一个小按钮重开
+            后处理类展区（⑫–⑰）会把整幅画面（含叠加层）一并处理，故需要「关闭面板」的逃生口。
+            */
+            if (!上下文.展示面板可见)
+            {
+                ImGui::SetNextWindowPos(ImVec2(视口->WorkPos.x + 16.0f, 视口->WorkPos.y + 16.0f));
+                ImGui::SetNextWindowSize(ImVec2(44.0f, 0.0f));
+                ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.04f, 0.07f, 0.14f, 0.92f));
+                ImGui::Begin("##能力展示折叠", nullptr,
+                    ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings
+                    | ImGuiWindowFlags_NoFocusOnAppearing);
+                //重开按钮（悬停提示快捷键）
+                if (ImGui::Button("?", ImVec2(30.0f, 30.0f)))
+                    上下文.展示面板可见 = true;
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("展开能力展示说明（M 键切换）");
+                ImGui::End();
+                ImGui::PopStyleColor();
+                return;
+            }
             ImGui::SetNextWindowPos(ImVec2(视口->WorkPos.x + 16.0f, 视口->WorkPos.y + 16.0f));
             ImGui::SetNextWindowSize(ImVec2(430.0f, 0.0f));
             //展示模式下没有蓝色渐变背景，本面板必须自带不透明底色，否则整个面板不可见
@@ -218,18 +241,23 @@ namespace engine
                 ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings
                 | ImGuiWindowFlags_NoFocusOnAppearing);
             ImGui::TextUnformatted("渲染能力展示 · 可漫游场景");
+            //关闭按钮（右上角小叉；再点左上角「?」可重开）
+            ImGui::SameLine(398.0f);
+            if (ImGui::SmallButton("×"))
+                上下文.展示面板可见 = false;
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("收起说明面板（M 键切换；后处理展区画面更清晰）");
             ImGui::Separator();
-            //展区图例（与三维投影标签一一对应；长行自动折行，避免右端被窗口裁剪）
-            ImGui::TextUnformatted("八个展区（场景内有同名标签）：");
-            ImGui::Bullet(); ImGui::TextWrapped("① 程序化网格：九种图元环形排布（含四棱锥与细分地形底板）");
-            ImGui::Bullet(); ImGui::TextWrapped("② PBR 材质：粗糙度 / 金属度 / 法线贴图 / 自发光 / 清漆层对比");
-            ImGui::Bullet(); ImGui::TextWrapped("③ 光照与阴影：方向光 / 点光 / 聚光 / 三级级联");
-            ImGui::Bullet(); ImGui::TextWrapped("④ 实例化合批：阶梯金字塔一次提交");
-            ImGui::Bullet(); ImGui::TextWrapped("⑤ 几何拼接：拱门 / 晶塔 / 环阵");
-            ImGui::Bullet(); ImGui::TextWrapped("⑥ 纹理与动态：棋盘 / 动态更新 / UV 立方");
-            ImGui::Bullet(); ImGui::TextWrapped("⑦ 卡通渲染：走近该区即切换色阶量化 / 边缘光 / 暗部色调 / 卡通高光 / 外扩描边 / 加法光晕");
-            ImGui::Bullet(); ImGui::TextWrapped("⑧ Cluster 灯墙：16 × 8 盏彩色点光（128 盏）；走近该区自动开启逐簇光照，离开关闭");
-            ImGui::Bullet(); ImGui::TextWrapped("⑨ 粒子喷泉：GPU 常驻模拟 ＋ 间接绘制（单条 vkCmdDrawIndexedIndirect，实例数由 GPU 写）；配色 冷青→暖橙、软边 0.35、软粒子深度 0.01");
+            //展区图例（由展区注册表自动生成，新增展区无需改界面）
+            uint32_t 展区数 = 场景.展区数量();
+            ImGui::TextUnformatted(std::to_string(展区数).c_str());
+            ImGui::SameLine(0.0f, 0.0f);
+            ImGui::TextUnformatted("个展区（场景内有同名标签）：");
+            for (uint32_t 序号 = 0; 序号 < 展区数; ++序号)
+            {
+                ImGui::Bullet();
+                ImGui::TextWrapped("%s", 场景.展区标题(序号));
+            }
             ImGui::Bullet(); ImGui::TextWrapped("多线程：4 工作线程（并行剔除 / 差异扫描；场景 pass 与阴影 pass 均按段并行录制）");
             ImGui::Separator();
             float 位置[3] = { 0.0f, 0.0f, 0.0f };
@@ -273,7 +301,7 @@ namespace engine
                 static_cast<unsigned long long>(上下文.运行状态.scan_parallel_dispatches),
                 static_cast<unsigned long long>(上下文.运行状态.cache_parallel_dispatches));
             ImGui::Separator();
-            ImGui::TextWrapped("操作：WASD 移动 · E / 空格 上升 · Q / Shift 下降 · 右键拖拽看向 · 滚轮调速 · ESC 返回");
+            ImGui::TextWrapped("操作：WASD 移动 · E / 空格 上升 · Q / Shift 下降 · 右键拖拽看向 · 滚轮调速 · M 收起说明 · ESC 返回");
             if (ImGui::Button("返回测试界面", ImVec2(150.0f, 30.0f)))
                 上下文.请求退出展示 = true;
             ImGui::SameLine();
@@ -382,6 +410,11 @@ namespace engine
                     //ESC：展示模式下返回测试界面
                     if (按下 && 上下文.展示模式)
                         上下文.请求退出展示 = true;
+                    break;
+                case SDL_SCANCODE_M:
+                    //M：展示模式下折叠 / 展开说明面板（后处理类展区观察更清晰）
+                    if (按下 && 上下文.展示模式)
+                        上下文.展示面板可见 = !上下文.展示面板可见;
                     break;
                 default:
                     break;

@@ -1,4 +1,4 @@
-﻿/*
+/*
 渲染Cluster光照测试（第二百六十六轮）
 覆盖：光源记录 SSBO 上传（未初始化拒绝 / 默认关闭不上传 / 开启后按帧上传 / 光源增减即时反映 / 关闭归零）。
 */
@@ -12,7 +12,7 @@
 
 #include "Application/Renderer/src/render/Renderer/渲染器.h"
 //能力展示场景（第三百零二轮：展廊灯墙接入）
-#include "src/主调/能力展示场景.h"
+#include "src/主调/能力展示/能力展示场景.h"
 
 namespace
 {

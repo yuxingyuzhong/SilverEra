@@ -1,4 +1,4 @@
-﻿/*
+/*
 渲染粒子门面测试（第三百一十轮；深研方向二 阶段 A）
 覆盖：未初始化拒绝、默认关闭、开关与容量钳制、发射器 / 参数校验、发射与步进、关闭再开启沿用池内容。
 第三百一十一轮补：GPU 推进资源可用性与零步自检。
@@ -19,7 +19,7 @@
 #include <vector>
 
 #include "Application/Renderer/src/render/Renderer/渲染器.h"
-#include "src/主调/能力展示场景.h"
+#include "src/主调/能力展示/能力展示场景.h"
 
 namespace
 {

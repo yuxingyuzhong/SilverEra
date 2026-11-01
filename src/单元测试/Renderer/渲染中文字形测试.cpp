@@ -122,6 +122,27 @@ namespace
 		}
 		return count;
 	}
+
+	//把码点按 UTF-8 追加到字符串（测试内部用；不依赖本地 codecvt）
+	void utf8_append(std::string& out, uint32_t codepoint)
+	{
+		//一字节（ASCII）
+		if (codepoint < 0x80)
+			out.push_back(static_cast<char>(codepoint));
+		//两字节
+		else if (codepoint < 0x800)
+		{
+			out.push_back(static_cast<char>(0xC0 | (codepoint >> 6)));
+			out.push_back(static_cast<char>(0x80 | (codepoint & 0x3F)));
+		}
+		//三字节（汉字区即此分支）
+		else
+		{
+			out.push_back(static_cast<char>(0xE0 | (codepoint >> 12)));
+			out.push_back(static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F)));
+			out.push_back(static_cast<char>(0x80 | (codepoint & 0x3F)));
+		}
+	}
 }
 
 //中文字形测试夹具
@@ -205,5 +226,39 @@ TEST_F(Renderer_Cjk_Text_Test, 不同中文各自产生墨迹)
 	EXPECT_GT(first_ink, 0u) << "第一串中文无墨迹";
 	EXPECT_GT(second_ink, 0u) << "第二串中文无墨迹";
 
+	renderer.font_unload(font);
+}
+
+/*
+字形图集扩容（第三百九十九轮）
+48 像素字号 ＋ 600 个不重复汉字：补烘需求远超初始图集高度。修复前「空间不足即跳过」，
+表现为 font_skipped_codepoints 增长、部分文字缺字；修复后应自动扩容且跳过数为 0。
+*/
+TEST_F(Renderer_Cjk_Text_Test, 图集扩容不跳过字形)
+{
+	//若本机没有中文字体则跳过
+	std::string font_path = cjk_font_path();
+	if (font_path.empty())
+		GTEST_SKIP() << "本机无测试用中文字体";
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	//48 像素字号（放大字形，快速耗尽图集高度）
+	uint64_t font = 0;
+	ASSERT_TRUE(renderer.font_load_file(font, font_path, 48u));
+	//拼接 600 个不重复汉字（基本区按 8 码点步进取样）
+	std::string 长串;
+	for (uint32_t 序号 = 0; 序号 < 600; ++序号)
+		utf8_append(长串, 0x4E00u + 序号 * 8u);
+	engine::Text_Layout 布局;
+	布局.max_width = 120.0f;
+	布局.line_height = 52.0f;
+	//绘制一次即触发全部码点的惰性补烘（含多次扩容）
+	ASSERT_TRUE(renderer.text_draw_layout(font, 长串, 4.0f, 4.0f, 布局));
+	//渲染一帧确认链路可用
+	std::vector<uint8_t> pixels(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(pixels.data(), static_cast<uint32_t>(pixels.size())));
+	EXPECT_GT(ink_count(pixels, 0, 0, WINDOW_WIDTH, WINDOW_HEIGHT), 0u) << "长串中文未产生任何墨迹";
+	//关键断言：扩容而非跳过（修复前会出现若干被跳过的码点）
+	EXPECT_EQ(renderer.font_skipped_codepoints(font), 0u) << "字形图集空间不足导致码点被跳过";
 	renderer.font_unload(font);
 }

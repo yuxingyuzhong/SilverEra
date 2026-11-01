@@ -400,10 +400,20 @@ else()
         $<TARGET_OBJECTS:EngineTestObjects>
         "${PROJECT_ROOT_DIR}/src/主调/主程序.cpp"
         "${PROJECT_ROOT_DIR}/src/主调/图形操作界面.cpp"
-        "${PROJECT_ROOT_DIR}/src/主调/能力展示场景.cpp"
         "${PROJECT_ROOT_DIR}/src/主调/测试界面.cpp"
         "${PROJECT_ROOT_DIR}/src/主调/测试运行器.cpp"
         "${PROJECT_ROOT_DIR}/src/主调/gtest输出镜像.cpp"
+        #能力展示场景（第三百九十九轮拆分：骨架 / 公共 / 资源 / 光照 / 展区分域）
+        "${PROJECT_ROOT_DIR}/src/主调/能力展示/能力展示场景.cpp"
+        "${PROJECT_ROOT_DIR}/src/主调/能力展示/展区公共.cpp"
+        "${PROJECT_ROOT_DIR}/src/主调/能力展示/资源构建.cpp"
+        "${PROJECT_ROOT_DIR}/src/主调/能力展示/场景光照.cpp"
+        "${PROJECT_ROOT_DIR}/src/主调/能力展示/展区_基础网格材质.cpp"
+        "${PROJECT_ROOT_DIR}/src/主调/能力展示/展区_光照几何.cpp"
+        "${PROJECT_ROOT_DIR}/src/主调/能力展示/展区_纹理风格.cpp"
+        "${PROJECT_ROOT_DIR}/src/主调/能力展示/展区_粒子文字.cpp"
+        "${PROJECT_ROOT_DIR}/src/主调/能力展示/展区_后处理.cpp"
+        "${PROJECT_ROOT_DIR}/src/主调/能力展示/展区_系统.cpp"
     )
     include("${PROJECT_ROOT_DIR}/源文件列表_EngineTests.cmake")
     target_include_directories(EngineTests PRIVATE ${BYJY_APP_INC})
