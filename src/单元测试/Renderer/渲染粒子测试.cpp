@@ -1878,3 +1878,33 @@ TEST(Renderer_Particle_Test, 展廊粒子常驻接入)
 	ASSERT_TRUE(renderer.particle_emit(8));
 	EXPECT_EQ(renderer.particle_active_count(), 8u);
 }
+
+/*
+展廊第九区 GPU 绘制接入（第三百四十三轮；阶段 D 收尾）
+场景 frame_draw 在常驻可用时改走 particle_gpu_draw：三轮常驻发射 ＋ 推进后一帧，
+紧凑计数 = 活跃数（仅 GPU 绘制路径会产生紧凑）、绘制项非零；关闭常驻后口径回到 CPU。
+*/
+TEST(Renderer_Particle_Test, 展廊粒子GPU绘制接入)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	engine::能力展示场景 场景;
+	ASSERT_TRUE(场景.init(renderer));
+	//预配置沿用：容量 4096；按场景进入区内的顺序开粒子再切常驻
+	ASSERT_TRUE(renderer.particle_enable_set(true));
+	ASSERT_TRUE(renderer.particle_resident_set(true));
+	for (uint32_t frame = 0; frame < 3; ++frame)
+	{
+		ASSERT_EQ(renderer.particle_gpu_emit(64), 64u);
+		ASSERT_TRUE(renderer.particle_gpu_step_resident(0.08f));
+	}
+	EXPECT_EQ(renderer.particle_active_count(), 192u);
+	//场景登记绘制：常驻可用 → GPU 绘制路径（紧凑索引由该路径产生）
+	场景.frame_draw(renderer);
+	EXPECT_EQ(renderer.particle_compact_count_get(), 192u);
+	ASSERT_TRUE(renderer.frame_render());
+	EXPECT_GT(renderer.frame_stats_get().drawn_items, 0u);
+	//关闭常驻：回到 CPU 参考路径，紧凑口径不再生效
+	ASSERT_TRUE(renderer.particle_resident_set(false));
+	EXPECT_EQ(renderer.particle_compact_count_get(), 0u);
+}

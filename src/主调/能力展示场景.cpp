@@ -558,7 +558,8 @@ namespace engine
 		(void)渲染器.render_target_present_chain_set(nullptr, 0);
 		/*
 		粒子喷泉预配置（第三百二十四轮）
-		默认关闭；第九展区进入时由 update 开启并逐帧发射 / 步进，frame_draw 登记 billboard 绘制。
+		默认关闭；第九展区进入时由 update 开启并逐帧发射 / 步进，frame_draw 登记 billboard 绘制
+		（常驻路径优先走 GPU 绘制，第三百四十三轮）。
 		*/
 		{
 			engine::Particle_Emitter 发射器{};
@@ -806,9 +807,19 @@ namespace engine
 		渲染器.material_tint_clear();
 		渲染器.material_bind_set(0);
 
-		//粒子喷泉 billboard 绘制（第三百二十四轮；未开启 / 无活跃粒子时为空操作）
+		/*
+		粒子喷泉 billboard 绘制（第三百二十四轮；第三百四十三轮起常驻路径优先）
+		常驻可用时走 GPU 路径（紧凑索引 ＋ 着色器内 billboard，主机不读状态缓冲），
+		否则回落 CPU 参考路径；未开启 / 无活跃粒子时两者均为空操作。
+		*/
 		if (渲染器.particle_enable_get())
-			(void)渲染器.particle_draw(0.16f);
+		{
+			//常驻路径：GPU 侧紧凑索引 ＋ 着色器内 billboard
+			if (渲染器.particle_resident_get())
+				(void)渲染器.particle_gpu_draw(0.16f);
+			else
+				(void)渲染器.particle_draw(0.16f);
+		}
 
 		//—— 展区角柱（每区四角一根，一次实例化提交，形成清晰边界） ——
 		{
