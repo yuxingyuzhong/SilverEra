@@ -1919,6 +1919,58 @@ TEST(Renderer_Particle_Test, 展廊粒子GPU绘制接入)
 }
 
 /*
+粒子绘制路径观测（第三百五十轮）
+同一渲染器依次走 CPU / GPU 直接 / GPU 间接三条登记路径，`Frame_Stats.particle_draw_path` 依次为 1 / 2 / 3；
+未开启粒子的新渲染器为 0（未登记）。
+*/
+TEST(Renderer_Particle_Test, 粒子绘制路径观测)
+{
+	engine::Renderer_Config config;
+	config.width = 64;
+	config.height = 36;
+	config.hidden = true;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(config));
+	//未开启粒子：未登记
+	EXPECT_EQ(renderer.frame_stats_get().particle_draw_path, 0u);
+	ASSERT_TRUE(renderer.particle_enable_set(true));
+	ASSERT_TRUE(renderer.particle_capacity_set(256));
+	engine::Particle_Emitter emitter{};
+	emitter.direction[1] = 1.0f;
+	emitter.speed_min = 0.5f;
+	emitter.speed_max = 1.0f;
+	emitter.lifetime_min = 10.0f;
+	emitter.lifetime_max = 10.0f;
+	emitter.shape = static_cast<uint32_t>(engine::Emit_Shape::Sphere_Shell);
+	emitter.extents[0] = 0.3f;
+	emitter.count = 64;
+	engine::Particle_Params params{};
+	params.damping = 1.0f;
+	ASSERT_TRUE(renderer.particle_emitter_set(emitter));
+	ASSERT_TRUE(renderer.particle_params_set(params));
+	ASSERT_EQ(renderer.particle_emit(64), 64u);
+	(void)renderer.particle_step(0.05f);
+	//CPU 参考路径
+	const float clear[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
+	renderer.clear_color_set(clear);
+	renderer.camera_position_set(0.0f, 0.0f, 4.0f);
+	renderer.camera_target_set(0.0f, 0.0f, 0.0f);
+	ASSERT_TRUE(renderer.particle_draw(0.2f));
+	EXPECT_EQ(renderer.frame_stats_get().particle_draw_path, 1u);
+	//GPU 直接路径（常驻）
+	ASSERT_TRUE(renderer.particle_resident_set(true));
+	ASSERT_EQ(renderer.particle_gpu_emit(64), 64u);
+	for (uint32_t step = 0; step < 3; ++step)
+		ASSERT_TRUE(renderer.particle_gpu_step_resident(0.05f));
+	ASSERT_TRUE(renderer.particle_gpu_draw(0.2f));
+	EXPECT_EQ(renderer.frame_stats_get().particle_draw_path, 2u);
+	//GPU 间接路径
+	ASSERT_TRUE(renderer.particle_indirect_draw(0.2f));
+	EXPECT_EQ(renderer.frame_stats_get().particle_draw_path, 3u);
+	ASSERT_TRUE(renderer.frame_render());
+}
+
+/*
 粒子三路径绘制对照（第三百四十五轮；阶段 D 后基线）
 同一 65536 常驻粒子分别走 CPU 绘制 / GPU 直接绘制 / GPU 间接绘制三帧（每帧前清零统计）：
 三路径实际绘制实例数一致、均有可见像素、可见像素数差异 ≤ 5%，并记录主机录制耗时。
