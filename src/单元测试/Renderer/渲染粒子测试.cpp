@@ -2610,3 +2610,34 @@ TEST(Renderer_Particle_Test, 软粒子档位开销)
 	EXPECT_LT(on_record, off_record * 2.0 + 0.2);
 	EXPECT_LT(on_gpu, off_gpu * 2.0 + 0.5);
 }
+
+/*
+粒子参数快照读取（第三百七十轮）
+门面 particle_params_get 返回最近一次被接受的参数；未初始化返回全零默认；
+非法档位整次拒绝后快照保持既有值（与绘制侧读到的参数一致，供展廊面板显示）。
+*/
+TEST(Renderer_Particle_Test, 粒子参数快照读取)
+{
+	//未初始化：全零默认
+	engine::Renderer renderer;
+	const engine::Particle_Params empty = renderer.particle_params_get();
+	EXPECT_FLOAT_EQ(empty.soft_depth_range, 0.0f);
+	EXPECT_EQ(empty.color_enabled, 0u);
+	//初始化并开启粒子
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	ASSERT_TRUE(renderer.particle_enable_set(true));
+	engine::Particle_Params params{};
+	params.soft_depth_range = 0.01f;
+	params.color_start[2] = 1.0f;
+	params.color_enabled = 1;
+	ASSERT_TRUE(renderer.particle_params_set(params));
+	//快照与设置值一致
+	const engine::Particle_Params applied = renderer.particle_params_get();
+	EXPECT_FLOAT_EQ(applied.soft_depth_range, 0.01f);
+	EXPECT_EQ(applied.color_enabled, 1u);
+	//非法档位整次拒绝：快照保持既有值
+	engine::Particle_Params invalid = params;
+	invalid.soft_depth_range = 2.0f;
+	EXPECT_FALSE(renderer.particle_params_set(invalid));
+	EXPECT_FLOAT_EQ(renderer.particle_params_get().soft_depth_range, 0.01f);
+}

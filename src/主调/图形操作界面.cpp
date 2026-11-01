@@ -261,9 +261,9 @@ namespace engine
                 粒子路径 = "GPU 直接";
             else if (上下文.运行状态.particle_draw_path == 3)
                 粒子路径 = "GPU 间接";
-            ImGui::TextWrapped("粒子 活跃 %llu   绘制路径 %s   紧凑 %.2f ms",
+            ImGui::TextWrapped("粒子 活跃 %llu   绘制路径 %s   紧凑 %.2f ms   软粒子 %.3f",
                 static_cast<unsigned long long>(上下文.运行状态.particle_active),
-                粒子路径, 上下文.运行状态.particle_compact_ms);
+                粒子路径, 上下文.运行状态.particle_compact_ms, 上下文.运行状态.particle_soft_depth);
             //实例剔除并行阈值（第二百二十二轮；0 表示未初始化）
             ImGui::TextWrapped("剔除并行阈值 %u（实例数达到该值才走并行剔除）",
                 上下文.运行状态.cull_parallel_min_instances);
@@ -600,6 +600,8 @@ namespace engine
             上下文.运行状态.particle_active = 统计.particle_active;
             上下文.运行状态.particle_draw_path = 统计.particle_draw_path;
             上下文.运行状态.particle_compact_ms = 统计.particle_compact_ms;
+            //软粒子档位（第三百七十轮；取自粒子参数快照，0 表示关闭）
+            上下文.运行状态.particle_soft_depth = 渲染器.particle_params_get().soft_depth_range;
             上下文.运行状态.gpu_supported = 渲染器.gpu_timestamp_supported();
 
             //推进一帧

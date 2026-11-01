@@ -60,6 +60,8 @@ namespace engine
         uint64_t particle_active = 0;
         uint32_t particle_draw_path = 0;
         double particle_compact_ms = 0.0;
+        //软粒子档位（第三百七十轮；0 = 关闭，与粒子参数快照同源）
+        float particle_soft_depth = 0.0f;
     };
 
     //测试操作界面绘制（每帧由图形操作界面的 UI 绘制回调调用）
