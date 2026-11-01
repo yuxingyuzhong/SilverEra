@@ -881,7 +881,8 @@ TEST(Renderer_Particle_Test, 超大容量与重建)
 	EXPECT_EQ(renderer.particle_capacity_get(), engine::PARTICLE_CAPACITY_MAX);
 	ASSERT_TRUE(renderer.particle_gpu_available());
 	const uint64_t expected_maximum = static_cast<uint64_t>(engine::PARTICLE_CAPACITY_MAX)
-		* engine::PARTICLE_STRIDE * 2u + static_cast<uint64_t>(engine::PARTICLE_FORCE_MAX) * engine::PARTICLE_FORCE_STRIDE;
+		* engine::PARTICLE_STRIDE * 2u + static_cast<uint64_t>(engine::PARTICLE_FORCE_MAX) * engine::PARTICLE_FORCE_STRIDE
+		+ (8u + (static_cast<uint64_t>(engine::PARTICLE_CAPACITY_MAX) + 31u) / 32u * 4u);
 	EXPECT_EQ(renderer.particle_gpu_bytes(), expected_maximum);
 	EXPECT_TRUE(renderer.particle_gpu_probe());
 	//同值重复设置：不重建、字节不变
@@ -896,7 +897,8 @@ TEST(Renderer_Particle_Test, 超大容量与重建)
 	EXPECT_EQ(renderer.particle_capacity_get(), 64u);
 	ASSERT_TRUE(renderer.particle_gpu_available());
 	const uint64_t expected_small = static_cast<uint64_t>(64) * engine::PARTICLE_STRIDE * 2u
-		+ static_cast<uint64_t>(engine::PARTICLE_FORCE_MAX) * engine::PARTICLE_FORCE_STRIDE;
+		+ static_cast<uint64_t>(engine::PARTICLE_FORCE_MAX) * engine::PARTICLE_FORCE_STRIDE
+		+ (8u + (64u + 31u) / 32u * 4u);
 	EXPECT_EQ(renderer.particle_gpu_bytes(), expected_small);
 	EXPECT_TRUE(renderer.particle_gpu_probe());
 }
@@ -1190,7 +1192,8 @@ TEST(Renderer_Particle_Test, 粒子性能基线)
 	double alloc_ms = std::chrono::duration<double, std::milli>(alloc_end - alloc_begin).count();
 	EXPECT_EQ(renderer.particle_gpu_bytes(),
 		static_cast<uint64_t>(engine::PARTICLE_CAPACITY_MAX) * engine::PARTICLE_STRIDE * 2u
-			+ static_cast<uint64_t>(engine::PARTICLE_FORCE_MAX) * engine::PARTICLE_FORCE_STRIDE);
+			+ static_cast<uint64_t>(engine::PARTICLE_FORCE_MAX) * engine::PARTICLE_FORCE_STRIDE
+			+ (8u + (static_cast<uint64_t>(engine::PARTICLE_CAPACITY_MAX) + 31u) / 32u * 4u));
 	const auto probe_begin = std::chrono::high_resolution_clock::now();
 	EXPECT_TRUE(renderer.particle_gpu_probe());
 	const auto probe_end = std::chrono::high_resolution_clock::now();
@@ -1203,4 +1206,62 @@ TEST(Renderer_Particle_Test, 粒子性能基线)
 	EXPECT_LT(gpu_step_ms, 200.0);
 	EXPECT_LT(draw_stats.host_record_ms, 10.0);
 	EXPECT_LT(alloc_ms + probe_ms, 2000.0);
+}
+
+/*
+常驻 GPU 发射（第三百二十七轮）
+环形写指针 ＋ 活跃位图 ＋ 活跃计数：三次发射后活跃数守恒、池满截断、出生统计同步；
+关闭常驻回到 CPU 镜像活跃数；计算不可用时拒绝常驻与 GPU 发射。
+*/
+TEST(Renderer_Particle_Test, 常驻GPU发射)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	ASSERT_TRUE(renderer.particle_enable_set(true));
+	ASSERT_TRUE(renderer.particle_capacity_set(64));
+	engine::Particle_Emitter emitter{};
+	emitter.direction[1] = 1.0f;
+	emitter.speed_min = 0.0f;
+	emitter.speed_max = 0.0f;
+	emitter.lifetime_min = 1.0f;
+	emitter.lifetime_max = 1.0f;
+	emitter.shape = static_cast<uint32_t>(engine::Emit_Shape::Point);
+	emitter.count = 10;
+	engine::Particle_Params params{};
+	params.damping = 1.0f;
+	ASSERT_TRUE(renderer.particle_emitter_set(emitter));
+	ASSERT_TRUE(renderer.particle_params_set(params));
+	//常驻关闭：GPU 发射不生效
+	EXPECT_FALSE(renderer.particle_resident_get());
+	EXPECT_EQ(renderer.particle_gpu_emit(5), 0u);
+	//开启常驻
+	ASSERT_TRUE(renderer.particle_resident_set(true));
+	EXPECT_TRUE(renderer.particle_resident_get());
+	EXPECT_EQ(renderer.particle_active_count(), 0u);
+	//三次发射
+	EXPECT_EQ(renderer.particle_gpu_emit(10), 10u);
+	EXPECT_EQ(renderer.particle_active_count(), 10u);
+	EXPECT_EQ(renderer.particle_gpu_emit(10), 10u);
+	EXPECT_EQ(renderer.particle_active_count(), 20u);
+	//池满截断（64 容量）
+	EXPECT_EQ(renderer.particle_gpu_emit(64), 44u);
+	EXPECT_EQ(renderer.particle_active_count(), 64u);
+	//已满
+	EXPECT_EQ(renderer.particle_gpu_emit(8), 0u);
+	EXPECT_EQ(renderer.frame_stats_get().particle_born_total, 64u);
+	//关闭常驻：回到 CPU 镜像（未发射 → 0）
+	ASSERT_TRUE(renderer.particle_resident_set(false));
+	EXPECT_EQ(renderer.particle_active_count(), 0u);
+	//计算不可用：拒绝常驻与 GPU 发射
+	engine::Renderer_Config config_off;
+	config_off.width = 64;
+	config_off.height = 64;
+	config_off.hidden = true;
+	config_off.compute_enable = false;
+	engine::Renderer renderer_off;
+	ASSERT_TRUE(renderer_off.init(config_off));
+	ASSERT_TRUE(renderer_off.particle_enable_set(true));
+	EXPECT_FALSE(renderer_off.particle_resident_set(true));
+	EXPECT_FALSE(renderer_off.particle_resident_get());
+	EXPECT_EQ(renderer_off.particle_gpu_emit(4), 0u);
 }
