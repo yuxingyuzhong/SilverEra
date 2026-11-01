@@ -433,3 +433,74 @@ TEST(Renderer_Particle_Test, 粒子年龄颜色曲线)
 	renderer.render_target_set(0);
 	renderer.render_target_destroy(target);
 }
+
+/*
+粒子混合档与深度写入（第三百一十六轮）
+两枚重合粒子：Alpha 档中心像素为单层颜色，切换 Additive 后叠加增亮；
+默认档为 Alpha、非法档拒绝、深度写入开关可读写（切换触发管线重建）。
+*/
+TEST(Renderer_Particle_Test, 粒子混合档与深度写入)
+{
+	engine::Renderer_Config config;
+	config.width = 64;
+	config.height = 64;
+	config.hidden = true;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(config));
+	const float clear[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
+	renderer.clear_color_set(clear);
+	renderer.camera_position_set(0.0f, 0.0f, 3.0f);
+	renderer.camera_target_set(0.0f, 0.0f, 0.0f);
+	ASSERT_TRUE(renderer.particle_enable_set(true));
+	ASSERT_TRUE(renderer.particle_capacity_set(8));
+	engine::Particle_Emitter emitter{};
+	emitter.direction[2] = -1.0f;
+	emitter.speed_min = 0.0f;
+	emitter.speed_max = 0.0f;
+	emitter.lifetime_min = 1.0f;
+	emitter.lifetime_max = 1.0f;
+	emitter.shape = static_cast<uint32_t>(engine::Emit_Shape::Point);
+	emitter.count = 2;
+	engine::Particle_Params params{};
+	params.damping = 1.0f;
+	ASSERT_TRUE(renderer.particle_emitter_set(emitter));
+	ASSERT_TRUE(renderer.particle_params_set(params));
+	ASSERT_EQ(renderer.particle_emit(2), 2u);
+	//默认档位
+	EXPECT_EQ(renderer.particle_blend_get(), engine::Blend_Mode::Alpha);
+	EXPECT_FALSE(renderer.particle_depth_write_get());
+	//非法档拒绝
+	EXPECT_FALSE(renderer.particle_blend_set(engine::Blend_Mode::Opaque));
+	uint64_t target = 0;
+	ASSERT_TRUE(renderer.render_target_create(target, 64, 64));
+	renderer.render_target_set(target);
+	std::size_t center = (static_cast<std::size_t>(32) * 64 + 32) * 4;
+	std::vector<uint8_t> pixels(64 * 64 * 4, 0);
+	uint32_t width = 0;
+	uint32_t height = 0;
+	//Alpha 档：单层颜色
+	ASSERT_TRUE(renderer.particle_blend_set(engine::Blend_Mode::Alpha));
+	ASSERT_TRUE(renderer.particle_draw(0.6f));
+	ASSERT_TRUE(renderer.frame_render());
+	ASSERT_TRUE(renderer.render_target_readback(target, pixels.data(), static_cast<uint32_t>(pixels.size()),
+		&width, &height));
+	uint8_t alpha_blue = pixels[center + 0];
+	//Additive 档：叠加增亮
+	ASSERT_TRUE(renderer.particle_blend_set(engine::Blend_Mode::Additive));
+	EXPECT_EQ(renderer.particle_blend_get(), engine::Blend_Mode::Additive);
+	ASSERT_TRUE(renderer.particle_draw(0.6f));
+	ASSERT_TRUE(renderer.frame_render());
+	std::fill(pixels.begin(), pixels.end(), 0);
+	ASSERT_TRUE(renderer.render_target_readback(target, pixels.data(), static_cast<uint32_t>(pixels.size()),
+		&width, &height));
+	uint8_t additive_blue = pixels[center + 0];
+	EXPECT_GT(static_cast<uint32_t>(additive_blue), static_cast<uint32_t>(alpha_blue) + 30u);
+	//深度写入开关（切换触发重建，绘制仍可用）
+	ASSERT_TRUE(renderer.particle_depth_write_set(true));
+	EXPECT_TRUE(renderer.particle_depth_write_get());
+	ASSERT_TRUE(renderer.particle_depth_write_set(false));
+	EXPECT_FALSE(renderer.particle_depth_write_get());
+	ASSERT_TRUE(renderer.particle_draw(0.6f));
+	renderer.render_target_set(0);
+	renderer.render_target_destroy(target);
+}
