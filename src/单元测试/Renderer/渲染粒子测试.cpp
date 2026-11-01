@@ -526,6 +526,76 @@ TEST(Renderer_Particle_Test, 粒子颜色覆盖绘制)
 }
 
 /*
+粒子软边可配（第三百五十五轮）
+单枚粒子（边长 1.6、颜色覆盖为纯蓝）：edge_softness = 0 保持内置 0.65 内半径；
+改为 0.95 后内半径收缩到 0.05，同帧整幅蓝色通道累加值显著下降（约 0.7 倍），证明软边宽度进入着色链路。
+*/
+TEST(Renderer_Particle_Test, 粒子软边可配)
+{
+	engine::Renderer_Config config;
+	config.width = 64;
+	config.height = 64;
+	config.hidden = true;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(config));
+	const float clear[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
+	renderer.clear_color_set(clear);
+	renderer.camera_position_set(0.0f, 0.0f, 3.0f);
+	renderer.camera_target_set(0.0f, 0.0f, 0.0f);
+	ASSERT_TRUE(renderer.particle_enable_set(true));
+	ASSERT_TRUE(renderer.particle_capacity_set(8));
+	engine::Particle_Emitter emitter{};
+	emitter.direction[2] = -1.0f;
+	emitter.speed_min = 0.0f;
+	emitter.speed_max = 0.0f;
+	emitter.lifetime_min = 10.0f;
+	emitter.lifetime_max = 10.0f;
+	emitter.shape = static_cast<uint32_t>(engine::Emit_Shape::Point);
+	emitter.count = 1;
+	engine::Particle_Params params{};
+	params.damping = 1.0f;
+	params.color_start[2] = 1.0f;
+	params.color_end[2] = 1.0f;
+	params.color_enabled = 1;
+	ASSERT_TRUE(renderer.particle_emitter_set(emitter));
+	ASSERT_TRUE(renderer.particle_params_set(params));
+	ASSERT_EQ(renderer.particle_emit(1), 1u);
+	uint64_t target = 0;
+	ASSERT_TRUE(renderer.render_target_create(target, 64, 64));
+	renderer.render_target_set(target);
+	std::vector<uint8_t> pixels(64 * 64 * 4, 0);
+	uint32_t width = 0;
+	uint32_t height = 0;
+	//整幅蓝色通道累加（软硬边对比口径）
+	auto blue_sum = [&](void) -> uint64_t
+	{
+		std::fill(pixels.begin(), pixels.end(), 0);
+		EXPECT_TRUE(renderer.render_target_readback(target, pixels.data(),
+			static_cast<uint32_t>(pixels.size()), &width, &height));
+		uint64_t sum = 0;
+		for (std::size_t index = 0; index + 3 < pixels.size(); index += 4)
+			sum += pixels[index];
+		return sum;
+	};
+	//硬边（软边宽度 0：内置 0.65 内半径）
+	ASSERT_TRUE(renderer.particle_draw(1.6f));
+	ASSERT_TRUE(renderer.frame_render());
+	const uint64_t hard_sum = blue_sum();
+	//软边（宽度 0.95：内半径 0.05）
+	params.edge_softness = 0.95f;
+	ASSERT_TRUE(renderer.particle_params_set(params));
+	ASSERT_TRUE(renderer.particle_draw(1.6f));
+	ASSERT_TRUE(renderer.frame_render());
+	const uint64_t soft_sum = blue_sum();
+	std::cout << "[软边] 硬边蓝和=" << hard_sum << " 软边蓝和=" << soft_sum << std::endl;
+	EXPECT_GT(hard_sum, 0u);
+	EXPECT_LT(soft_sum, hard_sum);
+	EXPECT_LT(soft_sum * 100u, hard_sum * 85u);
+	renderer.render_target_set(0);
+	renderer.render_target_destroy(target);
+}
+
+/*
 粒子混合档与深度写入（第三百一十六轮）
 两枚重合粒子：Alpha 档中心像素为单层颜色，切换 Additive 后叠加增亮；
 默认档为 Alpha、非法档拒绝、深度写入开关可读写（切换触发管线重建）。

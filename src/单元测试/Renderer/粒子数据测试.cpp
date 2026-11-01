@@ -152,4 +152,17 @@ TEST(Particle_Data_Test, 模拟参数校验)
 	params.color_start[2] = 1.0f;
 	params.color_end[1] = 1.0f;
 	EXPECT_TRUE(engine::particle_params_valid(params));
+	/*
+	软边宽度（第三百五十五轮）
+	落在 [0, 1]：越界 / 非有限拒绝，区间内接受（0 = 内置 0.65 内半径）。
+	*/
+	params = base_params();
+	params.edge_softness = 1.5f;
+	EXPECT_FALSE(engine::particle_params_valid(params));
+	params = base_params();
+	params.edge_softness = std::numeric_limits<float>::quiet_NaN();
+	EXPECT_FALSE(engine::particle_params_valid(params));
+	params = base_params();
+	params.edge_softness = 0.5f;
+	EXPECT_TRUE(engine::particle_params_valid(params));
 }
