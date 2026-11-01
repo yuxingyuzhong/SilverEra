@@ -10,7 +10,9 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cstdint>
+#include <iostream>
 #include <limits>
 #include <vector>
 
@@ -1130,4 +1132,75 @@ TEST(Renderer_Particle_Test, 展廊粒子喷泉接入)
 	//出帧并确认有绘制项
 	ASSERT_TRUE(renderer.frame_render());
 	EXPECT_GT(renderer.frame_stats_get().drawn_items, 0u);
+}
+
+/*
+粒子性能基线（第三百二十五轮）
+口径：1920×1080（MSAA 4×，设备不支持时自动降级）、1 万活跃粒子、容量 65 536；
+记录 CPU 参考单步、GPU 同步链单步（上传 / 调度 / 回读）与整帧绘制的主机 / GPU 耗时；
+另测 1M 容量资源分配与零步自检。
+*/
+TEST(Renderer_Particle_Test, 粒子性能基线)
+{
+	engine::Renderer_Config config;
+	config.width = 1920;
+	config.height = 1080;
+	config.hidden = true;
+	config.msaa_samples = 4;
+	//1 万粒子一次实例化提交：实例容量需覆盖
+	config.instance_capacity = 16384;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(config));
+	ASSERT_TRUE(renderer.particle_enable_set(true));
+	ASSERT_TRUE(renderer.particle_capacity_set(65536));
+	engine::Particle_Emitter emitter = point_emitter();
+	emitter.count = 10000;
+	emitter.speed_min = 0.6f;
+	emitter.speed_max = 1.4f;
+	emitter.lifetime_min = 4.0f;
+	emitter.lifetime_max = 6.0f;
+	engine::Particle_Params params{};
+	params.gravity[1] = -0.8f;
+	params.damping = 0.99f;
+	ASSERT_TRUE(renderer.particle_emitter_set(emitter));
+	ASSERT_TRUE(renderer.particle_params_set(params));
+	ASSERT_EQ(renderer.particle_emit(10000), 10000u);
+	//CPU 参考单步（十步平均）
+	const auto cpu_begin = std::chrono::high_resolution_clock::now();
+	for (uint32_t step = 0; step < 10; ++step)
+		renderer.particle_step(1.0f / 60.0f);
+	const auto cpu_end = std::chrono::high_resolution_clock::now();
+	double cpu_step_ms = std::chrono::duration<double, std::milli>(cpu_end - cpu_begin).count() / 10.0;
+	//GPU 同步链单步（十步平均）
+	ASSERT_TRUE(renderer.particle_gpu_available());
+	const auto gpu_begin = std::chrono::high_resolution_clock::now();
+	for (uint32_t step = 0; step < 10; ++step)
+		ASSERT_TRUE(renderer.particle_gpu_step(1.0f / 60.0f));
+	const auto gpu_end = std::chrono::high_resolution_clock::now();
+	double gpu_step_ms = std::chrono::duration<double, std::milli>(gpu_end - gpu_begin).count() / 10.0;
+	//整帧绘制（1 万 billboard）
+	ASSERT_TRUE(renderer.particle_draw(0.06f));
+	ASSERT_TRUE(renderer.frame_render());
+	const engine::Frame_Stats draw_stats = renderer.frame_stats_get();
+	//1M 容量资源分配与零步自检
+	const auto alloc_begin = std::chrono::high_resolution_clock::now();
+	ASSERT_TRUE(renderer.particle_capacity_set(engine::PARTICLE_CAPACITY_MAX));
+	ASSERT_TRUE(renderer.particle_gpu_available());
+	const auto alloc_end = std::chrono::high_resolution_clock::now();
+	double alloc_ms = std::chrono::duration<double, std::milli>(alloc_end - alloc_begin).count();
+	EXPECT_EQ(renderer.particle_gpu_bytes(),
+		static_cast<uint64_t>(engine::PARTICLE_CAPACITY_MAX) * engine::PARTICLE_STRIDE * 2u
+			+ static_cast<uint64_t>(engine::PARTICLE_FORCE_MAX) * engine::PARTICLE_FORCE_STRIDE);
+	const auto probe_begin = std::chrono::high_resolution_clock::now();
+	EXPECT_TRUE(renderer.particle_gpu_probe());
+	const auto probe_end = std::chrono::high_resolution_clock::now();
+	double probe_ms = std::chrono::duration<double, std::milli>(probe_end - probe_begin).count();
+	std::cout << "[粒子基线] CPU步进=" << cpu_step_ms << " ms  GPU同步步进=" << gpu_step_ms
+		<< " ms  录制=" << draw_stats.host_record_ms << " ms  GPU帧=" << draw_stats.gpu_frame_ms
+		<< " ms  1M分配=" << alloc_ms << " ms  1M零步自检=" << probe_ms << " ms" << std::endl;
+	//合理上限（防止性能退化）
+	EXPECT_LT(cpu_step_ms, 10.0);
+	EXPECT_LT(gpu_step_ms, 200.0);
+	EXPECT_LT(draw_stats.host_record_ms, 10.0);
+	EXPECT_LT(alloc_ms + probe_ms, 2000.0);
 }
