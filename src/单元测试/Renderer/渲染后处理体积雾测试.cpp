@@ -359,3 +359,69 @@ TEST_F(Renderer_Post_Chain_Test, 体积雾密度噪声)
 	//解析式噪声的增量有限（不超过均匀雾的 4 倍＋0.5 ms）
 	EXPECT_LT(noisy_gpu, smooth_gpu * 4.0 + 0.5);
 }
+
+/*
+体积雾与深度描边组合（第三百七十八轮）
+口径：两级链「体积雾 → 深度描边」，靶为两块中间目标。
+1. 雾 0（首级恒等）时，与「直通 → 深度描边(强度 0)」逐通道差 ≤ 4（两级编码取整）；
+2. 雾 0.2 ＋ 描边 0.5 相对前者差异像素 > 20，且 post_stages = 2（两自定义阶段串联正确）。
+*/
+TEST_F(Renderer_Post_Chain_Test, 体积雾与深度描边组合)
+{
+	engine::Renderer probe;
+	ASSERT_TRUE(probe.init(hidden_config()));
+	if (!probe.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+
+	//两级链渲染（fog_density = 0 表示首级恒等；outline > 0 时次级做深度描边）
+	auto render_pair = [&](const char* first_shader, float fog_density, float outline,
+		uint32_t* stages_out) -> std::vector<uint8_t>
+	{
+		engine::Renderer renderer;
+		EXPECT_TRUE(renderer.init(hidden_config()));
+		uint64_t target0 = 0;
+		uint64_t target1 = 0;
+		EXPECT_TRUE(renderer.render_target_create(target0, renderer.extent_width(), renderer.extent_height()));
+		EXPECT_TRUE(renderer.render_target_create(target1, renderer.extent_width(), renderer.extent_height()));
+		uint64_t first = post_pipeline_register(renderer, first_shader);
+		uint64_t outline_pass = post_pipeline_register(renderer, "深度描边.frag.spv");
+		EXPECT_NE(first, 0u);
+		EXPECT_NE(outline_pass, 0u);
+		uint64_t chain[2] = { first, outline_pass };
+		EXPECT_TRUE(renderer.post_chain_set(chain, 2));
+		//首级：体积雾四参（通用入口）
+		renderer.post_stage_vec4_set(0, fog_density, 0.0f, 20.0f, 1.0f);
+		renderer.post_stage_color4_set(0, FOG_COLOR[0], FOG_COLOR[1], FOG_COLOR[2], 0.0f);
+		//次级：深度描边（强度 / 保留 / 深度阈值 / 半径；调色范围校验内）
+		renderer.post_stage_param4_set(1, outline, 1.0f, 1.0f, 1.0f);
+		uint64_t targets[2] = { target0, target1 };
+		EXPECT_TRUE(renderer.render_target_present_chain_set(targets, 2));
+		engine::Mesh_Handle plane = 0;
+		EXPECT_TRUE(renderer.mesh_load(plane, quad_data()));
+		EXPECT_TRUE(renderer.mesh_draw(plane, nullptr));
+		renderer.mesh_unload(plane);
+		std::vector<uint8_t> pixels(pixel_bytes());
+		EXPECT_TRUE(renderer.frame_render(pixels.data(), static_cast<uint32_t>(pixels.size())));
+		if (stages_out != nullptr)
+			*stages_out = renderer.frame_stats_get().post_stages;
+		renderer.pipeline_unload(first);
+		renderer.pipeline_unload(outline_pass);
+		renderer.render_target_destroy(target1);
+		renderer.render_target_destroy(target0);
+		return pixels;
+	};
+	uint32_t stages = 0;
+	std::vector<uint8_t> reference = render_pair("后处理.frag.spv", 0.0f, 0.0f, nullptr);
+	std::vector<uint8_t> fog_off = render_pair("体积雾.frag.spv", 0.0f, 0.0f, nullptr);
+	std::vector<uint8_t> combined = render_pair("体积雾.frag.spv", 0.2f, 0.5f, &stages);
+	//雾关闭时首级恒等
+	int identity_diff = max_channel_diff(reference, fog_off);
+	RecordProperty("fog_outline_identity_diff", identity_diff);
+	EXPECT_LE(identity_diff, CHAIN_TOLERANCE) << "雾关闭时首级未恒等（最大差 " << identity_diff << "）";
+	//组合生效且两级都执行
+	uint32_t changed = differing_pixels(fog_off, combined, 8);
+	RecordProperty("fog_outline_changed_pixels", static_cast<int>(changed));
+	std::cout << "[雾＋描边] 差异像素=" << changed << " 级数=" << stages << std::endl;
+	EXPECT_EQ(stages, 2u);
+	EXPECT_GT(changed, 20u) << "雾与描边组合未生效";
+}
