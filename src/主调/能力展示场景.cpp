@@ -556,6 +556,37 @@ namespace engine
 		*/
 		(void)渲染器.post_chain_set(nullptr, 0);
 		(void)渲染器.render_target_present_chain_set(nullptr, 0);
+		/*
+		粒子喷泉预配置（第三百二十四轮）
+		默认关闭；第九展区进入时由 update 开启并逐帧发射 / 步进，frame_draw 登记 billboard 绘制。
+		*/
+		{
+			engine::Particle_Emitter 发射器{};
+			发射器.position[0] = 14.0f;
+			发射器.position[1] = 0.25f;
+			发射器.position[2] = -50.0f;
+			发射器.direction[1] = 1.0f;
+			发射器.speed_min = 2.2f;
+			发射器.speed_max = 3.6f;
+			发射器.lifetime_min = 1.4f;
+			发射器.lifetime_max = 2.2f;
+			发射器.shape = static_cast<uint32_t>(engine::Emit_Shape::Sphere_Shell);
+			发射器.extents[0] = 0.18f;
+			发射器.count = 64;
+			engine::Particle_Params 粒子参数{};
+			粒子参数.gravity[1] = -1.4f;
+			粒子参数.damping = 0.985f;
+			粒子参数.restitution = 0.35f;
+			粒子参数.friction = 0.25f;
+			粒子参数.ground_enabled = 1;
+			粒子参数.floor_y = 0.02f;
+			if (渲染器.particle_supported() && 渲染器.particle_capacity_set(4096)
+				&& 渲染器.particle_enable_set(true))
+			{
+				粒子已配置_ = 渲染器.particle_emitter_set(发射器) && 渲染器.particle_params_set(粒子参数);
+				渲染器.particle_enable_set(false);
+			}
+		}
 		return true;
 	}
 
@@ -670,6 +701,29 @@ namespace engine
 			if (渲染器.cluster_supported())
 				渲染器.cluster_enable_set(进入灯墙区);
 		}
+		/*
+		粒子喷泉区（第三百二十四轮）
+		相机进入第九展区（14, -50）半径 9 时开启粒子，并逐帧发射 64 个 / 固定步长 0.08 s 推进；
+		离开即关闭（保留池内容，重新进入沿用）。
+		*/
+		const float 粒子区x = 14.0f;
+		const float 粒子区z = -50.0f;
+		const float 粒子距x = 位置_[0] - 粒子区x;
+		const float 粒子距z = 位置_[2] - 粒子区z;
+		const bool 进入粒子区 = (粒子距x * 粒子距x + 粒子距z * 粒子距z) < 81.0f;
+		//若激活状态变化
+		if (进入粒子区 != 粒子区激活_)
+		{
+			粒子区激活_ = 进入粒子区;
+			if (渲染器.particle_supported())
+				渲染器.particle_enable_set(进入粒子区);
+		}
+		//区内逐帧发射与推进
+		if (粒子区激活_ && 粒子已配置_)
+		{
+			(void)渲染器.particle_emit(64);
+			(void)渲染器.particle_step(0.08f);
+		}
 	}
 
 	//登记本帧全部绘制项与字幕
@@ -695,7 +749,7 @@ namespace engine
 		展区网格（前两排各三列，第三排为卡通渲染区；第一百九十二轮增第七区，第三百零二轮增第八区）
 		第一排距离相机约 22 单位，第二排约 42 单位，第三排约 62 单位；每区 12×12 地台。
 		*/
-		const 展区 展区表[8] = {
+		const 展区 展区表[9] = {
 			{ -14.0f, -10.0f, { 0.46f, 0.52f, 0.70f }, "① 程序化网格（含细分地形）" },
 			{ 0.0f,   -10.0f, { 0.74f, 0.52f, 0.40f }, "② PBR 材质" },
 			{ 14.0f,  -10.0f, { 0.40f, 0.66f, 0.60f }, "③ 光照与阴影" },
@@ -704,6 +758,7 @@ namespace engine
 			{ 14.0f,  -30.0f, { 0.50f, 0.62f, 0.46f }, "⑥ 纹理与动态" },
 			{ 0.0f,   -50.0f, { 0.44f, 0.50f, 0.68f }, "⑦ 卡通渲染（色阶 / 边缘光 / 高光 / 外扩描边）" },
 			{ -14.0f, -50.0f, { 0.66f, 0.44f, 0.52f }, "⑧ Cluster 灯墙（128 盏逐簇光照）" },
+			{ 14.0f,  -50.0f, { 0.68f, 0.60f, 0.38f }, "⑨ 粒子喷泉（billboard / 力场 / 碰撞）" },
 		};
 		//圆周常数（环形排布与环绕动画用）
 		const float 圆周率 = 3.14159265f;
@@ -725,6 +780,10 @@ namespace engine
 		}
 		渲染器.material_tint_clear();
 		渲染器.material_bind_set(0);
+
+		//粒子喷泉 billboard 绘制（第三百二十四轮；未开启 / 无活跃粒子时为空操作）
+		if (渲染器.particle_enable_get())
+			(void)渲染器.particle_draw(0.16f);
 
 		//—— 展区角柱（每区四角一根，一次实例化提交，形成清晰边界） ——
 		{

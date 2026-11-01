@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "Application/Renderer/src/render/Renderer/渲染器.h"
+#include "src/主调/能力展示场景.h"
 
 namespace
 {
@@ -1102,4 +1103,31 @@ TEST(Renderer_Particle_Test, 粒子降级矩阵)
 		if (plain_off[index] != particle_off[index])
 			++changed;
 	EXPECT_GT(changed, 20u);
+}
+
+/*
+展廊第九区接入（第三百二十四轮）
+隐藏窗口初始化能力展示场景：粒子容量预置 4096、默认关闭；
+手动开启后发射 64 个并逐帧绘制出帧，出生累计与绘制项均增长。
+*/
+TEST(Renderer_Particle_Test, 展廊粒子喷泉接入)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	engine::能力展示场景 场景;
+	ASSERT_TRUE(场景.init(renderer));
+	//预配置：容量 4096、默认关闭
+	EXPECT_EQ(renderer.particle_capacity_get(), 4096u);
+	EXPECT_FALSE(renderer.particle_enable_get());
+	//手动开启并模拟区内一帧
+	ASSERT_TRUE(renderer.particle_enable_set(true));
+	ASSERT_EQ(renderer.particle_emit(64), 64u);
+	(void)renderer.particle_step(0.08f);
+	场景.frame_draw(renderer);
+	engine::Frame_Stats stats = renderer.frame_stats_get();
+	EXPECT_EQ(stats.particle_born_total, 64u);
+	EXPECT_EQ(stats.particle_active, 64u);
+	//出帧并确认有绘制项
+	ASSERT_TRUE(renderer.frame_render());
+	EXPECT_GT(renderer.frame_stats_get().drawn_items, 0u);
 }
