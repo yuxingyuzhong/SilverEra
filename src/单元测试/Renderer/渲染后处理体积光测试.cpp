@@ -127,3 +127,95 @@ TEST_F(Renderer_Post_Chain_Test, 体积光天空漏光)
 	EXPECT_GT(changed, 20u);
 	EXPECT_GT(luma_after, luma_before + 3.0f);
 }
+
+/*
+体积雾与体积光组合（第三百八十三轮）
+口径：两级链「体积雾 → 体积光」，靶为两块 64×36 中间目标。
+1. 雾 0 ＋ 光 0 时两级均恒等，整链与直通差 ≤ 4；
+2. 雾 0.2 ＋ 光 0.6 相对前者差异像素 > 20、整帧亮度上升，且 post_stages = 2。
+*/
+TEST_F(Renderer_Post_Chain_Test, 体积雾与体积光组合)
+{
+	engine::Renderer probe;
+	ASSERT_TRUE(probe.init(hidden_config()));
+	if (!probe.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+
+	//两级链渲染（fog / shaft 为各自强度；任何一者为 0 都保持该级恒等）
+	auto render_pair = [&](float fog, float shaft, uint32_t* stages_out) -> std::vector<uint8_t>
+	{
+		engine::Renderer renderer;
+		EXPECT_TRUE(renderer.init(hidden_config()));
+		uint64_t target0 = 0;
+		uint64_t target1 = 0;
+		EXPECT_TRUE(renderer.render_target_create(target0, renderer.extent_width(), renderer.extent_height()));
+		EXPECT_TRUE(renderer.render_target_create(target1, renderer.extent_width(), renderer.extent_height()));
+		uint64_t fog_pass = post_pipeline_register(renderer, "体积雾.frag.spv");
+		uint64_t shaft_pass = post_pipeline_register(renderer, "体积光.frag.spv");
+		EXPECT_NE(fog_pass, 0u);
+		EXPECT_NE(shaft_pass, 0u);
+		uint64_t chain[2] = { fog_pass, shaft_pass };
+		EXPECT_TRUE(renderer.post_chain_set(chain, 2));
+		renderer.post_stage_vec4_set(0, fog, 0.0f, 20.0f, 1.0f);
+		renderer.post_stage_color4_set(0, SHAFT_COLOR[0] * 0.6f, SHAFT_COLOR[1] * 0.7f, SHAFT_COLOR[2] * 0.9f, 0.0f);
+		renderer.post_stage_vec4_set(1, shaft, 0.9f, 1.0f, 0.9f);
+		renderer.post_stage_color_set(1, SHAFT_COLOR[0], SHAFT_COLOR[1], SHAFT_COLOR[2]);
+		uint64_t targets[2] = { target0, target1 };
+		EXPECT_TRUE(renderer.render_target_present_chain_set(targets, 2));
+		engine::Mesh_Handle plane = 0;
+		EXPECT_TRUE(renderer.mesh_load(plane, quad_data()));
+		EXPECT_TRUE(renderer.mesh_draw(plane, nullptr));
+		renderer.mesh_unload(plane);
+		std::vector<uint8_t> pixels(pixel_bytes());
+		EXPECT_TRUE(renderer.frame_render(pixels.data(), static_cast<uint32_t>(pixels.size())));
+		if (stages_out != nullptr)
+			*stages_out = renderer.frame_stats_get().post_stages;
+		renderer.pipeline_unload(fog_pass);
+		renderer.pipeline_unload(shaft_pass);
+		renderer.render_target_destroy(target1);
+		renderer.render_target_destroy(target0);
+		return pixels;
+	};
+	uint32_t stages = 0;
+	std::vector<uint8_t> off = render_pair(0.0f, 0.0f, nullptr);
+	std::vector<uint8_t> on = render_pair(0.2f, 0.6f, &stages);
+	//关闭态：与直通链（同为两级但首级直通）作对照的差值由「两级编码取整」上界约束
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	uint64_t target0 = 0;
+	uint64_t target1 = 0;
+	ASSERT_TRUE(renderer.render_target_create(target0, renderer.extent_width(), renderer.extent_height()));
+	ASSERT_TRUE(renderer.render_target_create(target1, renderer.extent_width(), renderer.extent_height()));
+	uint64_t passthrough = post_pipeline_register(renderer, "后处理.frag.spv");
+	uint64_t shaft_pass = post_pipeline_register(renderer, "体积光.frag.spv");
+	ASSERT_NE(passthrough, 0u);
+	ASSERT_NE(shaft_pass, 0u);
+	uint64_t chain[2] = { passthrough, shaft_pass };
+	ASSERT_TRUE(renderer.post_chain_set(chain, 2));
+	renderer.post_stage_vec4_set(1, 0.0f, 0.9f, 1.0f, 0.9f);
+	uint64_t targets[2] = { target0, target1 };
+	ASSERT_TRUE(renderer.render_target_present_chain_set(targets, 2));
+	engine::Mesh_Handle plane = 0;
+	ASSERT_TRUE(renderer.mesh_load(plane, quad_data()));
+	ASSERT_TRUE(renderer.mesh_draw(plane, nullptr));
+	renderer.mesh_unload(plane);
+	std::vector<uint8_t> direct(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(direct.data(), static_cast<uint32_t>(direct.size())));
+	renderer.pipeline_unload(passthrough);
+	renderer.pipeline_unload(shaft_pass);
+	renderer.render_target_destroy(target1);
+	renderer.render_target_destroy(target0);
+
+	int identity_diff = max_channel_diff(direct, off);
+	RecordProperty("fog_shaft_identity_diff", identity_diff);
+	EXPECT_LE(identity_diff, CHAIN_TOLERANCE) << "两级关闭态未恒等（最大差 " << identity_diff << "）";
+	uint32_t changed = differing_pixels(off, on, 8);
+	float luma_off = average_luma(off);
+	float luma_on = average_luma(on);
+	RecordProperty("fog_shaft_changed_pixels", static_cast<int>(changed));
+	std::cout << "[雾＋体积光] 差异像素=" << changed << " 亮度 " << luma_off << " → " << luma_on
+		<< " 级数=" << stages << std::endl;
+	EXPECT_EQ(stages, 2u);
+	EXPECT_GT(changed, 20u) << "雾与体积光组合未生效";
+	EXPECT_GT(luma_on, luma_off + 2.0f);
+}
