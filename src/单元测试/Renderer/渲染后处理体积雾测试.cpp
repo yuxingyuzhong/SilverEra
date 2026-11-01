@@ -144,3 +144,67 @@ TEST_F(Renderer_Post_Chain_Test, 体积雾高度衰减)
 	RecordProperty("fog_height_changed_pixels", static_cast<int>(changed));
 	EXPECT_GT(changed, 0u) << "高度衰减未生效（两帧完全一致）";
 }
+
+/*
+体积雾在多级链中取源正确（第三百七十四轮）
+口径：两级链「体积雾 → 反色」，靶为两块中间目标（ping-pong）。
+1. 密度 0 时首级恒等，故结果应与「直通 → 反色」几乎一致（逐通道差 ≤ 4，含两级编码取整）；
+2. 密度 0.2 时首级叠加雾，再经反色后仍与前者显著不同（差异像素 > 20），且两级都执行（post_stages = 2）。
+*/
+TEST_F(Renderer_Post_Chain_Test, 体积雾多级链取源)
+{
+	engine::Renderer probe;
+	ASSERT_TRUE(probe.init(hidden_config()));
+	if (!probe.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+
+	//两级链渲染（首级管线由 fog_shader 指定、参数由 density 控制；次级恒为反色）
+	auto render_chain = [&](const char* fog_shader, float density, uint32_t* stages_out) -> std::vector<uint8_t>
+	{
+		engine::Renderer renderer;
+		EXPECT_TRUE(renderer.init(hidden_config()));
+		uint64_t target0 = 0;
+		uint64_t target1 = 0;
+		EXPECT_TRUE(renderer.render_target_create(target0, renderer.extent_width(), renderer.extent_height()));
+		EXPECT_TRUE(renderer.render_target_create(target1, renderer.extent_width(), renderer.extent_height()));
+		uint64_t fog_pass = post_pipeline_register(renderer, fog_shader);
+		uint64_t invert_pass = post_pipeline_register(renderer, "反色.frag.spv");
+		EXPECT_NE(fog_pass, 0u);
+		EXPECT_NE(invert_pass, 0u);
+		uint64_t chain[2] = { fog_pass, invert_pass };
+		EXPECT_TRUE(renderer.post_chain_set(chain, 2));
+		renderer.post_stage_vec4_set(0, density, 0.0f, 20.0f, 1.0f);
+		renderer.post_stage_color_set(0, FOG_COLOR[0], FOG_COLOR[1], FOG_COLOR[2]);
+		uint64_t targets[2] = { target0, target1 };
+		EXPECT_TRUE(renderer.render_target_present_chain_set(targets, 2));
+		engine::Mesh_Handle plane = 0;
+		EXPECT_TRUE(renderer.mesh_load(plane, quad_data()));
+		EXPECT_TRUE(renderer.mesh_draw(plane, nullptr));
+		renderer.mesh_unload(plane);
+		std::vector<uint8_t> pixels(pixel_bytes());
+		EXPECT_TRUE(renderer.frame_render(pixels.data(), static_cast<uint32_t>(pixels.size())));
+		if (stages_out != nullptr)
+			*stages_out = renderer.frame_stats_get().post_stages;
+		renderer.pipeline_unload(fog_pass);
+		renderer.pipeline_unload(invert_pass);
+		renderer.render_target_destroy(target1);
+		renderer.render_target_destroy(target0);
+		return pixels;
+	};
+	uint32_t stages_identity = 0;
+	uint32_t stages_fogged = 0;
+	std::vector<uint8_t> identity = render_chain("后处理.frag.spv", 0.0f, &stages_identity);
+	std::vector<uint8_t> fog_off = render_chain("体积雾.frag.spv", 0.0f, nullptr);
+	std::vector<uint8_t> fog_on = render_chain("体积雾.frag.spv", 0.2f, &stages_fogged);
+	//两级都执行
+	EXPECT_EQ(stages_identity, 2u);
+	EXPECT_EQ(stages_fogged, 2u);
+	//密度 0 时首级恒等：与「直通 → 反色」几乎一致（两级编码取整容差 4）
+	int identity_diff = max_channel_diff(identity, fog_off);
+	RecordProperty("fog_chain_identity_diff", identity_diff);
+	EXPECT_LE(identity_diff, CHAIN_TOLERANCE) << "密度 0 在多级链中未恒等（最大差 " << identity_diff << "）";
+	//密度 0.2 时结果显著不同
+	uint32_t changed = differing_pixels(fog_off, fog_on, 8);
+	RecordProperty("fog_chain_changed_pixels", static_cast<int>(changed));
+	EXPECT_GT(changed, 20u) << "多级链中体积雾未生效";
+}
