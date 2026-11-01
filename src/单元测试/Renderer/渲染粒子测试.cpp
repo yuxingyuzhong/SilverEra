@@ -1424,6 +1424,56 @@ TEST(Renderer_Particle_Test, 常驻紧凑百万基线)
 }
 
 /*
+紧凑索引环形回绕（第三百三十六轮）
+容量 128 发射满池 → 推进至部分粒子死亡 → 再发射（环形指针回绕，部分落点仍活跃）：
+活跃计数以「位图基数」为不变式（不因覆盖仍活跃槽位重复计数），紧凑计数与活跃数一致。
+*/
+TEST(Renderer_Particle_Test, 紧凑索引环形回绕)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	ASSERT_TRUE(renderer.particle_enable_set(true));
+	ASSERT_TRUE(renderer.particle_capacity_set(128));
+	engine::Particle_Emitter emitter{};
+	emitter.direction[1] = 1.0f;
+	emitter.speed_min = 0.1f;
+	emitter.speed_max = 0.2f;
+	emitter.lifetime_min = 0.5f;
+	emitter.lifetime_max = 0.7f;
+	emitter.count = 128;
+	engine::Particle_Params params{};
+	params.damping = 1.0f;
+	ASSERT_TRUE(renderer.particle_emitter_set(emitter));
+	ASSERT_TRUE(renderer.particle_params_set(params));
+	ASSERT_TRUE(renderer.particle_resident_set(true));
+	//满池发射
+	ASSERT_EQ(renderer.particle_gpu_emit(128), 128u);
+	EXPECT_EQ(renderer.particle_active_count(), 128u);
+	//推进 0.55 s：寿命 ≤ 0.55 的粒子死亡，其余存活
+	for (uint32_t step = 0; step < 11; ++step)
+		ASSERT_TRUE(renderer.particle_gpu_step_resident(0.05f));
+	const uint32_t survivors = renderer.particle_active_count();
+	ASSERT_LT(survivors, 128u);
+	//再发射：环形指针回绕，部分落点仍活跃（旧实现会把重叠槽位重复计数 → 活跃数越过容量）
+	const uint32_t spawned = renderer.particle_gpu_emit(128);
+	EXPECT_GT(spawned, 0u);
+	const uint32_t active_after = renderer.particle_active_count();
+	EXPECT_LE(active_after, 128u);
+	//紧凑：计数 = 活跃数（位图基数），索引互异且全部落在 [0, 128)
+	ASSERT_TRUE(renderer.particle_gpu_compact());
+	EXPECT_EQ(renderer.particle_compact_count_get(), active_after);
+	std::vector<uint32_t> indices(active_after, 0xFFFFFFFFu);
+	ASSERT_EQ(renderer.particle_compact_indices_get(indices.data(), active_after), active_after);
+	std::vector<uint8_t> seen(128, 0u);
+	for (uint32_t slot = 0; slot < active_after; ++slot)
+	{
+		ASSERT_LT(indices[slot], 128u);
+		EXPECT_EQ(seen[indices[slot]], 0u);
+		seen[indices[slot]] = 1u;
+	}
+}
+
+/*
 常驻绘制（第三百三十轮）
 常驻发射 256 个后回读位图与状态并按活跃位构建实例：出帧有绘制项、中心区域出现粒子像素；
 容量超过 65536 时常驻绘制返回假（大容量绘制留待间接绘制）。
