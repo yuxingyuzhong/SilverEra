@@ -718,6 +718,7 @@ TEST(Renderer_Particle_Test, 碰撞地面)
 	params.damping = 1.0f;
 	params.restitution = 0.5f;
 	params.friction = 0.2f;
+	params.ground_enabled = 1;
 	ASSERT_TRUE(renderer.particle_emitter_set(emitter));
 	ASSERT_TRUE(renderer.particle_params_set(params));
 	ASSERT_EQ(renderer.particle_emit(1), 1u);
@@ -747,7 +748,8 @@ TEST(Renderer_Particle_Test, 碰撞地面)
 
 /*
 碰撞：球体（第三百一十九轮）
-粒子以 −Z 速度撞向原点半径 0.5 的球：全程不穿透球面，撞后法向速度反向。
+风场把粒子沿 −Z 加速撞向原点半径 0.5 的球（速度严格沿轴，避免发射扰动导致掠过球面）：
+全程不穿透球面，撞后法向速度反向。
 */
 TEST(Renderer_Particle_Test, 碰撞球体)
 {
@@ -758,8 +760,8 @@ TEST(Renderer_Particle_Test, 碰撞球体)
 	engine::Particle_Emitter emitter{};
 	emitter.position[2] = 1.0f;
 	emitter.direction[2] = -1.0f;
-	emitter.speed_min = 1.0f;
-	emitter.speed_max = 1.0f;
+	emitter.speed_min = 0.0f;
+	emitter.speed_max = 0.0f;
 	emitter.lifetime_min = 10.0f;
 	emitter.lifetime_max = 10.0f;
 	emitter.shape = static_cast<uint32_t>(engine::Emit_Shape::Point);
@@ -769,6 +771,11 @@ TEST(Renderer_Particle_Test, 碰撞球体)
 	params.restitution = 0.5f;
 	params.friction = 0.2f;
 	params.sphere_radius = 0.5f;
+	//风场：−Z 方向强度 20（每步 0.1 s 增加 2 m/s）
+	params.force_count = 1;
+	params.forces[0].type = static_cast<uint32_t>(engine::Force_Type::Wind);
+	params.forces[0].strength = 20.0f;
+	params.forces[0].direction[2] = -1.0f;
 	ASSERT_TRUE(renderer.particle_emitter_set(emitter));
 	ASSERT_TRUE(renderer.particle_params_set(params));
 	ASSERT_EQ(renderer.particle_emit(1), 1u);
@@ -808,6 +815,7 @@ TEST(Renderer_Particle_Test, 碰撞GPU对照)
 	params.restitution = 0.5f;
 	params.friction = 0.2f;
 	params.sphere_radius = 0.4f;
+	params.ground_enabled = 1;
 	engine::Particle_Emitter emitter = point_emitter();
 	emitter.position[1] = 1.2f;
 	emitter.extents[0] = 0.5f;
@@ -852,4 +860,40 @@ TEST(Renderer_Particle_Test, 碰撞GPU对照)
 		++compared;
 	}
 	EXPECT_EQ(compared, 4u);
+}
+
+/*
+超大容量与重建（第三百二十轮）
+容量上限 1 048 576（双缓冲 64 MB ＋ 力场 320 B）：资源可用、零步自检通过、观测字节正确；
+同值重复设置不重建；收缩到 64 后按新容量重建且可用。
+*/
+TEST(Renderer_Particle_Test, 超大容量与重建)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	ASSERT_TRUE(renderer.particle_enable_set(true));
+	//未创建资源时为 0
+	EXPECT_EQ(renderer.particle_gpu_bytes(), 0u);
+	ASSERT_TRUE(renderer.particle_capacity_set(engine::PARTICLE_CAPACITY_MAX));
+	EXPECT_EQ(renderer.particle_capacity_get(), engine::PARTICLE_CAPACITY_MAX);
+	ASSERT_TRUE(renderer.particle_gpu_available());
+	const uint64_t expected_maximum = static_cast<uint64_t>(engine::PARTICLE_CAPACITY_MAX)
+		* engine::PARTICLE_STRIDE * 2u + static_cast<uint64_t>(engine::PARTICLE_FORCE_MAX) * engine::PARTICLE_FORCE_STRIDE;
+	EXPECT_EQ(renderer.particle_gpu_bytes(), expected_maximum);
+	EXPECT_TRUE(renderer.particle_gpu_probe());
+	//同值重复设置：不重建、字节不变
+	ASSERT_TRUE(renderer.particle_capacity_set(engine::PARTICLE_CAPACITY_MAX));
+	EXPECT_EQ(renderer.particle_capacity_get(), engine::PARTICLE_CAPACITY_MAX);
+	EXPECT_EQ(renderer.particle_gpu_bytes(), expected_maximum);
+	//超上限钳到上限
+	ASSERT_TRUE(renderer.particle_capacity_set(engine::PARTICLE_CAPACITY_MAX + 1u));
+	EXPECT_EQ(renderer.particle_capacity_get(), engine::PARTICLE_CAPACITY_MAX);
+	//收缩重建
+	ASSERT_TRUE(renderer.particle_capacity_set(64));
+	EXPECT_EQ(renderer.particle_capacity_get(), 64u);
+	ASSERT_TRUE(renderer.particle_gpu_available());
+	const uint64_t expected_small = static_cast<uint64_t>(64) * engine::PARTICLE_STRIDE * 2u
+		+ static_cast<uint64_t>(engine::PARTICLE_FORCE_MAX) * engine::PARTICLE_FORCE_STRIDE;
+	EXPECT_EQ(renderer.particle_gpu_bytes(), expected_small);
+	EXPECT_TRUE(renderer.particle_gpu_probe());
 }
