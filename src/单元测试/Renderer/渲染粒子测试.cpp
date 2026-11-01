@@ -1,6 +1,7 @@
 ﻿/*
 渲染粒子门面测试（第三百一十轮；深研方向二 阶段 A）
 覆盖：未初始化拒绝、默认关闭、开关与容量钳制、发射器 / 参数校验、发射与步进、关闭再开启沿用池内容。
+第三百一十一轮补：GPU 推进资源可用性与零步自检。
 */
 #include <gtest/gtest.h>
 
@@ -133,4 +134,35 @@ TEST(Renderer_Particle_Test, 发射与步进)
 	EXPECT_EQ(renderer.particle_active_count(), 0u);
 	ASSERT_TRUE(renderer.particle_enable_set(true));
 	EXPECT_EQ(renderer.particle_active_count(), 8u);
+}
+
+//GPU 推进资源（第三百一十一轮）：关闭态不可用；开启后可用且零步自检为恒等
+TEST(Renderer_Particle_Test, GPU推进自检)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	//关闭态路径不可用
+	EXPECT_FALSE(renderer.particle_gpu_available());
+	EXPECT_FALSE(renderer.particle_gpu_probe());
+	ASSERT_TRUE(renderer.particle_enable_set(true));
+	ASSERT_TRUE(renderer.particle_capacity_set(64));
+	ASSERT_TRUE(renderer.particle_emitter_set(point_emitter()));
+	engine::Particle_Params params{};
+	params.damping = 1.0f;
+	params.restitution = 0.4f;
+	params.friction = 0.2f;
+	ASSERT_TRUE(renderer.particle_params_set(params));
+	//本机计算路径可用：惰性创建后即可用
+	EXPECT_TRUE(renderer.particle_gpu_available());
+	//空池零步自检
+	EXPECT_TRUE(renderer.particle_gpu_probe());
+	//发射后零步自检逐粒子恒等（dt = 0、阻尼 1）
+	EXPECT_EQ(renderer.particle_emit(32), 32u);
+	EXPECT_EQ(renderer.particle_active_count(), 32u);
+	EXPECT_TRUE(renderer.particle_gpu_probe());
+	//容量变化后按新容量重建
+	ASSERT_TRUE(renderer.particle_capacity_set(128));
+	EXPECT_EQ(renderer.particle_capacity_get(), 128u);
+	EXPECT_TRUE(renderer.particle_gpu_available());
+	EXPECT_TRUE(renderer.particle_gpu_probe());
 }
