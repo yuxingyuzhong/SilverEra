@@ -504,3 +504,70 @@ TEST(Renderer_Particle_Test, 粒子混合档与深度写入)
 	renderer.render_target_set(0);
 	renderer.render_target_destroy(target);
 }
+
+/*
+粒子深度分桶近似排序（第三百一十七轮）
+盒发射 16 个粒子（深度分散）：4 桶下连续两帧像素逐字节一致（结果稳定、无闪烁）；
+桶数钳制到 0..16，关闭分桶后单次绘制仍可用。
+*/
+TEST(Renderer_Particle_Test, 粒子深度分桶稳定性)
+{
+	engine::Renderer_Config config;
+	config.width = 64;
+	config.height = 64;
+	config.hidden = true;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(config));
+	const float clear[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
+	renderer.clear_color_set(clear);
+	renderer.camera_position_set(0.0f, 0.0f, 4.0f);
+	renderer.camera_target_set(0.0f, 0.0f, 0.0f);
+	ASSERT_TRUE(renderer.particle_enable_set(true));
+	ASSERT_TRUE(renderer.particle_capacity_set(32));
+	engine::Particle_Emitter emitter{};
+	emitter.direction[2] = -1.0f;
+	emitter.speed_min = 0.0f;
+	emitter.speed_max = 0.0f;
+	emitter.lifetime_min = 1.0f;
+	emitter.lifetime_max = 1.0f;
+	emitter.extents[0] = 0.6f;
+	emitter.extents[1] = 0.6f;
+	emitter.extents[2] = 2.0f;
+	emitter.shape = static_cast<uint32_t>(engine::Emit_Shape::Box);
+	emitter.count = 16;
+	engine::Particle_Params params{};
+	params.damping = 1.0f;
+	ASSERT_TRUE(renderer.particle_emitter_set(emitter));
+	ASSERT_TRUE(renderer.particle_params_set(params));
+	ASSERT_EQ(renderer.particle_emit(16), 16u);
+	//默认关闭分桶
+	EXPECT_EQ(renderer.particle_sort_buckets_get(), 0u);
+	ASSERT_TRUE(renderer.particle_sort_buckets_set(4));
+	EXPECT_EQ(renderer.particle_sort_buckets_get(), 4u);
+	uint64_t target = 0;
+	ASSERT_TRUE(renderer.render_target_create(target, 64, 64));
+	renderer.render_target_set(target);
+	std::vector<uint8_t> first(64 * 64 * 4, 0);
+	std::vector<uint8_t> second(64 * 64 * 4, 0);
+	uint32_t width = 0;
+	uint32_t height = 0;
+	//第一帧
+	ASSERT_TRUE(renderer.particle_draw(0.25f));
+	ASSERT_TRUE(renderer.frame_render());
+	ASSERT_TRUE(renderer.render_target_readback(target, first.data(), static_cast<uint32_t>(first.size()),
+		&width, &height));
+	//第二帧（同状态）
+	ASSERT_TRUE(renderer.particle_draw(0.25f));
+	ASSERT_TRUE(renderer.frame_render());
+	ASSERT_TRUE(renderer.render_target_readback(target, second.data(), static_cast<uint32_t>(second.size()),
+		&width, &height));
+	EXPECT_EQ(first, second);
+	//桶数钳制与关闭
+	ASSERT_TRUE(renderer.particle_sort_buckets_set(100));
+	EXPECT_EQ(renderer.particle_sort_buckets_get(), 16u);
+	ASSERT_TRUE(renderer.particle_sort_buckets_set(0));
+	EXPECT_EQ(renderer.particle_sort_buckets_get(), 0u);
+	ASSERT_TRUE(renderer.particle_draw(0.25f));
+	renderer.render_target_set(0);
+	renderer.render_target_destroy(target);
+}
