@@ -897,3 +897,63 @@ TEST(Renderer_Particle_Test, 超大容量与重建)
 	EXPECT_EQ(renderer.particle_gpu_bytes(), expected_small);
 	EXPECT_TRUE(renderer.particle_gpu_probe());
 }
+
+/*
+粒子模拟统计（第三百二十二轮）
+CPU 参考路径：出生累计 16、寿命到期死亡 16、活跃 0（出生 − 死亡 = 活跃）；主机侧模拟耗时 ≥ 0。
+GPU 路径：十步后统计自洽；设备支持时间戳时 particle_gpu_ms ≥ 0，否则为 −1。
+*/
+TEST(Renderer_Particle_Test, 粒子模拟统计)
+{
+	engine::Particle_Emitter emitter = point_emitter();
+	emitter.lifetime_min = 0.5f;
+	emitter.lifetime_max = 0.6f;
+	emitter.count = 16;
+	engine::Particle_Params params{};
+	params.damping = 1.0f;
+	//CPU 参考路径
+	engine::Renderer cpu;
+	ASSERT_TRUE(cpu.init(hidden_config()));
+	ASSERT_TRUE(cpu.particle_enable_set(true));
+	ASSERT_TRUE(cpu.particle_capacity_set(64));
+	ASSERT_TRUE(cpu.particle_emitter_set(emitter));
+	ASSERT_TRUE(cpu.particle_params_set(params));
+	engine::Frame_Stats stats = cpu.frame_stats_get();
+	EXPECT_EQ(stats.particle_active, 0u);
+	EXPECT_EQ(stats.particle_born_total, 0u);
+	EXPECT_EQ(stats.particle_died_total, 0u);
+	ASSERT_EQ(cpu.particle_emit(16), 16u);
+	stats = cpu.frame_stats_get();
+	EXPECT_EQ(stats.particle_active, 16u);
+	EXPECT_EQ(stats.particle_born_total, 16u);
+	//十二步 × 0.05 s = 0.6 s，寿命 ≤ 0.6 s 全部回收
+	for (uint32_t step = 0; step < 12; ++step)
+		cpu.particle_step(0.05f);
+	stats = cpu.frame_stats_get();
+	EXPECT_EQ(stats.particle_active, 0u);
+	EXPECT_EQ(stats.particle_born_total, 16u);
+	EXPECT_EQ(stats.particle_died_total, 16u);
+	EXPECT_EQ(stats.particle_born_total - stats.particle_died_total, stats.particle_active);
+	EXPECT_GE(stats.particle_sim_ms, 0.0);
+	//GPU 路径
+	engine::Renderer gpu;
+	ASSERT_TRUE(gpu.init(hidden_config()));
+	ASSERT_TRUE(gpu.particle_enable_set(true));
+	ASSERT_TRUE(gpu.particle_capacity_set(64));
+	ASSERT_TRUE(gpu.particle_emitter_set(emitter));
+	ASSERT_TRUE(gpu.particle_params_set(params));
+	ASSERT_EQ(gpu.particle_emit(16), 16u);
+	ASSERT_TRUE(gpu.particle_gpu_available());
+	for (uint32_t step = 0; step < 12; ++step)
+		ASSERT_TRUE(gpu.particle_gpu_step(0.05f));
+	stats = gpu.frame_stats_get();
+	EXPECT_EQ(stats.particle_active, 0u);
+	EXPECT_EQ(stats.particle_born_total, 16u);
+	EXPECT_EQ(stats.particle_died_total, 16u);
+	EXPECT_EQ(stats.particle_born_total - stats.particle_died_total, stats.particle_active);
+	EXPECT_GE(stats.particle_sim_ms, 0.0);
+	if (gpu.compute_timestamp_supported())
+		EXPECT_GE(stats.particle_gpu_ms, 0.0);
+	else
+		EXPECT_EQ(stats.particle_gpu_ms, -1.0);
+}
