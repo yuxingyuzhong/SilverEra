@@ -573,7 +573,8 @@ namespace engine
 			发射器.lifetime_max = 2.2f;
 			发射器.shape = static_cast<uint32_t>(engine::Emit_Shape::Sphere_Shell);
 			发射器.extents[0] = 0.18f;
-			发射器.count = 64;
+			//每次发射上限（第三百四十六轮由 64 提为 256，配合大容量展示）
+			发射器.count = 256;
 			engine::Particle_Params 粒子参数{};
 			粒子参数.gravity[1] = -1.4f;
 			粒子参数.damping = 0.985f;
@@ -581,7 +582,12 @@ namespace engine
 			粒子参数.friction = 0.25f;
 			粒子参数.ground_enabled = 1;
 			粒子参数.floor_y = 0.02f;
-			if (渲染器.particle_supported() && 渲染器.particle_capacity_set(4096)
+			/*
+			容量与绘制路径（第三百四十六轮）
+			容量升到 65 536 后常驻场景改走 GPU 间接绘制（GPU 写实例数，见 frame_draw），
+			以展示「百万级粒子的单条间接命令」链路；CPU 参考路径仍可回落。
+			*/
+			if (渲染器.particle_supported() && 渲染器.particle_capacity_set(65536)
 				&& 渲染器.particle_enable_set(true))
 			{
 				粒子已配置_ = 渲染器.particle_emitter_set(发射器) && 渲染器.particle_params_set(粒子参数);
@@ -737,16 +743,16 @@ namespace engine
 		//区内逐帧发射与推进
 		if (粒子区激活_ && 粒子已配置_)
 		{
-			//常驻路径：发射与推进均在 GPU
+			//常驻路径：发射与推进均在 GPU（第三百四十六轮发射上限提为 256）
 			if (粒子常驻_)
 			{
-				(void)渲染器.particle_gpu_emit(64);
+				(void)渲染器.particle_gpu_emit(256);
 				(void)渲染器.particle_gpu_step_resident(0.08f);
 			}
 			//回落路径：CPU 参考模拟
 			else
 			{
-				(void)渲染器.particle_emit(64);
+				(void)渲染器.particle_emit(256);
 				(void)渲染器.particle_step(0.08f);
 			}
 		}
@@ -784,7 +790,7 @@ namespace engine
 			{ 14.0f,  -30.0f, { 0.50f, 0.62f, 0.46f }, "⑥ 纹理与动态" },
 			{ 0.0f,   -50.0f, { 0.44f, 0.50f, 0.68f }, "⑦ 卡通渲染（色阶 / 边缘光 / 高光 / 外扩描边）" },
 			{ -14.0f, -50.0f, { 0.66f, 0.44f, 0.52f }, "⑧ Cluster 灯墙（128 盏逐簇光照）" },
-			{ 14.0f,  -50.0f, { 0.68f, 0.60f, 0.38f }, "⑨ 粒子喷泉（billboard / 力场 / 碰撞）" },
+			{ 14.0f,  -50.0f, { 0.68f, 0.60f, 0.38f }, "⑨ 粒子喷泉（GPU 间接绘制 / 力场 / 碰撞）" },
 		};
 		//圆周常数（环形排布与环绕动画用）
 		const float 圆周率 = 3.14159265f;
@@ -808,15 +814,21 @@ namespace engine
 		渲染器.material_bind_set(0);
 
 		/*
-		粒子喷泉 billboard 绘制（第三百二十四轮；第三百四十三轮起常驻路径优先）
-		常驻可用时走 GPU 路径（紧凑索引 ＋ 着色器内 billboard，主机不读状态缓冲），
-		否则回落 CPU 参考路径；未开启 / 无活跃粒子时两者均为空操作。
+		粒子喷泉 billboard 绘制（第三百二十四轮；第三百四十三 / 三百四十六轮演进）
+		常驻可用时按容量选 GPU 路径：≥ 16384 走间接绘制（GPU 写实例数、单条 vkCmdDrawIndexedIndirect），
+		否则走直接 GPU 绘制（紧凑索引 ＋ 着色器内 billboard）；非常驻回落 CPU 参考路径。
+		未开启 / 无活跃粒子时各路径均为空操作。
 		*/
 		if (渲染器.particle_enable_get())
 		{
-			//常驻路径：GPU 侧紧凑索引 ＋ 着色器内 billboard
+			//常驻路径：容量 ≥ 16384 走 GPU 间接绘制（单条命令、实例数由 GPU 写），否则直接 GPU 绘制
 			if (渲染器.particle_resident_get())
-				(void)渲染器.particle_gpu_draw(0.16f);
+			{
+				if (渲染器.particle_capacity_get() >= 16384)
+					(void)渲染器.particle_indirect_draw(0.16f);
+				else
+					(void)渲染器.particle_gpu_draw(0.16f);
+			}
 			else
 				(void)渲染器.particle_draw(0.16f);
 		}

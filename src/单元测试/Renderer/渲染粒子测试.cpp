@@ -1114,7 +1114,7 @@ TEST(Renderer_Particle_Test, 粒子降级矩阵)
 
 /*
 展廊第九区接入（第三百二十四轮）
-隐藏窗口初始化能力展示场景：粒子容量预置 4096、默认关闭；
+隐藏窗口初始化能力展示场景：粒子容量预置 65 536（第三百四十六轮由 4096 上调）、默认关闭；
 手动开启后发射 64 个并逐帧绘制出帧，出生累计与绘制项均增长。
 */
 TEST(Renderer_Particle_Test, 展廊粒子喷泉接入)
@@ -1123,8 +1123,8 @@ TEST(Renderer_Particle_Test, 展廊粒子喷泉接入)
 	ASSERT_TRUE(renderer.init(hidden_config()));
 	engine::能力展示场景 场景;
 	ASSERT_TRUE(场景.init(renderer));
-	//预配置：容量 4096、默认关闭
-	EXPECT_EQ(renderer.particle_capacity_get(), 4096u);
+	//预配置：容量 65 536、默认关闭
+	EXPECT_EQ(renderer.particle_capacity_get(), 65536u);
 	EXPECT_FALSE(renderer.particle_enable_get());
 	//手动开启并模拟区内一帧
 	ASSERT_TRUE(renderer.particle_enable_set(true));
@@ -1853,8 +1853,8 @@ TEST(Renderer_Particle_Test, 展廊粒子常驻接入)
 	ASSERT_TRUE(renderer.init(hidden_config()));
 	engine::能力展示场景 场景;
 	ASSERT_TRUE(场景.init(renderer));
-	//预配置沿用：容量 4096、默认关闭
-	EXPECT_EQ(renderer.particle_capacity_get(), 4096u);
+	//预配置沿用：容量 65 536、默认关闭
+	EXPECT_EQ(renderer.particle_capacity_get(), 65536u);
 	EXPECT_FALSE(renderer.particle_enable_get());
 	//按场景进入区内的顺序：先开粒子再切常驻
 	ASSERT_TRUE(renderer.particle_enable_set(true));
@@ -1882,9 +1882,10 @@ TEST(Renderer_Particle_Test, 展廊粒子常驻接入)
 }
 
 /*
-展廊第九区 GPU 绘制接入（第三百四十三轮；阶段 D 收尾）
-场景 frame_draw 在常驻可用时改走 particle_gpu_draw：三轮常驻发射 ＋ 推进后一帧，
-紧凑计数 = 活跃数（仅 GPU 绘制路径会产生紧凑）、绘制项非零；关闭常驻后口径回到 CPU。
+展廊第九区 GPU 绘制接入（第三百四十三轮；阶段 D 收尾；第三百四十六轮起大容量走间接路径）
+场景 frame_draw 在常驻可用时改走 GPU 绘制：三轮常驻发射 ＋ 推进后一帧，
+紧凑计数 = 活跃数（仅 GPU 绘制路径会产生紧凑）、绘制项非零；容量 ≥ 16384 时间接命令实例数 = 活跃数；
+关闭常驻后口径回到 CPU。
 */
 TEST(Renderer_Particle_Test, 展廊粒子GPU绘制接入)
 {
@@ -1892,7 +1893,7 @@ TEST(Renderer_Particle_Test, 展廊粒子GPU绘制接入)
 	ASSERT_TRUE(renderer.init(hidden_config()));
 	engine::能力展示场景 场景;
 	ASSERT_TRUE(场景.init(renderer));
-	//预配置沿用：容量 4096；按场景进入区内的顺序开粒子再切常驻
+	//预配置沿用：容量 65 536；按场景进入区内的顺序开粒子再切常驻
 	ASSERT_TRUE(renderer.particle_enable_set(true));
 	ASSERT_TRUE(renderer.particle_resident_set(true));
 	for (uint32_t frame = 0; frame < 3; ++frame)
@@ -1904,6 +1905,10 @@ TEST(Renderer_Particle_Test, 展廊粒子GPU绘制接入)
 	//场景登记绘制：常驻可用 → GPU 绘制路径（紧凑索引由该路径产生）
 	场景.frame_draw(renderer);
 	EXPECT_EQ(renderer.particle_compact_count_get(), 192u);
+	//容量 ≥ 16384 → 走 GPU 间接绘制（第三百四十六轮；命令实例数 = 活跃数）
+	uint32_t command[5] = {};
+	ASSERT_TRUE(renderer.particle_indirect_command_get(command));
+	EXPECT_EQ(command[1], 192u);
 	ASSERT_TRUE(renderer.frame_render());
 	EXPECT_GT(renderer.frame_stats_get().drawn_items, 0u);
 	//关闭常驻：回到 CPU 参考路径，紧凑口径不再生效
