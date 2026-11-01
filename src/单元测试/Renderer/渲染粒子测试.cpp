@@ -3,11 +3,14 @@
 覆盖：未初始化拒绝、默认关闭、开关与容量钳制、发射器 / 参数校验、发射与步进、关闭再开启沿用池内容。
 第三百一十一轮补：GPU 推进资源可用性与零步自检。
 第三百一十二轮补：GPU 单步推进与 CPU 参考逐粒子对照。
+第三百一十三轮补：GPU 生命周期与死亡同步。
+第三百一十四轮补：粒子 billboard 绘制与画面定位。
 */
 #include <gtest/gtest.h>
 
 #include <cstdint>
 #include <limits>
+#include <vector>
 
 #include "Application/Renderer/src/render/Renderer/渲染器.h"
 
@@ -298,4 +301,66 @@ TEST(Renderer_Particle_Test, GPU生命周期与死亡同步)
 			++readable;
 	}
 	EXPECT_EQ(readable, 32u);
+}
+
+/*
+粒子 billboard 定位（第三百一十四轮）
+64×64 离屏目标、相机 (0,0,3) 注视原点：原点处单个粒子绘制后中心像素亮、边角像素保持清屏色；
+关闭粒子后不再登记绘制项。
+*/
+TEST(Renderer_Particle_Test, 粒子billboard定位)
+{
+	engine::Renderer_Config config;
+	config.width = 64;
+	config.height = 64;
+	config.hidden = true;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(config));
+	const float clear[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
+	renderer.clear_color_set(clear);
+	renderer.camera_position_set(0.0f, 0.0f, 3.0f);
+	renderer.camera_target_set(0.0f, 0.0f, 0.0f);
+	ASSERT_TRUE(renderer.particle_enable_set(true));
+	ASSERT_TRUE(renderer.particle_capacity_set(8));
+	engine::Particle_Emitter emitter{};
+	emitter.direction[2] = -1.0f;
+	emitter.speed_min = 0.0f;
+	emitter.speed_max = 0.0f;
+	emitter.lifetime_min = 1.0f;
+	emitter.lifetime_max = 1.0f;
+	emitter.shape = static_cast<uint32_t>(engine::Emit_Shape::Point);
+	emitter.count = 1;
+	engine::Particle_Params params{};
+	params.damping = 1.0f;
+	ASSERT_TRUE(renderer.particle_emitter_set(emitter));
+	ASSERT_TRUE(renderer.particle_params_set(params));
+	EXPECT_EQ(renderer.particle_emit(1), 1u);
+	//尺寸非法拒绝
+	EXPECT_FALSE(renderer.particle_draw(0.0f));
+	EXPECT_FALSE(renderer.particle_draw(-1.0f));
+	//登记一个实例化绘制项
+	ASSERT_TRUE(renderer.particle_draw(0.5f));
+	uint64_t target = 0;
+	ASSERT_TRUE(renderer.render_target_create(target, 64, 64));
+	renderer.render_target_set(target);
+	ASSERT_TRUE(renderer.frame_render());
+	std::vector<uint8_t> pixels(64 * 64 * 4, 0);
+	uint32_t width = 0;
+	uint32_t height = 0;
+	ASSERT_TRUE(renderer.render_target_readback(target, pixels.data(), static_cast<uint32_t>(pixels.size()),
+		&width, &height));
+	EXPECT_EQ(width, 64u);
+	EXPECT_EQ(height, 64u);
+	//中心像素（BGRA：红色下标 2）显著亮于清屏色
+	std::size_t center = (static_cast<std::size_t>(32) * 64 + 32) * 4;
+	std::size_t corner = (static_cast<std::size_t>(4) * 64 + 4) * 4;
+	EXPECT_GT(pixels[center + 2], 40u);
+	EXPECT_GT(pixels[center + 0], 4u);
+	EXPECT_LT(pixels[corner + 2], 8u);
+	//关闭粒子后不再登记绘制项
+	ASSERT_TRUE(renderer.particle_enable_set(false));
+	EXPECT_FALSE(renderer.particle_draw(0.5f));
+	EXPECT_FALSE(renderer.particle_gpu_available());
+	renderer.render_target_set(0);
+	renderer.render_target_destroy(target);
 }
