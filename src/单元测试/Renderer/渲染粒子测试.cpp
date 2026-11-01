@@ -6,12 +6,14 @@
 第三百一十三轮补：GPU 生命周期与死亡同步。
 第三百一十四轮补：粒子 billboard 绘制与画面定位。
 第三百一十五轮补：颜色 / 尺寸随年龄渐变。
+第三百四十五轮补：三条绘制路径（CPU / GPU 直接 / GPU 间接）大容量对照。
 */
 #include <gtest/gtest.h>
 
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
+#include <functional>
 #include <iostream>
 #include <limits>
 #include <vector>
@@ -1907,4 +1909,122 @@ TEST(Renderer_Particle_Test, 展廊粒子GPU绘制接入)
 	//关闭常驻：回到 CPU 参考路径，紧凑口径不再生效
 	ASSERT_TRUE(renderer.particle_resident_set(false));
 	EXPECT_EQ(renderer.particle_compact_count_get(), 0u);
+}
+
+/*
+粒子三路径绘制对照（第三百四十五轮；阶段 D 后基线）
+同一 65536 常驻粒子分别走 CPU 绘制 / GPU 直接绘制 / GPU 间接绘制三帧（每帧前清零统计）：
+三路径实际绘制实例数一致、均有可见像素、可见像素数差异 ≤ 5%，并记录主机录制耗时。
+*/
+TEST(Renderer_Particle_Test, 粒子三路径绘制对照)
+{
+	engine::Renderer_Config config;
+	config.width = 320;
+	config.height = 180;
+	config.hidden = true;
+	//实例容量与粒子容量同规模（CPU 路径逐实例上传模型矩阵，默认 256 不够）
+	config.instance_capacity = engine::PARTICLE_EMIT_COUNT_MAX;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(config));
+	ASSERT_TRUE(renderer.particle_enable_set(true));
+	ASSERT_TRUE(renderer.particle_capacity_set(engine::PARTICLE_EMIT_COUNT_MAX));
+	engine::Particle_Emitter emitter{};
+	emitter.direction[1] = 1.0f;
+	emitter.speed_min = 0.5f;
+	emitter.speed_max = 1.0f;
+	emitter.lifetime_min = 100.0f;
+	emitter.lifetime_max = 100.0f;
+	emitter.shape = static_cast<uint32_t>(engine::Emit_Shape::Sphere_Shell);
+	emitter.extents[0] = 1.0f;
+	emitter.count = engine::PARTICLE_EMIT_COUNT_MAX;
+	engine::Particle_Params params{};
+	params.gravity[1] = -0.5f;
+	params.damping = 0.99f;
+	ASSERT_TRUE(renderer.particle_emitter_set(emitter));
+	ASSERT_TRUE(renderer.particle_params_set(params));
+	ASSERT_TRUE(renderer.particle_resident_set(true));
+	ASSERT_EQ(renderer.particle_gpu_emit(engine::PARTICLE_EMIT_COUNT_MAX), engine::PARTICLE_EMIT_COUNT_MAX);
+	//相机与清屏
+	const float clear[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
+	renderer.clear_color_set(clear);
+	renderer.camera_position_set(0.0f, 0.0f, 4.0f);
+	renderer.camera_target_set(0.0f, 0.0f, 0.0f);
+	uint64_t target = 0;
+	ASSERT_TRUE(renderer.render_target_create(target, 320, 180));
+	renderer.render_target_set(target);
+	//单路径测量结果
+	struct 路径结果
+	{
+		//绘制与出帧是否成功
+		bool ok = false;
+		//主机侧录制耗时（毫秒）
+		double record_ms = 0.0;
+		//GPU 帧耗时（毫秒；不可用时 0）
+		double gpu_ms = 0.0;
+		//实际绘制项数
+		uint64_t items = 0;
+		//实际绘制实例数
+		uint64_t instances = 0;
+		//可见像素数
+		uint32_t visible = 0;
+	};
+	auto 测量 = [&](const std::function<bool(engine::Renderer&)>& 绘制) -> 路径结果
+	{
+		路径结果 结果{};
+		//每路径从零统计（累计量含上一路径的数据）
+		renderer.frame_stats_reset();
+		结果.ok = 绘制(renderer) && renderer.frame_render();
+		if (!结果.ok)
+			return 结果;
+		const engine::Frame_Stats 统计 = renderer.frame_stats_get();
+		结果.record_ms = 统计.host_record_ms;
+		结果.gpu_ms = 统计.gpu_frame_ms;
+		结果.items = 统计.drawn_items;
+		结果.instances = 统计.drawn_instances;
+		std::vector<uint8_t> 像素(320u * 180u * 4u, 0u);
+		uint32_t 宽 = 0;
+		uint32_t 高 = 0;
+		if (renderer.render_target_readback(target, 像素.data(), static_cast<uint32_t>(像素.size()), &宽, &高))
+			for (std::size_t 偏移 = 0; 偏移 + 3 < 像素.size(); 偏移 += 4)
+				//任意通道明显高于清屏色即视为粒子像素
+				if (像素[偏移] > 8u || 像素[偏移 + 1] > 8u || 像素[偏移 + 2] > 8u)
+					++结果.visible;
+		return 结果;
+	};
+	//三路径（同一帧内容：常驻状态未推进，绘制输入一致；边长 0.2 保证在 320×180 下可见）
+	路径结果 CPU路径 = 测量([](engine::Renderer& 渲染器) { return 渲染器.particle_draw(0.2f); });
+	路径结果 GPU路径 = 测量([](engine::Renderer& 渲染器) { return 渲染器.particle_gpu_draw(0.2f); });
+	路径结果 间接路径 = 测量([](engine::Renderer& 渲染器) { return 渲染器.particle_indirect_draw(0.2f); });
+	EXPECT_TRUE(CPU路径.ok);
+	EXPECT_TRUE(GPU路径.ok);
+	EXPECT_TRUE(间接路径.ok);
+	//绘制量一致（每路径 1 个绘制项、65536 实例）
+	EXPECT_EQ(CPU路径.instances, engine::PARTICLE_EMIT_COUNT_MAX);
+	EXPECT_EQ(GPU路径.instances, engine::PARTICLE_EMIT_COUNT_MAX);
+	EXPECT_EQ(间接路径.instances, engine::PARTICLE_EMIT_COUNT_MAX);
+	EXPECT_EQ(CPU路径.items, 1u);
+	EXPECT_EQ(GPU路径.items, 1u);
+	EXPECT_EQ(间接路径.items, 1u);
+	//可见像素非零且三路径接近（同公式、仅构造位置不同：主机 vs 顶点着色器）
+	EXPECT_GT(CPU路径.visible, 0u);
+	EXPECT_GT(GPU路径.visible, 0u);
+	EXPECT_GT(间接路径.visible, 0u);
+	auto 差异比例 = [](uint32_t 甲, uint32_t 乙) -> double
+	{
+		const uint32_t 大 = 甲 > 乙 ? 甲 : 乙;
+		if (大 == 0u)
+			return 0.0;
+		const uint32_t 差 = 甲 > 乙 ? 甲 - 乙 : 乙 - 甲;
+		return static_cast<double>(差) / static_cast<double>(大);
+	};
+	const double GPU差异 = 差异比例(CPU路径.visible, GPU路径.visible);
+	const double 间接差异 = 差异比例(CPU路径.visible, 间接路径.visible);
+	std::cout << "[三路径绘制] CPU 录制=" << CPU路径.record_ms << " ms 可见=" << CPU路径.visible
+		<< "  GPU 录制=" << GPU路径.record_ms << " ms GPU帧=" << GPU路径.gpu_ms << " ms 可见=" << GPU路径.visible
+		<< "  间接 录制=" << 间接路径.record_ms << " ms GPU帧=" << 间接路径.gpu_ms << " ms 可见=" << 间接路径.visible
+		<< "  GPU差异=" << GPU差异 << " 间接差异=" << 间接差异 << std::endl;
+	EXPECT_LT(GPU差异, 0.05);
+	EXPECT_LT(间接差异, 0.05);
+	renderer.render_target_set(0);
+	renderer.render_target_destroy(target);
 }
