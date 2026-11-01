@@ -1374,6 +1374,76 @@ TEST(Renderer_Particle_Test, 常驻百万粒子基线)
 
 
 /*
+粒子 GPU 绘制（第三百四十一轮；阶段 D）
+常驻发射 256 个 → 紧凑 → 着色器内 billboard（不消费实例属性）：出帧有绘制项与可见像素；
+未开启常驻 / 无活跃粒子时返回假。
+*/
+TEST(Renderer_Particle_Test, 粒子GPU绘制)
+{
+	engine::Renderer_Config config;
+	config.width = 64;
+	config.height = 64;
+	config.hidden = true;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(config));
+	ASSERT_TRUE(renderer.particle_enable_set(true));
+	ASSERT_TRUE(renderer.particle_capacity_set(256));
+	engine::Particle_Emitter emitter{};
+	emitter.direction[1] = 1.0f;
+	emitter.speed_min = 0.5f;
+	emitter.speed_max = 1.0f;
+	emitter.lifetime_min = 1.0f;
+	emitter.lifetime_max = 1.0f;
+	emitter.shape = static_cast<uint32_t>(engine::Emit_Shape::Sphere_Shell);
+	emitter.extents[0] = 0.3f;
+	emitter.count = 256;
+	engine::Particle_Params params{};
+	params.damping = 1.0f;
+	ASSERT_TRUE(renderer.particle_emitter_set(emitter));
+	ASSERT_TRUE(renderer.particle_params_set(params));
+	//未开启常驻：拒绝
+	EXPECT_FALSE(renderer.particle_gpu_draw(0.1f));
+	ASSERT_TRUE(renderer.particle_resident_set(true));
+	ASSERT_EQ(renderer.particle_gpu_emit(256), 256u);
+	for (uint32_t step = 0; step < 5; ++step)
+		ASSERT_TRUE(renderer.particle_gpu_step_resident(0.05f));
+	//相机先就位（绘制时按相机位置构造 billboard 基向量），再登记 GPU 绘制项
+	const float clear[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
+	renderer.clear_color_set(clear);
+	renderer.camera_position_set(0.0f, 0.0f, 4.0f);
+	renderer.camera_target_set(0.0f, 0.0f, 0.0f);
+	ASSERT_TRUE(renderer.particle_gpu_draw(0.6f));
+	uint64_t target = 0;
+	ASSERT_TRUE(renderer.render_target_create(target, 64, 64));
+	renderer.render_target_set(target);
+	ASSERT_TRUE(renderer.frame_render());
+	EXPECT_GT(renderer.frame_stats_get().drawn_items, 0u);
+	EXPECT_EQ(renderer.frame_stats_get().drawn_instances, 256u);
+	std::vector<uint8_t> pixels(64 * 64 * 4, 0);
+	uint32_t width = 0;
+	uint32_t height = 0;
+	ASSERT_TRUE(renderer.render_target_readback(target, pixels.data(), static_cast<uint32_t>(pixels.size()),
+		&width, &height));
+	uint32_t visible = 0;
+	uint32_t max_channel = 0;
+	for (std::size_t index = 0; index + 3 < pixels.size(); index += 4)
+	{
+		max_channel = pixels[index] > max_channel ? pixels[index] : max_channel;
+		max_channel = pixels[index + 1] > max_channel ? pixels[index + 1] : max_channel;
+		max_channel = pixels[index + 2] > max_channel ? pixels[index + 2] : max_channel;
+		//任意通道明显高于清屏色即视为粒子像素
+		if (pixels[index + 0] > 8u || pixels[index + 1] > 8u || pixels[index + 2] > 8u)
+			++visible;
+	}
+	std::cout << "[GPU绘制] 可见=" << visible << " 最大通道=" << max_channel
+		<< " 绘制项=" << renderer.frame_stats_get().drawn_items
+		<< " 实例=" << renderer.frame_stats_get().drawn_instances << std::endl;
+	EXPECT_GT(visible, 0u);
+	renderer.render_target_set(0);
+	renderer.render_target_destroy(target);
+}
+
+/*
 常驻绘制与 CPU 绘制统计等价（第三百三十八轮）
 用两个独立渲染器各走一条路径（避免同类渲染器连续两帧的绘制项登记偏移）：
 同一发射器 / 参数下发射 64 个并推进五步，绘制项数与实际绘制实例数须一致。
