@@ -1374,6 +1374,56 @@ TEST(Renderer_Particle_Test, 常驻百万粒子基线)
 
 
 /*
+常驻紧凑百万基线（第三百三十四轮；阶段 D）
+容量 1 048 576 全活跃时紧凑索引：计数等于活跃数（1 048 576），记录三次紧凑的主机侧耗时并断言上限。
+*/
+TEST(Renderer_Particle_Test, 常驻紧凑百万基线)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	ASSERT_TRUE(renderer.particle_enable_set(true));
+	ASSERT_TRUE(renderer.particle_capacity_set(engine::PARTICLE_CAPACITY_MAX));
+	engine::Particle_Emitter emitter{};
+	emitter.direction[1] = 1.0f;
+	emitter.speed_min = 0.5f;
+	emitter.speed_max = 1.0f;
+	emitter.lifetime_min = 100.0f;
+	emitter.lifetime_max = 100.0f;
+	emitter.shape = static_cast<uint32_t>(engine::Emit_Shape::Sphere_Shell);
+	emitter.extents[0] = 1.0f;
+	emitter.count = engine::PARTICLE_EMIT_COUNT_MAX;
+	engine::Particle_Params params{};
+	params.damping = 1.0f;
+	ASSERT_TRUE(renderer.particle_emitter_set(emitter));
+	ASSERT_TRUE(renderer.particle_params_set(params));
+	ASSERT_TRUE(renderer.particle_resident_set(true));
+	//分 16 批发射满池
+	uint32_t total = 0;
+	for (uint32_t batch = 0; batch < 16; ++batch)
+		total += renderer.particle_gpu_emit(engine::PARTICLE_EMIT_COUNT_MAX);
+	ASSERT_EQ(total, engine::PARTICLE_CAPACITY_MAX);
+	//三次紧凑，取最后一次耗时（前两次作预热）
+	double compact_ms = 0.0;
+	for (uint32_t pass = 0; pass < 3; ++pass)
+	{
+		const auto begin = std::chrono::high_resolution_clock::now();
+		ASSERT_TRUE(renderer.particle_gpu_compact());
+		const auto end = std::chrono::high_resolution_clock::now();
+		compact_ms = std::chrono::duration<double, std::milli>(end - begin).count();
+	}
+	EXPECT_EQ(renderer.particle_compact_count_get(), engine::PARTICLE_CAPACITY_MAX);
+	//抽样校验索引取值（紧凑顺序不保证升序，仅校验范围）
+	uint32_t samples[4] = {};
+	ASSERT_EQ(renderer.particle_compact_indices_get(samples, 4), 4u);
+	for (uint32_t slot = 0; slot < 4; ++slot)
+		EXPECT_LT(samples[slot], engine::PARTICLE_CAPACITY_MAX);
+	std::cout << "[常驻紧凑百万] 紧凑=" << compact_ms << " ms  索引数="
+		<< renderer.particle_compact_count_get() << std::endl;
+	//百万紧凑为主机侧调度 ＋ 4 B 回读（实测数毫秒量级）
+	EXPECT_LT(compact_ms, 200.0);
+}
+
+/*
 常驻绘制（第三百三十轮）
 常驻发射 256 个后回读位图与状态并按活跃位构建实例：出帧有绘制项、中心区域出现粒子像素；
 容量超过 65536 时常驻绘制返回假（大容量绘制留待间接绘制）。
