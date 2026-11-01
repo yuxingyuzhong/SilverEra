@@ -2524,3 +2524,89 @@ TEST(Renderer_Particle_Test, 离屏软粒子深度淡化)
 	EXPECT_LT(direct_on * 100u, direct_off * 85u);
 	EXPECT_LT(indirect_on * 100u, indirect_off * 85u);
 }
+
+/*
+软粒子档位开销（第三百六十九轮；阶段 E）
+同一 320×180 常驻 GPU 直接绘制场景（Hi-Z 开启、1 万粒子），档位关闭 / 开启各跑八帧，
+取稳定段（第 3..8 帧）的主机录制与 GPU 帧均值；两档差异应在噪声范围内，开启不得明显退化。
+*/
+TEST(Renderer_Particle_Test, 软粒子档位开销)
+{
+	const float clear[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
+	bool hiz_ok = true;
+	//单档位测量（soft_range 为 0 表示关闭软粒子）
+	auto measure = [&](float soft_range, double& record_ms_out, double& gpu_ms_out) -> void
+	{
+		record_ms_out = 0.0;
+		gpu_ms_out = 0.0;
+		engine::Renderer_Config config;
+		config.width = 320;
+		config.height = 180;
+		config.hidden = true;
+		config.hiz_enable = true;
+		config.msaa_samples = 1;
+		engine::Renderer renderer;
+		ASSERT_TRUE(renderer.init(config));
+		//能力不足：交由测试体统一跳过
+		if (!renderer.hiz_supported())
+		{
+			hiz_ok = false;
+			return;
+		}
+		renderer.clear_color_set(clear);
+		renderer.camera_position_set(0.0f, 0.0f, 4.0f);
+		renderer.camera_target_set(0.0f, 0.0f, 0.0f);
+		ASSERT_TRUE(renderer.particle_enable_set(true));
+		ASSERT_TRUE(renderer.particle_capacity_set(16384));
+		engine::Particle_Emitter emitter{};
+		emitter.direction[1] = 1.0f;
+		emitter.speed_min = 0.5f;
+		emitter.speed_max = 1.0f;
+		emitter.lifetime_min = 100.0f;
+		emitter.lifetime_max = 100.0f;
+		emitter.shape = static_cast<uint32_t>(engine::Emit_Shape::Sphere_Shell);
+		emitter.extents[0] = 1.0f;
+		emitter.count = 10000;
+		engine::Particle_Params params{};
+		params.gravity[1] = -0.5f;
+		params.damping = 0.99f;
+		params.soft_depth_range = soft_range;
+		ASSERT_TRUE(renderer.particle_emitter_set(emitter));
+		ASSERT_TRUE(renderer.particle_params_set(params));
+		ASSERT_TRUE(renderer.particle_resident_set(true));
+		ASSERT_EQ(renderer.particle_gpu_emit(10000), 10000u);
+		//八帧：前两帧建历史（第 1 帧无历史、档位自动清零），取第 3..8 帧稳定段
+		double record_sum = 0.0;
+		double gpu_sum = 0.0;
+		uint32_t samples = 0;
+		for (uint32_t frame = 0; frame < 8; ++frame)
+		{
+			ASSERT_TRUE(renderer.particle_gpu_draw(0.04f));
+			ASSERT_TRUE(renderer.frame_render());
+			//稳定段采样（此时 GPU 时间戳与历史均已就绪）
+			if (frame >= 2)
+			{
+				const engine::Frame_Stats stats = renderer.frame_stats_get();
+				record_sum += stats.host_record_ms;
+				gpu_sum += stats.gpu_frame_ms;
+				++samples;
+			}
+		}
+		record_ms_out = record_sum / samples;
+		gpu_ms_out = gpu_sum / samples;
+	};
+	double off_record = 0.0;
+	double off_gpu = 0.0;
+	double on_record = 0.0;
+	double on_gpu = 0.0;
+	measure(0.0f, off_record, off_gpu);
+	measure(0.01f, on_record, on_gpu);
+	if (!hiz_ok)
+		GTEST_SKIP() << "本机不支持 Hi-Z 所需能力";
+	std::cout << "[软粒子开销] 关闭 录制=" << off_record << " ms GPU帧=" << off_gpu
+		<< " ms  开启 录制=" << on_record << " ms GPU帧=" << on_gpu << " ms" << std::endl;
+	//开启档位不得明显退化（噪声容差：录制 ≤ 2×＋0.2 ms、GPU ≤ 2×＋0.5 ms）
+	EXPECT_GT(off_record, 0.0);
+	EXPECT_LT(on_record, off_record * 2.0 + 0.2);
+	EXPECT_LT(on_gpu, off_gpu * 2.0 + 0.5);
+}
