@@ -1432,3 +1432,42 @@ TEST(Renderer_Particle_Test, 常驻绘制)
 	renderer.render_target_set(0);
 	renderer.render_target_destroy(target);
 }
+
+/*
+展廊粒子常驻接入（第三百三十一轮）
+场景预配置的发射器 / 参数下走常驻路径：三轮「GPU 发射 64 ＋ 常驻推进」后活跃与出生守恒，
+出帧有绘制项；关闭常驻后回到 CPU 参考路径（活跃数取 CPU 镜像）。
+*/
+TEST(Renderer_Particle_Test, 展廊粒子常驻接入)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	engine::能力展示场景 场景;
+	ASSERT_TRUE(场景.init(renderer));
+	//预配置沿用：容量 4096、默认关闭
+	EXPECT_EQ(renderer.particle_capacity_get(), 4096u);
+	EXPECT_FALSE(renderer.particle_enable_get());
+	//按场景进入区内的顺序：先开粒子再切常驻
+	ASSERT_TRUE(renderer.particle_enable_set(true));
+	ASSERT_TRUE(renderer.particle_resident_set(true));
+	EXPECT_TRUE(renderer.particle_resident_get());
+	//三轮区内发射 ＋ 推进（寿命 1.4 s 起，三步 0.08 s 不死亡）
+	for (uint32_t frame = 0; frame < 3; ++frame)
+	{
+		ASSERT_EQ(renderer.particle_gpu_emit(64), 64u);
+		ASSERT_TRUE(renderer.particle_gpu_step_resident(0.08f));
+	}
+	const engine::Frame_Stats stats = renderer.frame_stats_get();
+	EXPECT_EQ(stats.particle_born_total, 192u);
+	EXPECT_EQ(renderer.particle_active_count(), 192u);
+	//出帧并有绘制项（常驻绘制按位图展开）
+	场景.frame_draw(renderer);
+	ASSERT_TRUE(renderer.frame_render());
+	EXPECT_GT(renderer.frame_stats_get().drawn_items, 0u);
+	//关闭常驻：回到 CPU 参考路径（CPU 镜像未发射 → 0）
+	ASSERT_TRUE(renderer.particle_resident_set(false));
+	EXPECT_FALSE(renderer.particle_resident_get());
+	EXPECT_EQ(renderer.particle_active_count(), 0u);
+	ASSERT_TRUE(renderer.particle_emit(8));
+	EXPECT_EQ(renderer.particle_active_count(), 8u);
+}

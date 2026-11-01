@@ -705,6 +705,7 @@ namespace engine
 		粒子喷泉区（第三百二十四轮）
 		相机进入第九展区（14, -50）半径 9 时开启粒子，并逐帧发射 64 个 / 固定步长 0.08 s 推进；
 		离开即关闭（保留池内容，重新进入沿用）。
+		第三百三十一轮：区内优先切常驻路径（状态只留 GPU），常驻不可用时回落 CPU 参考路径。
 		*/
 		const float 粒子区x = 14.0f;
 		const float 粒子区z = -50.0f;
@@ -716,13 +717,37 @@ namespace engine
 		{
 			粒子区激活_ = 进入粒子区;
 			if (渲染器.particle_supported())
-				渲染器.particle_enable_set(进入粒子区);
+			{
+				//进入：先开启粒子，再尝试常驻
+				if (进入粒子区)
+				{
+					渲染器.particle_enable_set(true);
+					粒子常驻_ = 渲染器.particle_resident_set(true);
+				}
+				//离开：先关常驻，再关粒子
+				else
+				{
+					渲染器.particle_resident_set(false);
+					粒子常驻_ = false;
+					渲染器.particle_enable_set(false);
+				}
+			}
 		}
 		//区内逐帧发射与推进
 		if (粒子区激活_ && 粒子已配置_)
 		{
-			(void)渲染器.particle_emit(64);
-			(void)渲染器.particle_step(0.08f);
+			//常驻路径：发射与推进均在 GPU
+			if (粒子常驻_)
+			{
+				(void)渲染器.particle_gpu_emit(64);
+				(void)渲染器.particle_gpu_step_resident(0.08f);
+			}
+			//回落路径：CPU 参考模拟
+			else
+			{
+				(void)渲染器.particle_emit(64);
+				(void)渲染器.particle_step(0.08f);
+			}
 		}
 	}
 

@@ -135,5 +135,7 @@ namespace engine
 		*/
 		bool 粒子区激活_ = false;
 		bool 粒子已配置_ = false;
+		//区内是否走在常驻路径（第三百三十一轮；常驻不可用时回落 CPU 参考路径）
+		bool 粒子常驻_ = false;
 	};
 }
