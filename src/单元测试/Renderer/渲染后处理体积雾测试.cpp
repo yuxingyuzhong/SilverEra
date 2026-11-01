@@ -208,3 +208,87 @@ TEST_F(Renderer_Post_Chain_Test, 体积雾多级链取源)
 	RecordProperty("fog_chain_changed_pixels", static_cast<int>(changed));
 	EXPECT_GT(changed, 20u) << "多级链中体积雾未生效";
 }
+
+/*
+体积雾步数开销（第三百七十五轮）
+同一场景（覆盖视口的四边形 ＋ 天空），单级体积雾链；分辨率与步数三档对照，
+记录稳定段（第 3..8 帧）的主机录制与 GPU 帧均值；不设硬上限，只输出与粗检。
+*/
+TEST_F(Renderer_Post_Chain_Test, 体积雾步数开销)
+{
+	engine::Renderer probe;
+	ASSERT_TRUE(probe.init(hidden_config()));
+	if (!probe.gpu_timestamp_supported())
+		GTEST_SKIP() << "本机不支持 GPU 时间戳";
+
+	//单次测量（分辨率 / 步数缩放进 / 录制与 GPU 帧出）
+	auto measure = [&](uint32_t width, uint32_t height, float step_scale, double& record_out, double& gpu_out) -> void
+	{
+		record_out = 0.0;
+		gpu_out = 0.0;
+		engine::Renderer_Config config;
+		config.width = width;
+		config.height = height;
+		config.hidden = true;
+		engine::Renderer renderer;
+		ASSERT_TRUE(renderer.init(config));
+		uint64_t scene_target = 0;
+		ASSERT_TRUE(renderer.render_target_create(scene_target, renderer.extent_width(), renderer.extent_height()));
+		uint64_t pass = post_pipeline_register(renderer, "体积雾.frag.spv");
+		ASSERT_NE(pass, 0u);
+		ASSERT_TRUE(renderer.post_chain_set(&pass, 1));
+		renderer.post_stage_vec4_set(0, 0.1f, 0.0f, 30.0f, step_scale);
+		renderer.post_stage_color_set(0, FOG_COLOR[0], FOG_COLOR[1], FOG_COLOR[2]);
+		renderer.render_target_present_set(scene_target);
+		engine::Mesh_Handle plane = 0;
+		ASSERT_TRUE(renderer.mesh_load(plane, quad_data()));
+		//八帧：前两帧预热，取第 3..8 帧均值
+		double record_sum = 0.0;
+		double gpu_sum = 0.0;
+		uint32_t samples = 0;
+		for (uint32_t frame = 0; frame < 8; ++frame)
+		{
+			ASSERT_TRUE(renderer.mesh_draw(plane, nullptr));
+			ASSERT_TRUE(renderer.frame_render());
+			if (frame >= 2)
+			{
+				const engine::Frame_Stats stats = renderer.frame_stats_get();
+				record_sum += stats.host_record_ms;
+				gpu_sum += stats.gpu_frame_ms;
+				++samples;
+			}
+		}
+		record_out = record_sum / samples;
+		gpu_out = gpu_sum / samples;
+		renderer.mesh_unload(plane);
+		renderer.pipeline_unload(pass);
+		renderer.render_target_destroy(scene_target);
+	};
+	double small_12_record = 0.0, small_12_gpu = 0.0;
+	double small_24_record = 0.0, small_24_gpu = 0.0;
+	double small_48_record = 0.0, small_48_gpu = 0.0;
+	double large_24_record = 0.0, large_24_gpu = 0.0;
+	measure(64, 36, 0.5f, small_12_record, small_12_gpu);
+	measure(64, 36, 1.0f, small_24_record, small_24_gpu);
+	measure(64, 36, 2.0f, small_48_record, small_48_gpu);
+	measure(320, 180, 1.0f, large_24_record, large_24_gpu);
+	//全高清三档（步数效应在该分辨率下才可辨）
+	double full_12_record = 0.0, full_12_gpu = 0.0;
+	double full_24_record = 0.0, full_24_gpu = 0.0;
+	double full_48_record = 0.0, full_48_gpu = 0.0;
+	measure(1280, 720, 0.5f, full_12_record, full_12_gpu);
+	measure(1280, 720, 1.0f, full_24_record, full_24_gpu);
+	measure(1280, 720, 2.0f, full_48_record, full_48_gpu);
+	std::cout << "[体积雾开销] 64×36 12步 录制=" << small_12_record << " GPU帧=" << small_12_gpu
+		<< " ms；24步 录制=" << small_24_record << " GPU帧=" << small_24_gpu
+		<< " ms；48步 录制=" << small_48_record << " GPU帧=" << small_48_gpu
+		<< " ms；320×180 24步 录制=" << large_24_record << " GPU帧=" << large_24_gpu
+		<< " ms；1280×720 12步 录制=" << full_12_record << " GPU帧=" << full_12_gpu
+		<< " ms；24步 录制=" << full_24_record << " GPU帧=" << full_24_gpu
+		<< " ms；48步 录制=" << full_48_record << " GPU帧=" << full_48_gpu << " ms" << std::endl;
+	//粗检：主机录制非零；GPU 帧耗时随步数单调方向合理（24 步 ≥ 12 步的一半）
+	EXPECT_GT(small_12_record, 0.0);
+	EXPECT_GT(large_24_record, 0.0);
+	EXPECT_GT(small_24_gpu, small_12_gpu * 0.5);
+	EXPECT_GT(small_48_gpu, small_24_gpu * 0.5);
+}
