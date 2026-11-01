@@ -1444,6 +1444,128 @@ TEST(Renderer_Particle_Test, 粒子GPU绘制)
 }
 
 /*
+粒子 GPU 间接绘制（第三百四十二轮；阶段 D）
+常驻发射 256 个 → 计算着色器写单条间接命令（索引数 6、实例数 256、其余 0）→
+录制阶段以 vkCmdDrawIndexedIndirect 出帧：绘制项与可见像素均非零；未开启常驻时返回假。
+*/
+TEST(Renderer_Particle_Test, 粒子间接绘制)
+{
+	engine::Renderer_Config config;
+	config.width = 64;
+	config.height = 64;
+	config.hidden = true;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(config));
+	ASSERT_TRUE(renderer.particle_enable_set(true));
+	ASSERT_TRUE(renderer.particle_capacity_set(256));
+	engine::Particle_Emitter emitter{};
+	emitter.direction[1] = 1.0f;
+	emitter.speed_min = 0.5f;
+	emitter.speed_max = 1.0f;
+	emitter.lifetime_min = 1.0f;
+	emitter.lifetime_max = 1.0f;
+	emitter.shape = static_cast<uint32_t>(engine::Emit_Shape::Sphere_Shell);
+	emitter.extents[0] = 0.3f;
+	emitter.count = 256;
+	engine::Particle_Params params{};
+	params.damping = 1.0f;
+	ASSERT_TRUE(renderer.particle_emitter_set(emitter));
+	ASSERT_TRUE(renderer.particle_params_set(params));
+	//未开启常驻：拒绝
+	EXPECT_FALSE(renderer.particle_indirect_draw(0.1f));
+	ASSERT_TRUE(renderer.particle_resident_set(true));
+	ASSERT_EQ(renderer.particle_gpu_emit(256), 256u);
+	for (uint32_t step = 0; step < 5; ++step)
+		ASSERT_TRUE(renderer.particle_gpu_step_resident(0.05f));
+	//相机就位后生成间接命令
+	const float clear[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
+	renderer.clear_color_set(clear);
+	renderer.camera_position_set(0.0f, 0.0f, 4.0f);
+	renderer.camera_target_set(0.0f, 0.0f, 0.0f);
+	ASSERT_TRUE(renderer.particle_indirect_draw(0.6f));
+	//命令内容：索引数 = 四边形 6、实例数 = 紧凑计数、其余为 0
+	uint32_t command[5] = {};
+	ASSERT_TRUE(renderer.particle_indirect_command_get(command));
+	EXPECT_EQ(command[0], 6u);
+	EXPECT_EQ(command[1], 256u);
+	EXPECT_EQ(command[2], 0u);
+	EXPECT_EQ(command[3], 0u);
+	EXPECT_EQ(command[4], 0u);
+	//出帧
+	uint64_t target = 0;
+	ASSERT_TRUE(renderer.render_target_create(target, 64, 64));
+	renderer.render_target_set(target);
+	ASSERT_TRUE(renderer.frame_render());
+	EXPECT_GT(renderer.frame_stats_get().drawn_items, 0u);
+	EXPECT_EQ(renderer.frame_stats_get().drawn_instances, 256u);
+	std::vector<uint8_t> pixels(64 * 64 * 4, 0);
+	uint32_t width = 0;
+	uint32_t height = 0;
+	ASSERT_TRUE(renderer.render_target_readback(target, pixels.data(), static_cast<uint32_t>(pixels.size()),
+		&width, &height));
+	uint32_t visible = 0;
+	for (std::size_t index = 0; index + 3 < pixels.size(); index += 4)
+		//任意通道明显高于清屏色即视为粒子像素
+		if (pixels[index + 0] > 8u || pixels[index + 1] > 8u || pixels[index + 2] > 8u)
+			++visible;
+	std::cout << "[间接绘制] 可见=" << visible << " 绘制项=" << renderer.frame_stats_get().drawn_items
+		<< " 实例=" << renderer.frame_stats_get().drawn_instances << std::endl;
+	EXPECT_GT(visible, 0u);
+	renderer.render_target_set(0);
+	renderer.render_target_destroy(target);
+}
+
+/*
+百万粒子间接命令基线（第三百四十二轮；阶段 D）
+容量 1 048 576 全活跃：一次 particle_indirect_draw（紧凑 ＋ 单线程命令写入，不渲染）后，
+命令的实例数等于全池活跃数，记录三次主机侧耗时（前两次预热）并断言上限。
+*/
+TEST(Renderer_Particle_Test, 百万粒子间接命令基线)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	ASSERT_TRUE(renderer.particle_enable_set(true));
+	ASSERT_TRUE(renderer.particle_capacity_set(engine::PARTICLE_CAPACITY_MAX));
+	engine::Particle_Emitter emitter{};
+	emitter.direction[1] = 1.0f;
+	emitter.speed_min = 0.5f;
+	emitter.speed_max = 1.0f;
+	emitter.lifetime_min = 100.0f;
+	emitter.lifetime_max = 100.0f;
+	emitter.shape = static_cast<uint32_t>(engine::Emit_Shape::Sphere_Shell);
+	emitter.extents[0] = 1.0f;
+	emitter.count = engine::PARTICLE_EMIT_COUNT_MAX;
+	engine::Particle_Params params{};
+	params.damping = 1.0f;
+	ASSERT_TRUE(renderer.particle_emitter_set(emitter));
+	ASSERT_TRUE(renderer.particle_params_set(params));
+	ASSERT_TRUE(renderer.particle_resident_set(true));
+	//分 16 批发射满池
+	uint32_t total = 0;
+	for (uint32_t batch = 0; batch < 16; ++batch)
+		total += renderer.particle_gpu_emit(engine::PARTICLE_EMIT_COUNT_MAX);
+	ASSERT_EQ(total, engine::PARTICLE_CAPACITY_MAX);
+	//三次间接绘制（前两次预热），取最后一次耗时
+	double draw_ms = 0.0;
+	for (uint32_t pass = 0; pass < 3; ++pass)
+	{
+		const auto begin = std::chrono::high_resolution_clock::now();
+		ASSERT_TRUE(renderer.particle_indirect_draw(0.05f));
+		const auto end = std::chrono::high_resolution_clock::now();
+		draw_ms = std::chrono::duration<double, std::milli>(end - begin).count();
+	}
+	uint32_t command[5] = {};
+	ASSERT_TRUE(renderer.particle_indirect_command_get(command));
+	EXPECT_EQ(command[1], engine::PARTICLE_CAPACITY_MAX);
+	const engine::Frame_Stats stats = renderer.frame_stats_get();
+	std::cout << "[百万间接命令] 生成=" << draw_ms << " ms  实例数=" << command[1]
+		<< "  统计紧凑=" << stats.particle_compact_ms << " ms  统计活跃=" << stats.particle_active << std::endl;
+	EXPECT_EQ(stats.particle_active, engine::PARTICLE_CAPACITY_MAX);
+	//百万紧凑 ＋ 单线程命令写入（实测数毫秒量级）
+	EXPECT_LT(draw_ms, 200.0);
+}
+
+/*
 常驻绘制与 CPU 绘制统计等价（第三百三十八轮）
 用两个独立渲染器各走一条路径（避免同类渲染器连续两帧的绘制项登记偏移）：
 同一发射器 / 参数下发射 64 个并推进五步，绘制项数与实际绘制实例数须一致。
