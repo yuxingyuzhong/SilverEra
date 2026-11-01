@@ -5,9 +5,11 @@
 第三百一十二轮补：GPU 单步推进与 CPU 参考逐粒子对照。
 第三百一十三轮补：GPU 生命周期与死亡同步。
 第三百一十四轮补：粒子 billboard 绘制与画面定位。
+第三百一十五轮补：颜色 / 尺寸随年龄渐变。
 */
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <limits>
 #include <vector>
@@ -361,6 +363,73 @@ TEST(Renderer_Particle_Test, 粒子billboard定位)
 	ASSERT_TRUE(renderer.particle_enable_set(false));
 	EXPECT_FALSE(renderer.particle_draw(0.5f));
 	EXPECT_FALSE(renderer.particle_gpu_available());
+	renderer.render_target_set(0);
+	renderer.render_target_destroy(target);
+}
+
+/*
+粒子年龄颜色曲线（第三百一十五轮）
+同一粒子（速度 0、重力 0、寿命 1.0）：年龄 0 与年龄 0.8 两帧的中心像素比较，
+年轻者绿色分量更高、两者红色分量均保持高位（暖白 → 暗红渐变）。
+*/
+TEST(Renderer_Particle_Test, 粒子年龄颜色曲线)
+{
+	engine::Renderer_Config config;
+	config.width = 64;
+	config.height = 64;
+	config.hidden = true;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(config));
+	const float clear[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
+	renderer.clear_color_set(clear);
+	renderer.camera_position_set(0.0f, 0.0f, 3.0f);
+	renderer.camera_target_set(0.0f, 0.0f, 0.0f);
+	ASSERT_TRUE(renderer.particle_enable_set(true));
+	ASSERT_TRUE(renderer.particle_capacity_set(8));
+	engine::Particle_Emitter emitter{};
+	emitter.direction[2] = -1.0f;
+	emitter.speed_min = 0.0f;
+	emitter.speed_max = 0.0f;
+	emitter.lifetime_min = 1.0f;
+	emitter.lifetime_max = 1.0f;
+	emitter.shape = static_cast<uint32_t>(engine::Emit_Shape::Point);
+	emitter.count = 1;
+	engine::Particle_Params params{};
+	params.damping = 1.0f;
+	ASSERT_TRUE(renderer.particle_emitter_set(emitter));
+	ASSERT_TRUE(renderer.particle_params_set(params));
+	ASSERT_EQ(renderer.particle_emit(1), 1u);
+	uint64_t target = 0;
+	ASSERT_TRUE(renderer.render_target_create(target, 64, 64));
+	renderer.render_target_set(target);
+	std::size_t center = (static_cast<std::size_t>(32) * 64 + 32) * 4;
+	std::vector<uint8_t> pixels(64 * 64 * 4, 0);
+	uint32_t width = 0;
+	uint32_t height = 0;
+	//第一帧：年龄 0（暖白）
+	ASSERT_TRUE(renderer.particle_draw(0.6f));
+	ASSERT_TRUE(renderer.frame_render());
+	ASSERT_TRUE(renderer.render_target_readback(target, pixels.data(), static_cast<uint32_t>(pixels.size()),
+		&width, &height));
+	uint8_t young_green = pixels[center + 1];
+	uint8_t young_red = pixels[center + 2];
+	//推进到年龄 0.8（未死亡）
+	for (uint32_t step = 0; step < 8; ++step)
+		renderer.particle_step(0.1f);
+	ASSERT_EQ(renderer.particle_active_count(), 1u);
+	//第二帧：年龄 0.8（暗红）
+	ASSERT_TRUE(renderer.particle_draw(0.6f));
+	ASSERT_TRUE(renderer.frame_render());
+	std::fill(pixels.begin(), pixels.end(), 0);
+	ASSERT_TRUE(renderer.render_target_readback(target, pixels.data(), static_cast<uint32_t>(pixels.size()),
+		&width, &height));
+	uint8_t old_green = pixels[center + 1];
+	uint8_t old_red = pixels[center + 2];
+	//年轻者更偏暖白（绿色更高），两者红色均保持高位
+	EXPECT_GT(young_green, 100u);
+	EXPECT_GT(static_cast<uint32_t>(young_green), static_cast<uint32_t>(old_green) + 30u);
+	EXPECT_GT(young_red, 100u);
+	EXPECT_GT(old_red, 100u);
 	renderer.render_target_set(0);
 	renderer.render_target_destroy(target);
 }
