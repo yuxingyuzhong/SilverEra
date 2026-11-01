@@ -229,7 +229,7 @@ namespace engine
             ImGui::Bullet(); ImGui::TextWrapped("⑥ 纹理与动态：棋盘 / 动态更新 / UV 立方");
             ImGui::Bullet(); ImGui::TextWrapped("⑦ 卡通渲染：走近该区即切换色阶量化 / 边缘光 / 暗部色调 / 卡通高光 / 外扩描边 / 加法光晕");
             ImGui::Bullet(); ImGui::TextWrapped("⑧ Cluster 灯墙：16 × 8 盏彩色点光（128 盏）；走近该区自动开启逐簇光照，离开关闭");
-            ImGui::Bullet(); ImGui::TextWrapped("⑨ 粒子喷泉：GPU 常驻模拟 ＋ 间接绘制（单条 vkCmdDrawIndexedIndirect，实例数由 GPU 写）");
+            ImGui::Bullet(); ImGui::TextWrapped("⑨ 粒子喷泉：GPU 常驻模拟 ＋ 间接绘制（单条 vkCmdDrawIndexedIndirect，实例数由 GPU 写）；配色 冷青→暖橙、软边 0.35");
             ImGui::Bullet(); ImGui::TextWrapped("多线程：4 工作线程（并行剔除 / 差异扫描；场景 pass 与阴影 pass 均按段并行录制）");
             ImGui::Separator();
             float 位置[3] = { 0.0f, 0.0f, 0.0f };
