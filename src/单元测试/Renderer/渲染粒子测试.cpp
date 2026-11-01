@@ -1475,8 +1475,13 @@ TEST(Renderer_Particle_Test, 常驻紧凑百万基线)
 	ASSERT_EQ(renderer.particle_compact_indices_get(samples, 4), 4u);
 	for (uint32_t slot = 0; slot < 4; ++slot)
 		EXPECT_LT(samples[slot], engine::PARTICLE_CAPACITY_MAX);
+	const engine::Frame_Stats compact_stats = renderer.frame_stats_get();
 	std::cout << "[常驻紧凑百万] 紧凑=" << compact_ms << " ms  索引数="
-		<< renderer.particle_compact_count_get() << std::endl;
+		<< renderer.particle_compact_count_get() << "  统计紧凑=" << compact_stats.particle_compact_ms
+		<< " ms  统计活跃=" << compact_stats.particle_active << std::endl;
+//帧统计的紧凑耗时与活跃数同口径（第三百四十轮）
+EXPECT_GT(compact_stats.particle_compact_ms, 0.0);
+EXPECT_EQ(compact_stats.particle_active, engine::PARTICLE_CAPACITY_MAX);
 	//百万紧凑为主机侧调度 ＋ 4 B 回读（实测数毫秒量级）
 	EXPECT_LT(compact_ms, 200.0);
 }
