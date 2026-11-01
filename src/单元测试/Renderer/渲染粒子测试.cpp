@@ -1265,3 +1265,57 @@ TEST(Renderer_Particle_Test, 常驻GPU发射)
 	EXPECT_FALSE(renderer_off.particle_resident_get());
 	EXPECT_EQ(renderer_off.particle_gpu_emit(4), 0u);
 }
+
+/*
+常驻推进与死亡压缩（第三百二十八轮）
+常驻发射 32 个（寿命 0.5..0.6）：十二步 0.05 s 后活跃归零、死亡累计 32、无幽灵；
+再次发射 8 个沿用环形指针；常驻下同步链推进 / 自检被拒，关闭常驻后恢复。
+*/
+TEST(Renderer_Particle_Test, 常驻推进与死亡压缩)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	ASSERT_TRUE(renderer.particle_enable_set(true));
+	ASSERT_TRUE(renderer.particle_capacity_set(64));
+	engine::Particle_Emitter emitter{};
+	emitter.direction[1] = 1.0f;
+	emitter.speed_min = 0.0f;
+	emitter.speed_max = 0.0f;
+	emitter.lifetime_min = 0.5f;
+	emitter.lifetime_max = 0.6f;
+	emitter.shape = static_cast<uint32_t>(engine::Emit_Shape::Point);
+	emitter.count = 32;
+	engine::Particle_Params params{};
+	params.damping = 1.0f;
+	ASSERT_TRUE(renderer.particle_emitter_set(emitter));
+	ASSERT_TRUE(renderer.particle_params_set(params));
+	ASSERT_TRUE(renderer.particle_resident_set(true));
+	//常驻发射 32
+	EXPECT_EQ(renderer.particle_gpu_emit(32), 32u);
+	EXPECT_EQ(renderer.particle_active_count(), 32u);
+	//十二步 0.05 s → 全部死亡
+	const auto begin = std::chrono::high_resolution_clock::now();
+	uint32_t died_total = 0;
+	for (uint32_t step = 0; step < 12; ++step)
+	{
+		ASSERT_TRUE(renderer.particle_gpu_step_resident(0.05f));
+		died_total += renderer.particle_gpu_died_last();
+	}
+	const auto end = std::chrono::high_resolution_clock::now();
+	double per_step_ms = std::chrono::duration<double, std::milli>(end - begin).count() / 12.0;
+	EXPECT_EQ(renderer.particle_active_count(), 0u);
+	EXPECT_EQ(died_total, 32u);
+	EXPECT_EQ(renderer.frame_stats_get().particle_died_total, 32u);
+	//再次发射沿用环形指针
+	EXPECT_EQ(renderer.particle_gpu_emit(8), 8u);
+	EXPECT_EQ(renderer.particle_active_count(), 8u);
+	//常驻下同步链推进 / 自检被拒
+	EXPECT_FALSE(renderer.particle_gpu_step(0.05f));
+	EXPECT_FALSE(renderer.particle_gpu_probe());
+	//关闭常驻：同步链恢复可用
+	ASSERT_TRUE(renderer.particle_resident_set(false));
+	EXPECT_TRUE(renderer.particle_gpu_probe());
+	//常驻单步主机耗时上限（提交 + 围栏 + 两次 4 B 回读）
+	std::cout << "[常驻推进] 单步主机耗时=" << per_step_ms << " ms" << std::endl;
+	EXPECT_LT(per_step_ms, 5.0);
+}
