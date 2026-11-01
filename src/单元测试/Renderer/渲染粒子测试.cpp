@@ -596,6 +596,69 @@ TEST(Renderer_Particle_Test, 粒子软边可配)
 }
 
 /*
+粒子颜色分桶绘制（第三百五十七轮）
+分桶模式（4 桶）下每桶各自登记一次实例化绘制：颜色覆盖须逐桶写入推送块，
+故整幅蓝通道累加值与单桶背景下的同色粒子一致量级；分桶开启后仍能出帧且有蓝优像素。
+*/
+TEST(Renderer_Particle_Test, 粒子颜色分桶绘制)
+{
+	engine::Renderer_Config config;
+	config.width = 64;
+	config.height = 64;
+	config.hidden = true;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(config));
+	const float clear[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
+	renderer.clear_color_set(clear);
+	renderer.camera_position_set(0.0f, 0.0f, 3.0f);
+	renderer.camera_target_set(0.0f, 0.0f, 0.0f);
+	ASSERT_TRUE(renderer.particle_enable_set(true));
+	ASSERT_TRUE(renderer.particle_capacity_set(16));
+	engine::Particle_Emitter emitter{};
+	emitter.direction[2] = -1.0f;
+	emitter.speed_min = 0.0f;
+	emitter.speed_max = 0.0f;
+	emitter.lifetime_min = 10.0f;
+	emitter.lifetime_max = 10.0f;
+	emitter.shape = static_cast<uint32_t>(engine::Emit_Shape::Sphere_Shell);
+	//球壳半径 1：发射点自带不同视线深度，进入不同桶
+	emitter.extents[0] = 1.0f;
+	emitter.count = 8;
+	engine::Particle_Params params{};
+	params.damping = 1.0f;
+	params.color_start[2] = 1.0f;
+	params.color_end[2] = 1.0f;
+	params.color_enabled = 1;
+	ASSERT_TRUE(renderer.particle_emitter_set(emitter));
+	ASSERT_TRUE(renderer.particle_params_set(params));
+	ASSERT_EQ(renderer.particle_emit(8), 8u);
+	ASSERT_TRUE(renderer.particle_sort_buckets_set(4));
+	EXPECT_EQ(renderer.particle_sort_buckets_get(), 4u);
+	uint64_t target = 0;
+	ASSERT_TRUE(renderer.render_target_create(target, 64, 64));
+	renderer.render_target_set(target);
+	//分桶开启：出帧后统计蓝优像素
+	ASSERT_TRUE(renderer.particle_draw(0.4f));
+	ASSERT_TRUE(renderer.frame_render());
+	EXPECT_GT(renderer.frame_stats_get().drawn_items, 0u);
+	std::vector<uint8_t> pixels(64 * 64 * 4, 0);
+	uint32_t width = 0;
+	uint32_t height = 0;
+	ASSERT_TRUE(renderer.render_target_readback(target, pixels.data(), static_cast<uint32_t>(pixels.size()),
+		&width, &height));
+	uint32_t blue_pixels = 0;
+	for (std::size_t index = 0; index + 3 < pixels.size(); index += 4)
+		//蓝明显高于其余通道即视为蓝优像素
+		if (pixels[index] > 40u && pixels[index] > pixels[index + 1] && pixels[index] > pixels[index + 2])
+			++blue_pixels;
+	std::cout << "[颜色分桶] 桶数=4 绘制项=" << renderer.frame_stats_get().drawn_items
+		<< " 蓝优像素=" << blue_pixels << std::endl;
+	EXPECT_GT(blue_pixels, 0u);
+	renderer.render_target_set(0);
+	renderer.render_target_destroy(target);
+}
+
+/*
 粒子混合档与深度写入（第三百一十六轮）
 两枚重合粒子：Alpha 档中心像素为单层颜色，切换 Additive 后叠加增亮；
 默认档为 Alpha、非法档拒绝、深度写入开关可读写（切换触发管线重建）。
