@@ -1909,6 +1909,8 @@ TEST(Renderer_Particle_Test, 展廊粒子GPU绘制接入)
 	uint32_t command[5] = {};
 	ASSERT_TRUE(renderer.particle_indirect_command_get(command));
 	EXPECT_EQ(command[1], 192u);
+	//绘制路径观测（第三百四十八轮）：3 = GPU 间接
+	EXPECT_EQ(renderer.frame_stats_get().particle_draw_path, 3u);
 	ASSERT_TRUE(renderer.frame_render());
 	EXPECT_GT(renderer.frame_stats_get().drawn_items, 0u);
 	//关闭常驻：回到 CPU 参考路径，紧凑口径不再生效
@@ -1972,6 +1974,8 @@ TEST(Renderer_Particle_Test, 粒子三路径绘制对照)
 		uint64_t instances = 0;
 		//可见像素数
 		uint32_t visible = 0;
+		//最近一次绘制路径（0 未登记 / 1 CPU / 2 GPU 直接 / 3 GPU 间接）
+		uint32_t draw_path = 0;
 	};
 	auto 测量 = [&](const std::function<bool(engine::Renderer&)>& 绘制) -> 路径结果
 	{
@@ -1986,6 +1990,7 @@ TEST(Renderer_Particle_Test, 粒子三路径绘制对照)
 		结果.gpu_ms = 统计.gpu_frame_ms;
 		结果.items = 统计.drawn_items;
 		结果.instances = 统计.drawn_instances;
+		结果.draw_path = 统计.particle_draw_path;
 		std::vector<uint8_t> 像素(320u * 180u * 4u, 0u);
 		uint32_t 宽 = 0;
 		uint32_t 高 = 0;
@@ -2010,6 +2015,10 @@ TEST(Renderer_Particle_Test, 粒子三路径绘制对照)
 	EXPECT_EQ(CPU路径.items, 1u);
 	EXPECT_EQ(GPU路径.items, 1u);
 	EXPECT_EQ(间接路径.items, 1u);
+	//绘制路径观测（第三百四十八轮）：1 = CPU / 2 = GPU 直接 / 3 = GPU 间接
+	EXPECT_EQ(CPU路径.draw_path, 1u);
+	EXPECT_EQ(GPU路径.draw_path, 2u);
+	EXPECT_EQ(间接路径.draw_path, 3u);
 	//可见像素非零且三路径接近（同公式、仅构造位置不同：主机 vs 顶点着色器）
 	EXPECT_GT(CPU路径.visible, 0u);
 	EXPECT_GT(GPU路径.visible, 0u);

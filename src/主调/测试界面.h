@@ -56,6 +56,10 @@ namespace engine
         uint64_t cache_parallel_dispatches = 0;
         //设备是否支持 GPU 时间戳
         bool gpu_supported = false;
+        //粒子观测（第三百四十八轮）：活跃数、最近一次绘制路径（0 未登记 / 1 CPU / 2 GPU 直接 / 3 GPU 间接）、紧凑耗时
+        uint64_t particle_active = 0;
+        uint32_t particle_draw_path = 0;
+        double particle_compact_ms = 0.0;
     };
 
     //测试操作界面绘制（每帧由图形操作界面的 UI 绘制回调调用）

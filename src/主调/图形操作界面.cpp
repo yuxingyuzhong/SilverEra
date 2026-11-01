@@ -229,6 +229,7 @@ namespace engine
             ImGui::Bullet(); ImGui::TextWrapped("⑥ 纹理与动态：棋盘 / 动态更新 / UV 立方");
             ImGui::Bullet(); ImGui::TextWrapped("⑦ 卡通渲染：走近该区即切换色阶量化 / 边缘光 / 暗部色调 / 卡通高光 / 外扩描边 / 加法光晕");
             ImGui::Bullet(); ImGui::TextWrapped("⑧ Cluster 灯墙：16 × 8 盏彩色点光（128 盏）；走近该区自动开启逐簇光照，离开关闭");
+            ImGui::Bullet(); ImGui::TextWrapped("⑨ 粒子喷泉：GPU 常驻模拟 ＋ 间接绘制（单条 vkCmdDrawIndexedIndirect，实例数由 GPU 写）");
             ImGui::Bullet(); ImGui::TextWrapped("多线程：4 工作线程（并行剔除 / 差异扫描；场景 pass 与阴影 pass 均按段并行录制）");
             ImGui::Separator();
             float 位置[3] = { 0.0f, 0.0f, 0.0f };
@@ -252,6 +253,17 @@ namespace engine
                 static_cast<unsigned long long>(上下文.运行状态.parallel_dispatches),
                 上下文.运行状态.parallel_segments,
                 上下文.运行状态.shadow_parallel_segments);
+            //粒子观测（第三百四十八轮；路径 0 未登记 / 1 CPU / 2 GPU 直接 / 3 GPU 间接）
+            const char* 粒子路径 = "未登记";
+            if (上下文.运行状态.particle_draw_path == 1)
+                粒子路径 = "CPU 参考";
+            else if (上下文.运行状态.particle_draw_path == 2)
+                粒子路径 = "GPU 直接";
+            else if (上下文.运行状态.particle_draw_path == 3)
+                粒子路径 = "GPU 间接";
+            ImGui::TextWrapped("粒子 活跃 %llu   绘制路径 %s   紧凑 %.2f ms",
+                static_cast<unsigned long long>(上下文.运行状态.particle_active),
+                粒子路径, 上下文.运行状态.particle_compact_ms);
             //实例剔除并行阈值（第二百二十二轮；0 表示未初始化）
             ImGui::TextWrapped("剔除并行阈值 %u（实例数达到该值才走并行剔除）",
                 上下文.运行状态.cull_parallel_min_instances);
@@ -584,6 +596,10 @@ namespace engine
             上下文.运行状态.cull_parallel_dispatches = 统计.cull_parallel_dispatches;
             上下文.运行状态.scan_parallel_dispatches = 统计.scan_parallel_dispatches;
             上下文.运行状态.cache_parallel_dispatches = 统计.cache_parallel_dispatches;
+            //粒子观测（第三百四十八轮）
+            上下文.运行状态.particle_active = 统计.particle_active;
+            上下文.运行状态.particle_draw_path = 统计.particle_draw_path;
+            上下文.运行状态.particle_compact_ms = 统计.particle_compact_ms;
             上下文.运行状态.gpu_supported = 渲染器.gpu_timestamp_supported();
 
             //推进一帧
