@@ -1370,3 +1370,65 @@ TEST(Renderer_Particle_Test, 常驻百万粒子基线)
 	EXPECT_LT(emit_ms, 10000.0);
 }
 
+
+/*
+常驻绘制（第三百三十轮）
+常驻发射 256 个后回读位图与状态并按活跃位构建实例：出帧有绘制项、中心区域出现粒子像素；
+容量超过 65536 时常驻绘制返回假（大容量绘制留待间接绘制）。
+*/
+TEST(Renderer_Particle_Test, 常驻绘制)
+{
+	engine::Renderer_Config config;
+	config.width = 64;
+	config.height = 64;
+	config.hidden = true;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(config));
+	ASSERT_TRUE(renderer.particle_enable_set(true));
+	ASSERT_TRUE(renderer.particle_capacity_set(4096));
+	engine::Particle_Emitter emitter{};
+	emitter.direction[1] = 1.0f;
+	emitter.speed_min = 0.5f;
+	emitter.speed_max = 1.0f;
+	emitter.lifetime_min = 1.0f;
+	emitter.lifetime_max = 1.0f;
+	emitter.shape = static_cast<uint32_t>(engine::Emit_Shape::Sphere_Shell);
+	emitter.extents[0] = 0.3f;
+	emitter.count = 256;
+	engine::Particle_Params params{};
+	params.damping = 1.0f;
+	ASSERT_TRUE(renderer.particle_emitter_set(emitter));
+	ASSERT_TRUE(renderer.particle_params_set(params));
+	ASSERT_TRUE(renderer.particle_resident_set(true));
+	ASSERT_EQ(renderer.particle_gpu_emit(256), 256u);
+	EXPECT_EQ(renderer.particle_active_count(), 256u);
+	const float clear[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
+	renderer.clear_color_set(clear);
+	renderer.camera_position_set(0.0f, 0.0f, 4.0f);
+	renderer.camera_target_set(0.0f, 0.0f, 0.0f);
+	uint64_t target = 0;
+	ASSERT_TRUE(renderer.render_target_create(target, 64, 64));
+	renderer.render_target_set(target);
+	//常驻绘制与出帧
+	ASSERT_TRUE(renderer.particle_draw(0.1f));
+	ASSERT_TRUE(renderer.frame_render());
+	EXPECT_GT(renderer.frame_stats_get().drawn_items, 0u);
+	std::vector<uint8_t> pixels(64 * 64 * 4, 0);
+	uint32_t width = 0;
+	uint32_t height = 0;
+	ASSERT_TRUE(renderer.render_target_readback(target, pixels.data(), static_cast<uint32_t>(pixels.size()),
+		&width, &height));
+	uint32_t visible = 0;
+	for (std::size_t index = 0; index + 3 < pixels.size(); index += 4)
+	{
+		//任意通道明显高于清屏色即视为粒子像素
+		if (pixels[index + 0] > 8u || pixels[index + 1] > 8u || pixels[index + 2] > 8u)
+			++visible;
+	}
+	EXPECT_GT(visible, 0u);
+	//超过 65536 容量：常驻绘制返回假（留待间接绘制）
+	ASSERT_TRUE(renderer.particle_capacity_set(engine::PARTICLE_CAPACITY_MAX));
+	EXPECT_FALSE(renderer.particle_draw(0.1f));
+	renderer.render_target_set(0);
+	renderer.render_target_destroy(target);
+}
