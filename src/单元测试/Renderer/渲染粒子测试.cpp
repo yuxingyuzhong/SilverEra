@@ -2641,3 +2641,105 @@ TEST(Renderer_Particle_Test, 粒子参数快照读取)
 	EXPECT_FALSE(renderer.particle_params_set(invalid));
 	EXPECT_FLOAT_EQ(renderer.particle_params_get().soft_depth_range, 0.01f);
 }
+
+/*
+软粒子档位扫掠（第三百七十一轮；阶段 E）
+同一离屏场景（黑墙在纯蓝粒子后方 0.02、GPU 直接绘制），档位 0 / 0.002 / 0.005 / 0.02 逐档测量：
+淡出强度随档位单调不增（片元 alpha = clamp(深度差 / 档位, 0, 1)），蓝和应为非增序列。
+*/
+TEST(Renderer_Particle_Test, 软粒子档位扫掠)
+{
+	const float clear[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
+	bool hiz_ok = true;
+	//单档位测量（离屏 64×36、GPU 直接绘制一枚粒子）
+	auto measure = [&](float soft_range, uint64_t& sum_out) -> void
+	{
+		sum_out = 0;
+		engine::Renderer_Config config;
+		config.width = 64;
+		config.height = 36;
+		config.hidden = true;
+		config.hiz_enable = true;
+		config.msaa_samples = 1;
+		engine::Renderer renderer;
+		ASSERT_TRUE(renderer.init(config));
+		//能力不足：交由测试体统一跳过
+		if (!renderer.hiz_supported())
+		{
+			hiz_ok = false;
+			return;
+		}
+		renderer.clear_color_set(clear);
+		renderer.camera_position_set(0.0f, 0.0f, 3.0f);
+		renderer.camera_target_set(0.0f, 0.0f, 0.0f);
+		ASSERT_TRUE(renderer.particle_enable_set(true));
+		ASSERT_TRUE(renderer.particle_capacity_set(8));
+		engine::Particle_Emitter emitter{};
+		emitter.position[2] = 0.6f;
+		emitter.direction[2] = -1.0f;
+		emitter.speed_min = 0.0f;
+		emitter.speed_max = 0.0f;
+		emitter.lifetime_min = 10.0f;
+		emitter.lifetime_max = 10.0f;
+		emitter.shape = static_cast<uint32_t>(engine::Emit_Shape::Point);
+		emitter.count = 1;
+		engine::Particle_Params params{};
+		params.damping = 1.0f;
+		params.color_start[2] = 1.0f;
+		params.color_end[2] = 1.0f;
+		params.color_enabled = 1;
+		params.soft_depth_range = soft_range;
+		ASSERT_TRUE(renderer.particle_emitter_set(emitter));
+		ASSERT_TRUE(renderer.particle_params_set(params));
+		ASSERT_TRUE(renderer.particle_resident_set(true));
+		ASSERT_EQ(renderer.particle_gpu_emit(1), 1u);
+		//墙面（4×4，向相机方向平移到 z=0.58；染黑避免其蓝通道遮挡比较）
+		engine::Mesh_Handle wall = 0;
+		ASSERT_TRUE(renderer.mesh_plane_load(wall, 4.0f, 4.0f));
+		ASSERT_TRUE(renderer.material_tint_set(0.0f, 0.0f, 0.0f, 1.0f));
+		uint64_t target = 0;
+		ASSERT_TRUE(renderer.render_target_create(target, 64, 36));
+		renderer.render_target_set(target);
+		//三帧：前两帧建历史，末帧回读
+		for (uint32_t frame = 0; frame < 3; ++frame)
+		{
+			float transform[16] = { 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
+				0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.58f, 1.0f };
+			ASSERT_TRUE(renderer.mesh_draw(wall, transform));
+			ASSERT_TRUE(renderer.particle_gpu_draw(1.0f));
+			ASSERT_TRUE(renderer.frame_render());
+		}
+		std::vector<uint8_t> pixels(64 * 36 * 4, 0);
+		uint32_t width = 0;
+		uint32_t height = 0;
+		ASSERT_TRUE(renderer.render_target_readback(target, pixels.data(), static_cast<uint32_t>(pixels.size()),
+			&width, &height));
+		uint64_t sum = 0;
+		//蓝通道（BGR 与 RGB 口径不确定，取红 / 蓝两通道较大者）
+		for (std::size_t index = 0; index + 3 < pixels.size(); index += 4)
+			sum += pixels[index] > pixels[index + 2] ? pixels[index] : pixels[index + 2];
+		renderer.render_target_set(0);
+		renderer.render_target_destroy(target);
+		renderer.mesh_unload(wall);
+		sum_out = sum;
+	};
+	uint64_t off = 0;
+	uint64_t tiny = 0;
+	uint64_t mid = 0;
+	uint64_t wide = 0;
+	measure(0.0f, off);
+	measure(0.002f, tiny);
+	measure(0.005f, mid);
+	measure(0.02f, wide);
+	if (!hiz_ok)
+		GTEST_SKIP() << "本机不支持 Hi-Z 所需能力";
+	std::cout << "[软粒子扫掠] 0=" << off << " 0.002=" << tiny << " 0.005=" << mid
+		<< " 0.02=" << wide << std::endl;
+	EXPECT_GT(off, 0u);
+	//淡出强度随档位单调不增
+	EXPECT_LE(tiny, off);
+	EXPECT_LE(mid, tiny);
+	EXPECT_LE(wide, mid);
+	//最大档位相对关闭档显著淡出
+	EXPECT_LT(wide * 100u, off * 40u);
+}
