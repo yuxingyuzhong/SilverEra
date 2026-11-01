@@ -1293,6 +1293,57 @@ TEST(Renderer_Cluster_Test, 大光源整帧耗时对照)
 }
 
 /*
+片元簇采样：线性衰减提前退出（第三百零四轮）
+口径：八盏小半径（2）点光按线性衰减分布在画面各处，多数片元落在部分光源半径外；
+Cluster 开启（逐簇列表）与关闭（原 8 盏循环）两态仍须逐字节一致——锥外 / 半径外贡献恰为 0。
+*/
+TEST(Renderer_Cluster_Test, 片元簇采样_线性衰减提前退出)
+{
+	const uint32_t pixel_count = WINDOW_WIDTH * WINDOW_HEIGHT * 4u;
+	std::vector<std::vector<uint8_t>> results;
+	for (uint32_t cluster_index = 0; cluster_index < 2; ++cluster_index)
+	{
+		engine::Renderer_Config config = hidden_config();
+		config.msaa_samples = 1;
+		engine::Renderer renderer;
+		ASSERT_TRUE(renderer.init(config));
+		if (cluster_index != 0)
+		{
+			if (!renderer.cluster_supported())
+				GTEST_SKIP() << "本机不支持计算路径，簇采样路径不可用";
+			ASSERT_TRUE(renderer.cluster_enable_set(true));
+		}
+		//关闭主方向光，让画面由点光主导
+		const float no_direction[3] = { 0.0f, 0.0f, -1.0f };
+		const float no_color[3] = { 1.0f, 1.0f, 1.0f };
+		renderer.light_set(no_direction, no_color, 0.0f, 0.0f);
+		engine::Mesh_Handle mesh = 0;
+		ASSERT_TRUE(renderer.mesh_load(mesh, quad_data_lit()));
+		//八盏小半径点光（线性衰减；多数片元只在其中少数光源半径内）
+		const float color[3] = { 0.9f, 0.85f, 0.75f };
+		for (uint32_t index = 0; index < 8; ++index)
+		{
+			const float position[3] = { static_cast<float>(index % 4) * 3.0f - 4.5f,
+				static_cast<float>(index / 4) * 2.0f - 1.0f, 1.5f };
+			ASSERT_TRUE(renderer.light_add_point(position, color, 2.0f, 0.6f, 0.0f, 1u));
+		}
+		//逐帧回读
+		std::vector<uint8_t> pixels(pixel_count, 0u);
+		for (uint32_t frame = 0; frame < 3; ++frame)
+		{
+			ASSERT_TRUE(renderer.mesh_draw(mesh, nullptr));
+			ASSERT_TRUE(renderer.frame_render(pixels.data(), pixel_count, nullptr, nullptr));
+		}
+		results.push_back(std::move(pixels));
+		renderer.mesh_unload(mesh);
+	}
+	//两态画面逐字节一致（半径外贡献 0，提前退出不改变结果）
+	const bool same = std::mismatch(results[0].begin(), results[0].end(), results[1].begin()).first
+		== results[0].end();
+	EXPECT_TRUE(same) << "线性衰减提前退出改变了画面（应逐字节一致）";
+}
+
+/*
 展廊灯墙接入（第三百零二轮）
 口径：隐藏窗口搭建能力展示场景，验证灯墙 128 盏已登记、出帧正常；
 手动开启 Cluster 后簇条目与上传量非零（真实展廊场景下的簇光照可用性）。
