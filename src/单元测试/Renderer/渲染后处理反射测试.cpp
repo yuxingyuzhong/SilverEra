@@ -71,8 +71,9 @@ namespace
 		return count;
 	}
 
-	//准备「目标组 ＋ 单级后处理 ＋ 镜面 / 立方体」并渲染一帧
-	std::vector<uint8_t> render_with(const char* shader, const std::array<float, 4>& params)
+	//准备「目标组 ＋ 单级后处理 ＋ 镜面 / 立方体」并渲染一帧（edge < 0 表示不设边缘宽度）
+	std::vector<uint8_t> render_with(const char* shader, const std::array<float, 4>& params,
+		float edge = -1.0f)
 	{
 		engine::Renderer renderer;
 		EXPECT_TRUE(renderer.init(hidden_config()));
@@ -83,6 +84,9 @@ namespace
 		//链先于 present_set 设置（与既有遮蔽用例同序）
 		EXPECT_TRUE(renderer.post_chain_set(&pass, 1));
 		renderer.post_stage_param4_set(0, params[0], params[1], params[2], params[3]);
+		//边缘淡出宽度（第三百七十七轮；仅反射级读取第三组推送的 x 分量）
+		if (edge >= 0.0f)
+			renderer.post_stage_color4_set(0, edge, 0.0f, 0.0f, 0.0f);
 		renderer.render_target_present_set(scene_target);
 		engine::Mesh_Handle mirror = 0;
 		EXPECT_TRUE(renderer.mesh_load(mirror, quad_data()));
@@ -136,4 +140,27 @@ TEST_F(Renderer_Post_Chain_Test, 反射未初始化设置无副作用)
 	renderer.post_stage_param4_set(0, 1.0f, 0.5f, 8.0f, 1.0f);
 	renderer.post_chain_set(nullptr, 0);
 	SUCCEED();
+}
+
+/*
+反射边缘淡出宽度可配（第三百七十七轮）
+口径：屏幕空间反射的「屏幕边缘淡出」宽度由第三组推送的 x 分量控制，未设置（≤ 0）回落 0.15。
+1. 未设置与显式 0.15 两帧逐通道差 ≤ 2（回落口径与旧行为一致）；
+2. 极窄（0.001，几乎不淡出）与加宽（0.4）两帧在画面上存在差异（参数生效）。
+*/
+TEST_F(Renderer_Post_Chain_Test, 反射边缘淡出宽度可配)
+{
+	std::vector<uint8_t> unset = render_with("屏幕空间反射.frag.spv", { 1.0f, 0.5f, 8.0f, 1.0f });
+	std::vector<uint8_t> default_width = render_with("屏幕空间反射.frag.spv", { 1.0f, 0.5f, 8.0f, 1.0f }, 0.15f);
+	std::vector<uint8_t> narrow = render_with("屏幕空间反射.frag.spv", { 1.0f, 0.5f, 8.0f, 1.0f }, 0.001f);
+	std::vector<uint8_t> wide = render_with("屏幕空间反射.frag.spv", { 1.0f, 0.5f, 8.0f, 1.0f }, 0.4f);
+	//回落口径：未设置与显式默认宽度一致
+	int default_diff = max_channel_diff(unset, default_width);
+	RecordProperty("ssr_edge_default_diff", default_diff);
+	EXPECT_LE(default_diff, 2) << "未设置边缘宽度未回落默认 0.15（最大差 " << default_diff << "）";
+	//参数生效：极窄与加宽之间存在差异
+	uint32_t changed = differing_pixels(narrow, wide, 2);
+	RecordProperty("ssr_edge_changed_pixels", static_cast<int>(changed));
+	std::cout << "[反射边缘] 极窄 vs 加宽 差异像素=" << changed << std::endl;
+	EXPECT_GT(changed, 0u) << "边缘淡出宽度参数未生效";
 }
