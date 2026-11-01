@@ -2,10 +2,12 @@
 渲染粒子门面测试（第三百一十轮；深研方向二 阶段 A）
 覆盖：未初始化拒绝、默认关闭、开关与容量钳制、发射器 / 参数校验、发射与步进、关闭再开启沿用池内容。
 第三百一十一轮补：GPU 推进资源可用性与零步自检。
+第三百一十二轮补：GPU 单步推进与 CPU 参考逐粒子对照。
 */
 #include <gtest/gtest.h>
 
 #include <cstdint>
+#include <limits>
 
 #include "Application/Renderer/src/render/Renderer/渲染器.h"
 
@@ -165,4 +167,67 @@ TEST(Renderer_Particle_Test, GPU推进自检)
 	EXPECT_EQ(renderer.particle_capacity_get(), 128u);
 	EXPECT_TRUE(renderer.particle_gpu_available());
 	EXPECT_TRUE(renderer.particle_gpu_probe());
+}
+
+/*
+GPU 单步对照（第三百一十二轮）
+同种子 / 同配置的两套渲染器各发射 32 个粒子，CPU 参考与 GPU 推进连跑 10 步；
+逐粒子比对位置 / 速度 / 年龄 / 寿命（阈值 1e-5）。
+*/
+TEST(Renderer_Particle_Test, GPU推进单步对照)
+{
+	engine::Particle_Emitter emitter = point_emitter();
+	emitter.lifetime_min = 2.0f;
+	emitter.lifetime_max = 3.0f;
+	engine::Particle_Params params{};
+	params.gravity[1] = -2.0f;
+	params.damping = 0.9f;
+	params.restitution = 0.4f;
+	params.friction = 0.2f;
+	engine::Renderer cpu;
+	engine::Renderer gpu;
+	ASSERT_TRUE(cpu.init(hidden_config()));
+	ASSERT_TRUE(gpu.init(hidden_config()));
+	ASSERT_TRUE(cpu.particle_enable_set(true));
+	ASSERT_TRUE(gpu.particle_enable_set(true));
+	ASSERT_TRUE(cpu.particle_capacity_set(64));
+	ASSERT_TRUE(gpu.particle_capacity_set(64));
+	ASSERT_TRUE(cpu.particle_emitter_set(emitter));
+	ASSERT_TRUE(gpu.particle_emitter_set(emitter));
+	ASSERT_TRUE(cpu.particle_params_set(params));
+	ASSERT_TRUE(gpu.particle_params_set(params));
+	ASSERT_EQ(cpu.particle_emit(32), 32u);
+	ASSERT_EQ(gpu.particle_emit(32), 32u);
+	ASSERT_TRUE(gpu.particle_gpu_available());
+	//步长非法拒绝
+	EXPECT_FALSE(gpu.particle_gpu_step(0.0f));
+	EXPECT_FALSE(gpu.particle_gpu_step(-1.0f));
+	EXPECT_FALSE(gpu.particle_gpu_step(std::numeric_limits<float>::quiet_NaN()));
+	//十步推进（同参数同顺序）
+	for (uint32_t step = 0; step < 10; ++step)
+	{
+		cpu.particle_step(0.05f);
+		ASSERT_TRUE(gpu.particle_gpu_step(0.05f));
+	}
+	//逐活跃索引比对
+	uint32_t compared = 0;
+	for (uint32_t index = 0; index < 64; ++index)
+	{
+		engine::Particle_State expected{};
+		engine::Particle_State actual{};
+		//CPU 侧非活跃索引跳过
+		if (!cpu.particle_state_get(index, expected))
+			continue;
+		ASSERT_TRUE(gpu.particle_state_get(index, actual));
+		for (uint32_t axis = 0; axis < 3; ++axis)
+		{
+			EXPECT_NEAR(expected.position[axis], actual.position[axis], 1e-5f);
+			EXPECT_NEAR(expected.velocity[axis], actual.velocity[axis], 1e-5f);
+		}
+		EXPECT_NEAR(expected.age, actual.age, 1e-5f);
+		EXPECT_NEAR(expected.lifetime, actual.lifetime, 1e-5f);
+		++compared;
+	}
+	EXPECT_EQ(compared, 32u);
+	EXPECT_EQ(gpu.particle_active_count(), 32u);
 }
