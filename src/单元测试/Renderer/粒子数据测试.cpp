@@ -127,4 +127,29 @@ TEST(Particle_Data_Test, 模拟参数校验)
 	params = base_params();
 	params.gravity[1] = std::numeric_limits<float>::quiet_NaN();
 	EXPECT_FALSE(engine::particle_params_valid(params));
+	/*
+	颜色覆盖（第三百五十四轮）
+	启用时两端颜色各通道须落在 [0, 1]：越界 / 负值 / 非有限拒绝，合法接受；
+	未启用时颜色字段不参与校验（旧调用方的零初始化参数保持可用）。
+	*/
+	params = base_params();
+	params.color_enabled = 1;
+	params.color_start[2] = 2.0f;
+	EXPECT_FALSE(engine::particle_params_valid(params));
+	params = base_params();
+	params.color_enabled = 1;
+	params.color_end[0] = -0.1f;
+	EXPECT_FALSE(engine::particle_params_valid(params));
+	params = base_params();
+	params.color_enabled = 1;
+	params.color_start[1] = std::numeric_limits<float>::quiet_NaN();
+	EXPECT_FALSE(engine::particle_params_valid(params));
+	params = base_params();
+	params.color_start[2] = 2.0f;
+	EXPECT_TRUE(engine::particle_params_valid(params));
+	params = base_params();
+	params.color_enabled = 1;
+	params.color_start[2] = 1.0f;
+	params.color_end[1] = 1.0f;
+	EXPECT_TRUE(engine::particle_params_valid(params));
 }

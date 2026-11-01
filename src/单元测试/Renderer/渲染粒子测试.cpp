@@ -440,6 +440,92 @@ TEST(Renderer_Particle_Test, 粒子年龄颜色曲线)
 }
 
 /*
+粒子颜色覆盖绘制（第三百五十四轮）
+单枚原点粒子配置「蓝 → 绿」：CPU 参考路径年龄 0 中心像素蓝优、年龄 0.8 绿优（随年龄插值）；
+常驻 GPU 直接 / 间接两条路径推送块同口径，年龄 ≈ 0 中心像素同样蓝优。
+像素缓冲为 BGRA：偏移 +0 = 蓝、+1 = 绿、+2 = 红。
+*/
+TEST(Renderer_Particle_Test, 粒子颜色覆盖绘制)
+{
+	engine::Renderer_Config config;
+	config.width = 64;
+	config.height = 64;
+	config.hidden = true;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(config));
+	const float clear[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
+	renderer.clear_color_set(clear);
+	renderer.camera_position_set(0.0f, 0.0f, 3.0f);
+	renderer.camera_target_set(0.0f, 0.0f, 0.0f);
+	ASSERT_TRUE(renderer.particle_enable_set(true));
+	ASSERT_TRUE(renderer.particle_capacity_set(8));
+	engine::Particle_Emitter emitter{};
+	emitter.direction[2] = -1.0f;
+	emitter.speed_min = 0.0f;
+	emitter.speed_max = 0.0f;
+	emitter.lifetime_min = 1.0f;
+	emitter.lifetime_max = 1.0f;
+	emitter.shape = static_cast<uint32_t>(engine::Emit_Shape::Point);
+	emitter.count = 1;
+	engine::Particle_Params params{};
+	params.damping = 1.0f;
+	params.color_start[2] = 1.0f;
+	params.color_end[1] = 1.0f;
+	params.color_enabled = 1;
+	ASSERT_TRUE(renderer.particle_emitter_set(emitter));
+	ASSERT_TRUE(renderer.particle_params_set(params));
+	uint64_t target = 0;
+	ASSERT_TRUE(renderer.render_target_create(target, 64, 64));
+	renderer.render_target_set(target);
+	const std::size_t center = (static_cast<std::size_t>(32) * 64 + 32) * 4;
+	std::vector<uint8_t> pixels(64 * 64 * 4, 0);
+	uint32_t width = 0;
+	uint32_t height = 0;
+	//CPU 参考路径：年龄 0（新生端为蓝）
+	ASSERT_EQ(renderer.particle_emit(1), 1u);
+	ASSERT_TRUE(renderer.particle_draw(0.6f));
+	ASSERT_TRUE(renderer.frame_render());
+	std::fill(pixels.begin(), pixels.end(), 0);
+	ASSERT_TRUE(renderer.render_target_readback(target, pixels.data(), static_cast<uint32_t>(pixels.size()),
+		&width, &height));
+	EXPECT_GT(pixels[center + 0], 100u);
+	EXPECT_GT(static_cast<uint32_t>(pixels[center + 0]), static_cast<uint32_t>(pixels[center + 1]) + 60u);
+	//CPU 参考路径：推进到年龄 0.8（衰老端为绿）
+	for (uint32_t step = 0; step < 8; ++step)
+		renderer.particle_step(0.1f);
+	ASSERT_EQ(renderer.particle_active_count(), 1u);
+	ASSERT_TRUE(renderer.particle_draw(0.6f));
+	ASSERT_TRUE(renderer.frame_render());
+	std::fill(pixels.begin(), pixels.end(), 0);
+	ASSERT_TRUE(renderer.render_target_readback(target, pixels.data(), static_cast<uint32_t>(pixels.size()),
+		&width, &height));
+	EXPECT_GT(pixels[center + 1], 100u);
+	EXPECT_GT(static_cast<uint32_t>(pixels[center + 1]), static_cast<uint32_t>(pixels[center + 0]) + 60u);
+	//常驻 GPU 路径：GPU 侧发射后单步推进（年龄 ≈ 0）
+	ASSERT_TRUE(renderer.particle_resident_set(true));
+	ASSERT_EQ(renderer.particle_gpu_emit(1), 1u);
+	ASSERT_TRUE(renderer.particle_gpu_step_resident(0.01f));
+	//GPU 直接绘制
+	ASSERT_TRUE(renderer.particle_gpu_draw(0.6f));
+	ASSERT_TRUE(renderer.frame_render());
+	std::fill(pixels.begin(), pixels.end(), 0);
+	ASSERT_TRUE(renderer.render_target_readback(target, pixels.data(), static_cast<uint32_t>(pixels.size()),
+		&width, &height));
+	EXPECT_GT(pixels[center + 0], 100u);
+	EXPECT_GT(static_cast<uint32_t>(pixels[center + 0]), static_cast<uint32_t>(pixels[center + 1]) + 60u);
+	//GPU 间接绘制
+	ASSERT_TRUE(renderer.particle_indirect_draw(0.6f));
+	ASSERT_TRUE(renderer.frame_render());
+	std::fill(pixels.begin(), pixels.end(), 0);
+	ASSERT_TRUE(renderer.render_target_readback(target, pixels.data(), static_cast<uint32_t>(pixels.size()),
+		&width, &height));
+	EXPECT_GT(pixels[center + 0], 100u);
+	EXPECT_GT(static_cast<uint32_t>(pixels[center + 0]), static_cast<uint32_t>(pixels[center + 1]) + 60u);
+	renderer.render_target_set(0);
+	renderer.render_target_destroy(target);
+}
+
+/*
 粒子混合档与深度写入（第三百一十六轮）
 两枚重合粒子：Alpha 档中心像素为单层颜色，切换 Additive 后叠加增亮；
 默认档为 Alpha、非法档拒绝、深度写入开关可读写（切换触发管线重建）。
