@@ -500,6 +500,31 @@ namespace engine
 		//高度衰减（第一百四十三轮）：高处物体比贴地物体更通透
 		雾.height_falloff = 0.012f;
 		渲染器.scene_apply(相机, 光照, 雾);
+		/*
+		Cluster 灯墙灯光登记（第三百零二轮）
+		临时开启簇光照以突破 8 盏上限，登记 16 × 8 盏彩色点光（记录持久保留），随后恢复关闭；
+		设备不支持计算路径时跳过（灯墙只保留墙体与 8 盏前向灯光）。
+		*/
+		if (渲染器.cluster_supported())
+		{
+			渲染器.cluster_enable_set(true);
+			const float 灯墙色[6][3] = {
+				{ 1.0f, 0.38f, 0.32f }, { 1.0f, 0.72f, 0.30f }, { 0.55f, 0.95f, 0.55f },
+				{ 0.35f, 0.90f, 0.95f }, { 0.45f, 0.62f, 1.0f }, { 0.85f, 0.55f, 1.0f },
+			};
+			for (uint32_t 行 = 0; 行 < 8; ++行)
+			{
+				for (uint32_t 列 = 0; 列 < 16; ++列)
+				{
+					const uint32_t 序号 = 行 * 16 + 列;
+					//灯位略在墙前（-48.8），半径 2.5 覆盖邻近墙面
+					const float 灯位置[3] = { -19.0f + 0.64f * static_cast<float>(列),
+						1.0f + 0.7f * static_cast<float>(行), -48.8f };
+					(void)渲染器.light_add_point(灯位置, 灯墙色[序号 % 6], 2.5f, 0.16f, 0.0f);
+				}
+			}
+			渲染器.cluster_enable_set(false);
+		}
 		//阴影范围与级联（覆盖整条展廊：三片 × 远处倍增）
 		渲染器.shadow_range_set(30.0f, 1.0f, 130.0f);
 		渲染器.shadow_cascade_set(3, 18.0f, 2.2f);
@@ -628,6 +653,23 @@ namespace engine
 			else
 				渲染器.outline_clear();
 		}
+		/*
+		Cluster 灯墙区切换（第三百零二轮）
+		相机进入第八展区（-14, -50）半径 9 时开启簇光照，离开关闭；
+		仅在状态变化时调用，设备不支持计算路径时保持关闭。
+		*/
+		const float 灯墙区x = -14.0f;
+		const float 灯墙区z = -50.0f;
+		const float 灯距x = 位置_[0] - 灯墙区x;
+		const float 灯距z = 位置_[2] - 灯墙区z;
+		const bool 进入灯墙区 = (灯距x * 灯距x + 灯距z * 灯距z) < 81.0f;
+		//若激活状态变化
+		if (进入灯墙区 != 灯墙区激活_)
+		{
+			灯墙区激活_ = 进入灯墙区;
+			if (渲染器.cluster_supported())
+				渲染器.cluster_enable_set(进入灯墙区);
+		}
 	}
 
 	//登记本帧全部绘制项与字幕
@@ -650,10 +692,10 @@ namespace engine
 			const char* 标题;
 		};
 		/*
-		展区网格（前两排各三列，第三排为卡通渲染区；第一百九十二轮增第七区）
+		展区网格（前两排各三列，第三排为卡通渲染区；第一百九十二轮增第七区，第三百零二轮增第八区）
 		第一排距离相机约 22 单位，第二排约 42 单位，第三排约 62 单位；每区 12×12 地台。
 		*/
-		const 展区 展区表[7] = {
+		const 展区 展区表[8] = {
 			{ -14.0f, -10.0f, { 0.46f, 0.52f, 0.70f }, "① 程序化网格（含细分地形）" },
 			{ 0.0f,   -10.0f, { 0.74f, 0.52f, 0.40f }, "② PBR 材质" },
 			{ 14.0f,  -10.0f, { 0.40f, 0.66f, 0.60f }, "③ 光照与阴影" },
@@ -661,6 +703,7 @@ namespace engine
 			{ 0.0f,   -30.0f, { 0.76f, 0.60f, 0.34f }, "⑤ 几何拼接" },
 			{ 14.0f,  -30.0f, { 0.50f, 0.62f, 0.46f }, "⑥ 纹理与动态" },
 			{ 0.0f,   -50.0f, { 0.44f, 0.50f, 0.68f }, "⑦ 卡通渲染（色阶 / 边缘光 / 高光 / 外扩描边）" },
+			{ -14.0f, -50.0f, { 0.66f, 0.44f, 0.52f }, "⑧ Cluster 灯墙（128 盏逐簇光照）" },
 		};
 		//圆周常数（环形排布与环绕动画用）
 		const float 圆周率 = 3.14159265f;
@@ -1004,6 +1047,29 @@ namespace engine
 			//恢复本区外扩描边（与 update 内的启用值一致）
 			const float 描边色[3] = { 0.06f, 0.05f, 0.10f };
 			渲染器.outline_set(0.05f, 描边色);
+		}
+
+		/*
+		—— 展区⑧：Cluster 灯墙（第三百零二轮） ——
+		墙面用立方体压扁成板；128 个灯泡按 16 × 8 排布，一次实例化提交；
+		灯泡对应的点光已在 init 中登记，进入本区时由 update 开启簇光照。
+		*/
+		{
+			//墙板（10 × 6.5 × 0.5，中心抬高到墙高一半）
+			渲染器.material_tint_set(0.22f, 0.24f, 0.30f, 1.0f);
+			const std::array<float, 16> 墙板 = 非均匀变换(-14.0f, 3.4f, -50.0f, 10.0f, 6.5f, 0.5f);
+			(void)渲染器.mesh_draw(立方体_, 墙板.data());
+			//灯泡矩阵（与灯光位置一一对应，略靠墙前）
+			std::vector<std::array<float, 16>> 灯泡矩阵;
+			灯泡矩阵.reserve(128);
+			for (uint32_t 行 = 0; 行 < 8; ++行)
+				for (uint32_t 列 = 0; 列 < 16; ++列)
+					灯泡矩阵.push_back(变换(-19.0f + 0.64f * static_cast<float>(列),
+						1.0f + 0.7f * static_cast<float>(行), -49.6f, 0.22f));
+			渲染器.material_tint_set(1.0f, 0.86f, 0.62f, 1.0f);
+			(void)渲染器.mesh_draw_instanced(球_, reinterpret_cast<const float*>(灯泡矩阵.data()),
+				static_cast<uint32_t>(灯泡矩阵.size()));
+			渲染器.material_tint_clear();
 		}
 
 		//—— 区域标签（三维投影：把世界坐标投到屏幕像素，再绘制文字） ——

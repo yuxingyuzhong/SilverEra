@@ -220,7 +220,7 @@ namespace engine
             ImGui::TextUnformatted("渲染能力展示 · 可漫游场景");
             ImGui::Separator();
             //展区图例（与三维投影标签一一对应；长行自动折行，避免右端被窗口裁剪）
-            ImGui::TextUnformatted("七个展区（场景内有同名标签）：");
+            ImGui::TextUnformatted("八个展区（场景内有同名标签）：");
             ImGui::Bullet(); ImGui::TextWrapped("① 程序化网格：九种图元环形排布（含四棱锥与细分地形底板）");
             ImGui::Bullet(); ImGui::TextWrapped("② PBR 材质：粗糙度 / 金属度 / 法线贴图 / 自发光 / 清漆层对比");
             ImGui::Bullet(); ImGui::TextWrapped("③ 光照与阴影：方向光 / 点光 / 聚光 / 三级级联");
@@ -228,6 +228,7 @@ namespace engine
             ImGui::Bullet(); ImGui::TextWrapped("⑤ 几何拼接：拱门 / 晶塔 / 环阵");
             ImGui::Bullet(); ImGui::TextWrapped("⑥ 纹理与动态：棋盘 / 动态更新 / UV 立方");
             ImGui::Bullet(); ImGui::TextWrapped("⑦ 卡通渲染：走近该区即切换色阶量化 / 边缘光 / 暗部色调 / 卡通高光 / 外扩描边 / 加法光晕");
+            ImGui::Bullet(); ImGui::TextWrapped("⑧ Cluster 灯墙：16 × 8 盏彩色点光（128 盏）；走近该区自动开启逐簇光照，离开关闭");
             ImGui::Bullet(); ImGui::TextWrapped("多线程：4 工作线程（并行剔除 / 差异扫描；场景 pass 与阴影 pass 均按段并行录制）");
             ImGui::Separator();
             float 位置[3] = { 0.0f, 0.0f, 0.0f };
@@ -409,6 +410,8 @@ namespace engine
         配置.height = 窗口高度;
         配置.title = 窗口标题;
         配置.frame_overlap = 2;
+        //实例容量（第三百零二轮：灯墙一次实例化 128 个灯泡，连同其余展区留足余量）
+        配置.instance_capacity = 512;
         配置.vsync = true;
         配置.hidden = false;
 
