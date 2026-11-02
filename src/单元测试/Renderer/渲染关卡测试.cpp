@@ -2,7 +2,8 @@
 渲染关卡测试（第四百二十九轮 · 方向六：场景序列化与关卡装载 · 阶段 A）
 覆盖：关卡文本往返（全字段逐位一致）、缺省补齐、非法文本拒绝（未知段 / 未知键 / 字段数不符 /
 非有限值 / 开关非 0-1 / 点光超 8 盏 / 资产行缺字段）、资产声明行原样保留、
-材质实例行（往返 / 缺省 / 数值越界 / 结构非法 / 重名；第四百六十六轮）、写入与读取失败路径。
+材质实例行（往返 / 缺省 / 数值越界 / 结构非法 / 重名；第四百六十六轮）、
+材质实例装配（拒绝 / 等价；第四百六十七轮）、写入与读取失败路径。
 口径：只测文本层（`engine::level_text_read` / `engine::level_text_write`），不建任何 GPU 资源。
 临时文件写在 `out/关卡测试/`：写盘用宽字符路径，加载 / 写出入参用 UTF-8 窄字符串。
 */
@@ -577,6 +578,101 @@ TEST(Renderer_Level_Test, 关卡材质实例重名)
 	engine::Level_Data loaded;
 	EXPECT_FALSE(engine::level_text_read(level_utf8("实例重名.level"), loaded));
 	EXPECT_TRUE(loaded.materials.empty());
+}
+
+/*
+材质实例装配拒绝（第四百六十七轮；方向七阶段 B-B）
+口径：place 引用未声明实例 / 实例模板名未命中材质库 → 关卡装载整份失败，输出清空。
+*/
+TEST(Renderer_Level_Test, 关卡材质实例装配拒绝)
+{
+	write_box_assets();
+	const std::vector<std::pair<std::string, std::string>> cases = {
+		{ "引用未声明实例", "level 拒绝\nmesh 方盒 box.obj\nmtl 方盒材质 box.mtl\nplace 方盒 蓝 0 0 0 1 1 1\n" },
+		{ "模板名未命中", "level 拒绝\nmaterial 红 不存在\nmesh 方盒 box.obj\nmtl 方盒材质 box.mtl\nplace 方盒 红 0 0 0 1 1 1\n" },
+	};
+
+	engine::Renderer_Config config;
+	config.width = LEVEL_WIDTH;
+	config.height = LEVEL_HEIGHT;
+	config.hidden = true;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(config));
+
+	for (const std::pair<std::string, std::string>& item : cases)
+	{
+		write_text(level_dir() / L"实例装配.level", item.second);
+		engine::Level_Data 关卡;
+		engine::Asset_Scene 场景;
+		EXPECT_FALSE(renderer.level_load(关卡, 场景, level_utf8("实例装配.level"))) << item.first;
+		//失败契约：关卡与场景输出清空
+		EXPECT_TRUE(场景.objects.empty()) << item.first;
+		EXPECT_TRUE(场景.meshes.empty()) << item.first;
+		EXPECT_TRUE(场景.materials.empty()) << item.first;
+	}
+}
+
+/*
+材质实例等价装配（第四百六十七轮；方向七阶段 B-B）
+口径：默认覆盖（tint 1/1/1/1、emissive 0）经实例装配，画面与「直接引用材质库」逐字节一致。
+*/
+TEST(Renderer_Level_Test, 关卡材质实例等价装配)
+{
+	write_box_assets();
+	//直接引用材质库
+	write_text(level_dir() / L"实例等价甲.level",
+		"level 等价甲\n"
+		"camera position 1 0 3\n"
+		"mesh 方盒 box.obj\n"
+		"mtl 方盒材质 box.mtl\n"
+		"place 方盒 方盒材质 0 0 0 1 1 1\n");
+	//同模板实例（默认覆盖）
+	write_text(level_dir() / L"实例等价乙.level",
+		"level 等价乙\n"
+		"camera position 1 0 3\n"
+		"material 红 甲 tint 1 1 1 1 emissive 0\n"
+		"mesh 方盒 box.obj\n"
+		"mtl 方盒材质 box.mtl\n"
+		"place 方盒 红 0 0 0 1 1 1\n");
+
+	engine::Renderer_Config config;
+	config.width = LEVEL_WIDTH;
+	config.height = LEVEL_HEIGHT;
+	config.hidden = true;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(config));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+
+	//空场景基线
+	std::vector<uint8_t> reference(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+	ASSERT_TRUE(renderer.frame_render(reference.data(), static_cast<uint32_t>(reference.size())));
+
+	//甲：直接引用材质库
+	engine::Level_Data 甲;
+	engine::Asset_Scene 场景甲;
+	ASSERT_TRUE(renderer.level_load(甲, 场景甲, level_utf8("实例等价甲.level")));
+	ASSERT_EQ(场景甲.objects.size(), 1u);
+	EXPECT_TRUE(场景甲.objects[0].material_instances.empty());
+	EXPECT_EQ(renderer.scene_draw(场景甲), 1u);
+	std::vector<uint8_t> 帧甲(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+	ASSERT_TRUE(renderer.frame_render(帧甲.data(), static_cast<uint32_t>(帧甲.size())));
+	renderer.level_unload(场景甲);
+
+	//乙：同模板实例（默认覆盖）
+	engine::Level_Data 乙;
+	engine::Asset_Scene 场景乙;
+	ASSERT_TRUE(renderer.level_load(乙, 场景乙, level_utf8("实例等价乙.level")));
+	ASSERT_EQ(场景乙.objects.size(), 1u);
+	ASSERT_EQ(场景乙.objects[0].material_instances.size(), 1u);
+	//实例模板句柄与绑定句柄一致
+	EXPECT_EQ(场景乙.objects[0].material_instances[0].模板, 场景乙.objects[0].materials[0]);
+	EXPECT_EQ(renderer.scene_draw(场景乙), 1u);
+	std::vector<uint8_t> 帧乙(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+	ASSERT_TRUE(renderer.frame_render(帧乙.data(), static_cast<uint32_t>(帧乙.size())));
+	//默认覆盖等价：画面逐字节 0 差异
+	EXPECT_EQ(changed_pixels(帧甲, 帧乙), 0u);
+	renderer.level_unload(场景乙);
 }
 
 /*
