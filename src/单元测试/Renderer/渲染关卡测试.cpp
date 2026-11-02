@@ -3,7 +3,8 @@
 覆盖：关卡文本往返（全字段逐位一致）、缺省补齐、非法文本拒绝（未知段 / 未知键 / 字段数不符 /
 非有限值 / 开关非 0-1 / 点光超 8 盏 / 资产行缺字段）、资产声明行原样保留、
 材质实例行（往返 / 缺省 / 数值越界 / 结构非法 / 重名；第四百六十六轮）、
-材质实例装配（拒绝 / 等价；第四百六十七轮）、写入与读取失败路径。
+材质实例装配（拒绝 / 等价；第四百六十七轮）、材质实例覆盖（tint / 自发光；第四百六十九轮）、
+写入与读取失败路径。
 口径：只测文本层（`engine::level_text_read` / `engine::level_text_write`），不建任何 GPU 资源。
 临时文件写在 `out/关卡测试/`：写盘用宽字符路径，加载 / 写出入参用 UTF-8 窄字符串。
 */
@@ -672,6 +673,118 @@ TEST(Renderer_Level_Test, 关卡材质实例等价装配)
 	ASSERT_TRUE(renderer.frame_render(帧乙.data(), static_cast<uint32_t>(帧乙.size())));
 	//默认覆盖等价：画面逐字节 0 差异
 	EXPECT_EQ(changed_pixels(帧甲, 帧乙), 0u);
+	renderer.level_unload(场景乙);
+}
+
+/*
+材质实例覆盖生效（第四百六十九轮；方向七阶段 C）
+口径：同模板不同 tint → 画面差异明显；绘制后 tint / 自发光吸附状态复位（不污染后续绘制项）。
+*/
+TEST(Renderer_Level_Test, 关卡材质实例覆盖生效)
+{
+	write_box_assets();
+	//实例：白色（默认覆盖）
+	write_text(level_dir() / L"覆盖甲.level",
+		"level 覆盖甲\n"
+		"camera position 1 0 3\n"
+		"material 素 甲 tint 1 1 1 1 emissive 0\n"
+		"mesh 方盒 box.obj\n"
+		"mtl 方盒材质 box.mtl\n"
+		"place 方盒 素 0 0 0 1 1 1\n");
+	//实例：深灰覆盖
+	write_text(level_dir() / L"覆盖乙.level",
+		"level 覆盖乙\n"
+		"camera position 1 0 3\n"
+		"material 暗 甲 tint 0.2 0.2 0.2 1 emissive 0\n"
+		"mesh 方盒 box.obj\n"
+		"mtl 方盒材质 box.mtl\n"
+		"place 方盒 暗 0 0 0 1 1 1\n");
+
+	engine::Renderer_Config config;
+	config.width = LEVEL_WIDTH;
+	config.height = LEVEL_HEIGHT;
+	config.hidden = true;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(config));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+
+	//甲：默认覆盖
+	engine::Level_Data 甲;
+	engine::Asset_Scene 场景甲;
+	ASSERT_TRUE(renderer.level_load(甲, 场景甲, level_utf8("覆盖甲.level")));
+	EXPECT_EQ(renderer.scene_draw(场景甲), 1u);
+	//绘制后吸附状态复位
+	EXPECT_FALSE(renderer.material_tint_active());
+	EXPECT_EQ(renderer.material_emissive(), 0.0f);
+	std::vector<uint8_t> 帧甲(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+	ASSERT_TRUE(renderer.frame_render(帧甲.data(), static_cast<uint32_t>(帧甲.size())));
+	renderer.level_unload(场景甲);
+
+	//乙：深灰覆盖
+	engine::Level_Data 乙;
+	engine::Asset_Scene 场景乙;
+	ASSERT_TRUE(renderer.level_load(乙, 场景乙, level_utf8("覆盖乙.level")));
+	EXPECT_EQ(renderer.scene_draw(场景乙), 1u);
+	std::vector<uint8_t> 帧乙(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+	ASSERT_TRUE(renderer.frame_render(帧乙.data(), static_cast<uint32_t>(帧乙.size())));
+	//不同 tint → 明显差异
+	const uint32_t 差异 = changed_pixels(帧甲, 帧乙);
+	std::cout << "[关卡] 实例色调差异 " << 差异 << std::endl;
+	EXPECT_GT(差异, 200u) << "实例 tint 覆盖未生效";
+	renderer.level_unload(场景乙);
+}
+
+/*
+材质实例自发光生效（第四百六十九轮）
+口径：同模板 emissive 0 与 0.6 两个实例 → 画面差异明显。
+*/
+TEST(Renderer_Level_Test, 关卡材质实例自发光生效)
+{
+	write_box_assets();
+	write_text(level_dir() / L"自发甲.level",
+		"level 自发甲\n"
+		"camera position 1 0 3\n"
+		"material 素 甲 tint 0.2 0.2 0.2 1 emissive 0\n"
+		"mesh 方盒 box.obj\n"
+		"mtl 方盒材质 box.mtl\n"
+		"place 方盒 素 0 0 0 1 1 1\n");
+	write_text(level_dir() / L"自发乙.level",
+		"level 自发乙\n"
+		"camera position 1 0 3\n"
+		"material 亮 甲 tint 0.2 0.2 0.2 1 emissive 0.6\n"
+		"mesh 方盒 box.obj\n"
+		"mtl 方盒材质 box.mtl\n"
+		"place 方盒 亮 0 0 0 1 1 1\n");
+
+	engine::Renderer_Config config;
+	config.width = LEVEL_WIDTH;
+	config.height = LEVEL_HEIGHT;
+	config.hidden = true;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(config));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+
+	//甲：emissive 0
+	engine::Level_Data 甲;
+	engine::Asset_Scene 场景甲;
+	ASSERT_TRUE(renderer.level_load(甲, 场景甲, level_utf8("自发甲.level")));
+	EXPECT_EQ(renderer.scene_draw(场景甲), 1u);
+	std::vector<uint8_t> 帧甲(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+	ASSERT_TRUE(renderer.frame_render(帧甲.data(), static_cast<uint32_t>(帧甲.size())));
+	renderer.level_unload(场景甲);
+
+	//乙：emissive 0.6
+	engine::Level_Data 乙;
+	engine::Asset_Scene 场景乙;
+	ASSERT_TRUE(renderer.level_load(乙, 场景乙, level_utf8("自发乙.level")));
+	EXPECT_EQ(renderer.scene_draw(场景乙), 1u);
+	std::vector<uint8_t> 帧乙(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+	ASSERT_TRUE(renderer.frame_render(帧乙.data(), static_cast<uint32_t>(帧乙.size())));
+	const uint32_t 差异 = changed_pixels(帧甲, 帧乙);
+	std::cout << "[关卡] 实例自发光差异 " << 差异 << std::endl;
+	EXPECT_GT(差异, 100u) << "实例 emissive 覆盖未生效";
 	renderer.level_unload(场景乙);
 }
 
