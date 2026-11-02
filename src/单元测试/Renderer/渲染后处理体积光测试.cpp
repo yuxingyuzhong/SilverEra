@@ -337,3 +337,96 @@ TEST_F(Renderer_Post_Chain_Test, 体积光光源位置可配)
 	std::cout << "[体积光光源] 左 vs 右 差异像素=" << changed << std::endl;
 	EXPECT_GT(changed, 20u) << "光源屏幕 x 未生效（左右两帧几乎一致）";
 }
+
+namespace
+{
+	/*
+	渲染一帧（阴影版）：单级体积光链 ＋ 「地面四边形 ＋ 上方挡板」场景 ＋ 阴影图。
+	on = 是否写 post_extra.x（阴影开关）；strength = 光照明影强度（0 = 阴影无效，用于对照）。
+	*/
+	std::vector<uint8_t> render_shaft_shadow(bool on, float strength)
+	{
+		engine::Renderer renderer;
+		EXPECT_TRUE(renderer.init(hidden_config()));
+		uint64_t scene_target = 0;
+		EXPECT_TRUE(renderer.render_target_create(scene_target, renderer.extent_width(), renderer.extent_height()));
+		uint64_t pass = post_pipeline_register(renderer, "体积光.frag.spv");
+		EXPECT_NE(pass, 0u);
+		EXPECT_TRUE(renderer.post_chain_set(&pass, 1));
+		renderer.post_stage_vec4_set(0, 0.6f, 0.9f, 1.0f, 0.9f);
+		renderer.post_stage_color_set(0, SHAFT_COLOR[0], SHAFT_COLOR[1], SHAFT_COLOR[2]);
+		//第四百零二轮：逐级 extra（x = 阴影开关）
+		renderer.post_stage_extra_set(0, on ? 1.0f : 0.0f, 0.0f, 0.0f, 0.0f);
+		renderer.render_target_present_set(scene_target);
+
+		//场景：相机在 +Z 3 处看向原点；方向光从左上前方斜射；开启阴影
+		engine::Camera_Data camera{};
+		camera.position[2] = 3.0f;
+		camera.target[1] = 0.0f;
+		camera.fov = 1.2f;
+		camera.far_plane = 40.0f;
+		engine::Light_Data light{};
+		light.direction[0] = 0.45f;
+		light.direction[1] = -0.85f;
+		light.direction[2] = -0.28f;
+		light.intensity = 1.0f;
+		light.ambient = 0.05f;
+		light.shadow_enabled = 0;
+		light.shadow_strength = strength;
+		engine::Fog_Data fog{};
+		renderer.scene_apply(camera, light, fog);
+		renderer.shadow_enable_set(true);
+		renderer.shadow_range_set(3.0f, 1.0f, 12.0f);
+		renderer.shadow_cascade_set(1, 3.0f, 8.0f);
+
+		//地面四边形（受光面）
+		engine::Mesh_Handle plane = 0;
+		EXPECT_TRUE(renderer.mesh_load(plane, quad_data()));
+		EXPECT_TRUE(renderer.mesh_draw(plane, nullptr));
+		//上方挡板（平移 ＋ 非等比缩放的列主序矩阵）
+		const float blocker[16] = {
+			0.62f, 0.0f, 0.0f, 0.0f,
+			0.0f, 0.42f, 0.0f, 0.0f,
+			0.0f, 0.0f, 0.02f, 0.0f,
+			-0.35f, 0.85f, -0.5f, 1.0f,
+		};
+		EXPECT_TRUE(renderer.mesh_draw(plane, blocker));
+		renderer.mesh_unload(plane);
+
+		std::vector<uint8_t> pixels(pixel_bytes());
+		EXPECT_TRUE(renderer.frame_render(pixels.data(), static_cast<uint32_t>(pixels.size())));
+		renderer.pipeline_unload(pass);
+		renderer.render_target_destroy(scene_target);
+		return pixels;
+	}
+}
+
+/*
+体积光接阴影图（第四百零二轮）
+口径：同一「地面 ＋ 挡板」场景下，仅改 post_extra.x 与阴影强度。
+1. 阴影强度 1：开 / 关阴影开关画面差异像素 > 20（几何采样点的受光判定与截断生效）；
+2. 阴影强度 0（lit 恒为 1）与强度 1 相比，整帧平均亮度下降 > 1（被挡板遮蔽的光路更暗）。
+*/
+TEST_F(Renderer_Post_Chain_Test, 体积光接阴影图)
+{
+	engine::Renderer probe;
+	ASSERT_TRUE(probe.init(hidden_config()));
+	if (!probe.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+
+	std::vector<uint8_t> off = render_shaft_shadow(false, 1.0f);
+	std::vector<uint8_t> on = render_shaft_shadow(true, 1.0f);
+	uint32_t changed = differing_pixels(off, on, 4);
+	EXPECT_GT(changed, 20u) << "阴影开关未改变画面";
+
+	//强度 0：lit 混合为 1，等同于「阴影无效」对照
+	std::vector<uint8_t> no_shadow = render_shaft_shadow(true, 0.0f);
+	float luma_full = average_luma(on);
+	float luma_none = average_luma(no_shadow);
+	RecordProperty("shaft_shadow_changed_pixels", static_cast<int>(changed));
+	RecordProperty("shaft_shadow_luma_full", static_cast<double>(luma_full));
+	RecordProperty("shaft_shadow_luma_none", static_cast<double>(luma_none));
+	std::cout << "[体积光·阴影] 差异像素=" << changed << " 亮度（强度1）" << luma_full
+		<< " / （强度0）" << luma_none << std::endl;
+	EXPECT_LT(luma_full, luma_none - 1.0f) << "阴影强度未使光路变暗";
+}

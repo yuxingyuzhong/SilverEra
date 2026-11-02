@@ -191,8 +191,8 @@ namespace engine
             展示输入 输入{};
 			//能力展示场景（非空即表示已搭建）
 			能力展示场景* 展示场景 = nullptr;
-			//展示叠加层是否展开（关闭后只在左上角留「?」小按钮，避免遮挡画面）
-			bool 展示面板可见 = true;
+			//展示叠加层是否展开（默认收起：23 个展区的长列表会挡住画面，需要时按 M 或点「?」打开）
+			bool 展示面板可见 = false;
 			//展示模式的原生输入状态（SDL 事件直采；不依赖 ImGui 焦点与面板可见性）
 			bool 键前 = false;
 			bool 键后 = false;
@@ -253,11 +253,15 @@ namespace engine
             ImGui::TextUnformatted(std::to_string(展区数).c_str());
             ImGui::SameLine(0.0f, 0.0f);
             ImGui::TextUnformatted("个展区（场景内有同名标签）：");
+            //展区列表限高可滚动（避免 23 条长文把面板撑满整屏、遮住场景）
+            ImGui::BeginChild("##展区列表", ImVec2(0.0f, 视口->WorkSize.y * 0.42f), false,
+                ImGuiWindowFlags_NoSavedSettings);
             for (uint32_t 序号 = 0; 序号 < 展区数; ++序号)
             {
                 ImGui::Bullet();
                 ImGui::TextWrapped("%s", 场景.展区标题(序号));
             }
+            ImGui::EndChild();
             ImGui::Bullet(); ImGui::TextWrapped("多线程：4 工作线程（并行剔除 / 差异扫描；场景 pass 与阴影 pass 均按段并行录制）");
             ImGui::Separator();
             float 位置[3] = { 0.0f, 0.0f, 0.0f };
