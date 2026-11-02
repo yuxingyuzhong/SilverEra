@@ -954,6 +954,62 @@ TEST(Renderer_Level_Test, 关卡材质实例卡通生效)
 }
 
 /*
+聚光灯阴影（第四百七十四轮；方案 A）
+口径：第 1 盏聚光灯从上方照地面，遮挡立方体开启阴影后在地面投下暗区；开启前后差异 > 200 像素。
+*/
+TEST(Renderer_Level_Test, 关卡聚光灯阴影)
+{
+	write_cube_assets();
+	//地面（压扁立方体）＋ 遮挡体
+	write_text(level_dir() / L"聚光阴影.level",
+		"level 聚光阴影\n"
+		"camera position 0 6 6\n"
+		"camera target 0 0 0\n"
+		"light direction 0 -1 0\n"
+		"light color 0.2 0.2 0.2\n"
+		"light intensity 0.2\n"
+		"light spot 0 4 0 0 -1 0 1 1 1 12 2 20 40 0 0 16\n"
+		"mesh 方块 cube.obj\n"
+		"mtl 方块材质 cube.mtl\n"
+		"place 方块 方块材质 0 -1.5 0 8 0.2 8\n"
+		"place 方块 方块材质 0 0.6 0 1.2 1.2 1.2\n");
+
+	engine::Renderer_Config config;
+	config.width = LEVEL_WIDTH;
+	config.height = LEVEL_HEIGHT;
+	config.hidden = true;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(config));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+
+	engine::Level_Data 关卡;
+	engine::Asset_Scene 场景;
+	ASSERT_TRUE(renderer.level_load(关卡, 场景, level_utf8("聚光阴影.level"), false));
+
+	//关闭阴影：基线
+	engine::Light_Data 灯光 = 关卡.light;
+	ASSERT_EQ(灯光.spot_count, 1u);
+	灯光.spot_shadow_enabled = 0;
+	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
+	EXPECT_EQ(renderer.scene_draw(场景), 2u);
+	std::vector<uint8_t> 无影(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+	ASSERT_TRUE(renderer.frame_render(无影.data(), static_cast<uint32_t>(无影.size())));
+
+	//开启聚光灯阴影
+	灯光.spot_shadow_enabled = 1;
+	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
+	EXPECT_EQ(renderer.scene_draw(场景), 2u);
+	std::vector<uint8_t> 有影(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+	ASSERT_TRUE(renderer.frame_render(有影.data(), static_cast<uint32_t>(有影.size())));
+
+	const uint32_t 差异 = changed_pixels(无影, 有影);
+	std::cout << "[关卡] 聚光阴影差异 " << 差异 << std::endl;
+	EXPECT_GT(差异, 200u) << "聚光灯阴影未生效";
+	renderer.level_unload(场景);
+}
+
+/*
 写入与读取失败路径（第四百二十九轮）
 口径：空路径 / 不存在的文件 → 返回假；读取失败时输出清空。
 */
