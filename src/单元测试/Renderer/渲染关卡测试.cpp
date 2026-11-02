@@ -17,9 +17,16 @@
 #include <vector>
 
 #include "Application/Renderer/src/render/Level/关卡文件.h"
+#include "Application/Renderer/src/render/Renderer/渲染器.h"
 
 namespace
 {
+	//端到端窗口尺寸
+	constexpr uint32_t LEVEL_WIDTH = 128;
+	constexpr uint32_t LEVEL_HEIGHT = 72;
+	//端到端覆盖下限（2×2 四边形在默认相机下占屏比例远大于此）
+	constexpr uint32_t LEVEL_MIN_PIXELS = 800;
+
 	//临时文件目录（宽字符；相对可执行文件目录）
 	std::filesystem::path level_dir(void)
 	{
@@ -45,6 +52,42 @@ namespace
 	bool bit_equal(float left, float right)
 	{
 		return std::memcmp(&left, &right, sizeof(float)) == 0;
+	}
+
+	//两帧之间逐通道差 ≥ 6 的像素数
+	uint32_t changed_pixels(const std::vector<uint8_t>& left, const std::vector<uint8_t>& right)
+	{
+		uint32_t count = 0;
+		for (std::size_t index = 0; index + 3 < left.size(); index += 4)
+		{
+			int maximum = 0;
+			for (std::size_t channel = 0; channel < 3; ++channel)
+			{
+				int delta = static_cast<int>(left[index + channel]) - static_cast<int>(right[index + channel]);
+				if (delta < 0)
+					delta = -delta;
+				if (maximum < delta)
+					maximum = delta;
+			}
+			if (maximum >= 6)
+				++count;
+		}
+		return count;
+	}
+
+	//写方盒几何 ＋ 单材质（关卡端到端用）
+	void write_box_assets(void)
+	{
+		write_text(level_dir() / L"box.obj",
+			"v -1 -1 0\n"
+			"v 1 -1 0\n"
+			"v 1 1 0\n"
+			"v -1 1 0\n"
+			"vt 0 1\nvt 1 1\nvt 1 0\nvt 0 0\n"
+			"vn 0 0 1\n"
+			"f 1/1/1 2/2/1 3/3/1\n"
+			"f 1/1/1 3/3/1 4/4/1\n");
+		write_text(level_dir() / L"box.mtl", "newmtl 甲\nKd 0.8 0.2 0.2\nNs 64\n");
 	}
 
 	//三通道浮点逐位相等
@@ -406,4 +449,172 @@ TEST(Renderer_Level_Test, 关卡读写失败路径)
 	EXPECT_TRUE(loaded.name.empty());
 
 	EXPECT_FALSE(engine::level_text_write(loaded, ""));
+}
+
+/*
+关卡装载端到端（第四百三十轮 · 阶段 B）
+口径：关卡文件内嵌资产段落 → `level_load` 建立 1 网格 / 1 材质 / 1 对象；绘制后覆盖达标；
+`level_save` 可把装载结果原样写回并可再读；`level_unload` 幂等释放。
+*/
+TEST(Renderer_Level_Test, 关卡装载端到端)
+{
+	write_box_assets();
+	write_text(level_dir() / L"端到端.level",
+		"level 端到端关卡\n"
+		"camera position 0 0 3\n"
+		"camera target 0 0 0\n"
+		"light direction 0 0 -1\n"
+		"light color 1 1 1\n"
+		"light intensity 1\n"
+		"mesh 方盒 box.obj\n"
+		"mtl 方盒材质 box.mtl\n"
+		"place 方盒 方盒材质 0 0 0 1 1 1\n");
+
+	engine::Renderer_Config config;
+	config.width = LEVEL_WIDTH;
+	config.height = LEVEL_HEIGHT;
+	config.hidden = true;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(config));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+
+	//基线（空场景）
+	std::vector<uint8_t> reference(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+	ASSERT_TRUE(renderer.frame_render(reference.data(), static_cast<uint32_t>(reference.size())));
+
+	engine::Level_Data 关卡;
+	engine::Asset_Scene 场景;
+	ASSERT_TRUE(renderer.level_load(关卡, 场景, level_utf8("端到端.level")));
+	EXPECT_EQ(关卡.name, "端到端关卡");
+	EXPECT_EQ(关卡.asset_lines.size(), 3u);
+	ASSERT_EQ(场景.meshes.size(), 1u);
+	ASSERT_EQ(场景.materials.size(), 1u);
+	ASSERT_EQ(场景.objects.size(), 1u);
+	ASSERT_EQ(场景.objects[0].materials.size(), 1u);
+
+	//逐段绑材质绘制
+	const engine::Material_Handle* 材质 = 场景.objects[0].materials.data();
+	ASSERT_TRUE(renderer.mesh_draw_sections(场景.objects[0].mesh, nullptr,
+		材质, static_cast<uint32_t>(场景.objects[0].materials.size())));
+	std::vector<uint8_t> shown(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+	ASSERT_TRUE(renderer.frame_render(shown.data(), static_cast<uint32_t>(shown.size())));
+	const uint32_t covered = changed_pixels(reference, shown);
+	std::cout << "[关卡] 端到端覆盖 " << covered << std::endl;
+	EXPECT_GE(covered, LEVEL_MIN_PIXELS) << "关卡装载的网格没有画出来";
+
+	//门面保存：写回后再读，名称与资产行数量一致
+	ASSERT_TRUE(renderer.level_save(关卡, level_utf8("端到端_保存.level")));
+	engine::Level_Data reread;
+	ASSERT_TRUE(engine::level_text_read(level_utf8("端到端_保存.level"), reread));
+	EXPECT_EQ(reread.name, 关卡.name);
+	EXPECT_EQ(reread.asset_lines.size(), 关卡.asset_lines.size());
+
+	//幂等释放
+	renderer.level_unload(场景);
+	EXPECT_TRUE(场景.objects.empty());
+	EXPECT_TRUE(场景.meshes.empty());
+}
+
+/*
+关卡与手工构造画面一致（第四百三十轮 · 阶段 B）
+口径：同一关卡经「level_load」与「手工 scene_apply ＋ scene_load」两条路径出帧，逐字节一致。
+*/
+TEST(Renderer_Level_Test, 关卡与手工构造画面一致)
+{
+	write_box_assets();
+	//关卡：带相机 / 光照 / 雾与一段资产
+	write_text(level_dir() / L"等价.level",
+		"level 等价关卡\n"
+		"camera position 1 0 3\n"
+		"camera target 0 0 0\n"
+		"light direction 0.3 -1 0.2\n"
+		"light color 1 0.9 0.8\n"
+		"light intensity 0.8\n"
+		"fog color 0.3 0.35 0.4\n"
+		"fog density 0.2\n"
+		"fog range 2 20\n"
+		"mesh 方盒 box.obj\n"
+		"mtl 方盒材质 box.mtl\n"
+		"place 方盒 方盒材质 0 0 0 1 1 1\n");
+	//等价清单（仅资产段落）
+	write_text(level_dir() / L"等价清单.txt",
+		"mesh 方盒 box.obj\n"
+		"mtl 方盒材质 box.mtl\n"
+		"place 方盒 方盒材质 0 0 0 1 1 1\n");
+
+	engine::Renderer_Config config;
+	config.width = LEVEL_WIDTH;
+	config.height = LEVEL_HEIGHT;
+	config.hidden = true;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(config));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+
+	//路径一：关卡装载
+	engine::Level_Data 关卡;
+	engine::Asset_Scene 场景甲;
+	ASSERT_TRUE(renderer.level_load(关卡, 场景甲, level_utf8("等价.level")));
+	ASSERT_EQ(场景甲.objects.size(), 1u);
+	ASSERT_TRUE(renderer.mesh_draw_sections(场景甲.objects[0].mesh, nullptr,
+		场景甲.objects[0].materials.data(), static_cast<uint32_t>(场景甲.objects[0].materials.size())));
+	std::vector<uint8_t> 关卡帧(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+	ASSERT_TRUE(renderer.frame_render(关卡帧.data(), static_cast<uint32_t>(关卡帧.size())));
+	renderer.level_unload(场景甲);
+
+	//路径二：手工三组 ＋ 场景清单
+	renderer.scene_apply(关卡.camera, 关卡.light, 关卡.fog);
+	engine::Asset_Scene 场景乙;
+	ASSERT_TRUE(renderer.scene_load(场景乙, level_utf8("等价清单.txt")));
+	ASSERT_EQ(场景乙.objects.size(), 1u);
+	ASSERT_TRUE(renderer.mesh_draw_sections(场景乙.objects[0].mesh, nullptr,
+		场景乙.objects[0].materials.data(), static_cast<uint32_t>(场景乙.objects[0].materials.size())));
+	std::vector<uint8_t> 手工帧(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+	ASSERT_TRUE(renderer.frame_render(手工帧.data(), static_cast<uint32_t>(手工帧.size())));
+	renderer.scene_unload(场景乙);
+
+	//逐字节比较
+	ASSERT_EQ(关卡帧.size(), 手工帧.size());
+	uint32_t 差异字节 = 0;
+	for (std::size_t index = 0; index < 关卡帧.size(); ++index)
+	{
+		if (关卡帧[index] != 手工帧[index])
+			++差异字节;
+	}
+	EXPECT_EQ(差异字节, 0u) << "关卡链路与手工构造画面不一致";
+}
+
+/*
+关卡装载失败回退（第四百三十轮 · 阶段 B）
+口径：资产不存在 / 相机参数非法 → `level_load` 返回假，输出清空且资产不残留。
+*/
+TEST(Renderer_Level_Test, 关卡装载失败回退)
+{
+	//资产不存在
+	write_text(level_dir() / L"缺失资产.level",
+		"level 缺失资产\n"
+		"mesh 方盒 不存在.obj\n"
+		"place 方盒 0 0 0 1 1 1\n");
+	//相机非法（视场角 0）
+	write_text(level_dir() / L"非法相机.level", "level 非法相机\ncamera fov 0\n");
+
+	engine::Renderer_Config config;
+	config.width = 64;
+	config.height = 36;
+	config.hidden = true;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(config));
+
+	engine::Level_Data 关卡;
+	engine::Asset_Scene 场景;
+	EXPECT_FALSE(renderer.level_load(关卡, 场景, level_utf8("缺失资产.level")));
+	EXPECT_TRUE(关卡.name.empty());
+	EXPECT_TRUE(场景.meshes.empty());
+	EXPECT_TRUE(场景.materials.empty());
+	EXPECT_TRUE(场景.objects.empty());
+
+	EXPECT_FALSE(renderer.level_load(关卡, 场景, level_utf8("非法相机.level")));
+	EXPECT_TRUE(关卡.name.empty());
+	EXPECT_TRUE(场景.objects.empty());
 }
