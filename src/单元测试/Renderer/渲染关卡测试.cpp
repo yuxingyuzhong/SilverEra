@@ -1170,6 +1170,62 @@ TEST(Renderer_Level_Test, 关卡聚光灯阴影开关非法)
 }
 
 /*
+聚光灯阴影质量参数往返（第四百七十八轮）
+口径：`light spot_shadow 1 0.02 0.5 0.3` 读入三项并写出后再读回一致；仅写开关时三项保持默认。
+*/
+TEST(Renderer_Level_Test, 关卡聚光灯阴影质量参数往返)
+{
+	write_text(level_dir() / L"聚光质量.level", "level 聚光质量\nlight spot_shadow 1 0.02 0.5 0.3\n");
+
+	engine::Level_Data loaded;
+	ASSERT_TRUE(engine::level_text_read(level_utf8("聚光质量.level"), loaded));
+	EXPECT_EQ(loaded.light.spot_shadow_enabled, 1);
+	EXPECT_FLOAT_EQ(loaded.light.spot_shadow_bias, 0.02f);
+	EXPECT_FLOAT_EQ(loaded.light.spot_shadow_softness, 0.5f);
+	EXPECT_FLOAT_EQ(loaded.light.spot_shadow_strength, 0.3f);
+
+	ASSERT_TRUE(engine::level_text_write(loaded, level_utf8("聚光质量_回写.level")));
+	engine::Level_Data reread;
+	ASSERT_TRUE(engine::level_text_read(level_utf8("聚光质量_回写.level"), reread));
+	EXPECT_EQ(reread.light.spot_shadow_enabled, 1);
+	EXPECT_FLOAT_EQ(reread.light.spot_shadow_bias, 0.02f);
+	EXPECT_FLOAT_EQ(reread.light.spot_shadow_softness, 0.5f);
+	EXPECT_FLOAT_EQ(reread.light.spot_shadow_strength, 0.3f);
+
+	//仅写开关：三项沿用默认（0.010 / 0 / 1）
+	write_text(level_dir() / L"聚光默认.level", "level 聚光默认\nlight spot_shadow 1\n");
+	engine::Level_Data 缺省;
+	ASSERT_TRUE(engine::level_text_read(level_utf8("聚光默认.level"), 缺省));
+	EXPECT_FLOAT_EQ(缺省.light.spot_shadow_bias, 0.010f);
+	EXPECT_FLOAT_EQ(缺省.light.spot_shadow_softness, 0.0f);
+	EXPECT_FLOAT_EQ(缺省.light.spot_shadow_strength, 1.0f);
+}
+
+/*
+聚光灯阴影质量参数非法（第四百七十八轮）
+口径：偏置 0..0.05、软度 0..1、强度 0..1；只写一两项 / 多余字段 / 越界一律整份拒绝。
+*/
+TEST(Renderer_Level_Test, 关卡聚光灯阴影质量参数非法)
+{
+	const std::vector<std::pair<std::string, std::string>> cases = {
+		{ "偏置越界", "level 非法\nlight spot_shadow 1 0.06 0.5 0.3\n" },
+		{ "软度越界", "level 非法\nlight spot_shadow 1 0.01 1.2 0.3\n" },
+		{ "强度为负", "level 非法\nlight spot_shadow 1 0.01 0.5 -0.1\n" },
+		{ "只写两项", "level 非法\nlight spot_shadow 1 0.01 0.5\n" },
+		{ "多余字段", "level 非法\nlight spot_shadow 1 0.01 0.5 0.3 9\n" },
+	};
+
+	for (const std::pair<std::string, std::string>& item : cases)
+	{
+		write_text(level_dir() / "非法.level", item.second);
+		engine::Level_Data loaded;
+		EXPECT_FALSE(engine::level_text_read(level_utf8("非法.level"), loaded)) << item.first;
+		EXPECT_EQ(loaded.light.spot_shadow_enabled, 0) << item.first;
+		EXPECT_FLOAT_EQ(loaded.light.spot_shadow_bias, 0.010f) << item.first;
+	}
+}
+
+/*
 写入与读取失败路径（第四百二十九轮）
 口径：空路径 / 不存在的文件 → 返回假；读取失败时输出清空。
 */
