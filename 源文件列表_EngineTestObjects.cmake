@@ -113,6 +113,7 @@ target_sources(EngineTestObjects PRIVATE
     "src/单元测试/Renderer/渲染能力展示排查测试.cpp"
     "src/单元测试/Renderer/渲染计算测试.cpp"
     "src/单元测试/Renderer/渲染资产加载测试.cpp"
+    "src/单元测试/Renderer/渲染关卡测试.cpp"
     "src/单元测试/Renderer/渲染资源与链查询测试.cpp"
     "src/单元测试/Renderer/渲染超采样测试.cpp"
     "src/单元测试/Renderer/渲染逐物体卡通测试.cpp"
