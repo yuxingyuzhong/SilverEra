@@ -85,6 +85,67 @@ namespace
 		return std::sqrt(vertex.normal[0] * vertex.normal[0]
 			+ vertex.normal[1] * vertex.normal[1] + vertex.normal[2] * vertex.normal[2]);
 	}
+
+	/*
+	MTL 测试目录（纯 ASCII）
+	原因：门面 `material_load_mtl` 的贴图路径按 UTF-8 窄字符串拼给 `texture_load_file`（内部 ifstream 走系统编码），
+	中文目录在非 UTF-8 代码页下无法定位；故 MTL 相关用例统一放在 ASCII 目录。
+	*/
+	std::filesystem::path mtl_dir(void)
+	{
+		return std::filesystem::path(L"out") / std::filesystem::path(L"asset_test");
+	}
+
+	//MTL 的 UTF-8 窄路径
+	std::string mtl_utf8(const char* name)
+	{
+		return std::string("out/asset_test/") + name;
+	}
+
+	//写一张 24 位 BMP（测试贴图；stb_image 可直接解码）
+	void write_bmp(const std::filesystem::path& path, uint32_t width, uint32_t height)
+	{
+		//行字节数按 4 字节对齐
+		const uint32_t row_bytes = ((width * 3 + 3) / 4) * 4;
+		const uint32_t pixel_bytes = row_bytes * height;
+		const uint32_t file_bytes = 14 + 40 + pixel_bytes;
+		std::vector<uint8_t> bytes(file_bytes, 0);
+		//文件头：类型 'BM' ＋ 文件大小 ＋ 保留 ＋ 数据偏移
+		bytes[0] = 'B';
+		bytes[1] = 'M';
+		const uint32_t size = file_bytes;
+		bytes[2] = static_cast<uint8_t>(size & 0xFF);
+		bytes[3] = static_cast<uint8_t>((size >> 8) & 0xFF);
+		bytes[4] = static_cast<uint8_t>((size >> 16) & 0xFF);
+		bytes[5] = static_cast<uint8_t>((size >> 24) & 0xFF);
+		const uint32_t offset = 54;
+		bytes[10] = static_cast<uint8_t>(offset & 0xFF);
+		bytes[11] = static_cast<uint8_t>((offset >> 8) & 0xFF);
+		//信息头：40 字节 / 宽 / 高 / 平面数 1 / 24 位 / 无压缩
+		const uint32_t header_size = 40;
+		bytes[14] = static_cast<uint8_t>(header_size & 0xFF);
+		bytes[18] = static_cast<uint8_t>(width & 0xFF);
+		bytes[19] = static_cast<uint8_t>((width >> 8) & 0xFF);
+		bytes[22] = static_cast<uint8_t>(height & 0xFF);
+		bytes[23] = static_cast<uint8_t>((height >> 8) & 0xFF);
+		bytes[26] = 1;
+		bytes[28] = 24;
+		//像素：每行 BGR 平铺，行序自下而上（全部填白色 255/255/255）
+		for (uint32_t y = 0; y < height; ++y)
+		{
+			for (uint32_t x = 0; x < width; ++x)
+			{
+				const std::size_t base = 54 + static_cast<std::size_t>(y) * row_bytes + x * 3;
+				bytes[base] = 255;
+				bytes[base + 1] = 255;
+				bytes[base + 2] = 255;
+			}
+		}
+		std::error_code code;
+		std::filesystem::create_directories(path.parent_path(), code);
+		std::ofstream file(path, std::ios::binary);
+		file.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+	}
 }
 
 /*
@@ -257,4 +318,126 @@ TEST(Renderer_Asset_Load_Test, OBJ端到端绘制)
 	EXPECT_GE(covered, ASSET_MIN_PIXELS) << "OBJ 网格没有真正画出来";
 	EXPECT_GT(luma, 0.0f);
 	renderer.mesh_unload(mesh);
+}
+
+/*
+MTL 完整字段解析（第四百二十三轮）
+口径：两个 newmtl；第一项显式 Kd / Ks / Ke / Ns / d / map_Kd / map_Bump（含 -bm 选项），
+第二项全缺省 → 默认白 / 黑 / Ns 0 / d 1 / 无贴图。
+*/
+TEST(Renderer_Asset_Load_Test, MTL完整字段解析)
+{
+	write_text(mtl_dir() / L"完整字段.mtl",
+		"# 两个材质\n"
+		"newmtl 红\n"
+		"Kd 0.5 0.25 0.125\n"
+		"Ks 1 0.5 0\n"
+		"Ke 0.1 0.2 0.3\n"
+		"Ns 96\n"
+		"d 0.5\n"
+		"map_Kd tex.bmp\n"
+		"map_Bump -bm 1.0 nrm.bmp\n"
+		"newmtl 蓝\n"
+		"illum 2\n");
+
+	std::vector<engine::Mtl_Material> 材质;
+	ASSERT_TRUE(engine::mtl_materials_load(mtl_utf8("完整字段.mtl"), 材质));
+	ASSERT_EQ(材质.size(), 2u);
+	//第一项逐字段核对
+	EXPECT_EQ(材质[0].name, "红");
+	EXPECT_FLOAT_EQ(材质[0].diffuse[0], 0.5f);
+	EXPECT_FLOAT_EQ(材质[0].diffuse[1], 0.25f);
+	EXPECT_FLOAT_EQ(材质[0].diffuse[2], 0.125f);
+	EXPECT_FLOAT_EQ(材质[0].specular[0], 1.0f);
+	EXPECT_FLOAT_EQ(材质[0].shininess, 96.0f);
+	EXPECT_FLOAT_EQ(材质[0].opacity, 0.5f);
+	EXPECT_EQ(材质[0].diffuse_map, "tex.bmp");
+	EXPECT_EQ(材质[0].normal_map, "nrm.bmp");
+	//第二项缺省
+	EXPECT_EQ(材质[1].name, "蓝");
+	EXPECT_FLOAT_EQ(材质[1].diffuse[0], 1.0f);
+	EXPECT_FLOAT_EQ(材质[1].specular[0], 0.0f);
+	EXPECT_FLOAT_EQ(材质[1].shininess, 0.0f);
+	EXPECT_FLOAT_EQ(材质[1].opacity, 1.0f);
+	EXPECT_TRUE(材质[1].diffuse_map.empty());
+	EXPECT_TRUE(材质[1].normal_map.empty());
+	std::cout << "[资产加载] MTL 完整字段：材质 " << 材质.size()
+		<< " 首项 Kd=(" << 材质[0].diffuse[0] << "," << 材质[0].diffuse[1] << ","
+		<< 材质[0].diffuse[2] << ") Ns=" << 材质[0].shininess << std::endl;
+}
+
+/*
+MTL 缺省值与 Tr 换算（第四百二十三轮）
+口径：Tr 0.25 → opacity 0.75；数值越界钳到 [0,1]；Ns 超过 1000 钳到 1000。
+*/
+TEST(Renderer_Asset_Load_Test, MTL缺省值与Tr换算)
+{
+	write_text(mtl_dir() / L"缺省值.mtl",
+		"newmtl 甲\n"
+		"Tr 0.25\n"
+		"Kd 2 -1 0.4\n"
+		"Ns 5000\n");
+
+	std::vector<engine::Mtl_Material> 材质;
+	ASSERT_TRUE(engine::mtl_materials_load(mtl_utf8("缺省值.mtl"), 材质));
+	ASSERT_EQ(材质.size(), 1u);
+	EXPECT_FLOAT_EQ(材质[0].opacity, 0.75f);
+	EXPECT_FLOAT_EQ(材质[0].diffuse[0], 1.0f);
+	EXPECT_FLOAT_EQ(材质[0].diffuse[1], 0.0f);
+	EXPECT_FLOAT_EQ(材质[0].diffuse[2], 0.4f);
+	EXPECT_FLOAT_EQ(材质[0].shininess, 1000.0f);
+}
+
+/*
+MTL 非法输入拒绝（第四百二十三轮）
+口径：不存在 / 空文件 / 只有注释（无 newmtl）→ 返回假且输出为空。
+*/
+TEST(Renderer_Asset_Load_Test, MTL非法输入被拒绝)
+{
+	std::vector<engine::Mtl_Material> 材质;
+	EXPECT_FALSE(engine::mtl_materials_load(mtl_utf8("不存在.mtl"), 材质));
+	EXPECT_TRUE(材质.empty());
+
+	write_text(mtl_dir() / L"空.mtl", "");
+	EXPECT_FALSE(engine::mtl_materials_load(mtl_utf8("空.mtl"), 材质));
+
+	write_text(mtl_dir() / L"无材质.mtl", "# 只有注释\nKd 1 1 1\n");
+	EXPECT_FALSE(engine::mtl_materials_load(mtl_utf8("无材质.mtl"), 材质));
+	EXPECT_TRUE(材质.empty());
+}
+
+/*
+MTL 端到端创建材质（第四百二十三轮）
+口径：写一张白色 BMP ＋ 引用它的 MTL（两个材质：一个带 map_Kd，一个纯色），
+门面 `material_load_mtl` 应创建 2 个非零材质句柄；卸载后不残留（无 VMA 断言）。
+*/
+TEST(Renderer_Asset_Load_Test, MTL端到端创建材质)
+{
+	write_bmp(mtl_dir() / L"tex.bmp", 4, 4);
+	write_text(mtl_dir() / L"贴图材质.mtl",
+		"newmtl 贴图甲\n"
+		"Kd 0.8 0.8 0.8\n"
+		"Ns 64\n"
+		"map_Kd tex.bmp\n"
+		"newmtl 纯色乙\n"
+		"Kd 0.2 0.4 0.9\n"
+		"d 0.6\n");
+
+	engine::Renderer_Config config;
+	config.width = 64;
+	config.height = 36;
+	config.hidden = true;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(config));
+
+	std::vector<engine::Material_Handle> 材质;
+	ASSERT_TRUE(renderer.material_load_mtl(材质, mtl_utf8("贴图材质.mtl")));
+	ASSERT_EQ(材质.size(), 2u);
+	EXPECT_NE(材质[0], 0u);
+	EXPECT_NE(材质[1], 0u);
+	std::cout << "[资产加载] MTL 端到端：材质 " << 材质.size() << " 个" << std::endl;
+
+	//卸载（含贴图）后再次查询材质数量应递减
+	for (engine::Material_Handle 句柄 : 材质)
+		renderer.material_unload(句柄);
 }
