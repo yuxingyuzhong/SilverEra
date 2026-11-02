@@ -1247,6 +1247,73 @@ TEST(Renderer_Level_Test, 关卡聚光阴影序号越界)
 }
 
 /*
+方向光与聚光阴影共存（第四百八十四轮；方案 B）
+口径：方向光阴影开启时再开聚光阴影 → 画面继续变化（> 50 像素），证明两者互不覆盖、同时生效。
+*/
+TEST(Renderer_Level_Test, 关卡聚光与方向光阴影共存)
+{
+	write_cube_assets();
+	write_text(level_dir() / L"共存阴影.level",
+		"level 共存阴影\n"
+		"camera position 0 6 8\n"
+		"camera target 0 0 0\n"
+		"light direction 0.3 -1 0.2\n"
+		"light color 1 1 1\n"
+		"light intensity 0.5\n"
+		"light shadow 1 0.004 0 0.8 1024\n"
+		"light spot 2 4 0 0 -1 0 1 1 1 10 2 20 40 0 0 16\n"
+		"mesh 方块 cube.obj\n"
+		"mtl 方块材质 cube.mtl\n"
+		"place 方块 方块材质 0 -1.5 0 8 0.2 8\n"
+		"place 方块 方块材质 0 0.6 0 1.2 1.2 1.2\n");
+
+	engine::Renderer_Config config;
+	config.width = LEVEL_WIDTH;
+	config.height = LEVEL_HEIGHT;
+	config.hidden = true;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(config));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+
+	engine::Level_Data 关卡;
+	engine::Asset_Scene 场景;
+	ASSERT_TRUE(renderer.level_load(关卡, 场景, level_utf8("共存阴影.level"), false));
+
+	engine::Light_Data 灯光 = 关卡.light;
+	//基线：两套阴影都关
+	灯光.shadow_enabled = 0;
+	灯光.spot_shadow_enabled = 0;
+	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
+	EXPECT_EQ(renderer.scene_draw(场景), 2u);
+	std::vector<uint8_t> 无影(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+	ASSERT_TRUE(renderer.frame_render(无影.data(), static_cast<uint32_t>(无影.size())));
+
+	//仅方向光阴影
+	灯光.shadow_enabled = 1;
+	灯光.spot_shadow_enabled = 0;
+	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
+	EXPECT_EQ(renderer.scene_draw(场景), 2u);
+	std::vector<uint8_t> 方向影(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+	ASSERT_TRUE(renderer.frame_render(方向影.data(), static_cast<uint32_t>(方向影.size())));
+	const uint32_t 方向差异 = changed_pixels(无影, 方向影);
+	std::cout << "[关卡] 方向光阴影差异 " << 方向差异 << std::endl;
+	EXPECT_GT(方向差异, 100u) << "方向光阴影未生效";
+
+	//方向光 ＋ 聚光阴影
+	灯光.spot_shadow_enabled = 1;
+	灯光.spot_shadow_index = 0;
+	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
+	EXPECT_EQ(renderer.scene_draw(场景), 2u);
+	std::vector<uint8_t> 双影(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+	ASSERT_TRUE(renderer.frame_render(双影.data(), static_cast<uint32_t>(双影.size())));
+	const uint32_t 共存差异 = changed_pixels(方向影, 双影);
+	std::cout << "[关卡] 聚光叠加方向光差异 " << 共存差异 << std::endl;
+	EXPECT_GT(共存差异, 50u) << "聚光阴影未与方向光阴影共存";
+	renderer.level_unload(场景);
+}
+
+/*
 聚光灯阴影开关文本往返（第四百七十五轮）
 口径：`light spot_shadow 0/1` 结构化保存；写出再读回一致。
 */
