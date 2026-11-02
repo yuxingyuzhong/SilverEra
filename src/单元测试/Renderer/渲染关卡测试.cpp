@@ -739,6 +739,63 @@ TEST(Renderer_Level_Test, 摆放旋转)
 }
 
 /*
+材质实例数据校验（第四百四十八轮 · 方向七阶段 A）
+口径：模板须为已登记材质；覆盖 tint / 自发光须有限且在 [0,1]；越界与非有限值一律拒绝；不建资源、不改状态。
+*/
+TEST(Renderer_Level_Test, 材质实例数据校验)
+{
+	engine::Renderer_Config config;
+	config.width = 64;
+	config.height = 36;
+	config.hidden = true;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(config));
+
+	//模板材质（默认描述）
+	engine::Material_Data 描述;
+	engine::Material_Handle 模板 = 0;
+	ASSERT_TRUE(renderer.material_load(模板, 描述));
+	ASSERT_NE(模板, 0u);
+
+	//合法实例（不覆盖 / 覆盖 tint / 覆盖自发光）
+	engine::Material_Instance_Data 实例;
+	实例.模板 = 模板;
+	EXPECT_TRUE(renderer.material_instance_validate(实例));
+	实例.use_tint = true;
+	实例.tint[0] = 0.2f;
+	实例.tint[1] = 0.4f;
+	实例.tint[2] = 0.6f;
+	实例.tint[3] = 1.0f;
+	EXPECT_TRUE(renderer.material_instance_validate(实例));
+	实例.use_emissive = true;
+	实例.emissive = 0.8f;
+	EXPECT_TRUE(renderer.material_instance_validate(实例));
+
+	//模板非法
+	engine::Material_Instance_Data 坏模板 = 实例;
+	坏模板.模板 = 0;
+	EXPECT_FALSE(renderer.material_instance_validate(坏模板));
+	坏模板.模板 = 9999;
+	EXPECT_FALSE(renderer.material_instance_validate(坏模板));
+
+	//覆盖越界 / 非有限
+	engine::Material_Instance_Data 坏色 = 实例;
+	坏色.tint[0] = 1.5f;
+	EXPECT_FALSE(renderer.material_instance_validate(坏色));
+	坏色.tint[0] = -0.1f;
+	EXPECT_FALSE(renderer.material_instance_validate(坏色));
+	坏色.tint[0] = std::nanf("");
+	EXPECT_FALSE(renderer.material_instance_validate(坏色));
+	engine::Material_Instance_Data 坏光 = 实例;
+	坏光.emissive = -0.2f;
+	EXPECT_FALSE(renderer.material_instance_validate(坏光));
+	坏光.emissive = std::numeric_limits<float>::infinity();
+	EXPECT_FALSE(renderer.material_instance_validate(坏光));
+
+	renderer.material_unload(模板);
+}
+
+/*
 关卡装载开销（第四百三十三轮 · 阶段 E）
 口径：单关卡（1 网格 ＋ 1 材质 ＋ 4 对象）连续装载三次，取最短耗时；给出实测数值并断言不高于 300 ms（防抖动上界）。
 */
