@@ -441,3 +441,124 @@ TEST(Renderer_Asset_Load_Test, MTL端到端创建材质)
 	for (engine::Material_Handle 句柄 : 材质)
 		renderer.material_unload(句柄);
 }
+
+/*
+场景清单纯解析（第四百二十四轮）
+口径：mesh / mtl 各一条、place 两条（第二条省略材质列）→ 字段与位置正确。
+*/
+TEST(Renderer_Asset_Load_Test, 场景清单纯解析)
+{
+	write_text(mtl_dir() / L"清单.txt",
+		"# 单个方盒\n"
+		"mesh 方盒 box.obj\n"
+		"mtl 方盒材质 box.mtl\n"
+		"place 方盒 方盒材质 0 0 0 1 1 1\n"
+		"place 方盒 0 2 0 1 1 1\n");
+
+	engine::Scene_Manifest 清单;
+	ASSERT_TRUE(engine::scene_manifest_parse(mtl_utf8("清单.txt"), 清单));
+	ASSERT_EQ(清单.meshes.size(), 1u);
+	ASSERT_EQ(清单.materials.size(), 1u);
+	ASSERT_EQ(清单.places.size(), 2u);
+	EXPECT_EQ(清单.meshes[0].id, "方盒");
+	EXPECT_EQ(清单.meshes[0].path, "box.obj");
+	EXPECT_EQ(清单.materials[0].id, "方盒材质");
+	EXPECT_EQ(清单.materials[0].path, "box.mtl");
+	//第一条：带材质、位置原点、缩放 1
+	EXPECT_EQ(清单.places[0].material_id, "方盒材质");
+	EXPECT_FLOAT_EQ(清单.places[0].position[0], 0.0f);
+	EXPECT_FLOAT_EQ(清单.places[0].scale[0], 1.0f);
+	//第二条：省略材质列，位置 y = 2
+	EXPECT_TRUE(清单.places[1].material_id.empty());
+	EXPECT_FLOAT_EQ(清单.places[1].position[1], 2.0f);
+	std::cout << "[资产加载] 清单解析：网格 " << 清单.meshes.size() << " 材质 " << 清单.materials.size()
+		<< " 摆放 " << 清单.places.size() << std::endl;
+}
+
+/*
+场景清单非法输入被拒绝（第四百二十四轮）
+口径：未知指令 / 引用未知网格 / ID 重复 / 无 place → 全部返回假。
+*/
+TEST(Renderer_Asset_Load_Test, 场景清单非法被拒绝)
+{
+	engine::Scene_Manifest 清单;
+	//未知指令
+	write_text(mtl_dir() / L"未知指令.txt", "mesh 甲 box.obj\nobject 乙\nplace 甲 0 0 0 1 1 1\n");
+	EXPECT_FALSE(engine::scene_manifest_parse(mtl_utf8("未知指令.txt"), 清单));
+	//引用未知网格
+	write_text(mtl_dir() / L"未知网格.txt", "mesh 甲 box.obj\nplace 乙 0 0 0 1 1 1\n");
+	EXPECT_FALSE(engine::scene_manifest_parse(mtl_utf8("未知网格.txt"), 清单));
+	//网格 ID 重复
+	write_text(mtl_dir() / L"重复ID.txt", "mesh 甲 box.obj\nmesh 甲 box2.obj\nplace 甲 0 0 0 1 1 1\n");
+	EXPECT_FALSE(engine::scene_manifest_parse(mtl_utf8("重复ID.txt"), 清单));
+	//无 place
+	write_text(mtl_dir() / L"无摆放.txt", "mesh 甲 box.obj\n");
+	EXPECT_FALSE(engine::scene_manifest_parse(mtl_utf8("无摆放.txt"), 清单));
+	EXPECT_TRUE(清单.meshes.empty());
+	EXPECT_TRUE(清单.places.empty());
+}
+
+/*
+场景清单端到端装载（第四百二十四轮）
+口径：写方盒 OBJ ＋ 单材质 MTL ＋ 清单（2 个 place，一个带材质一个不带）；
+`scene_load` 应建立 1 个网格、1 个材质、2 个对象；带材质对象可用 `mesh_draw_sections` 绘制。
+*/
+TEST(Renderer_Asset_Load_Test, 场景清单端到端装载)
+{
+	//方盒几何（2×2 四边形，朝 +Z）
+	write_text(mtl_dir() / L"box.obj",
+		"v -1 -1 0\n"
+		"v 1 -1 0\n"
+		"v 1 1 0\n"
+		"v -1 1 0\n"
+		"vt 0 1\nvt 1 1\nvt 1 0\nvt 0 0\n"
+		"vn 0 0 1\n"
+		"f 1/1/1 2/2/1 3/3/1\n"
+		"f 1/1/1 3/3/1 4/4/1\n");
+	//单材质
+	write_text(mtl_dir() / L"box.mtl", "newmtl 甲\nKd 0.8 0.2 0.2\nNs 64\n");
+	//清单：两个摆放（第二个省略材质列）
+	write_text(mtl_dir() / L"场景.txt",
+		"mesh 方盒 box.obj\n"
+		"mtl 方盒材质 box.mtl\n"
+		"place 方盒 方盒材质 0 0 0 1 1 1\n"
+		"place 方盒 0 2 0 1 1 1\n");
+
+	engine::Renderer_Config config;
+	config.width = ASSET_WIDTH;
+	config.height = ASSET_HEIGHT;
+	config.hidden = true;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(config));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+
+	//基线（空场景）
+	std::vector<uint8_t> reference(ASSET_WIDTH * ASSET_HEIGHT * 4);
+	ASSERT_TRUE(renderer.frame_render(reference.data(), static_cast<uint32_t>(reference.size())));
+
+	engine::Asset_Scene 场景;
+	ASSERT_TRUE(renderer.scene_load(场景, mtl_utf8("场景.txt")));
+	ASSERT_EQ(场景.meshes.size(), 1u);
+	ASSERT_EQ(场景.materials.size(), 1u);
+	ASSERT_EQ(场景.objects.size(), 2u);
+	EXPECT_NE(场景.objects[0].mesh, 0u);
+	ASSERT_EQ(场景.objects[0].materials.size(), 1u);
+	EXPECT_TRUE(场景.objects[1].materials.empty());
+	EXPECT_FLOAT_EQ(场景.objects[1].position[1], 2.0f);
+
+	//用带材质对象绘制（逐段绑材质入口）
+	const engine::Material_Handle* 材质 = 场景.objects[0].materials.data();
+	ASSERT_TRUE(renderer.mesh_draw_sections(场景.objects[0].mesh, nullptr,
+		材质, static_cast<uint32_t>(场景.objects[0].materials.size())));
+	std::vector<uint8_t> shown(ASSET_WIDTH * ASSET_HEIGHT * 4);
+	ASSERT_TRUE(renderer.frame_render(shown.data(), static_cast<uint32_t>(shown.size())));
+	const uint32_t covered = changed_pixels(reference, shown);
+	std::cout << "[资产加载] 清单端到端覆盖 " << covered << std::endl;
+	EXPECT_GE(covered, ASSET_MIN_PIXELS) << "场景清单装载的网格没有画出来";
+
+	//释放（幂等）
+	renderer.scene_unload(场景);
+	EXPECT_TRUE(场景.objects.empty());
+	EXPECT_TRUE(场景.meshes.empty());
+}
