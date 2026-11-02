@@ -4,7 +4,8 @@
 非有限值 / 开关非 0-1 / 点光超 8 盏 / 资产行缺字段）、资产声明行原样保留、
 材质实例行（往返 / 缺省 / 数值越界 / 结构非法 / 重名；第四百六十六轮）、
 材质实例装配（拒绝 / 等价；第四百六十七轮）、材质实例覆盖（tint / 自发光；第四百六十九轮）、
-材质实例卡通（往返 / 越界 / 结构 / 生效；第四百七十一 / 472 轮）、写入与读取失败路径。
+材质实例卡通（往返 / 越界 / 结构 / 生效；第四百七十一 / 472 轮）、
+聚光灯阴影（渲染 / 开关文本；第四百七十四 / 475 轮）、写入与读取失败路径。
 口径：只测文本层（`engine::level_text_read` / `engine::level_text_write`），不建任何 GPU 资源。
 临时文件写在 `out/关卡测试/`：写盘用宽字符路径，加载 / 写出入参用 UTF-8 窄字符串。
 */
@@ -1007,6 +1008,46 @@ TEST(Renderer_Level_Test, 关卡聚光灯阴影)
 	std::cout << "[关卡] 聚光阴影差异 " << 差异 << std::endl;
 	EXPECT_GT(差异, 200u) << "聚光灯阴影未生效";
 	renderer.level_unload(场景);
+}
+
+/*
+聚光灯阴影开关文本往返（第四百七十五轮）
+口径：`light spot_shadow 0/1` 结构化保存；写出再读回一致。
+*/
+TEST(Renderer_Level_Test, 关卡聚光灯阴影开关往返)
+{
+	write_text(level_dir() / L"聚光开关.level", "level 聚光开关\nlight spot_shadow 1\n");
+
+	engine::Level_Data loaded;
+	ASSERT_TRUE(engine::level_text_read(level_utf8("聚光开关.level"), loaded));
+	EXPECT_EQ(loaded.light.spot_shadow_enabled, 1);
+
+	ASSERT_TRUE(engine::level_text_write(loaded, level_utf8("聚光开关_回写.level")));
+	engine::Level_Data reread;
+	ASSERT_TRUE(engine::level_text_read(level_utf8("聚光开关_回写.level"), reread));
+	EXPECT_EQ(reread.light.spot_shadow_enabled, 1);
+}
+
+/*
+聚光灯阴影开关非法（第四百七十五轮）
+口径：只接受 0 / 1，且不得有多余字段；越界 / 缺值 / 非数字一律拒绝。
+*/
+TEST(Renderer_Level_Test, 关卡聚光灯阴影开关非法)
+{
+	const std::vector<std::pair<std::string, std::string>> cases = {
+		{ "开关为 2", "level 非法\nlight spot_shadow 2\n" },
+		{ "缺值", "level 非法\nlight spot_shadow\n" },
+		{ "非数字", "level 非法\nlight spot_shadow on\n" },
+		{ "多余字段", "level 非法\nlight spot_shadow 1 2\n" },
+	};
+
+	for (const std::pair<std::string, std::string>& item : cases)
+	{
+		write_text(level_dir() / "非法.level", item.second);
+		engine::Level_Data loaded;
+		EXPECT_FALSE(engine::level_text_read(level_utf8("非法.level"), loaded)) << item.first;
+		EXPECT_EQ(loaded.light.spot_shadow_enabled, 0) << item.first;
+	}
 }
 
 /*
