@@ -65,23 +65,37 @@ namespace engine
 			光照.point_intensity[序号] = 0.55f;
 			光照.point_shininess[序号] = 48.0f;
 		}
-		//一盏自上而下的聚光灯（正对光照 / 阴影展区）
-		光照.spot_count = 1;
-		光照.spot_position[0][0] = 14.0f;
-		光照.spot_position[0][1] = 9.0f;
-		光照.spot_position[0][2] = -10.0f;
-		光照.spot_direction[0][0] = 0.0f;
-		光照.spot_direction[0][1] = -1.0f;
-		光照.spot_direction[0][2] = 0.0f;
-		光照.spot_color[0][0] = 1.0f;
-		光照.spot_color[0][1] = 0.96f;
-		光照.spot_color[0][2] = 0.88f;
-		光照.spot_radius[0] = 26.0f;
-		光照.spot_intensity[0] = 1.3f;
-		光照.spot_inner_deg[0] = 16.0f;
-		光照.spot_outer_deg[0] = 38.0f;
+		/*
+		四盏自上而下的聚光灯（第五百一十轮：多盏聚光灯阴影演示）
+		每根立柱正上方一盏，开启 spot_shadow_all 后四根立柱各自投下独立阴影；
+		单盏强度压低避免叠加过曝，四盏光池仍保持可辨的边界。
+		*/
+		光照.spot_count = 4;
+		const float 聚光位置[4][3] = { { 11.4f, 9.0f, -10.0f }, { 13.1f, 9.0f, -10.0f }, { 14.8f, 9.0f, -10.0f }, { 16.5f, 9.0f, -10.0f } };
+		const float 聚光颜色[4][3] = { { 1.0f, 0.96f, 0.88f }, { 1.0f, 0.94f, 0.84f }, { 1.0f, 0.92f, 0.82f }, { 1.0f, 0.90f, 0.80f } };
+		for (uint32_t 序号 = 0; 序号 < 4; ++序号)
+		{
+			for (uint32_t 分量 = 0; 分量 < 3; ++分量)
+			{
+				光照.spot_position[序号][分量] = 聚光位置[序号][分量];
+				光照.spot_color[序号][分量] = 聚光颜色[序号][分量];
+			}
+			光照.spot_direction[序号][0] = 0.0f;
+			光照.spot_direction[序号][1] = -1.0f;
+			光照.spot_direction[序号][2] = 0.0f;
+			光照.spot_radius[序号] = 9.0f;
+			光照.spot_intensity[序号] = 0.45f;
+			光照.spot_inner_deg[序号] = 16.0f;
+			光照.spot_outer_deg[序号] = 34.0f;
+		}
 		光照.specular_intensity = 0.0f;
 		光照.specular_shininess = 96.0f;
+		/*
+		聚光灯阴影（第五百一十轮）
+		四盏各自独立阴影图（瓦片 0..3）；与方向光阴影并存，质量参数沿用默认。
+		*/
+		光照.spot_shadow_enabled = 1;
+		光照.spot_shadow_all = 1;
 		//半球环境光（天光偏冷、地面反光偏暖）
 		光照.ambient_color[0] = 0.32f;
 		光照.ambient_color[1] = 0.36f;

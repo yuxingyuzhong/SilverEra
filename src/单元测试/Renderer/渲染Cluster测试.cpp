@@ -1360,15 +1360,15 @@ TEST(Renderer_Cluster_Test, 能力展示灯墙_簇灯光登记)
 	const bool cluster_supported = renderer.cluster_supported();
 	if (cluster_supported)
 	{
-		//基础 3 点光 ＋ 1 聚光 ＋ 灯墙 128 ＝ 132；方向光与补光记录 2 条 → 记录 134
-		EXPECT_EQ(renderer.point_light_count(), 132u);
-		EXPECT_EQ(renderer.light_record_count(), 134u);
+		//基础 3 点光 ＋ 4 聚光（第五百一十轮多盏演示）＋ 灯墙 128 ＝ 135；方向光与补光记录 2 条 → 记录 137
+		EXPECT_EQ(renderer.point_light_count(), 135u);
+		EXPECT_EQ(renderer.light_record_count(), 137u);
 	}
 	else
 	{
-		//不支持计算路径时只保留基础 4 盏
-		EXPECT_EQ(renderer.point_light_count(), 4u);
-		EXPECT_EQ(renderer.light_record_count(), 6u);
+		//不支持计算路径时只保留基础 7 盏
+		EXPECT_EQ(renderer.point_light_count(), 7u);
+		EXPECT_EQ(renderer.light_record_count(), 9u);
 	}
 	const uint32_t pixel_count = WINDOW_WIDTH * WINDOW_HEIGHT * 4u;
 	std::vector<uint8_t> pixels(pixel_count, 0u);
