@@ -4,7 +4,7 @@
 非有限值 / 开关非 0-1 / 点光超 8 盏 / 资产行缺字段）、资产声明行原样保留、
 材质实例行（往返 / 缺省 / 数值越界 / 结构非法 / 重名；第四百六十六轮）、
 材质实例装配（拒绝 / 等价；第四百六十七轮）、材质实例覆盖（tint / 自发光；第四百六十九轮）、
-写入与读取失败路径。
+材质实例卡通（往返 / 越界 / 结构；第四百七十一轮）、写入与读取失败路径。
 口径：只测文本层（`engine::level_text_read` / `engine::level_text_write`），不建任何 GPU 资源。
 临时文件写在 `out/关卡测试/`：写盘用宽字符路径，加载 / 写出入参用 UTF-8 窄字符串。
 */
@@ -786,6 +786,85 @@ TEST(Renderer_Level_Test, 关卡材质实例自发光生效)
 	std::cout << "[关卡] 实例自发光差异 " << 差异 << std::endl;
 	EXPECT_GT(差异, 100u) << "实例 emissive 覆盖未生效";
 	renderer.level_unload(场景乙);
+}
+
+/*
+材质实例卡通覆盖往返（第四百七十一轮；方向七延伸）
+口径：`toon` 三值结构化保存并随写出一并回读，字段逐位相等。
+*/
+TEST(Renderer_Level_Test, 关卡材质实例卡通往返)
+{
+	const std::string text =
+		"level 卡通关卡\n"
+		"material 卡通 甲 tint 0.8 0.8 0.8 1 emissive 0.1 toon 4 0.5 0.3\n"
+		"mesh 甲 box.obj\n"
+		"mtl 乙 甲.mtl\n"
+		"place 甲 卡通 0 1 2 1 1 1\n";
+
+	write_text(level_dir() / L"实例卡通.level", text);
+
+	engine::Level_Data loaded;
+	ASSERT_TRUE(engine::level_text_read(level_utf8("实例卡通.level"), loaded));
+	ASSERT_EQ(loaded.materials.size(), 1u);
+	ASSERT_EQ(loaded.asset_lines.size(), 3u);
+	EXPECT_TRUE(loaded.materials[0].use_toon);
+	EXPECT_TRUE(bit_equal(loaded.materials[0].toon_steps, 4.0f));
+	EXPECT_TRUE(bit_equal(loaded.materials[0].toon_rim, 0.5f));
+	EXPECT_TRUE(bit_equal(loaded.materials[0].toon_specular, 0.3f));
+
+	//写出再读回
+	ASSERT_TRUE(engine::level_text_write(loaded, level_utf8("实例卡通_回写.level")));
+	engine::Level_Data reread;
+	ASSERT_TRUE(engine::level_text_read(level_utf8("实例卡通_回写.level"), reread));
+	ASSERT_EQ(reread.materials.size(), 1u);
+	EXPECT_TRUE(reread.materials[0].use_toon);
+	EXPECT_TRUE(bit_equal(reread.materials[0].toon_steps, loaded.materials[0].toon_steps));
+	EXPECT_TRUE(bit_equal(reread.materials[0].toon_rim, loaded.materials[0].toon_rim));
+	EXPECT_TRUE(bit_equal(reread.materials[0].toon_specular, loaded.materials[0].toon_specular));
+}
+
+/*
+材质实例卡通数值越界（第四百七十一轮）
+口径：色阶 0..8、边缘光 / 高光 0..1；越界 / NaN 一律整份拒绝。
+*/
+TEST(Renderer_Level_Test, 关卡材质实例卡通越界)
+{
+	const std::vector<std::pair<std::string, std::string>> cases = {
+		{ "色阶超上限", "level 越界\nmaterial 甲 乙 toon 9 0.5 0.3\n" },
+		{ "边缘光越界", "level 越界\nmaterial 甲 乙 toon 4 1.5 0.3\n" },
+		{ "高光为负", "level 越界\nmaterial 甲 乙 toon 4 0.5 -0.1\n" },
+		{ "色阶 NaN", "level 越界\nmaterial 甲 乙 toon nan 0.5 0.3\n" },
+	};
+
+	for (const std::pair<std::string, std::string>& item : cases)
+	{
+		write_text(level_dir() / "实例非法.level", item.second);
+		engine::Level_Data loaded;
+		EXPECT_FALSE(engine::level_text_read(level_utf8("实例非法.level"), loaded)) << item.first;
+		EXPECT_TRUE(loaded.materials.empty()) << item.first;
+	}
+}
+
+/*
+材质实例卡通结构非法（第四百七十一轮）
+口径：toon 缺值 / 多余字段 / toon 后再出现 tint 或 emissive → 整份拒绝。
+*/
+TEST(Renderer_Level_Test, 关卡材质实例卡通结构非法)
+{
+	const std::vector<std::pair<std::string, std::string>> cases = {
+		{ "toon 缺值", "level 非法\nmaterial 甲 乙 toon 4 0.5\n" },
+		{ "toon 多余字段", "level 非法\nmaterial 甲 乙 toon 4 0.5 0.3 0.9\n" },
+		{ "toon 后再 tint", "level 非法\nmaterial 甲 乙 toon 4 0.5 0.3 tint 1 1 1 1\n" },
+		{ "toon 后再 emissive", "level 非法\nmaterial 甲 乙 toon 4 0.5 0.3 emissive 0.2\n" },
+	};
+
+	for (const std::pair<std::string, std::string>& item : cases)
+	{
+		write_text(level_dir() / "实例非法.level", item.second);
+		engine::Level_Data loaded;
+		EXPECT_FALSE(engine::level_text_read(level_utf8("实例非法.level"), loaded)) << item.first;
+		EXPECT_TRUE(loaded.materials.empty()) << item.first;
+	}
 }
 
 /*
