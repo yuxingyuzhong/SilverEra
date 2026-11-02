@@ -1011,6 +1011,125 @@ TEST(Renderer_Level_Test, 关卡聚光灯阴影)
 }
 
 /*
+聚光灯阴影强度独立（第四百七十六轮）
+口径：strength = 0 时与未开阴影逐像素等价（≤ 2）；strength = 1 时恢复遮蔽（> 200 像素差异）。
+*/
+TEST(Renderer_Level_Test, 关卡聚光阴影强度)
+{
+	write_cube_assets();
+	write_text(level_dir() / L"聚光强度.level",
+		"level 聚光强度\n"
+		"camera position 0 6 6\n"
+		"camera target 0 0 0\n"
+		"light direction 0 -1 0\n"
+		"light color 0.2 0.2 0.2\n"
+		"light intensity 0.2\n"
+		"light spot 0 4 0 0 -1 0 1 1 1 12 2 20 40 0 0 16\n"
+		"mesh 方块 cube.obj\n"
+		"mtl 方块材质 cube.mtl\n"
+		"place 方块 方块材质 0 -1.5 0 8 0.2 8\n"
+		"place 方块 方块材质 0 0.6 0 1.2 1.2 1.2\n");
+
+	engine::Renderer_Config config;
+	config.width = LEVEL_WIDTH;
+	config.height = LEVEL_HEIGHT;
+	config.hidden = true;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(config));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+
+	engine::Level_Data 关卡;
+	engine::Asset_Scene 场景;
+	ASSERT_TRUE(renderer.level_load(关卡, 场景, level_utf8("聚光强度.level"), false));
+
+	engine::Light_Data 灯光 = 关卡.light;
+	//基线：未开聚光阴影
+	灯光.spot_shadow_enabled = 0;
+	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
+	EXPECT_EQ(renderer.scene_draw(场景), 2u);
+	std::vector<uint8_t> 无影(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+	ASSERT_TRUE(renderer.frame_render(无影.data(), static_cast<uint32_t>(无影.size())));
+
+	//强度 0：应等价于未开阴影
+	灯光.spot_shadow_enabled = 1;
+	灯光.spot_shadow_strength = 0.0f;
+	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
+	EXPECT_EQ(renderer.scene_draw(场景), 2u);
+	std::vector<uint8_t> 零强度(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+	ASSERT_TRUE(renderer.frame_render(零强度.data(), static_cast<uint32_t>(零强度.size())));
+	const uint32_t 零差异 = changed_pixels(无影, 零强度);
+	std::cout << "[关卡] 聚光阴影零强度差异 " << 零差异 << std::endl;
+	EXPECT_LE(零差异, 2u) << "强度 0 未完全关闭阴影";
+
+	//强度 1：恢复遮蔽
+	灯光.spot_shadow_strength = 1.0f;
+	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
+	EXPECT_EQ(renderer.scene_draw(场景), 2u);
+	std::vector<uint8_t> 全强度(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+	ASSERT_TRUE(renderer.frame_render(全强度.data(), static_cast<uint32_t>(全强度.size())));
+	const uint32_t 全差异 = changed_pixels(无影, 全强度);
+	std::cout << "[关卡] 聚光阴影全强度差异 " << 全差异 << std::endl;
+	EXPECT_GT(全差异, 200u) << "强度 1 未产生遮蔽";
+	renderer.level_unload(场景);
+}
+
+/*
+聚光灯阴影软度独立（第四百七十六轮）
+口径：硬边（软度 0）与软边（软度 0.75 → 5×5 PCF）在阴影边缘产生可观测差异（> 10 像素）。
+*/
+TEST(Renderer_Level_Test, 关卡聚光阴影软度)
+{
+	write_cube_assets();
+	write_text(level_dir() / L"聚光软度.level",
+		"level 聚光软度\n"
+		"camera position 0 6 6\n"
+		"camera target 0 0 0\n"
+		"light direction 0 -1 0\n"
+		"light color 0.2 0.2 0.2\n"
+		"light intensity 0.2\n"
+		"light spot 0 4 0 0 -1 0 1 1 1 12 2 20 40 0 0 16\n"
+		"mesh 方块 cube.obj\n"
+		"mtl 方块材质 cube.mtl\n"
+		"place 方块 方块材质 0 -1.5 0 8 0.2 8\n"
+		"place 方块 方块材质 0 0.6 0 1.2 1.2 1.2\n");
+
+	engine::Renderer_Config config;
+	config.width = LEVEL_WIDTH;
+	config.height = LEVEL_HEIGHT;
+	config.hidden = true;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(config));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+
+	engine::Level_Data 关卡;
+	engine::Asset_Scene 场景;
+	ASSERT_TRUE(renderer.level_load(关卡, 场景, level_utf8("聚光软度.level"), false));
+
+	engine::Light_Data 灯光 = 关卡.light;
+	灯光.spot_shadow_enabled = 1;
+	//硬边
+	灯光.spot_shadow_softness = 0.0f;
+	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
+	EXPECT_EQ(renderer.scene_draw(场景), 2u);
+	std::vector<uint8_t> 硬边(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+	ASSERT_TRUE(renderer.frame_render(硬边.data(), static_cast<uint32_t>(硬边.size())));
+
+	//软边（0.75 → 5×5 邻域）
+	灯光.spot_shadow_softness = 0.75f;
+	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
+	EXPECT_EQ(renderer.scene_draw(场景), 2u);
+	std::vector<uint8_t> 软边(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+	ASSERT_TRUE(renderer.frame_render(软边.data(), static_cast<uint32_t>(软边.size())));
+
+	const uint32_t 差异 = changed_pixels(硬边, 软边);
+	std::cout << "[关卡] 聚光阴影软度差异 " << 差异 << std::endl;
+	EXPECT_GT(差异, 10u) << "聚光灯软度未生效";
+	renderer.level_unload(场景);
+}
+
+/*
 聚光灯阴影开关文本往返（第四百七十五轮）
 口径：`light spot_shadow 0/1` 结构化保存；写出再读回一致。
 */
