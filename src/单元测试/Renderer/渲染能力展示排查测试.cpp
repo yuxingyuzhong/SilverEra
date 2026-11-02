@@ -45,6 +45,15 @@ namespace
 		return PROBE_WIDTH * PROBE_HEIGHT * 4;
 	}
 
+	//整帧平均亮度（Rec.709 加权）
+	float average_luma(const std::vector<uint8_t>& pixels)
+	{
+		double sum = 0.0;
+		for (std::size_t index = 0; index + 3 < pixels.size(); index += 4)
+			sum += 0.2126 * pixels[index] + 0.7152 * pixels[index + 1] + 0.0722 * pixels[index + 2];
+		return static_cast<float>(sum / static_cast<double>(PROBE_WIDTH * PROBE_HEIGHT));
+	}
+
 	//两帧之间逐通道差 ≥ 阈值的像素数
 	uint32_t changed_pixels(const std::vector<uint8_t>& left, const std::vector<uint8_t>& right)
 	{
@@ -106,6 +115,7 @@ TEST(Renderer_Showcase_Probe_Test, 各格多距离多角度均有显示)
 			const float x = columns[column];
 			uint32_t minimum_count = 0xFFFFFFFFu;
 			uint32_t maximum_count = 0;
+			float minimum_luma = 1.0e9f;
 			//四种距离 × 五种朝向 ＋ 高空俯视
 			for (uint32_t sample = 0; sample < 21; ++sample)
 			{
@@ -121,14 +131,18 @@ TEST(Renderer_Showcase_Probe_Test, 各格多距离多角度均有显示)
 				std::vector<uint8_t> shown(probe_bytes());
 				ASSERT_TRUE(renderer.frame_render(shown.data(), static_cast<uint32_t>(shown.size())));
 				const uint32_t count = changed_pixels(reference, shown);
+				const float luma = average_luma(shown);
 				if (count < minimum_count)
 					minimum_count = count;
 				if (count > maximum_count)
 					maximum_count = count;
+				if (luma < minimum_luma)
+					minimum_luma = luma;
 			}
 			std::cout << "[展示排查] 格 (" << x << ", " << z << ") 覆盖 " << minimum_count
-				<< " .. " << maximum_count << std::endl;
-			if (minimum_count < VISIBLE_MIN_PIXELS)
+				<< " .. " << maximum_count << " 最低亮度 " << minimum_luma << std::endl;
+			//画面过暗也视为「看不清」（条形灯与地台都应有可见亮度）
+			if (minimum_count < VISIBLE_MIN_PIXELS || minimum_luma < 18.0f)
 				++empty_cases;
 		}
 	}

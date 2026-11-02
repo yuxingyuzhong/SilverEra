@@ -1,4 +1,4 @@
-﻿//场景配置：相机 / 光照 / 雾 / 天空 / 阴影 / 簇灯墙 / 粒子预配置
+//场景配置：相机 / 光照 / 雾 / 天空 / 阴影 / 簇灯墙 / 粒子预配置
 #include "src/主调/能力展示/展区公共.h"
 
 //渲染器门面（Vulkan-free 公共面）
@@ -39,8 +39,8 @@ namespace engine
 		光照.color[1] = 0.94f;
 		光照.color[2] = 0.86f;
 		//主光强度（压低到不过曝）
-		光照.intensity = 0.85f;
-		光照.ambient = 0.06f;
+		光照.intensity = 1.05f;
+		光照.ambient = 0.22f;
 		//补光（冷色）
 		光照.fill_direction[0] = -0.5f;
 		光照.fill_direction[1] = -0.25f;
@@ -89,12 +89,12 @@ namespace engine
 		光照.ambient_ground[0] = 0.28f;
 		光照.ambient_ground[1] = 0.24f;
 		光照.ambient_ground[2] = 0.20f;
-		光照.ambient_hemisphere = 0.15f;
+		光照.ambient_hemisphere = 0.30f;
 		//阴影（软边 ＋ 三级级联）
 		光照.shadow_enabled = 1;
 		光照.shadow_bias = 0.004f;
 		光照.shadow_softness = 0.35f;
-		光照.shadow_strength = 1.0f;
+		光照.shadow_strength = 0.8f;
 
 		//—— 雾（线性，远距离才起效，给远景补空间层次） ——
 		Fog_Data 雾;
@@ -143,7 +143,7 @@ namespace engine
 		渲染器.sky_enable_set(true);
 		渲染器.sky_texture_set(资源.天空);
 		//天空 IBL 强度压低：否则整幅画面被蓝色天光冲成单色
-		渲染器.sky_params_set(0.12f, 0.20f);
+		渲染器.sky_params_set(0.28f, 0.26f);
 		//PBR-lite 全局开启（逐物体另设粗糙度 / 金属度）
 		渲染器.pbr_enable_set(true);
 		渲染器.pbr_roughness_set(1.0f);
