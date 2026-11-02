@@ -10,10 +10,12 @@
 #include <cstdint>
 #include <cstring>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <limits>
 #include <string>
 #include <utility>
 #include <vector>
@@ -102,6 +104,7 @@ namespace
 	void expect_level_equal(const engine::Level_Data& left, const engine::Level_Data& right)
 	{
 		EXPECT_EQ(left.name, right.name);
+		EXPECT_EQ(left.version, right.version) << "格式版本不一致";
 
 		//相机组
 		EXPECT_TRUE(triple_bit_equal(left.camera.position, right.camera.position)) << "相机位置不一致";
@@ -817,6 +820,72 @@ TEST(Renderer_Level_Test, 关卡反复装载释放)
 		EXPECT_EQ(renderer.asset_cache_count(), 0u) << "第 " << 轮次 << " 次释放后仍有缓存条目";
 	}
 	std::cout << "[关卡] 反复装载释放 200 次完成" << std::endl;
+}
+
+/*
+格式版本与写出前校验（第四百三十六轮）
+口径：版本行写出并可读回；未知版本 / 版本 < 1 / 非有限字段 → 拒绝；缺省版本按 1。
+*/
+TEST(Renderer_Level_Test, 格式版本与写出前校验)
+{
+	//版本往返
+	engine::Level_Data source = rich_level();
+	source.version = 1;
+	ASSERT_TRUE(engine::level_text_write(source, level_utf8("版本.level")));
+	engine::Level_Data loaded;
+	ASSERT_TRUE(engine::level_text_read(level_utf8("版本.level"), loaded));
+	EXPECT_EQ(loaded.version, 1);
+
+	//缺省版本按 1
+	write_text(level_dir() / L"无版本.level", "level 无版本\ncamera position 0 0 3\n");
+	engine::Level_Data legacy;
+	ASSERT_TRUE(engine::level_text_read(level_utf8("无版本.level"), legacy));
+	EXPECT_EQ(legacy.version, 1);
+
+	//未知版本拒绝
+	write_text(level_dir() / L"未来版本.level", "level 未来\nversion 2\n");
+	engine::Level_Data future;
+	EXPECT_FALSE(engine::level_text_read(level_utf8("未来版本.level"), future));
+	EXPECT_TRUE(future.name.empty());
+
+	//版本 0 不写出
+	engine::Level_Data bad_version = rich_level();
+	bad_version.version = 0;
+	EXPECT_FALSE(engine::level_text_write(bad_version, level_utf8("坏版本.level")));
+
+	//非有限字段不写出
+	engine::Level_Data bad_value = rich_level();
+	bad_value.fog.density = std::nanf("");
+	EXPECT_FALSE(engine::level_text_write(bad_value, level_utf8("坏数值.level")));
+	bad_value = rich_level();
+	bad_value.light.point_shininess[0] = std::numeric_limits<float>::infinity();
+	EXPECT_FALSE(engine::level_text_write(bad_value, level_utf8("坏点光.level")));
+}
+
+/*
+八盏点光边界（第四百三十六轮）
+口径：恰好 8 盏通过；第 9 盏拒绝（上限 8）。
+*/
+TEST(Renderer_Level_Test, 八盏点光边界)
+{
+	std::string text = "level 八盏\n";
+	for (uint32_t 序号 = 0; 序号 < 8; ++序号)
+	{
+		char 行[128] = {};
+		std::snprintf(行, sizeof(行), "light point %d 0 0 1 1 1 5 1 0 1 0\n", static_cast<int>(序号));
+		text += 行;
+	}
+	write_text(level_dir() / L"八盏.level", text);
+
+	engine::Level_Data loaded;
+	ASSERT_TRUE(engine::level_text_read(level_utf8("八盏.level"), loaded));
+	EXPECT_EQ(loaded.light.point_count, 8u);
+
+	text += "light point 8 0 0 1 1 1 5 1 0 1 0\n";
+	write_text(level_dir() / L"九盏.level", text);
+	engine::Level_Data too_many;
+	EXPECT_FALSE(engine::level_text_read(level_utf8("九盏.level"), too_many));
+	EXPECT_EQ(too_many.light.point_count, 0u);
 }
 
 /*
