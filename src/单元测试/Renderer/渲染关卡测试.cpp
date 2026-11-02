@@ -1343,6 +1343,53 @@ TEST(Renderer_Level_Test, 关卡聚光灯阴影质量参数非法)
 }
 
 /*
+聚光灯阴影序号文本往返（第四百八十一轮）
+口径：`light spot_shadow_index 1` 结构化保存；缺省为 0；写出再读回一致。
+*/
+TEST(Renderer_Level_Test, 关卡聚光灯阴影序号往返)
+{
+	write_text(level_dir() / L"聚光序号文本.level", "level 聚光序号文本\nlight spot_shadow_index 1\n");
+
+	engine::Level_Data loaded;
+	ASSERT_TRUE(engine::level_text_read(level_utf8("聚光序号文本.level"), loaded));
+	EXPECT_EQ(loaded.light.spot_shadow_index, 1);
+
+	ASSERT_TRUE(engine::level_text_write(loaded, level_utf8("聚光序号文本_回写.level")));
+	engine::Level_Data reread;
+	ASSERT_TRUE(engine::level_text_read(level_utf8("聚光序号文本_回写.level"), reread));
+	EXPECT_EQ(reread.light.spot_shadow_index, 1);
+
+	//缺省：不写该行时序号为 0
+	write_text(level_dir() / L"聚光序号缺省.level", "level 聚光序号缺省\n");
+	engine::Level_Data 缺省;
+	ASSERT_TRUE(engine::level_text_read(level_utf8("聚光序号缺省.level"), 缺省));
+	EXPECT_EQ(缺省.light.spot_shadow_index, 0);
+}
+
+/*
+聚光灯阴影序号非法（第四百八十一轮）
+口径：只接受 0..7 的十进制整数，且不得有多余字段。
+*/
+TEST(Renderer_Level_Test, 关卡聚光灯阴影序号非法)
+{
+	const std::vector<std::pair<std::string, std::string>> cases = {
+		{ "序号为 8", "level 非法\nlight spot_shadow_index 8\n" },
+		{ "负数", "level 非法\nlight spot_shadow_index -1\n" },
+		{ "非数字", "level 非法\nlight spot_shadow_index on\n" },
+		{ "缺值", "level 非法\nlight spot_shadow_index\n" },
+		{ "多余字段", "level 非法\nlight spot_shadow_index 1 2\n" },
+	};
+
+	for (const std::pair<std::string, std::string>& item : cases)
+	{
+		write_text(level_dir() / "非法.level", item.second);
+		engine::Level_Data loaded;
+		EXPECT_FALSE(engine::level_text_read(level_utf8("非法.level"), loaded)) << item.first;
+		EXPECT_EQ(loaded.light.spot_shadow_index, 0) << item.first;
+	}
+}
+
+/*
 写入与读取失败路径（第四百二十九轮）
 口径：空路径 / 不存在的文件 → 返回假；读取失败时输出清空。
 */
