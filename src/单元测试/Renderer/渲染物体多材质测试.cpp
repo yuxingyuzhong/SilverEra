@@ -367,3 +367,40 @@ TEST_F(Renderer_Scene_Test, 网格分段非三角形被拒绝)
 	EXPECT_FALSE(renderer.mesh_load(mesh, bad)) << "非三角形分段未被拒绝";
 	EXPECT_EQ(mesh, 0u);
 }
+
+/*
+实例化上传字节按实例步长计算（第四百一十五轮 · 方向四性能基线）
+口径：200 个实例（默认容量 256 内）首次登记后，首帧槽上传应为 200 × 112 字节；
+      用确定性指标而非 GPU 耗时（64×36 下噪声主导）。
+*/
+TEST_F(Renderer_Scene_Test, 实例化上传字节按步长计算)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, quad_data()));
+	engine::Camera_Data camera{};
+	engine::Light_Data light{};
+	engine::Fog_Data fog{};
+	renderer.scene_apply(camera, light, fog);
+
+	//200 个沿 X 轴递增平移的实例
+	std::vector<float> transforms(200u * 16u, 0.0f);
+	for (uint32_t index = 0; index < 200u; ++index)
+	{
+		float* matrix = transforms.data() + index * 16u;
+		matrix[0] = 1.0f;
+		matrix[5] = 1.0f;
+		matrix[10] = 1.0f;
+		matrix[12] = static_cast<float>(index) * 0.02f - 2.0f;
+		matrix[15] = 1.0f;
+	}
+	uint64_t before = renderer.instance_upload_bytes();
+	ASSERT_TRUE(renderer.mesh_draw_instanced(mesh, transforms.data(), 200u));
+	ASSERT_TRUE(renderer.frame_render());
+	uint64_t after = renderer.instance_upload_bytes();
+	RecordProperty("instanced_upload_bytes", static_cast<int>(after - before));
+	EXPECT_EQ(after - before, 200u * 112u) << "实例上传字节与步长不符";
+
+	renderer.mesh_unload(mesh);
+}
