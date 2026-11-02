@@ -99,6 +99,7 @@ target_sources(EngineTestObjects PRIVATE
     "src/单元测试/Renderer/渲染水平面测试.cpp"
     "src/单元测试/Renderer/渲染深度描边测试.cpp"
     "src/单元测试/Renderer/渲染混合测试.cpp"
+    "src/单元测试/Renderer/渲染物体多材质测试.cpp"
     "src/单元测试/Renderer/渲染相机测试.cpp"
     "src/单元测试/Renderer/渲染着色器校验测试.cpp"
     "src/单元测试/Renderer/渲染离屏目标测试.cpp"

@@ -27,14 +27,18 @@ namespace
 		return pixels;
 	}
 
-	//登记带卡通覆盖的材质（参数原样传入，非法值由渲染层拒绝）
-	engine::Material_Handle load_toon_material(engine::Renderer& renderer, float steps, float rim, float specular)
+	//登记带卡通覆盖的材质（参数原样传入，非法值由渲染层拒绝；tint 为暗部色调，默认 (1,1,1)）
+	engine::Material_Handle load_toon_material(engine::Renderer& renderer, float steps, float rim, float specular,
+		float tint_r = 1.0f, float tint_g = 1.0f, float tint_b = 1.0f)
 	{
 		engine::Material_Data data{};
 		data.toon_override = true;
 		data.toon_steps = steps;
 		data.toon_rim = rim;
 		data.toon_specular = specular;
+		data.toon_shadow_tint[0] = tint_r;
+		data.toon_shadow_tint[1] = tint_g;
+		data.toon_shadow_tint[2] = tint_b;
 		engine::Material_Handle material = 0;
 		EXPECT_TRUE(renderer.material_load(material, data));
 		return material;
@@ -53,6 +57,29 @@ namespace
 				maximum = delta;
 		}
 		return maximum;
+	}
+
+	//按 Rec.709 求像素亮度
+	float luma_of(const std::array<uint8_t, 4>& value)
+	{
+		return 0.2126f * static_cast<float>(value[0]) + 0.7152f * static_cast<float>(value[1])
+			+ 0.0722f * static_cast<float>(value[2]);
+	}
+
+	//统计「本帧比参考帧暗至少 threshold」的像素数（暗部色调用例）
+	uint32_t darkened_count(const std::vector<uint8_t>& tested, const std::vector<uint8_t>& reference, float threshold)
+	{
+		uint32_t count = 0;
+		for (uint32_t y = 0; y < WINDOW_HEIGHT; ++y)
+		{
+			for (uint32_t x = 0; x < WINDOW_WIDTH; ++x)
+			{
+				float difference = luma_of(pixel_get(reference, x, y)) - luma_of(pixel_get(tested, x, y));
+				if (difference >= threshold)
+					++count;
+			}
+		}
+		return count;
 	}
 
 	//两帧之间逐通道差达到 threshold 的像素数
@@ -215,6 +242,75 @@ TEST_F(Renderer_Scene_Test, 逐物体卡通非法参数按不覆盖)
 	int difference = max_channel_diff(plain, invalid);
 	RecordProperty("toon_object_invalid_max_diff", difference);
 	EXPECT_LE(difference, 2) << "非法卡通参数未被拒绝（最大差 " << difference << "）";
+	renderer.material_unload(material);
+	renderer.mesh_unload(mesh);
+	renderer.texture_unload(texture);
+}
+
+/*
+逐物体暗部色调生效（第四百零九轮 · 方向四阶段 B）
+口径：立方体 ＋ 斜射方向光；材质覆盖标志为真、色调 (0.5, 0.5, 0.5)、色阶 0（不量化）；
+      暗部像素被乘上暗色 → 被压暗像素数应显著（断言 ≥ 20）。
+*/
+TEST_F(Renderer_Scene_Test, 逐物体暗部色调生效)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	uint64_t texture = 0;
+	std::vector<uint8_t> texels = solid_white();
+	ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 2, 2));
+	renderer.texture_bind_set(texture);
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, cube_data(0.4f)));
+	engine::Camera_Data camera{};
+	engine::Light_Data light{};
+	//场景：方向光自 +Z 射向 -Z（可见的 +Z 正面 ndotl = 0 → 处于暗部）、环境光 0.5 提供基底亮度
+	light.direction[0] = 0.0f;
+	light.direction[1] = 0.0f;
+	light.direction[2] = 1.0f;
+	light.intensity = 1.0f;
+	light.ambient = 0.5f;
+
+	std::vector<uint8_t> plain = render_frame(renderer, mesh, camera, light, 0);
+	engine::Material_Handle material = load_toon_material(renderer, 0.0f, 0.0f, 0.0f, 0.5f, 0.5f, 0.5f);
+	std::vector<uint8_t> tinted = render_frame(renderer, mesh, camera, light, material);
+	uint32_t darkened = darkened_count(tinted, plain, 0.05f);
+	RecordProperty("toon_object_tint_darkened_pixels", static_cast<int>(darkened));
+	EXPECT_GE(darkened, 20u) << "逐物体暗部色调未生效（压暗像素 " << darkened << "）";
+	renderer.material_unload(material);
+	renderer.mesh_unload(mesh);
+	renderer.texture_unload(texture);
+}
+
+//逐物体暗部色调默认 (1,1,1) 为乘性恒等：覆盖标志为真时画面仍应与不覆盖逐通道差 ≤ 2
+TEST_F(Renderer_Scene_Test, 逐物体暗部色调默认可配)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	uint64_t texture = 0;
+	std::vector<uint8_t> texels = solid_white();
+	ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 2, 2));
+	renderer.texture_bind_set(texture);
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, cube_data(0.4f)));
+	engine::Camera_Data camera{};
+	engine::Light_Data light{};
+	light.direction[0] = 0.6f;
+	light.direction[1] = -0.6f;
+	light.direction[2] = -0.6f;
+	light.intensity = 1.0f;
+	light.ambient = 0.0f;
+
+	std::vector<uint8_t> plain = render_frame(renderer, mesh, camera, light, 0);
+	engine::Material_Handle material = load_toon_material(renderer, 0.0f, 0.0f, 0.0f);
+	std::vector<uint8_t> neutral = render_frame(renderer, mesh, camera, light, material);
+	int difference = max_channel_diff(plain, neutral);
+	RecordProperty("toon_object_tint_neutral_max_diff", difference);
+	EXPECT_LE(difference, 2) << "默认暗部色调非恒等（最大差 " << difference << "）";
 	renderer.material_unload(material);
 	renderer.mesh_unload(mesh);
 	renderer.texture_unload(texture);

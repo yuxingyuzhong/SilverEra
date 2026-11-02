@@ -482,8 +482,8 @@ TEST_F(Renderer_Scene_Test, 场景UBO按需写入)
 
 /*
 实例缓冲按需写入（第六十一轮）
-口径：frame_overlap = 2；每帧绘制同一个四边形（1 个实例 = 96 字节，第四百零八轮由 80 扩至 96）；
-     各帧槽预热后静止帧上传 0 字节；平移模型矩阵后逐帧上传 >0 且 ≤96，随后回到 0。
+口径：frame_overlap = 2；每帧绘制同一个四边形（1 个实例 = 112 字节，第四百零八轮 80→96、第四百零九轮 96→112）；
+     各帧槽预热后静止帧上传 0 字节；平移模型矩阵后逐帧上传 >0 且 ≤112，随后回到 0。
 */
 TEST_F(Renderer_Scene_Test, 实例缓冲按需写入)
 {
@@ -511,16 +511,16 @@ TEST_F(Renderer_Scene_Test, 实例缓冲按需写入)
 		}
 	};
 
-	//静止场景：两个帧槽依次预热（各 96 字节：模型矩阵 16 ＋ 材质 4 ＋ 卡通 4 浮点，第四百零八轮扩至 96），之后为 0
+	//静止场景：两个帧槽依次预热（各 112 字节：模型矩阵 16 ＋ 材质 4 ＋ 卡通 4 ＋ 暗部色调 4 浮点），之后为 0
 	std::vector<uint64_t> deltas;
 	uint64_t previous = renderer.instance_upload_bytes();
 	upload_delta(deltas, previous, 4, nullptr);
 	RecordProperty("instance_upload_frame1", static_cast<int>(deltas[0]));
 	RecordProperty("instance_upload_frame3", static_cast<int>(deltas[2]));
-	EXPECT_EQ(deltas[0], 96u) << "首帧未写入单个实例";
+	EXPECT_EQ(deltas[0], 112u) << "首帧未写入单个实例";
 	EXPECT_EQ(*std::min_element(deltas.begin(), deltas.end()), 0u) << "静止场景仍整块上传";
 	for (uint64_t delta : deltas)
-		EXPECT_LE(delta, 96u) << "单帧上传超出本帧实例字节数";
+		EXPECT_LE(delta, 112u) << "单帧上传超出本帧实例字节数";
 
 	//平移模型矩阵 → 模型矩阵变化，应重新上传该实例
 	std::array<float, 16> model = {};
