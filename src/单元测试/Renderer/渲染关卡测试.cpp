@@ -996,6 +996,60 @@ TEST(Renderer_Level_Test, 随机关卡往返逐位一致)
 }
 
 /*
+关卡规模装载开销（第四百四十二轮 · 性能）
+口径：同一网格摆放 100 / 400 / 1000 个对象，各装载两次取最短；断言不高于 1000 ms（防抖动上界）。
+*/
+TEST(Renderer_Level_Test, 关卡规模装载开销)
+{
+	write_box_assets();
+
+	engine::Renderer_Config config;
+	config.width = 64;
+	config.height = 36;
+	config.hidden = true;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(config));
+
+	for (uint32_t 数量 : { 100u, 400u, 1000u })
+	{
+		//生成关卡文本（同一网格 / 材质）
+		std::string 文本 = "level 规模\ncamera position 0 0 8\nmesh 方盒 box.obj\nmtl 方盒材质 box.mtl\n";
+		文本.reserve(文本.size() + static_cast<std::size_t>(数量) * 64);
+		for (uint32_t 序号 = 0; 序号 < 数量; ++序号)
+		{
+			char 行[96] = {};
+			std::snprintf(行, sizeof(行), "place 方盒 方盒材质 %d %d 0 1 1 1 0 %d 0\n",
+				static_cast<int>(序号 % 20) - 10, static_cast<int>(序号 / 20) - 10,
+				static_cast<int>(序号 % 7) * 5);
+			文本 += 行;
+		}
+		write_text(level_dir() / L"规模.level", 文本);
+
+		//预热一次
+		engine::Level_Data 关卡;
+		engine::Asset_Scene 场景;
+		ASSERT_TRUE(renderer.level_load(关卡, 场景, level_utf8("规模.level")));
+		ASSERT_EQ(场景.objects.size(), 数量);
+		renderer.level_unload(场景);
+
+		double 最短毫秒 = 1e9;
+		for (uint32_t 次数 = 0; 次数 < 2; ++次数)
+		{
+			engine::Asset_Scene 测场景;
+			const std::chrono::steady_clock::time_point 开始 = std::chrono::steady_clock::now();
+			ASSERT_TRUE(renderer.level_load(关卡, 测场景, level_utf8("规模.level")));
+			const std::chrono::steady_clock::time_point 结束 = std::chrono::steady_clock::now();
+			const double 毫秒 = std::chrono::duration<double, std::milli>(结束 - 开始).count();
+			if (毫秒 < 最短毫秒)
+				最短毫秒 = 毫秒;
+			renderer.level_unload(测场景);
+		}
+		std::cout << "[关卡] " << 数量 << " 摆放装载最短 " << 最短毫秒 << " ms" << std::endl;
+		EXPECT_LT(最短毫秒, 1000.0);
+	}
+}
+
+/*
 关卡大量摆放（第四百三十四轮 · 稳定性）
 口径：同一网格 / 材质摆放 20 个对象（含旋转）；对象数、句柄复用与绘制登记量正确。
 */

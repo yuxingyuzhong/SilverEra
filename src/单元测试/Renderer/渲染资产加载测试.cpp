@@ -10,6 +10,7 @@
 
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -688,6 +689,42 @@ TEST(Renderer_Asset_Load_Test, 纹理中文目录加载)
 	renderer.texture_release(共享);
 	EXPECT_EQ(renderer.asset_cache_count(), 0u);
 	std::cout << "[资产加载] 中文目录贴图可加载（句柄 " << 共享 << "）" << std::endl;
+}
+
+/*
+OBJ 解析吞吐（第四百四十二轮 · 性能）
+口径：现场生成 50000 三角形（150000 独立顶点、无 vt / vn）的 OBJ，仅测解析（不建 GPU 资源）；断言不高于 5000 ms。
+*/
+TEST(Renderer_Asset_Load_Test, OBJ解析吞吐)
+{
+	const uint32_t 三角形数 = 50000u;
+	std::string 文本;
+	文本.reserve(static_cast<std::size_t>(三角形数) * 3 * 28 + static_cast<std::size_t>(三角形数) * 20);
+	//顶点（每个三角形三个独立顶点，坐标落在一个网格上）
+	for (uint32_t 序号 = 0; 序号 < 三角形数 * 3; ++序号)
+	{
+		char 行[64] = {};
+		std::snprintf(行, sizeof(行), "v %d %d %d\n",
+			static_cast<int>(序号 % 97), static_cast<int>((序号 / 97) % 97), static_cast<int>(序号 % 13));
+		文本 += 行;
+	}
+	//面（扇形三角化不触发，全为三角形）
+	for (uint32_t 序号 = 0; 序号 < 三角形数; ++序号)
+	{
+		char 行[64] = {};
+		std::snprintf(行, sizeof(行), "f %u %u %u\n", 序号 * 3 + 1, 序号 * 3 + 2, 序号 * 3 + 3);
+		文本 += 行;
+	}
+	write_text(asset_dir() / L"吞吐.obj", 文本);
+
+	engine::Mesh_File_Data 文件;
+	const std::chrono::steady_clock::time_point 开始 = std::chrono::steady_clock::now();
+	ASSERT_TRUE(engine::obj_mesh_load(asset_utf8("吞吐.obj"), 文件));
+	const std::chrono::steady_clock::time_point 结束 = std::chrono::steady_clock::now();
+	const double 毫秒 = std::chrono::duration<double, std::milli>(结束 - 开始).count();
+	EXPECT_EQ(文件.data.indices.size(), static_cast<std::size_t>(三角形数) * 3);
+	std::cout << "[资产加载] 50000 三角形解析 " << 毫秒 << " ms" << std::endl;
+	EXPECT_LT(毫秒, 5000.0);
 }
 
 /*
