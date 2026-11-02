@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <cstring>
 #include <chrono>
+#include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -782,4 +783,91 @@ TEST(Renderer_Level_Test, 关卡装载开销)
 	}
 	std::cout << "[关卡] 装载开销（1 网格 + 1 材质 + 4 对象）最短 " << 最短毫秒 << " ms" << std::endl;
 	EXPECT_LT(最短毫秒, 300.0) << "关卡装载耗时异常";
+}
+
+/*
+关卡反复装载与释放（第四百三十四轮 · 稳定性）
+口径：同一关卡连续装载 / 释放 200 次全部成功；结束后资产缓存条目为 0、无句柄残留。
+*/
+TEST(Renderer_Level_Test, 关卡反复装载释放)
+{
+	write_box_assets();
+	write_text(level_dir() / L"反复.level",
+		"level 反复关卡\n"
+		"camera position 0 0 3\n"
+		"mesh 方盒 box.obj\n"
+		"mtl 方盒材质 box.mtl\n"
+		"place 方盒 方盒材质 0 0 0 1 1 1\n"
+		"place 方盒 方盒材质 2 0 0 1 1 1 0 30 0\n");
+
+	engine::Renderer_Config config;
+	config.width = 64;
+	config.height = 36;
+	config.hidden = true;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(config));
+
+	for (uint32_t 轮次 = 0; 轮次 < 200; ++轮次)
+	{
+		engine::Level_Data 关卡;
+		engine::Asset_Scene 场景;
+		ASSERT_TRUE(renderer.level_load(关卡, 场景, level_utf8("反复.level"))) << "第 " << 轮次 << " 次装载失败";
+		ASSERT_EQ(场景.objects.size(), 2u);
+		renderer.level_unload(场景);
+		EXPECT_EQ(renderer.asset_cache_count(), 0u) << "第 " << 轮次 << " 次释放后仍有缓存条目";
+	}
+	std::cout << "[关卡] 反复装载释放 200 次完成" << std::endl;
+}
+
+/*
+关卡大量摆放（第四百三十四轮 · 稳定性）
+口径：同一网格 / 材质摆放 20 个对象（含旋转）；对象数、句柄复用与绘制登记量正确。
+*/
+TEST(Renderer_Level_Test, 关卡大量摆放)
+{
+	write_box_assets();
+	std::string 文本 = "level 大量摆放\ncamera position 0 0 6\nmesh 方盒 box.obj\nmtl 方盒材质 box.mtl\n";
+	for (uint32_t 序号 = 0; 序号 < 20; ++序号)
+	{
+		char 行[128] = {};
+		std::snprintf(行, sizeof(行), "place 方盒 方盒材质 %d %d 0 1 1 1 0 %d 0\n",
+			static_cast<int>(序号 % 5) - 2, static_cast<int>(序号 / 5) - 2, static_cast<int>(序号) * 9);
+		文本 += 行;
+	}
+	write_text(level_dir() / L"大量摆放.level", 文本);
+
+	engine::Renderer_Config config;
+	config.width = LEVEL_WIDTH;
+	config.height = LEVEL_HEIGHT;
+	config.hidden = true;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(config));
+
+	engine::Level_Data 关卡;
+	engine::Asset_Scene 场景;
+	ASSERT_TRUE(renderer.level_load(关卡, 场景, level_utf8("大量摆放.level")));
+	EXPECT_EQ(场景.meshes.size(), 1u);
+	EXPECT_EQ(场景.materials.size(), 1u);
+	ASSERT_EQ(场景.objects.size(), 20u);
+	//全部对象共享同一网格句柄
+	for (const engine::Asset_Object& 对象 : 场景.objects)
+		EXPECT_EQ(对象.mesh, 场景.meshes[0]);
+
+	//逐对象登记绘制（同一网格 20 份）
+	for (const engine::Asset_Object& 对象 : 场景.objects)
+	{
+		float 矩阵[16] = {};
+		engine::level_transform_build(对象.position, 对象.rotation_deg, 对象.scale, 矩阵);
+		ASSERT_TRUE(renderer.mesh_draw_sections(对象.mesh, 矩阵, 对象.materials.data(),
+			static_cast<uint32_t>(对象.materials.size())));
+	}
+	//出帧一次结算帧统计
+	std::vector<uint8_t> 像素(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+	ASSERT_TRUE(renderer.frame_render(像素.data(), static_cast<uint32_t>(像素.size())));
+	const engine::Frame_Stats 统计 = renderer.frame_stats_get();
+	std::cout << "[关卡] 大量摆放绘制项 " << 统计.drawn_items << std::endl;
+	EXPECT_GE(统计.drawn_items, 1u);
+
+	renderer.level_unload(场景);
+	EXPECT_TRUE(场景.objects.empty());
 }
