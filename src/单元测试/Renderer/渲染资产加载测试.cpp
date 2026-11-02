@@ -15,6 +15,9 @@
 #include <iostream>
 #include <string>
 #include <vector>
+//异步用例：轮询等待
+#include <chrono>
+#include <thread>
 
 #include "Application/Renderer/src/render/Asset/资产加载.h"
 #include "Application/Renderer/src/render/Renderer/渲染器.h"
@@ -670,4 +673,97 @@ TEST(Renderer_Asset_Load_Test, 共享纹理复用与引用计数)
 	renderer.texture_release(乙);
 	EXPECT_EQ(renderer.asset_cache_count(), 0u);
 	std::cout << "[资产加载] 共享纹理：复用 2 次、释放归零后条目 0" << std::endl;
+}
+
+/*
+异步加载完成后可绘制（第四百二十六轮）
+口径：提交后主线程轮询 ≤ 5 秒应就绪；句柄非 0 且可绘制；再次轮询返回同一句柄（不重建）。
+*/
+TEST(Renderer_Asset_Load_Test, 异步加载完成后可绘制)
+{
+	write_text(mtl_dir() / L"async.obj",
+		"v -1 -1 0\nv 1 -1 0\nv 1 1 0\nv -1 1 0\n"
+		"vn 0 0 1\n"
+		"f 1//1 2//1 3//1\nf 1//1 3//1 4//1\n");
+
+	engine::Renderer_Config config;
+	config.width = ASSET_WIDTH;
+	config.height = ASSET_HEIGHT;
+	config.hidden = true;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(config));
+
+	engine::Asset_Async_Task 任务;
+	ASSERT_TRUE(renderer.mesh_load_obj_async(任务, mtl_utf8("async.obj")));
+	//在途任务不允许被覆盖
+	EXPECT_FALSE(renderer.mesh_load_obj_async(任务, mtl_utf8("async.obj")));
+
+	engine::Mesh_Handle 句柄 = 0;
+	bool 就绪 = false;
+	//最长等待 5 秒（每 2 ms 轮询一次）
+	for (uint32_t 尝试 = 0; 尝试 < 2500 && !就绪; ++尝试)
+	{
+		就绪 = renderer.mesh_load_obj_async_poll(任务, 句柄);
+		if (!就绪)
+			std::this_thread::sleep_for(std::chrono::milliseconds(2));
+	}
+	ASSERT_TRUE(就绪) << "异步解析在 5 秒内未完成";
+	ASSERT_NE(句柄, 0u);
+	EXPECT_TRUE(renderer.mesh_draw(句柄, nullptr));
+	//幂等：再次轮询同一句柄
+	engine::Mesh_Handle 再次 = 0;
+	EXPECT_TRUE(renderer.mesh_load_obj_async_poll(任务, 再次));
+	EXPECT_EQ(再次, 句柄);
+	std::cout << "[资产加载] 异步加载就绪，句柄 " << 句柄 << std::endl;
+	renderer.mesh_unload(句柄);
+}
+
+/*
+异步加载失败（第四百二十六轮）
+口径：不存在路径 → 提交成功（任务建立），轮询始终返回假、句柄保持 0。
+*/
+TEST(Renderer_Asset_Load_Test, 异步加载失败)
+{
+	engine::Renderer_Config config;
+	config.width = 64;
+	config.height = 36;
+	config.hidden = true;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(config));
+
+	engine::Asset_Async_Task 任务;
+	ASSERT_TRUE(renderer.mesh_load_obj_async(任务, mtl_utf8("不存在_async.obj")));
+	engine::Mesh_Handle 句柄 = 0;
+	bool 就绪 = false;
+	//最长等待 5 秒
+	for (uint32_t 尝试 = 0; 尝试 < 2500 && !就绪; ++尝试)
+	{
+		就绪 = renderer.mesh_load_obj_async_poll(任务, 句柄);
+		if (!就绪)
+			std::this_thread::sleep_for(std::chrono::milliseconds(2));
+	}
+	EXPECT_FALSE(就绪) << "不存在的路径不应异步加载成功";
+	EXPECT_EQ(句柄, 0u);
+}
+
+/*
+异步提交的入参保护（第四百二十六轮）
+口径：空路径 → 提交失败；已有任务 → 再次提交失败。
+*/
+TEST(Renderer_Asset_Load_Test, 异步提交入参保护)
+{
+	engine::Renderer_Config config;
+	config.width = 64;
+	config.height = 36;
+	config.hidden = true;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(config));
+
+	engine::Asset_Async_Task 任务;
+	//空路径
+	EXPECT_FALSE(renderer.mesh_load_obj_async(任务, ""));
+	//未建立任务时轮询返回假
+	engine::Mesh_Handle 句柄 = 0;
+	EXPECT_FALSE(renderer.mesh_load_obj_async_poll(任务, 句柄));
+	EXPECT_EQ(句柄, 0u);
 }
