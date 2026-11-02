@@ -128,13 +128,8 @@ void engine::展区24_绘制(展示资源& 资源, 展示状态& 状态, Rendere
 	(void)状态;
 	if (!已装载)
 		return;
-	for (const engine::Asset_Object& 对象 : 关卡场景.objects)
-	{
-		float 矩阵[16] = {};
-		engine::level_transform_build(对象.position, 对象.rotation_deg, 对象.scale, 矩阵);
-		(void)渲染器.mesh_draw_sections(对象.mesh, 矩阵, 对象.materials.data(),
-			static_cast<uint32_t>(对象.materials.size()));
-	}
+	//逐对象登记绘制（门面 scene_draw：位置 / 旋转 / 缩放 ＋ 逐段绑材质）
+	(void)渲染器.scene_draw(关卡场景);
 }
 
 //释放关卡资产（幂等）

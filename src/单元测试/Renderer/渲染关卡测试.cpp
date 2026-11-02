@@ -498,10 +498,8 @@ TEST(Renderer_Level_Test, 关卡装载端到端)
 	ASSERT_EQ(场景.objects.size(), 1u);
 	ASSERT_EQ(场景.objects[0].materials.size(), 1u);
 
-	//逐段绑材质绘制
-	const engine::Material_Handle* 材质 = 场景.objects[0].materials.data();
-	ASSERT_TRUE(renderer.mesh_draw_sections(场景.objects[0].mesh, nullptr,
-		材质, static_cast<uint32_t>(场景.objects[0].materials.size())));
+	//逐段绑材质绘制（门面 scene_draw）
+	EXPECT_EQ(renderer.scene_draw(场景), 1u);
 	std::vector<uint8_t> shown(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(shown.data(), static_cast<uint32_t>(shown.size())));
 	const uint32_t covered = changed_pixels(reference, shown);
@@ -562,8 +560,7 @@ TEST(Renderer_Level_Test, 关卡与手工构造画面一致)
 	engine::Asset_Scene 场景甲;
 	ASSERT_TRUE(renderer.level_load(关卡, 场景甲, level_utf8("等价.level")));
 	ASSERT_EQ(场景甲.objects.size(), 1u);
-	ASSERT_TRUE(renderer.mesh_draw_sections(场景甲.objects[0].mesh, nullptr,
-		场景甲.objects[0].materials.data(), static_cast<uint32_t>(场景甲.objects[0].materials.size())));
+	EXPECT_EQ(renderer.scene_draw(场景甲), 1u);
 	std::vector<uint8_t> 关卡帧(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(关卡帧.data(), static_cast<uint32_t>(关卡帧.size())));
 	renderer.level_unload(场景甲);
@@ -922,14 +919,8 @@ TEST(Renderer_Level_Test, 关卡大量摆放)
 	for (const engine::Asset_Object& 对象 : 场景.objects)
 		EXPECT_EQ(对象.mesh, 场景.meshes[0]);
 
-	//逐对象登记绘制（同一网格 20 份）
-	for (const engine::Asset_Object& 对象 : 场景.objects)
-	{
-		float 矩阵[16] = {};
-		engine::level_transform_build(对象.position, 对象.rotation_deg, 对象.scale, 矩阵);
-		ASSERT_TRUE(renderer.mesh_draw_sections(对象.mesh, 矩阵, 对象.materials.data(),
-			static_cast<uint32_t>(对象.materials.size())));
-	}
+	//逐对象登记绘制（同一网格 20 份；门面 scene_draw）
+	EXPECT_EQ(renderer.scene_draw(场景), 20u);
 	//出帧一次结算帧统计
 	std::vector<uint8_t> 像素(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(像素.data(), static_cast<uint32_t>(像素.size())));
