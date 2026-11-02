@@ -4,7 +4,7 @@
 非有限值 / 开关非 0-1 / 点光超 8 盏 / 资产行缺字段）、资产声明行原样保留、
 材质实例行（往返 / 缺省 / 数值越界 / 结构非法 / 重名；第四百六十六轮）、
 材质实例装配（拒绝 / 等价；第四百六十七轮）、材质实例覆盖（tint / 自发光；第四百六十九轮）、
-材质实例卡通（往返 / 越界 / 结构；第四百七十一轮）、写入与读取失败路径。
+材质实例卡通（往返 / 越界 / 结构 / 生效；第四百七十一 / 472 轮）、写入与读取失败路径。
 口径：只测文本层（`engine::level_text_read` / `engine::level_text_write`），不建任何 GPU 资源。
 临时文件写在 `out/关卡测试/`：写盘用宽字符路径，加载 / 写出入参用 UTF-8 窄字符串。
 */
@@ -95,6 +95,38 @@ namespace
 			"f 1/1/1 2/2/1 3/3/1\n"
 			"f 1/1/1 3/3/1 4/4/1\n");
 		write_text(level_dir() / L"box.mtl", "newmtl 甲\nKd 0.8 0.2 0.2\nNs 64\n");
+	}
+
+	/*
+	写立方体几何 ＋ 单材质（第四百七十二轮；卡通用例需要多变法线）
+	六个面各自独立法线，供逐物体卡通色阶产生可见差异；正面 / 右侧 / 顶面按外法线逆时针绕序。
+	*/
+	void write_cube_assets(void)
+	{
+		write_text(level_dir() / L"cube.obj",
+			"v -1 -1 -1\n"
+			"v 1 -1 -1\n"
+			"v 1 1 -1\n"
+			"v -1 1 -1\n"
+			"v -1 -1 1\n"
+			"v 1 -1 1\n"
+			"v 1 1 1\n"
+			"v -1 1 1\n"
+			"vt 0 0\nvt 1 0\nvt 1 1\nvt 0 1\n"
+			"vn 0 0 -1\nvn 0 0 1\nvn -1 0 0\nvn 1 0 0\nvn 0 -1 0\nvn 0 1 0\n"
+			"f 5/1/2 6/2/2 7/3/2\n"
+			"f 5/1/2 7/3/2 8/4/2\n"
+			"f 6/1/4 7/2/4 3/3/4\n"
+			"f 6/1/4 3/3/4 2/4/4\n"
+			"f 8/1/6 7/2/6 3/3/6\n"
+			"f 8/1/6 3/3/6 4/4/6\n"
+			"f 2/1/1 1/2/1 4/3/1\n"
+			"f 2/1/1 4/3/1 3/4/1\n"
+			"f 5/1/3 1/2/3 4/3/3\n"
+			"f 5/1/3 4/3/3 8/4/3\n"
+			"f 1/1/5 2/2/5 6/3/5\n"
+			"f 1/1/5 6/3/5 5/4/5\n");
+		write_text(level_dir() / L"cube.mtl", "newmtl 甲\nKd 0.7 0.5 0.4\nNs 64\n");
 	}
 
 	//三通道浮点逐位相等
@@ -865,6 +897,60 @@ TEST(Renderer_Level_Test, 关卡材质实例卡通结构非法)
 		EXPECT_FALSE(engine::level_text_read(level_utf8("实例非法.level"), loaded)) << item.first;
 		EXPECT_TRUE(loaded.materials.empty()) << item.first;
 	}
+}
+
+/*
+材质实例卡通生效（第四百七十二轮；方向七延伸）
+口径：同模板「无卡通」与「toon 1 / 边缘光 1.0 / 高光 0.5」两个实例 → 画面差异明显。
+*/
+TEST(Renderer_Level_Test, 关卡材质实例卡通生效)
+{
+	write_cube_assets();
+	write_text(level_dir() / L"卡通甲.level",
+		"level 卡通甲\n"
+		"camera position 1 0 3\n"
+		"material 素 甲 tint 1 1 1 1\n"
+		"mesh 方盒 cube.obj\n"
+		"mtl 方盒材质 cube.mtl\n"
+		"place 方盒 素 0 0 0 1 1 1\n");
+	write_text(level_dir() / L"卡通乙.level",
+		"level 卡通乙\n"
+		"camera position 1 0 3\n"
+		"material 纹 甲 tint 1 1 1 1 toon 1 1.0 0.5\n"
+		"mesh 方盒 cube.obj\n"
+		"mtl 方盒材质 cube.mtl\n"
+		"place 方盒 纹 0 0 0 1 1 1\n");
+
+	engine::Renderer_Config config;
+	config.width = LEVEL_WIDTH;
+	config.height = LEVEL_HEIGHT;
+	config.hidden = true;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(config));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+
+	//甲：无卡通
+	engine::Level_Data 甲;
+	engine::Asset_Scene 场景甲;
+	ASSERT_TRUE(renderer.level_load(甲, 场景甲, level_utf8("卡通甲.level")));
+	EXPECT_EQ(renderer.scene_draw(场景甲), 1u);
+	std::vector<uint8_t> 帧甲(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+	ASSERT_TRUE(renderer.frame_render(帧甲.data(), static_cast<uint32_t>(帧甲.size())));
+	renderer.level_unload(场景甲);
+
+	//乙：实例卡通
+	engine::Level_Data 乙;
+	engine::Asset_Scene 场景乙;
+	ASSERT_TRUE(renderer.level_load(乙, 场景乙, level_utf8("卡通乙.level")));
+	EXPECT_EQ(renderer.scene_draw(场景乙), 1u);
+	std::vector<uint8_t> 帧乙(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+	ASSERT_TRUE(renderer.frame_render(帧乙.data(), static_cast<uint32_t>(帧乙.size())));
+	const uint32_t 差异 = changed_pixels(帧甲, 帧乙);
+	std::cout << "[关卡] 实例卡通差异 " << 差异 << std::endl;
+	//立方体各面照明接近饱和，色阶量化差异有限；可观测差异主要来自边缘光（阈值取 10）
+	EXPECT_GT(差异, 10u) << "实例 toon 覆盖未生效";
+	renderer.level_unload(场景乙);
 }
 
 /*
