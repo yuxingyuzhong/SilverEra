@@ -252,3 +252,43 @@ TEST_F(Renderer_Scene_Test, 多材质分段使用两个材质)
 	renderer.render_target_destroy(scene_target);
 	renderer.texture_unload(texture);
 }
+
+/*
+多材质分段的结构性开销（第四百一十三轮）
+口径：一次 mesh_draw_sections(2) 应登记 2 个绘制项、写 2 × 实例步长（112 字节）的实例数据；
+      用确定性指标（绘制项数 / 实例上传字节）而非 GPU 耗时（64×36 下噪声主导）。
+*/
+TEST_F(Renderer_Scene_Test, 多材质分段绘制项数与实例字节)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	uint64_t texture = 0;
+	std::vector<uint8_t> texels = solid_white();
+	ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 2, 2));
+	renderer.texture_bind_set(texture);
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, quad_data()));
+	engine::Camera_Data camera{};
+	engine::Light_Data light{};
+	engine::Fog_Data fog{};
+	renderer.scene_apply(camera, light, fog);
+
+	engine::Material_Handle red = load_tinted_material(renderer, 1.0f, 0.1f, 0.1f);
+	engine::Material_Handle blue = load_tinted_material(renderer, 0.1f, 0.1f, 1.0f);
+	engine::Material_Handle materials[2] = { red, blue };
+	//首个帧槽的实例上传增量（本帧两段各一个实例）
+	uint64_t before = renderer.instance_upload_bytes();
+	ASSERT_TRUE(renderer.mesh_draw_sections(mesh, nullptr, materials, 2));
+	ASSERT_TRUE(renderer.frame_render());
+	uint64_t after = renderer.instance_upload_bytes();
+	engine::Frame_Stats stats = renderer.frame_stats_get();
+	RecordProperty("sections_draw_items", static_cast<int>(stats.last_draw_items));
+	RecordProperty("sections_instance_bytes", static_cast<int>(after - before));
+	EXPECT_EQ(stats.last_draw_items, 2u) << "两段应登记两个绘制项";
+	EXPECT_EQ(after - before, 2u * 112u) << "两段实例数据应为 2 × 112 字节";
+
+	renderer.material_unload(red);
+	renderer.material_unload(blue);
+	renderer.mesh_unload(mesh);
+	renderer.texture_unload(texture);
+}
