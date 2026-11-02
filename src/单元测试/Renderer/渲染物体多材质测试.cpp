@@ -292,3 +292,78 @@ TEST_F(Renderer_Scene_Test, 多材质分段绘制项数与实例字节)
 	renderer.mesh_unload(mesh);
 	renderer.texture_unload(texture);
 }
+
+/*
+网格分段按描述绘制（第四百一十四轮）
+口径：同一四边形 6 索引两个三角形；「均分」帧（无 sections）为第一三角形红、第二蓝；
+      「分段」帧的 sections 把材质槽反向（段 0 → 蓝、段 1 → 红）；
+      两帧颜色应互换（差异像素 > 100），证明分段分支按段描述取材质而非均分。
+*/
+TEST_F(Renderer_Scene_Test, 网格分段按描述绘制)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	uint64_t texture = 0;
+	std::vector<uint8_t> texels = solid_white();
+	ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 2, 2));
+	renderer.texture_bind_set(texture);
+	engine::Camera_Data camera{};
+	engine::Light_Data light{};
+	engine::Fog_Data fog{};
+	renderer.scene_apply(camera, light, fog);
+	engine::Material_Handle red = load_tinted_material(renderer, 1.0f, 0.1f, 0.1f);
+	engine::Material_Handle blue = load_tinted_material(renderer, 0.1f, 0.1f, 1.0f);
+	engine::Material_Handle materials[2] = { red, blue };
+
+	//均分帧（网格无分段）
+	engine::Mesh_Handle plain_mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(plain_mesh, quad_data()));
+	ASSERT_TRUE(renderer.mesh_draw_sections(plain_mesh, nullptr, materials, 2));
+	std::vector<uint8_t> even(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(even.data(), static_cast<uint32_t>(even.size())));
+
+	//分段帧（段 0 → 材质 1 蓝、段 1 → 材质 0 红）
+	engine::Mesh_Data sectioned = quad_data();
+	sectioned.sections = { { 0u, 3u, 1u }, { 3u, 3u, 0u } };
+	engine::Mesh_Handle section_mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(section_mesh, sectioned));
+	ASSERT_TRUE(renderer.mesh_draw_sections(section_mesh, nullptr, materials, 2));
+	std::vector<uint8_t> swapped(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(swapped.data(), static_cast<uint32_t>(swapped.size())));
+
+	uint32_t changes = differing_count(even, swapped, 20);
+	RecordProperty("section_described_changed_pixels", static_cast<int>(changes));
+	EXPECT_GT(changes, 100u) << "分段描述未生效（两帧差异仅 " << changes << " 像素）";
+
+	renderer.mesh_unload(plain_mesh);
+	renderer.mesh_unload(section_mesh);
+	renderer.material_unload(red);
+	renderer.material_unload(blue);
+	renderer.texture_unload(texture);
+}
+
+//分段区间越界（first 4 / count 3 超过 6 个索引）应在网格创建时被拒绝
+TEST_F(Renderer_Scene_Test, 网格分段越界被拒绝)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	engine::Mesh_Data bad = quad_data();
+	bad.sections = { { 4u, 3u, 0u } };
+	engine::Mesh_Handle mesh = 0;
+	EXPECT_FALSE(renderer.mesh_load(mesh, bad)) << "越界分段未被拒绝";
+	EXPECT_EQ(mesh, 0u);
+}
+
+//分段索引数非 3 的倍数（2）应在网格创建时被拒绝
+TEST_F(Renderer_Scene_Test, 网格分段非三角形被拒绝)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	engine::Mesh_Data bad = quad_data();
+	bad.sections = { { 0u, 2u, 0u } };
+	engine::Mesh_Handle mesh = 0;
+	EXPECT_FALSE(renderer.mesh_load(mesh, bad)) << "非三角形分段未被拒绝";
+	EXPECT_EQ(mesh, 0u);
+}
