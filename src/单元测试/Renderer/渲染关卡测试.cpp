@@ -1130,6 +1130,123 @@ TEST(Renderer_Level_Test, 关卡聚光阴影软度)
 }
 
 /*
+聚光灯阴影序号（第四百七十九轮）
+口径：两盏聚光各照一块地面与遮挡体；序号 0 与序号 1 只有一处被遮蔽，两图差异 > 100 像素。
+*/
+TEST(Renderer_Level_Test, 关卡聚光阴影序号)
+{
+	write_cube_assets();
+	write_text(level_dir() / L"聚光序号.level",
+		"level 聚光序号\n"
+		"camera position 0 6 7\n"
+		"camera target 0 0 0\n"
+		"light direction 0 -1 0\n"
+		"light color 0.1 0.1 0.1\n"
+		"light intensity 0.1\n"
+		"light spot -3 4 0 0 -1 0 1 1 1 9 2 20 40 0 0 16\n"
+		"light spot 3 4 0 0 -1 0 1 1 1 9 2 20 40 0 0 16\n"
+		"mesh 方块 cube.obj\n"
+		"mtl 方块材质 cube.mtl\n"
+		"place 方块 方块材质 -3 -1.5 0 4 0.2 4\n"
+		"place 方块 方块材质 3 -1.5 0 4 0.2 4\n"
+		"place 方块 方块材质 -3 0.6 0 1.2 1.2 1.2\n"
+		"place 方块 方块材质 3 0.6 0 1.2 1.2 1.2\n");
+
+	engine::Renderer_Config config;
+	config.width = LEVEL_WIDTH;
+	config.height = LEVEL_HEIGHT;
+	config.hidden = true;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(config));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+
+	engine::Level_Data 关卡;
+	engine::Asset_Scene 场景;
+	ASSERT_TRUE(renderer.level_load(关卡, 场景, level_utf8("聚光序号.level"), false));
+	ASSERT_EQ(关卡.light.spot_count, 2u);
+
+	//序号 0：只遮蔽左灯
+	engine::Light_Data 灯光 = 关卡.light;
+	灯光.spot_shadow_enabled = 1;
+	灯光.spot_shadow_index = 0;
+	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
+	EXPECT_EQ(renderer.scene_draw(场景), 4u);
+	std::vector<uint8_t> 左影(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+	ASSERT_TRUE(renderer.frame_render(左影.data(), static_cast<uint32_t>(左影.size())));
+
+	//序号 1：只遮蔽右灯
+	灯光.spot_shadow_index = 1;
+	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
+	EXPECT_EQ(renderer.scene_draw(场景), 4u);
+	std::vector<uint8_t> 右影(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+	ASSERT_TRUE(renderer.frame_render(右影.data(), static_cast<uint32_t>(右影.size())));
+
+	const uint32_t 差异 = changed_pixels(左影, 右影);
+	std::cout << "[关卡] 聚光阴影序号差异 " << 差异 << std::endl;
+	EXPECT_GT(差异, 100u) << "聚光灯阴影序号未生效";
+	renderer.level_unload(场景);
+}
+
+/*
+聚光灯阴影序号越界（第四百七十九轮）
+口径：只登记 2 盏聚光时序号 5 越界 → 按无聚光阴影处理，与关闭阴影的画面等价（≤ 2 像素）。
+*/
+TEST(Renderer_Level_Test, 关卡聚光阴影序号越界)
+{
+	write_cube_assets();
+	write_text(level_dir() / L"聚光越界.level",
+		"level 聚光越界\n"
+		"camera position 0 6 7\n"
+		"camera target 0 0 0\n"
+		"light direction 0 -1 0\n"
+		"light color 0.1 0.1 0.1\n"
+		"light intensity 0.1\n"
+		"light spot -3 4 0 0 -1 0 1 1 1 9 2 20 40 0 0 16\n"
+		"light spot 3 4 0 0 -1 0 1 1 1 9 2 20 40 0 0 16\n"
+		"mesh 方块 cube.obj\n"
+		"mtl 方块材质 cube.mtl\n"
+		"place 方块 方块材质 -3 -1.5 0 4 0.2 4\n"
+		"place 方块 方块材质 3 -1.5 0 4 0.2 4\n"
+		"place 方块 方块材质 -3 0.6 0 1.2 1.2 1.2\n"
+		"place 方块 方块材质 3 0.6 0 1.2 1.2 1.2\n");
+
+	engine::Renderer_Config config;
+	config.width = LEVEL_WIDTH;
+	config.height = LEVEL_HEIGHT;
+	config.hidden = true;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(config));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+
+	engine::Level_Data 关卡;
+	engine::Asset_Scene 场景;
+	ASSERT_TRUE(renderer.level_load(关卡, 场景, level_utf8("聚光越界.level"), false));
+
+	engine::Light_Data 灯光 = 关卡.light;
+	//基线：关闭聚光阴影
+	灯光.spot_shadow_enabled = 0;
+	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
+	EXPECT_EQ(renderer.scene_draw(场景), 4u);
+	std::vector<uint8_t> 无影(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+	ASSERT_TRUE(renderer.frame_render(无影.data(), static_cast<uint32_t>(无影.size())));
+
+	//开启但序号越界
+	灯光.spot_shadow_enabled = 1;
+	灯光.spot_shadow_index = 5;
+	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
+	EXPECT_EQ(renderer.scene_draw(场景), 4u);
+	std::vector<uint8_t> 越界(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+	ASSERT_TRUE(renderer.frame_render(越界.data(), static_cast<uint32_t>(越界.size())));
+
+	const uint32_t 差异 = changed_pixels(无影, 越界);
+	std::cout << "[关卡] 聚光阴影越界差异 " << 差异 << std::endl;
+	EXPECT_LE(差异, 2u) << "越界序号仍产生阴影";
+	renderer.level_unload(场景);
+}
+
+/*
 聚光灯阴影开关文本往返（第四百七十五轮）
 口径：`light spot_shadow 0/1` 结构化保存；写出再读回一致。
 */
