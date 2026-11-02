@@ -36,7 +36,7 @@ namespace
 		return std::filesystem::path(L"out") / std::filesystem::path(L"资产测试");
 	}
 
-	//OBJ 的 UTF-8 窄路径（供加载器入参；不做任何编码转换）
+	//资产文件的 UTF-8 窄路径（供加载器入参；不做任何编码转换）
 	std::string asset_utf8(const char* name)
 	{
 		return std::string("out/资产测试/") + name;
@@ -87,22 +87,6 @@ namespace
 		const engine::Vertex& vertex = data.vertices[index];
 		return std::sqrt(vertex.normal[0] * vertex.normal[0]
 			+ vertex.normal[1] * vertex.normal[1] + vertex.normal[2] * vertex.normal[2]);
-	}
-
-	/*
-	MTL 测试目录（纯 ASCII）
-	原因：门面 `material_load_mtl` 的贴图路径按 UTF-8 窄字符串拼给 `texture_load_file`（内部 ifstream 走系统编码），
-	中文目录在非 UTF-8 代码页下无法定位；故 MTL 相关用例统一放在 ASCII 目录。
-	*/
-	std::filesystem::path mtl_dir(void)
-	{
-		return std::filesystem::path(L"out") / std::filesystem::path(L"asset_test");
-	}
-
-	//MTL 的 UTF-8 窄路径
-	std::string mtl_utf8(const char* name)
-	{
-		return std::string("out/asset_test/") + name;
 	}
 
 	//写一张 24 位 BMP（测试贴图；stb_image 可直接解码）
@@ -330,7 +314,7 @@ MTL 完整字段解析（第四百二十三轮）
 */
 TEST(Renderer_Asset_Load_Test, MTL完整字段解析)
 {
-	write_text(mtl_dir() / L"完整字段.mtl",
+	write_text(asset_dir() / L"完整字段.mtl",
 		"# 两个材质\n"
 		"newmtl 红\n"
 		"Kd 0.5 0.25 0.125\n"
@@ -344,7 +328,7 @@ TEST(Renderer_Asset_Load_Test, MTL完整字段解析)
 		"illum 2\n");
 
 	std::vector<engine::Mtl_Material> 材质;
-	ASSERT_TRUE(engine::mtl_materials_load(mtl_utf8("完整字段.mtl"), 材质));
+	ASSERT_TRUE(engine::mtl_materials_load(asset_utf8("完整字段.mtl"), 材质));
 	ASSERT_EQ(材质.size(), 2u);
 	//第一项逐字段核对
 	EXPECT_EQ(材质[0].name, "红");
@@ -375,14 +359,14 @@ MTL 缺省值与 Tr 换算（第四百二十三轮）
 */
 TEST(Renderer_Asset_Load_Test, MTL缺省值与Tr换算)
 {
-	write_text(mtl_dir() / L"缺省值.mtl",
+	write_text(asset_dir() / L"缺省值.mtl",
 		"newmtl 甲\n"
 		"Tr 0.25\n"
 		"Kd 2 -1 0.4\n"
 		"Ns 5000\n");
 
 	std::vector<engine::Mtl_Material> 材质;
-	ASSERT_TRUE(engine::mtl_materials_load(mtl_utf8("缺省值.mtl"), 材质));
+	ASSERT_TRUE(engine::mtl_materials_load(asset_utf8("缺省值.mtl"), 材质));
 	ASSERT_EQ(材质.size(), 1u);
 	EXPECT_FLOAT_EQ(材质[0].opacity, 0.75f);
 	EXPECT_FLOAT_EQ(材质[0].diffuse[0], 1.0f);
@@ -398,14 +382,14 @@ MTL 非法输入拒绝（第四百二十三轮）
 TEST(Renderer_Asset_Load_Test, MTL非法输入被拒绝)
 {
 	std::vector<engine::Mtl_Material> 材质;
-	EXPECT_FALSE(engine::mtl_materials_load(mtl_utf8("不存在.mtl"), 材质));
+	EXPECT_FALSE(engine::mtl_materials_load(asset_utf8("不存在.mtl"), 材质));
 	EXPECT_TRUE(材质.empty());
 
-	write_text(mtl_dir() / L"空.mtl", "");
-	EXPECT_FALSE(engine::mtl_materials_load(mtl_utf8("空.mtl"), 材质));
+	write_text(asset_dir() / L"空.mtl", "");
+	EXPECT_FALSE(engine::mtl_materials_load(asset_utf8("空.mtl"), 材质));
 
-	write_text(mtl_dir() / L"无材质.mtl", "# 只有注释\nKd 1 1 1\n");
-	EXPECT_FALSE(engine::mtl_materials_load(mtl_utf8("无材质.mtl"), 材质));
+	write_text(asset_dir() / L"无材质.mtl", "# 只有注释\nKd 1 1 1\n");
+	EXPECT_FALSE(engine::mtl_materials_load(asset_utf8("无材质.mtl"), 材质));
 	EXPECT_TRUE(材质.empty());
 }
 
@@ -416,8 +400,8 @@ MTL 端到端创建材质（第四百二十三轮）
 */
 TEST(Renderer_Asset_Load_Test, MTL端到端创建材质)
 {
-	write_bmp(mtl_dir() / L"tex.bmp", 4, 4);
-	write_text(mtl_dir() / L"贴图材质.mtl",
+	write_bmp(asset_dir() / L"tex.bmp", 4, 4);
+	write_text(asset_dir() / L"贴图材质.mtl",
 		"newmtl 贴图甲\n"
 		"Kd 0.8 0.8 0.8\n"
 		"Ns 64\n"
@@ -434,7 +418,7 @@ TEST(Renderer_Asset_Load_Test, MTL端到端创建材质)
 	ASSERT_TRUE(renderer.init(config));
 
 	std::vector<engine::Material_Handle> 材质;
-	ASSERT_TRUE(renderer.material_load_mtl(材质, mtl_utf8("贴图材质.mtl")));
+	ASSERT_TRUE(renderer.material_load_mtl(材质, asset_utf8("贴图材质.mtl")));
 	ASSERT_EQ(材质.size(), 2u);
 	EXPECT_NE(材质[0], 0u);
 	EXPECT_NE(材质[1], 0u);
@@ -451,7 +435,7 @@ TEST(Renderer_Asset_Load_Test, MTL端到端创建材质)
 */
 TEST(Renderer_Asset_Load_Test, 场景清单纯解析)
 {
-	write_text(mtl_dir() / L"清单.txt",
+	write_text(asset_dir() / L"清单.txt",
 		"# 单个方盒\n"
 		"mesh 方盒 box.obj\n"
 		"mtl 方盒材质 box.mtl\n"
@@ -459,7 +443,7 @@ TEST(Renderer_Asset_Load_Test, 场景清单纯解析)
 		"place 方盒 0 2 0 1 1 1\n");
 
 	engine::Scene_Manifest 清单;
-	ASSERT_TRUE(engine::scene_manifest_parse(mtl_utf8("清单.txt"), 清单));
+	ASSERT_TRUE(engine::scene_manifest_parse(asset_utf8("清单.txt"), 清单));
 	ASSERT_EQ(清单.meshes.size(), 1u);
 	ASSERT_EQ(清单.materials.size(), 1u);
 	ASSERT_EQ(清单.places.size(), 2u);
@@ -486,17 +470,17 @@ TEST(Renderer_Asset_Load_Test, 场景清单非法被拒绝)
 {
 	engine::Scene_Manifest 清单;
 	//未知指令
-	write_text(mtl_dir() / L"未知指令.txt", "mesh 甲 box.obj\nobject 乙\nplace 甲 0 0 0 1 1 1\n");
-	EXPECT_FALSE(engine::scene_manifest_parse(mtl_utf8("未知指令.txt"), 清单));
+	write_text(asset_dir() / L"未知指令.txt", "mesh 甲 box.obj\nobject 乙\nplace 甲 0 0 0 1 1 1\n");
+	EXPECT_FALSE(engine::scene_manifest_parse(asset_utf8("未知指令.txt"), 清单));
 	//引用未知网格
-	write_text(mtl_dir() / L"未知网格.txt", "mesh 甲 box.obj\nplace 乙 0 0 0 1 1 1\n");
-	EXPECT_FALSE(engine::scene_manifest_parse(mtl_utf8("未知网格.txt"), 清单));
+	write_text(asset_dir() / L"未知网格.txt", "mesh 甲 box.obj\nplace 乙 0 0 0 1 1 1\n");
+	EXPECT_FALSE(engine::scene_manifest_parse(asset_utf8("未知网格.txt"), 清单));
 	//网格 ID 重复
-	write_text(mtl_dir() / L"重复ID.txt", "mesh 甲 box.obj\nmesh 甲 box2.obj\nplace 甲 0 0 0 1 1 1\n");
-	EXPECT_FALSE(engine::scene_manifest_parse(mtl_utf8("重复ID.txt"), 清单));
+	write_text(asset_dir() / L"重复ID.txt", "mesh 甲 box.obj\nmesh 甲 box2.obj\nplace 甲 0 0 0 1 1 1\n");
+	EXPECT_FALSE(engine::scene_manifest_parse(asset_utf8("重复ID.txt"), 清单));
 	//无 place
-	write_text(mtl_dir() / L"无摆放.txt", "mesh 甲 box.obj\n");
-	EXPECT_FALSE(engine::scene_manifest_parse(mtl_utf8("无摆放.txt"), 清单));
+	write_text(asset_dir() / L"无摆放.txt", "mesh 甲 box.obj\n");
+	EXPECT_FALSE(engine::scene_manifest_parse(asset_utf8("无摆放.txt"), 清单));
 	EXPECT_TRUE(清单.meshes.empty());
 	EXPECT_TRUE(清单.places.empty());
 }
@@ -509,7 +493,7 @@ TEST(Renderer_Asset_Load_Test, 场景清单非法被拒绝)
 TEST(Renderer_Asset_Load_Test, 场景清单端到端装载)
 {
 	//方盒几何（2×2 四边形，朝 +Z）
-	write_text(mtl_dir() / L"box.obj",
+	write_text(asset_dir() / L"box.obj",
 		"v -1 -1 0\n"
 		"v 1 -1 0\n"
 		"v 1 1 0\n"
@@ -519,9 +503,9 @@ TEST(Renderer_Asset_Load_Test, 场景清单端到端装载)
 		"f 1/1/1 2/2/1 3/3/1\n"
 		"f 1/1/1 3/3/1 4/4/1\n");
 	//单材质
-	write_text(mtl_dir() / L"box.mtl", "newmtl 甲\nKd 0.8 0.2 0.2\nNs 64\n");
+	write_text(asset_dir() / L"box.mtl", "newmtl 甲\nKd 0.8 0.2 0.2\nNs 64\n");
 	//清单：两个摆放（第二个省略材质列）
-	write_text(mtl_dir() / L"场景.txt",
+	write_text(asset_dir() / L"场景.txt",
 		"mesh 方盒 box.obj\n"
 		"mtl 方盒材质 box.mtl\n"
 		"place 方盒 方盒材质 0 0 0 1 1 1\n"
@@ -541,7 +525,7 @@ TEST(Renderer_Asset_Load_Test, 场景清单端到端装载)
 	ASSERT_TRUE(renderer.frame_render(reference.data(), static_cast<uint32_t>(reference.size())));
 
 	engine::Asset_Scene 场景;
-	ASSERT_TRUE(renderer.scene_load(场景, mtl_utf8("场景.txt")));
+	ASSERT_TRUE(renderer.scene_load(场景, asset_utf8("场景.txt")));
 	ASSERT_EQ(场景.meshes.size(), 1u);
 	ASSERT_EQ(场景.materials.size(), 1u);
 	ASSERT_EQ(场景.objects.size(), 2u);
@@ -572,7 +556,7 @@ TEST(Renderer_Asset_Load_Test, 场景清单端到端装载)
 */
 TEST(Renderer_Asset_Load_Test, 共享网格复用与引用计数)
 {
-	write_text(mtl_dir() / L"shared.obj",
+	write_text(asset_dir() / L"shared.obj",
 		"v -1 -1 0\nv 1 -1 0\nv 1 1 0\nv -1 1 0\n"
 		"vn 0 0 1\n"
 		"f 1//1 2//1 3//1\nf 1//1 3//1 4//1\n");
@@ -586,13 +570,13 @@ TEST(Renderer_Asset_Load_Test, 共享网格复用与引用计数)
 
 	engine::Mesh_Handle 甲 = 0;
 	engine::Mesh_Handle 乙 = 0;
-	ASSERT_TRUE(renderer.mesh_load_obj_shared(甲, mtl_utf8("shared.obj")));
-	ASSERT_TRUE(renderer.mesh_load_obj_shared(乙, mtl_utf8("shared.obj")));
+	ASSERT_TRUE(renderer.mesh_load_obj_shared(甲, asset_utf8("shared.obj")));
+	ASSERT_TRUE(renderer.mesh_load_obj_shared(乙, asset_utf8("shared.obj")));
 	EXPECT_EQ(甲, 乙);
 	EXPECT_EQ(renderer.asset_cache_count(), 1u);
 	//大小写不同但归一化后同键 → 仍是同一资源
 	engine::Mesh_Handle 丙 = 0;
-	ASSERT_TRUE(renderer.mesh_load_obj_shared(丙, "out/asset_test/SHARED.OBJ"));
+	ASSERT_TRUE(renderer.mesh_load_obj_shared(丙, "out/资产测试/SHARED.OBJ"));
 	EXPECT_EQ(丙, 甲);
 	EXPECT_EQ(renderer.asset_cache_count(), 1u);
 
@@ -615,9 +599,9 @@ TEST(Renderer_Asset_Load_Test, 共享网格复用与引用计数)
 */
 TEST(Renderer_Asset_Load_Test, 共享加载隔离与失败)
 {
-	write_text(mtl_dir() / L"iso1.obj",
+	write_text(asset_dir() / L"iso1.obj",
 		"v -1 -1 0\nv 1 -1 0\nv 0 1 0\nvn 0 0 1\nf 1//1 2//1 3//1\n");
-	write_text(mtl_dir() / L"iso2.obj",
+	write_text(asset_dir() / L"iso2.obj",
 		"v -1 -1 0\nv 1 -1 0\nv 0 1 0\nv 0 -1 0\nvn 0 0 1\nf 1//1 2//1 3//1\nf 1//1 3//1 4//1\n");
 
 	engine::Renderer_Config config;
@@ -629,14 +613,14 @@ TEST(Renderer_Asset_Load_Test, 共享加载隔离与失败)
 
 	engine::Mesh_Handle 甲 = 0;
 	engine::Mesh_Handle 乙 = 0;
-	ASSERT_TRUE(renderer.mesh_load_obj_shared(甲, mtl_utf8("iso1.obj")));
-	ASSERT_TRUE(renderer.mesh_load_obj_shared(乙, mtl_utf8("iso2.obj")));
+	ASSERT_TRUE(renderer.mesh_load_obj_shared(甲, asset_utf8("iso1.obj")));
+	ASSERT_TRUE(renderer.mesh_load_obj_shared(乙, asset_utf8("iso2.obj")));
 	EXPECT_NE(甲, 乙);
 	EXPECT_EQ(renderer.asset_cache_count(), 2u);
 
 	//失败不入缓存
 	engine::Mesh_Handle 缺失 = 0;
-	EXPECT_FALSE(renderer.mesh_load_obj_shared(缺失, mtl_utf8("不存在.obj")));
+	EXPECT_FALSE(renderer.mesh_load_obj_shared(缺失, asset_utf8("不存在.obj")));
 	EXPECT_EQ(缺失, 0u);
 	EXPECT_EQ(renderer.asset_cache_count(), 2u);
 
@@ -651,7 +635,7 @@ TEST(Renderer_Asset_Load_Test, 共享加载隔离与失败)
 */
 TEST(Renderer_Asset_Load_Test, 共享纹理复用与引用计数)
 {
-	write_bmp(mtl_dir() / L"shared_tex.bmp", 4, 4);
+	write_bmp(asset_dir() / L"shared_tex.bmp", 4, 4);
 
 	engine::Renderer_Config config;
 	config.width = 64;
@@ -662,8 +646,8 @@ TEST(Renderer_Asset_Load_Test, 共享纹理复用与引用计数)
 
 	uint64_t 甲 = 0;
 	uint64_t 乙 = 0;
-	ASSERT_TRUE(renderer.texture_load_file_shared(甲, mtl_utf8("shared_tex.bmp")));
-	ASSERT_TRUE(renderer.texture_load_file_shared(乙, mtl_utf8("shared_tex.bmp")));
+	ASSERT_TRUE(renderer.texture_load_file_shared(甲, asset_utf8("shared_tex.bmp")));
+	ASSERT_TRUE(renderer.texture_load_file_shared(乙, asset_utf8("shared_tex.bmp")));
 	EXPECT_EQ(甲, 乙);
 	EXPECT_NE(甲, 0u);
 	EXPECT_EQ(renderer.asset_cache_count(), 1u);
@@ -676,12 +660,43 @@ TEST(Renderer_Asset_Load_Test, 共享纹理复用与引用计数)
 }
 
 /*
+纹理中文目录加载（第四百二十八轮）
+口径：贴图放在中文目录（`out/资产测试/`），`texture_load_file` 与共享入口均应成功；释放后缓存条目归零。
+*/
+TEST(Renderer_Asset_Load_Test, 纹理中文目录加载)
+{
+	write_bmp(asset_dir() / L"中文贴图.bmp", 4, 4);
+
+	engine::Renderer_Config config;
+	config.width = 64;
+	config.height = 36;
+	config.hidden = true;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(config));
+
+	//普通入口
+	uint64_t 句柄 = 0;
+	ASSERT_TRUE(renderer.texture_load_file(句柄, asset_utf8("中文贴图.bmp")));
+	ASSERT_NE(句柄, 0u);
+	renderer.texture_unload(句柄);
+
+	//共享入口（同一中文路径）
+	uint64_t 共享 = 0;
+	ASSERT_TRUE(renderer.texture_load_file_shared(共享, asset_utf8("中文贴图.bmp")));
+	ASSERT_NE(共享, 0u);
+	EXPECT_EQ(renderer.asset_cache_count(), 1u);
+	renderer.texture_release(共享);
+	EXPECT_EQ(renderer.asset_cache_count(), 0u);
+	std::cout << "[资产加载] 中文目录贴图可加载（句柄 " << 共享 << "）" << std::endl;
+}
+
+/*
 异步加载完成后可绘制（第四百二十六轮）
 口径：提交后主线程轮询 ≤ 5 秒应就绪；句柄非 0 且可绘制；再次轮询返回同一句柄（不重建）。
 */
 TEST(Renderer_Asset_Load_Test, 异步加载完成后可绘制)
 {
-	write_text(mtl_dir() / L"async.obj",
+	write_text(asset_dir() / L"async.obj",
 		"v -1 -1 0\nv 1 -1 0\nv 1 1 0\nv -1 1 0\n"
 		"vn 0 0 1\n"
 		"f 1//1 2//1 3//1\nf 1//1 3//1 4//1\n");
@@ -694,9 +709,9 @@ TEST(Renderer_Asset_Load_Test, 异步加载完成后可绘制)
 	ASSERT_TRUE(renderer.init(config));
 
 	engine::Asset_Async_Task 任务;
-	ASSERT_TRUE(renderer.mesh_load_obj_async(任务, mtl_utf8("async.obj")));
+	ASSERT_TRUE(renderer.mesh_load_obj_async(任务, asset_utf8("async.obj")));
 	//在途任务不允许被覆盖
-	EXPECT_FALSE(renderer.mesh_load_obj_async(任务, mtl_utf8("async.obj")));
+	EXPECT_FALSE(renderer.mesh_load_obj_async(任务, asset_utf8("async.obj")));
 
 	engine::Mesh_Handle 句柄 = 0;
 	bool 就绪 = false;
@@ -732,7 +747,7 @@ TEST(Renderer_Asset_Load_Test, 异步加载失败)
 	ASSERT_TRUE(renderer.init(config));
 
 	engine::Asset_Async_Task 任务;
-	ASSERT_TRUE(renderer.mesh_load_obj_async(任务, mtl_utf8("不存在_async.obj")));
+	ASSERT_TRUE(renderer.mesh_load_obj_async(任务, asset_utf8("不存在_async.obj")));
 	engine::Mesh_Handle 句柄 = 0;
 	bool 就绪 = false;
 	//最长等待 5 秒

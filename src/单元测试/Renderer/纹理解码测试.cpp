@@ -13,6 +13,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <string>
 #include <vector>
@@ -25,7 +27,7 @@ namespace
 	//窗口尺寸（与回读断言配套）
 	constexpr uint32_t WINDOW_WIDTH = 64;
 	constexpr uint32_t WINDOW_HEIGHT = 36;
-	//素材文件名（相对用例工作目录；纯 ASCII，避免本机代码页对路径的影响）
+	//素材文件名（相对用例工作目录；按 UTF-8 解释，读写两侧口径一致）
 	const char* const BMP_FILE = "解码测试素材.bmp";
 	const char* const PNG_FILE = "解码测试素材.png";
 	//素材颜色（纯红：只有解码成功才会得到该色）
@@ -94,11 +96,19 @@ namespace
 		return data;
 	}
 
-	//把字节写入文件
+	//UTF-8 字符串 → 文件系统路径（与纹理加载入口口径一致；第四百二十八轮）
+	std::filesystem::path path_from_utf8(const char* text)
+	{
+		const std::size_t length = std::strlen(text);
+		std::u8string u8(reinterpret_cast<const char8_t*>(text), length);
+		return std::filesystem::path(u8);
+	}
+
+	//把字节写入文件（窄 ofstream 会按系统代码页解释路径，中文名会写成乱码名）
 	bool write_file(const char* path, const std::vector<uint8_t>& bytes)
 	{
 		//二进制截断写入
-		std::ofstream file(path, std::ios::binary | std::ios::trunc);
+		std::ofstream file(path_from_utf8(path), std::ios::binary | std::ios::trunc);
 		//若打不开
 		if (!file)
 			return false;
@@ -109,7 +119,8 @@ namespace
 	//删除素材文件（用例善后）
 	void remove_file(const char* path)
 	{
-		std::remove(path);
+		std::error_code code;
+		std::filesystem::remove(path_from_utf8(path), code);
 	}
 
 	//CRC32（PNG 分块校验用；反射多项式 0xEDB88320）
