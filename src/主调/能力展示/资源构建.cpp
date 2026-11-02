@@ -229,6 +229,62 @@ namespace engine
 		if (!渲染器.material_load(资源.扩展材质, 扩展描述))
 			return false;
 
+		/*
+		逐物体卡通材质（第四百一十一轮；展区⑦ 三个档位）
+		同一场景三种档位并存：甲 = 二值化、乙 = 三档 ＋ 边缘光、丙 = 不量化 ＋ 强边缘光；
+		tint 保留原有三色（暖橙 / 冷蓝 / 米黄），否则球会变白。
+		*/
+		Material_Data 卡通甲描述;
+		卡通甲描述.toon_override = true;
+		卡通甲描述.toon_steps = 1.0f;
+		卡通甲描述.tint_override = true;
+		卡通甲描述.tint[0] = 1.0f;
+		卡通甲描述.tint[1] = 0.62f;
+		卡通甲描述.tint[2] = 0.45f;
+		卡通甲描述.tint[3] = 1.0f;
+		if (!渲染器.material_load(资源.卡通材质甲, 卡通甲描述))
+			return false;
+		Material_Data 卡通乙描述;
+		卡通乙描述.toon_override = true;
+		卡通乙描述.toon_steps = 3.0f;
+		卡通乙描述.toon_rim = 0.6f;
+		卡通乙描述.tint_override = true;
+		卡通乙描述.tint[0] = 0.55f;
+		卡通乙描述.tint[1] = 0.85f;
+		卡通乙描述.tint[2] = 1.0f;
+		卡通乙描述.tint[3] = 1.0f;
+		if (!渲染器.material_load(资源.卡通材质乙, 卡通乙描述))
+			return false;
+		Material_Data 卡通丙描述;
+		卡通丙描述.toon_override = true;
+		卡通丙描述.toon_steps = 0.0f;
+		卡通丙描述.toon_rim = 1.0f;
+		卡通丙描述.tint_override = true;
+		卡通丙描述.tint[0] = 0.95f;
+		卡通丙描述.tint[1] = 0.85f;
+		卡通丙描述.tint[2] = 0.45f;
+		卡通丙描述.tint[3] = 1.0f;
+		if (!渲染器.material_load(资源.卡通材质丙, 卡通丙描述))
+			return false;
+
+		//多材质分段材质（第四百一十一轮；展区⑩ 红 / 蓝两块，仅反照率色调不同）
+		Material_Data 分段甲描述;
+		分段甲描述.tint_override = true;
+		分段甲描述.tint[0] = 1.0f;
+		分段甲描述.tint[1] = 0.25f;
+		分段甲描述.tint[2] = 0.25f;
+		分段甲描述.tint[3] = 1.0f;
+		if (!渲染器.material_load(资源.分段材质甲, 分段甲描述))
+			return false;
+		Material_Data 分段乙描述;
+		分段乙描述.tint_override = true;
+		分段乙描述.tint[0] = 0.25f;
+		分段乙描述.tint[1] = 0.35f;
+		分段乙描述.tint[2] = 1.0f;
+		分段乙描述.tint[3] = 1.0f;
+		if (!渲染器.material_load(资源.分段材质乙, 分段乙描述))
+			return false;
+
 		//—— 中间目标（与交换链同尺寸，后处理 1:1 取源） ——
 		资源.目标宽 = 渲染器.extent_width();
 		资源.目标高 = 渲染器.extent_height();
@@ -287,12 +343,28 @@ namespace engine
 			渲染器.material_unload(资源.扩展材质);
 		if (资源.地面材质 != 0)
 			渲染器.material_unload(资源.地面材质);
+		//逐物体卡通与分段材质（第四百一十一轮）
+		if (资源.卡通材质甲 != 0)
+			渲染器.material_unload(资源.卡通材质甲);
+		if (资源.卡通材质乙 != 0)
+			渲染器.material_unload(资源.卡通材质乙);
+		if (资源.卡通材质丙 != 0)
+			渲染器.material_unload(资源.卡通材质丙);
+		if (资源.分段材质甲 != 0)
+			渲染器.material_unload(资源.分段材质甲);
+		if (资源.分段材质乙 != 0)
+			渲染器.material_unload(资源.分段材质乙);
 		资源.贴图材质 = 0;
 		资源.光晕材质 = 0;
 		资源.清漆材质 = 0;
 		资源.镂空材质 = 0;
 		资源.扩展材质 = 0;
 		资源.地面材质 = 0;
+		资源.卡通材质甲 = 0;
+		资源.卡通材质乙 = 0;
+		资源.卡通材质丙 = 0;
+		资源.分段材质甲 = 0;
+		资源.分段材质乙 = 0;
 
 		//字体与纹理
 		if (资源.字体 != 0)
