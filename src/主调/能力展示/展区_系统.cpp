@@ -1,4 +1,4 @@
-﻿//展区⑱–㉓：系统类展区（采样、雾模式、计算管线、多线程、正交投影、读回统计）
+//展区⑱–㉓：系统类展区（采样、雾模式、计算管线、多线程、正交投影、读回统计）
 #include "src/主调/能力展示/展区公共.h"
 
 #include "Application/Renderer/src/render/Renderer/渲染器.h"

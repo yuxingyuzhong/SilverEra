@@ -1673,16 +1673,16 @@ TEST(Renderer_Level_Test, 关卡多盏聚光阴影)
 
 	//单盏（序号 0）：只遮蔽左侧
 	engine::Light_Data 灯光 = 关卡.light;
-		灯光.spot_shadow_enabled = 1;
-		灯光.spot_shadow_all = 0;
-		灯光.spot_shadow_index = 0;
+	灯光.spot_shadow_enabled = 1;
+	灯光.spot_shadow_all = 0;
+	灯光.spot_shadow_index = 0;
 	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
 	EXPECT_EQ(renderer.scene_draw(场景), 4u);
 	std::vector<uint8_t> 单盏(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(单盏.data(), static_cast<uint32_t>(单盏.size())));
 
 	//多盏：两盏各自投影
-		灯光.spot_shadow_all = 1;
+	灯光.spot_shadow_all = 1;
 	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
 	EXPECT_EQ(renderer.scene_draw(场景), 4u);
 	std::vector<uint8_t> 多盏(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
@@ -1739,6 +1739,148 @@ TEST(Renderer_Level_Test, 关卡多盏聚光开关非法)
 		EXPECT_FALSE(engine::level_text_read(level_utf8("非法.level"), loaded)) << item.first;
 		EXPECT_EQ(loaded.light.spot_shadow_all, 0) << item.first;
 	}
+}
+
+/*
+四盏聚光灯阴影（第五百零八轮）
+口径：四盏聚光各照一块地面与遮挡体；单盏（序号 0）只遮蔽最左，多盏开启后四盏各自遮蔽，两图差异 > 100 像素。
+*/
+TEST(Renderer_Level_Test, 关卡四盏聚光阴影)
+{
+	write_cube_assets();
+	write_text(level_dir() / L"四盏聚光.level",
+		"level 四盏聚光\n"
+		"camera position 0 8 10\n"
+		"camera target 0 0 0\n"
+		"light direction 0 -1 0\n"
+		"light color 0.1 0.1 0.1\n"
+		"light intensity 0.1\n"
+		"light spot -6 4 0 0 -1 0 1 1 1 9 2 20 40 0 0 16\n"
+		"light spot -2 4 0 0 -1 0 1 1 1 9 2 20 40 0 0 16\n"
+		"light spot 2 4 0 0 -1 0 1 1 1 9 2 20 40 0 0 16\n"
+		"light spot 6 4 0 0 -1 0 1 1 1 9 2 20 40 0 0 16\n"
+		"mesh 方块 cube.obj\n"
+		"mtl 方块材质 cube.mtl\n"
+		"place 方块 方块材质 -6 -1.5 0 3 0.2 3\n"
+		"place 方块 方块材质 -2 -1.5 0 3 0.2 3\n"
+		"place 方块 方块材质 2 -1.5 0 3 0.2 3\n"
+		"place 方块 方块材质 6 -1.5 0 3 0.2 3\n"
+		"place 方块 方块材质 -6 0.6 0 1.2 1.2 1.2\n"
+		"place 方块 方块材质 -2 0.6 0 1.2 1.2 1.2\n"
+		"place 方块 方块材质 2 0.6 0 1.2 1.2 1.2\n"
+		"place 方块 方块材质 6 0.6 0 1.2 1.2 1.2\n");
+
+	engine::Renderer_Config config;
+	config.width = LEVEL_WIDTH;
+	config.height = LEVEL_HEIGHT;
+	config.hidden = true;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(config));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+
+	engine::Level_Data 关卡;
+	engine::Asset_Scene 场景;
+	ASSERT_TRUE(renderer.level_load(关卡, 场景, level_utf8("四盏聚光.level"), false));
+	ASSERT_EQ(关卡.light.spot_count, 4u);
+
+	//单盏（序号 0）：只遮蔽最左
+	engine::Light_Data 灯光 = 关卡.light;
+		灯光.spot_shadow_enabled = 1;
+		灯光.spot_shadow_all = 0;
+		灯光.spot_shadow_index = 0;
+	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
+	EXPECT_EQ(renderer.scene_draw(场景), 8u);
+	std::vector<uint8_t> 单盏(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+	ASSERT_TRUE(renderer.frame_render(单盏.data(), static_cast<uint32_t>(单盏.size())));
+
+	//多盏：四盏各自投影
+		灯光.spot_shadow_all = 1;
+	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
+	EXPECT_EQ(renderer.scene_draw(场景), 8u);
+	std::vector<uint8_t> 四盏(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+	ASSERT_TRUE(renderer.frame_render(四盏.data(), static_cast<uint32_t>(四盏.size())));
+
+	const uint32_t 差异 = changed_pixels(单盏, 四盏);
+	std::cout << "[关卡] 四盏聚光阴影差异 " << 差异 << std::endl;
+	EXPECT_GT(差异, 100u) << "四盏聚光灯阴影未生效";
+	renderer.level_unload(场景);
+}
+
+/*
+多盏聚光灯开销基线（第五百零八轮）
+口径：同一场景（四盏聚光各照一块地面与遮挡体），分别登记 1 / 2 / 4 盏并全部投影；
+记录阴影 pass 的单遍 GPU 耗时（gpu_shadow_ms 为最后一次聚光提交的耗时；设备不支持时间戳时各项为 0）；
+断言 4 盏的单遍耗时不显著低于 1 盏（容差 0.1 ms），说明单遍成本与盏数无关、总成本随遍数线性增长。
+*/
+TEST(Renderer_Level_Test, 关卡多盏聚光开销)
+{
+	write_cube_assets();
+	write_text(level_dir() / L"多盏开销.level",
+		"level 多盏开销\n"
+		"camera position 0 8 10\n"
+		"camera target 0 0 0\n"
+		"light direction 0 -1 0\n"
+		"light color 0.1 0.1 0.1\n"
+		"light intensity 0.1\n"
+		"light spot -6 4 0 0 -1 0 1 1 1 9 2 20 40 0 0 16\n"
+		"light spot -2 4 0 0 -1 0 1 1 1 9 2 20 40 0 0 16\n"
+		"light spot 2 4 0 0 -1 0 1 1 1 9 2 20 40 0 0 16\n"
+		"light spot 6 4 0 0 -1 0 1 1 1 9 2 20 40 0 0 16\n"
+		"mesh 方块 cube.obj\n"
+		"mtl 方块材质 cube.mtl\n"
+		"place 方块 方块材质 -6 -1.5 0 3 0.2 3\n"
+		"place 方块 方块材质 -2 -1.5 0 3 0.2 3\n"
+		"place 方块 方块材质 2 -1.5 0 3 0.2 3\n"
+		"place 方块 方块材质 6 -1.5 0 3 0.2 3\n"
+		"place 方块 方块材质 -6 0.6 0 1.2 1.2 1.2\n"
+		"place 方块 方块材质 -2 0.6 0 1.2 1.2 1.2\n"
+		"place 方块 方块材质 2 0.6 0 1.2 1.2 1.2\n"
+		"place 方块 方块材质 6 0.6 0 1.2 1.2 1.2\n");
+
+	engine::Renderer_Config config;
+	config.width = LEVEL_WIDTH;
+	config.height = LEVEL_HEIGHT;
+	config.hidden = true;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(config));
+
+	engine::Level_Data 关卡;
+	engine::Asset_Scene 场景;
+	ASSERT_TRUE(renderer.level_load(关卡, 场景, level_utf8("多盏开销.level"), false));
+
+	//分别按 1 / 2 / 4 盏登记，全部投影并预热 6 帧
+	const uint32_t counts[3] = { 1u, 2u, 4u };
+	double shadow_ms[3] = { 0.0, 0.0, 0.0 };
+	std::string keys[3] = { "spot_shadow_gpu_ms_1", "spot_shadow_gpu_ms_2", "spot_shadow_gpu_ms_4" };
+	for (std::size_t index = 0; index < 3; ++index)
+	{
+		engine::Light_Data 灯光 = 关卡.light;
+		灯光.spot_shadow_enabled = 1;
+		灯光.spot_shadow_all = 1;
+		灯光.spot_count = counts[index];
+		renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
+		灯光.spot_count = counts[index];
+		EXPECT_EQ(renderer.scene_draw(场景), 8u);
+		for (uint32_t frame = 0; frame < 6; ++frame)
+			ASSERT_TRUE(renderer.frame_render());
+		shadow_ms[index] = renderer.frame_stats_get().gpu_shadow_ms;
+		RecordProperty(keys[index], shadow_ms[index]);
+		std::cout << "[关卡] 多盏开销 " << counts[index] << " 盏阴影耗时 " << shadow_ms[index] << " ms" << std::endl;
+	}
+
+	//设备支持时间戳时：4 盏必须产生阴影耗时，且不显著低于 1 盏
+	if (renderer.gpu_timestamp_supported())
+	{
+		EXPECT_GT(shadow_ms[2], 0.0) << "4 盏聚光未产生阴影耗时";
+		EXPECT_GE(shadow_ms[2], shadow_ms[0] - 0.1) << "4 盏阴影耗时异常低于 1 盏";
+	}
+	else
+	{
+		for (std::size_t index = 0; index < 3; ++index)
+			EXPECT_EQ(shadow_ms[index], 0.0);
+	}
+	renderer.level_unload(场景);
 }
 
 /*

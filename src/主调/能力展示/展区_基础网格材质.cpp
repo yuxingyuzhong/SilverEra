@@ -1,4 +1,4 @@
-﻿//展区①②：程序化网格（①）与 PBR 材质（②）
+//展区①②：程序化网格（①）与 PBR 材质（②）
 #include "src/主调/能力展示/展区公共.h"
 
 #include "Application/Renderer/src/render/Renderer/渲染器.h"

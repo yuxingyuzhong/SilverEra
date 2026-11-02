@@ -1,4 +1,4 @@
-﻿//展区③④⑤：光照与阴影、实例化与合批、几何拼接
+//展区③④⑤：光照与阴影、实例化与合批、几何拼接
 #include "src/主调/能力展示/展区公共.h"
 
 #include "Application/Renderer/src/render/Renderer/渲染器.h"

@@ -1,4 +1,4 @@
-﻿//展区⑫–⑰：后处理类展区（泛光链 / LUT 与色调映射 / SSAO 与 FXAA / 描边与体积雾 / 体积光 / SSR）
+//展区⑫–⑰：后处理类展区（泛光链 / LUT 与色调映射 / SSAO 与 FXAA / 描边与体积雾 / 体积光 / SSR）
 #include "src/主调/能力展示/展区公共.h"
 
 #include "Application/Renderer/src/render/Renderer/渲染器.h"

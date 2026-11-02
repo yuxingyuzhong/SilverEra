@@ -1,4 +1,4 @@
-﻿//展区⑨⑩⑪：粒子喷泉、材质贴图扩展、文字渲染与布局
+//展区⑨⑩⑪：粒子喷泉、材质贴图扩展、文字渲染与布局
 #include "src/主调/能力展示/展区公共.h"
 
 #include "Application/Renderer/src/render/Renderer/渲染器.h"
