@@ -172,6 +172,12 @@ namespace engine
 		bool init(Renderer& 渲染器);
 		//按输入推进相机（秒为帧间隔）并在窗口尺寸变化时重建后处理目标
 		void update(Renderer& 渲染器, const 展示输入& 输入, float 秒);
+		/*
+		探测 / 跳转用：直接设置相机位姿
+		仅写内部状态（位置 / 偏航 / 俯仰），真正的渲染器相机与进区开关由随后的 update 提交；
+		俯仰钳到 ±1.35 弧度，离地高度不低于 0.6（与 update 同口径）。
+		*/
+		void 相机位姿设置(const float 位置[3], float 偏航值, float 俯仰值);
 		//登记本帧全部绘制项与字幕（真正绘制在 frame_render 内发生）
 		void frame_draw(Renderer& 渲染器);
 		//释放全部资源（幂等）
