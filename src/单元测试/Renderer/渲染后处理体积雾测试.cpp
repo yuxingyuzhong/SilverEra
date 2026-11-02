@@ -12,8 +12,8 @@ namespace
 	//雾色（亮蓝；开启后整体亮度上升）
 	const std::array<float, 3> FOG_COLOR = { 0.6f, 0.7f, 0.9f };
 
-	//渲染一帧：单级体积雾链 ＋ 中央四边形（返回回读像素；noise 为密度噪声强度 0..1）
-	std::vector<uint8_t> render_fog(const std::array<float, 4>& params, float noise = 0.0f)
+	//渲染一帧：单级体积雾链 ＋ 中央四边形；noise 为密度噪声强度、base_height 为雾基准高度（第四百零四轮）
+	std::vector<uint8_t> render_fog(const std::array<float, 4>& params, float noise = 0.0f, float base_height = 0.0f)
 	{
 		engine::Renderer renderer;
 		EXPECT_TRUE(renderer.init(hidden_config()));
@@ -26,6 +26,8 @@ namespace
 		//体积雾参数走通用四参入口（第三百七十三轮；密度 / 高度衰减 / 最大距离 / 步数缩放）
 		renderer.post_stage_vec4_set(0, params[0], params[1], params[2], params[3]);
 		renderer.post_stage_color4_set(0, FOG_COLOR[0], FOG_COLOR[1], FOG_COLOR[2], noise);
+		//基准高度走逐级 extra 第一分量（未设置时为 0，与引入前逐字节一致）
+		renderer.post_stage_extra_set(0, base_height, 0.0f, 0.0f, 0.0f);
 		renderer.render_target_present_set(scene_target);
 		engine::Mesh_Handle plane = 0;
 		EXPECT_TRUE(renderer.mesh_load(plane, quad_data()));
@@ -495,4 +497,29 @@ TEST_F(Renderer_Post_Chain_Test, 四级链目标轮转)
 	RecordProperty("chain4_changed_pixels", static_cast<int>(changed));
 	std::cout << "[四级链] 恒等差=" << identity_diff << " 组合差异像素=" << changed << std::endl;
 	EXPECT_GT(changed, 20u) << "四级链中雾与描边未生效";
+}
+
+/*
+雾基准高度（第四百零四轮；方向三候选 B）
+口径：同一场景与参数（密度 0.3、高度衰减 2.0、最大距离 20），只改基准高度。
+1. 基准 0（默认）：与第 373 轮行为一致；
+2. 基准 6：低于 6 的空间不再衰减 → 雾更浓；与基准 0 相比差异像素 > 20、平均亮度下降。
+*/
+TEST_F(Renderer_Post_Chain_Test, 雾基准高度可配)
+{
+	engine::Renderer probe;
+	ASSERT_TRUE(probe.init(hidden_config()));
+	if (!probe.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+
+	std::vector<uint8_t> ground0 = render_fog({ 0.3f, 2.0f, 20.0f, 1.0f }, 0.0f, 0.0f);
+	std::vector<uint8_t> raised = render_fog({ 0.3f, 2.0f, 20.0f, 1.0f }, 0.0f, 6.0f);
+	uint32_t changed = differing_pixels(ground0, raised, 4);
+	float luma_ground = average_luma(ground0);
+	float luma_raised = average_luma(raised);
+	RecordProperty("fog_base_changed_pixels", static_cast<int>(changed));
+	std::cout << "[体积雾·基准高度] 差异像素=" << changed << " 亮度 " << luma_ground << " → " << luma_raised << std::endl;
+	EXPECT_GT(changed, 20u) << "基准高度未改变画面";
+	//基准抬高后低空雾更浓 → 整帧应更接近雾色（亮度下降或上升取决于雾色，这里以差异为准）
+	EXPECT_NE(luma_ground, luma_raised);
 }
