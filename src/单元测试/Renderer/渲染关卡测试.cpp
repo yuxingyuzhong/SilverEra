@@ -9,6 +9,7 @@
 
 #include <cstdint>
 #include <cstring>
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -734,4 +735,51 @@ TEST(Renderer_Level_Test, 摆放旋转)
 	std::cout << "[关卡] 旋转 45° 画面差异 " << 差异 << " 像素" << std::endl;
 	EXPECT_GT(差异, 50u) << "旋转未生效";
 	renderer.level_unload(旋转场景);
+}
+
+/*
+关卡装载开销（第四百三十三轮 · 阶段 E）
+口径：单关卡（1 网格 ＋ 1 材质 ＋ 4 对象）连续装载三次，取最短耗时；给出实测数值并断言不高于 300 ms（防抖动上界）。
+*/
+TEST(Renderer_Level_Test, 关卡装载开销)
+{
+	write_box_assets();
+	write_text(level_dir() / L"开销.level",
+		"level 开销关卡\n"
+		"camera position 0 0 3\n"
+		"mesh 方盒 box.obj\n"
+		"mtl 方盒材质 box.mtl\n"
+		"place 方盒 方盒材质 -2 0 0 1 1 1\n"
+		"place 方盒 方盒材质 0 0 0 1 1 1\n"
+		"place 方盒 方盒材质 2 0 0 1 1 1\n"
+		"place 方盒 方盒材质 0 2 0 1 1 1\n");
+
+	engine::Renderer_Config config;
+	config.width = 64;
+	config.height = 36;
+	config.hidden = true;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(config));
+
+	//预热一次（首轮包含管线 / 采样器等惰性创建）
+	engine::Level_Data 关卡;
+	engine::Asset_Scene 场景;
+	ASSERT_TRUE(renderer.level_load(关卡, 场景, level_utf8("开销.level")));
+	EXPECT_EQ(场景.objects.size(), 4u);
+	renderer.level_unload(场景);
+
+	double 最短毫秒 = 1e9;
+	for (uint32_t 次数 = 0; 次数 < 3; ++次数)
+	{
+		engine::Asset_Scene 测场景;
+		const std::chrono::steady_clock::time_point 开始 = std::chrono::steady_clock::now();
+		ASSERT_TRUE(renderer.level_load(关卡, 测场景, level_utf8("开销.level")));
+		const std::chrono::steady_clock::time_point 结束 = std::chrono::steady_clock::now();
+		const double 毫秒 = std::chrono::duration<double, std::milli>(结束 - 开始).count();
+		if (毫秒 < 最短毫秒)
+			最短毫秒 = 毫秒;
+		renderer.level_unload(测场景);
+	}
+	std::cout << "[关卡] 装载开销（1 网格 + 1 材质 + 4 对象）最短 " << 最短毫秒 << " ms" << std::endl;
+	EXPECT_LT(最短毫秒, 300.0) << "关卡装载耗时异常";
 }
