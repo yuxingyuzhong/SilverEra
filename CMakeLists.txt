@@ -414,6 +414,7 @@ else()
         "${PROJECT_ROOT_DIR}/src/主调/能力展示/展区_粒子文字.cpp"
         "${PROJECT_ROOT_DIR}/src/主调/能力展示/展区_后处理.cpp"
         "${PROJECT_ROOT_DIR}/src/主调/能力展示/展区_系统.cpp"
+        "${PROJECT_ROOT_DIR}/src/主调/能力展示/展区_关卡.cpp"
     )
     include("${PROJECT_ROOT_DIR}/源文件列表_EngineTests.cmake")
     target_include_directories(EngineTests PRIVATE ${BYJY_APP_INC})
