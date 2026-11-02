@@ -1635,6 +1635,113 @@ TEST(Renderer_Level_Test, 关卡聚光灯阴影序号非法)
 }
 
 /*
+多盏聚光灯阴影（第五百零七轮）
+口径：两盏聚光各照一块地面与遮挡体；单盏（序号 0）只遮蔽左侧，多盏开启后两盏各自遮蔽，两图差异 > 100 像素。
+*/
+TEST(Renderer_Level_Test, 关卡多盏聚光阴影)
+{
+	write_cube_assets();
+	write_text(level_dir() / L"多盏聚光.level",
+		"level 多盏聚光\n"
+		"camera position 0 6 7\n"
+		"camera target 0 0 0\n"
+		"light direction 0 -1 0\n"
+		"light color 0.1 0.1 0.1\n"
+		"light intensity 0.1\n"
+		"light spot -3 4 0 0 -1 0 1 1 1 9 2 20 40 0 0 16\n"
+		"light spot 3 4 0 0 -1 0 1 1 1 9 2 20 40 0 0 16\n"
+		"mesh 方块 cube.obj\n"
+		"mtl 方块材质 cube.mtl\n"
+		"place 方块 方块材质 -3 -1.5 0 4 0.2 4\n"
+		"place 方块 方块材质 3 -1.5 0 4 0.2 4\n"
+		"place 方块 方块材质 -3 0.6 0 1.2 1.2 1.2\n"
+		"place 方块 方块材质 3 0.6 0 1.2 1.2 1.2\n");
+
+	engine::Renderer_Config config;
+	config.width = LEVEL_WIDTH;
+	config.height = LEVEL_HEIGHT;
+	config.hidden = true;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(config));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+
+	engine::Level_Data 关卡;
+	engine::Asset_Scene 场景;
+	ASSERT_TRUE(renderer.level_load(关卡, 场景, level_utf8("多盏聚光.level"), false));
+	ASSERT_EQ(关卡.light.spot_count, 2u);
+
+	//单盏（序号 0）：只遮蔽左侧
+	engine::Light_Data 灯光 = 关卡.light;
+		灯光.spot_shadow_enabled = 1;
+		灯光.spot_shadow_all = 0;
+		灯光.spot_shadow_index = 0;
+	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
+	EXPECT_EQ(renderer.scene_draw(场景), 4u);
+	std::vector<uint8_t> 单盏(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+	ASSERT_TRUE(renderer.frame_render(单盏.data(), static_cast<uint32_t>(单盏.size())));
+
+	//多盏：两盏各自投影
+		灯光.spot_shadow_all = 1;
+	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
+	EXPECT_EQ(renderer.scene_draw(场景), 4u);
+	std::vector<uint8_t> 多盏(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+	ASSERT_TRUE(renderer.frame_render(多盏.data(), static_cast<uint32_t>(多盏.size())));
+
+	const uint32_t 差异 = changed_pixels(单盏, 多盏);
+	std::cout << "[关卡] 多盏聚光阴影差异 " << 差异 << std::endl;
+	EXPECT_GT(差异, 100u) << "多盏聚光灯阴影未生效";
+	renderer.level_unload(场景);
+}
+
+/*
+多盏聚光灯开关文本往返（第五百零七轮）
+口径：`light spot_shadow_all 1` 结构化保存；缺省为 0；写出再读回一致。
+*/
+TEST(Renderer_Level_Test, 关卡多盏聚光开关往返)
+{
+	write_text(level_dir() / L"多盏开关.level", "level 多盏开关\nlight spot_shadow_all 1\n");
+
+	engine::Level_Data loaded;
+	ASSERT_TRUE(engine::level_text_read(level_utf8("多盏开关.level"), loaded));
+	EXPECT_EQ(loaded.light.spot_shadow_all, 1);
+
+	ASSERT_TRUE(engine::level_text_write(loaded, level_utf8("多盏开关_回写.level")));
+	engine::Level_Data reread;
+	ASSERT_TRUE(engine::level_text_read(level_utf8("多盏开关_回写.level"), reread));
+	EXPECT_EQ(reread.light.spot_shadow_all, 1);
+
+	//缺省：不写该行时为 0
+	write_text(level_dir() / L"多盏开关缺省.level", "level 多盏开关缺省\n");
+	engine::Level_Data 缺省;
+	ASSERT_TRUE(engine::level_text_read(level_utf8("多盏开关缺省.level"), 缺省));
+	EXPECT_EQ(缺省.light.spot_shadow_all, 0);
+}
+
+/*
+多盏聚光灯开关非法（第五百零七轮）
+口径：只接受 0 / 1，且不得有多余字段。
+*/
+TEST(Renderer_Level_Test, 关卡多盏聚光开关非法)
+{
+	const std::vector<std::pair<std::string, std::string>> cases = {
+		{ "开关为 2", "level 非法\nlight spot_shadow_all 2\n" },
+		{ "负数", "level 非法\nlight spot_shadow_all -1\n" },
+		{ "非数字", "level 非法\nlight spot_shadow_all on\n" },
+		{ "缺值", "level 非法\nlight spot_shadow_all\n" },
+		{ "多余字段", "level 非法\nlight spot_shadow_all 1 2\n" },
+	};
+
+	for (const std::pair<std::string, std::string>& item : cases)
+	{
+		write_text(level_dir() / "非法.level", item.second);
+		engine::Level_Data loaded;
+		EXPECT_FALSE(engine::level_text_read(level_utf8("非法.level"), loaded)) << item.first;
+		EXPECT_EQ(loaded.light.spot_shadow_all, 0) << item.first;
+	}
+}
+
+/*
 写入与读取失败路径（第四百二十九轮）
 口径：空路径 / 不存在的文件 → 返回假；读取失败时输出清空。
 */
