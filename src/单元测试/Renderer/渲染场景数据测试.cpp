@@ -692,3 +692,45 @@ TEST_F(Renderer_Scene_Test, 相机宽高比覆盖)
 	renderer.mesh_unload(mesh);
 	renderer.texture_unload(texture);
 }
+
+/*
+聚光灯阴影参数门面（第四百九十二轮）
+口径：默认 0.010 / 0 / 1 与序号 0；合法设置可回读；任一非法值整次忽略（已设值不变）。
+*/
+TEST_F(Renderer_Scene_Test, 聚光灯阴影参数门面)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+
+	//默认值
+	float bias = 0.0f;
+	float softness = 0.0f;
+	float strength = 0.0f;
+	renderer.spot_shadow_params_get(&bias, &softness, &strength);
+	EXPECT_FLOAT_EQ(bias, 0.010f);
+	EXPECT_FLOAT_EQ(softness, 0.0f);
+	EXPECT_FLOAT_EQ(strength, 1.0f);
+	EXPECT_EQ(renderer.spot_shadow_index(), 0);
+
+	//合法设置
+	renderer.spot_shadow_params_set(0.02f, 0.5f, 0.3f);
+	renderer.spot_shadow_index_set(5);
+	renderer.spot_shadow_params_get(&bias, &softness, &strength);
+	EXPECT_FLOAT_EQ(bias, 0.02f);
+	EXPECT_FLOAT_EQ(softness, 0.5f);
+	EXPECT_FLOAT_EQ(strength, 0.3f);
+	EXPECT_EQ(renderer.spot_shadow_index(), 5);
+
+	//非法设置：整次忽略，已设值不变
+	renderer.spot_shadow_params_set(0.06f, 0.5f, 0.3f);
+	renderer.spot_shadow_params_get(&bias, &softness, &strength);
+	EXPECT_FLOAT_EQ(bias, 0.02f) << "越界偏置未被忽略";
+	renderer.spot_shadow_params_set(0.02f, 1.2f, 0.3f);
+	renderer.spot_shadow_params_get(&bias, &softness, &strength);
+	EXPECT_FLOAT_EQ(softness, 0.5f) << "越界软度未被忽略";
+	renderer.spot_shadow_params_set(0.02f, 0.5f, -0.1f);
+	renderer.spot_shadow_params_get(&bias, &softness, &strength);
+	EXPECT_FLOAT_EQ(strength, 0.3f) << "越界强度未被忽略";
+	renderer.spot_shadow_index_set(9);
+	EXPECT_EQ(renderer.spot_shadow_index(), 5) << "越界序号未被忽略";
+}
