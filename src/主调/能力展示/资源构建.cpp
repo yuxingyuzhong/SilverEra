@@ -113,11 +113,12 @@ namespace engine
 			return false;
 		/*
 		带子网格分段的四边形（第四百一十六轮；展区⑩ 多材质面板）
-		两个三角形各一段（段 0 → 材质槽 0、段 1 → 材质槽 1），走 Mesh_Data.sections 的段描述路径。
+		两个三角形各一段（段 0 → 材质槽 0、段 1 → 材质槽 1），经 mesh_load_sections 单独传入段描述
+		（分段不放进 Mesh_Data，避免与 EngineCore 同名类型的 ODR 冲突）。
 		*/
 		Mesh_Data 分段数据 = 展示::四边形数据(0.9f, 0.9f);
-		分段数据.sections = { { 0u, 3u, 0u }, { 3u, 3u, 1u } };
-		if (!渲染器.mesh_load(资源.分段平面, 分段数据))
+		const Mesh_Section 分段描述[2] = { { 0u, 3u, 0u }, { 3u, 3u, 1u } };
+		if (!渲染器.mesh_load_sections(资源.分段平面, 分段数据, 分段描述, 2))
 			return false;
 
 		//—— 纹理 ——

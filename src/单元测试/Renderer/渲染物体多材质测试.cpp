@@ -326,9 +326,9 @@ TEST_F(Renderer_Scene_Test, 网格分段按描述绘制)
 
 	//分段帧（段 0 → 材质 1 蓝、段 1 → 材质 0 红）
 	engine::Mesh_Data sectioned = quad_data();
-	sectioned.sections = { { 0u, 3u, 1u }, { 3u, 3u, 0u } };
+	const engine::Mesh_Section 段描述[2] = { { 0u, 3u, 1u }, { 3u, 3u, 0u } };
 	engine::Mesh_Handle section_mesh = 0;
-	ASSERT_TRUE(renderer.mesh_load(section_mesh, sectioned));
+	ASSERT_TRUE(renderer.mesh_load_sections(section_mesh, sectioned, 段描述, 2));
 	ASSERT_TRUE(renderer.mesh_draw_sections(section_mesh, nullptr, materials, 2));
 	std::vector<uint8_t> swapped(pixel_bytes());
 	ASSERT_TRUE(renderer.frame_render(swapped.data(), static_cast<uint32_t>(swapped.size())));
@@ -350,9 +350,9 @@ TEST_F(Renderer_Scene_Test, 网格分段越界被拒绝)
 	engine::Renderer renderer;
 	ASSERT_TRUE(renderer.init(hidden_config()));
 	engine::Mesh_Data bad = quad_data();
-	bad.sections = { { 4u, 3u, 0u } };
+	const engine::Mesh_Section 段描述[1] = { { 4u, 3u, 0u } };
 	engine::Mesh_Handle mesh = 0;
-	EXPECT_FALSE(renderer.mesh_load(mesh, bad)) << "越界分段未被拒绝";
+	EXPECT_FALSE(renderer.mesh_load_sections(mesh, bad, 段描述, 1)) << "越界分段未被拒绝";
 	EXPECT_EQ(mesh, 0u);
 }
 
@@ -362,9 +362,9 @@ TEST_F(Renderer_Scene_Test, 网格分段非三角形被拒绝)
 	engine::Renderer renderer;
 	ASSERT_TRUE(renderer.init(hidden_config()));
 	engine::Mesh_Data bad = quad_data();
-	bad.sections = { { 0u, 2u, 0u } };
+	const engine::Mesh_Section 段描述[1] = { { 0u, 2u, 0u } };
 	engine::Mesh_Handle mesh = 0;
-	EXPECT_FALSE(renderer.mesh_load(mesh, bad)) << "非三角形分段未被拒绝";
+	EXPECT_FALSE(renderer.mesh_load_sections(mesh, bad, 段描述, 1)) << "非三角形分段未被拒绝";
 	EXPECT_EQ(mesh, 0u);
 }
 
