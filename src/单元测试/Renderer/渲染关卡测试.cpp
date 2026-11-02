@@ -1,7 +1,8 @@
 /*
 渲染关卡测试（第四百二十九轮 · 方向六：场景序列化与关卡装载 · 阶段 A）
 覆盖：关卡文本往返（全字段逐位一致）、缺省补齐、非法文本拒绝（未知段 / 未知键 / 字段数不符 /
-非有限值 / 开关非 0-1 / 点光超 8 盏 / 资产行缺字段）、资产声明行原样保留、写入与读取失败路径。
+非有限值 / 开关非 0-1 / 点光超 8 盏 / 资产行缺字段）、资产声明行原样保留、
+材质实例行（往返 / 缺省 / 数值越界 / 结构非法 / 重名；第四百六十六轮）、写入与读取失败路径。
 口径：只测文本层（`engine::level_text_read` / `engine::level_text_write`），不建任何 GPU 资源。
 临时文件写在 `out/关卡测试/`：写盘用宽字符路径，加载 / 写出入参用 UTF-8 窄字符串。
 */
@@ -438,6 +439,144 @@ TEST(Renderer_Level_Test, 关卡资产行原样保留)
 	ASSERT_EQ(reread.asset_lines.size(), 3u);
 	for (std::size_t index = 0; index < reread.asset_lines.size(); ++index)
 		EXPECT_EQ(reread.asset_lines[index], loaded.asset_lines[index]);
+}
+
+/*
+材质实例行往返（第四百六十六轮；方向七阶段 B）
+口径：`material` 行结构化保存、不进入 asset_lines；写出再读回逐字段（含浮点）逐位相等。
+*/
+TEST(Renderer_Level_Test, 关卡材质实例行往返)
+{
+	const std::string text =
+		"level 实例关卡\n"
+		"material 红 甲 tint 0.9 0.2 0.2 1\n"
+		"material 亮 乙 tint 0.5 0.5 0.5 1 emissive 0.35\n"
+		"mesh 甲 box.obj\n"
+		"mtl 乙 甲.mtl\n"
+		"place 甲 红 0 1 2 1 1 1\n";
+
+	write_text(level_dir() / L"实例.level", text);
+
+	engine::Level_Data loaded;
+	ASSERT_TRUE(engine::level_text_read(level_utf8("实例.level"), loaded));
+	//结构化：两条实例；asset_lines 仍只有 mesh / mtl / place 三行
+	ASSERT_EQ(loaded.materials.size(), 2u);
+	ASSERT_EQ(loaded.asset_lines.size(), 3u);
+	//第一条：仅覆盖底色
+	EXPECT_EQ(loaded.materials[0].实例名, "红");
+	EXPECT_EQ(loaded.materials[0].模板, "甲");
+	EXPECT_TRUE(loaded.materials[0].use_tint);
+	EXPECT_FALSE(loaded.materials[0].use_emissive);
+	EXPECT_TRUE(bit_equal(loaded.materials[0].tint[0], 0.9f));
+	EXPECT_TRUE(bit_equal(loaded.materials[0].tint[3], 1.0f));
+	//第二条：底色 ＋ 自发光
+	EXPECT_TRUE(loaded.materials[1].use_emissive);
+	EXPECT_TRUE(bit_equal(loaded.materials[1].emissive, 0.35f));
+
+	//写出再读回：实例逐字段相等
+	ASSERT_TRUE(engine::level_text_write(loaded, level_utf8("实例_回写.level")));
+	engine::Level_Data reread;
+	ASSERT_TRUE(engine::level_text_read(level_utf8("实例_回写.level"), reread));
+	ASSERT_EQ(reread.materials.size(), 2u);
+	for (std::size_t material_index = 0; material_index < reread.materials.size(); ++material_index)
+	{
+		const engine::Level_Material& left = loaded.materials[material_index];
+		const engine::Level_Material& right = reread.materials[material_index];
+		EXPECT_EQ(left.实例名, right.实例名);
+		EXPECT_EQ(left.模板, right.模板);
+		EXPECT_EQ(left.use_tint, right.use_tint);
+		EXPECT_EQ(left.use_emissive, right.use_emissive);
+		EXPECT_TRUE(bit_equal(left.emissive, right.emissive));
+		for (std::size_t index = 0; index < 4; ++index)
+			EXPECT_TRUE(bit_equal(left.tint[index], right.tint[index]));
+	}
+}
+
+/*
+材质实例缺省不覆盖（第四百六十六轮）
+口径：只给实例名与模板名时，两项覆盖均为假，底色全 1、自发光 0。
+*/
+TEST(Renderer_Level_Test, 关卡材质实例缺省)
+{
+	write_text(level_dir() / L"实例缺省.level", "level 实例缺省\nmaterial 素 甲\n");
+
+	engine::Level_Data loaded;
+	ASSERT_TRUE(engine::level_text_read(level_utf8("实例缺省.level"), loaded));
+	ASSERT_EQ(loaded.materials.size(), 1u);
+	EXPECT_EQ(loaded.materials[0].实例名, "素");
+	EXPECT_EQ(loaded.materials[0].模板, "甲");
+	EXPECT_FALSE(loaded.materials[0].use_tint);
+	EXPECT_FALSE(loaded.materials[0].use_emissive);
+	for (std::size_t index = 0; index < 4; ++index)
+		EXPECT_TRUE(bit_equal(loaded.materials[0].tint[index], 1.0f));
+	EXPECT_TRUE(bit_equal(loaded.materials[0].emissive, 0.0f));
+	EXPECT_TRUE(loaded.asset_lines.empty());
+}
+
+/*
+材质实例数值越界拒绝（第四百六十六轮）
+口径：覆盖值必须有限且在 [0,1]；越界 / NaN / Inf 一律整份拒绝。
+*/
+TEST(Renderer_Level_Test, 关卡材质实例数值越界)
+{
+	const std::vector<std::pair<std::string, std::string>> cases = {
+		{ "底色超上界", "level 越界\nmaterial 甲 乙 tint 1.5 0.2 0.2 1\n" },
+		{ "底色为负", "level 越界\nmaterial 甲 乙 tint -0.1 0.2 0.2 1\n" },
+		{ "底色 NaN", "level 越界\nmaterial 甲 乙 tint nan 0.2 0.2 1\n" },
+		{ "自发光超上界", "level 越界\nmaterial 甲 乙 emissive 1.2\n" },
+		{ "自发光为负", "level 越界\nmaterial 甲 乙 emissive -0.2\n" },
+		{ "自发光 Inf", "level 越界\nmaterial 甲 乙 emissive inf\n" },
+	};
+
+	for (const std::pair<std::string, std::string>& item : cases)
+	{
+		write_text(level_dir() / "实例非法.level", item.second);
+		engine::Level_Data loaded;
+		EXPECT_FALSE(engine::level_text_read(level_utf8("实例非法.level"), loaded)) << item.first;
+		//失败契约：输出清空
+		EXPECT_TRUE(loaded.materials.empty()) << item.first;
+	}
+}
+
+/*
+材质实例结构非法拒绝（第四百六十六轮）
+口径：未知覆盖项 / 缺值 / 缺模板名 / 顺序颠倒 / 多余字段一律整份拒绝。
+*/
+TEST(Renderer_Level_Test, 关卡材质实例结构非法)
+{
+	const std::vector<std::pair<std::string, std::string>> cases = {
+		{ "缺模板名", "level 非法\nmaterial 甲\n" },
+		{ "未知覆盖项", "level 非法\nmaterial 甲 乙 gloss 0.5\n" },
+		{ "底色缺值", "level 非法\nmaterial 甲 乙 tint 0.2 0.3 0.4\n" },
+		{ "顺序颠倒", "level 非法\nmaterial 甲 乙 emissive 0.5 tint 0.2 0.3 0.4 1\n" },
+		{ "多余字段", "level 非法\nmaterial 甲 乙 tint 0.2 0.3 0.4 0.5 0.6\n" },
+	};
+
+	for (const std::pair<std::string, std::string>& item : cases)
+	{
+		write_text(level_dir() / "实例非法.level", item.second);
+		engine::Level_Data loaded;
+		EXPECT_FALSE(engine::level_text_read(level_utf8("实例非法.level"), loaded)) << item.first;
+		EXPECT_TRUE(loaded.materials.empty()) << item.first;
+	}
+}
+
+/*
+材质实例重名拒绝（第四百六十六轮）
+口径：同一关卡内实例名唯一；重复即整份拒绝。
+*/
+TEST(Renderer_Level_Test, 关卡材质实例重名)
+{
+	const std::string text =
+		"level 重名\n"
+		"material 甲 乙 tint 0.2 0.2 0.2 1\n"
+		"material 甲 丙\n";
+
+	write_text(level_dir() / L"实例重名.level", text);
+
+	engine::Level_Data loaded;
+	EXPECT_FALSE(engine::level_text_read(level_utf8("实例重名.level"), loaded));
+	EXPECT_TRUE(loaded.materials.empty());
 }
 
 /*
