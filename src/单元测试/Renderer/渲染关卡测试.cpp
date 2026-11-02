@@ -618,3 +618,120 @@ TEST(Renderer_Level_Test, 关卡装载失败回退)
 	EXPECT_TRUE(关卡.name.empty());
 	EXPECT_TRUE(场景.objects.empty());
 }
+
+/*
+变换矩阵构造（第四百三十一轮 · 阶段 C）
+口径：旋转全零 → 对角缩放 ＋ 末列平移；绕 Z 90° → 局部 (1,0,0) 变为 (0,1,0)（缩放 2 倍、平移 (1,2,3)）。
+*/
+TEST(Renderer_Level_Test, 变换矩阵构造)
+{
+	//单位旋转：对角缩放 ＋ 平移
+	{
+		const float position[3] = { 1.0f, 2.0f, 3.0f };
+		const float rotation[3] = { 0.0f, 0.0f, 0.0f };
+		const float scale[3] = { 2.0f, 3.0f, 4.0f };
+		float matrix[16] = {};
+		engine::level_transform_build(position, rotation, scale, matrix);
+		EXPECT_FLOAT_EQ(matrix[0], 2.0f);
+		EXPECT_FLOAT_EQ(matrix[5], 3.0f);
+		EXPECT_FLOAT_EQ(matrix[10], 4.0f);
+		EXPECT_FLOAT_EQ(matrix[12], 1.0f);
+		EXPECT_FLOAT_EQ(matrix[13], 2.0f);
+		EXPECT_FLOAT_EQ(matrix[14], 3.0f);
+		EXPECT_FLOAT_EQ(matrix[15], 1.0f);
+		EXPECT_FLOAT_EQ(matrix[1], 0.0f);
+	}
+	//绕 Z 轴 90°（列主序；局部 +X 转到 +Y）
+	{
+		const float position[3] = { 1.0f, 2.0f, 3.0f };
+		const float rotation[3] = { 0.0f, 0.0f, 90.0f };
+		const float scale[3] = { 2.0f, 2.0f, 2.0f };
+		float matrix[16] = {};
+		engine::level_transform_build(position, rotation, scale, matrix);
+		//列主序矩阵作用于局部点 (1,0,0)：结果应为缩放 2 倍后旋转到 +Y，再平移
+		const float local[3] = { 1.0f, 0.0f, 0.0f };
+		float world[3] = {};
+		for (std::size_t row = 0; row < 3; ++row)
+			world[row] = matrix[row] * local[0] + matrix[4 + row] * local[1]
+				+ matrix[8 + row] * local[2] + matrix[12 + row];
+		EXPECT_NEAR(world[0], 1.0f, 1e-6f);
+		EXPECT_NEAR(world[1], 4.0f, 1e-6f);
+		EXPECT_NEAR(world[2], 3.0f, 1e-6f);
+	}
+}
+
+/*
+摆放旋转（第四百三十一轮 · 阶段 C）
+口径：`place` 行带旋转三轴 → 对象 `rotation_deg` 生效；零旋转用构造矩阵绘制与旧（nullptr）画面逐字节一致；
+绕 Y 45° 后画面变化。
+*/
+TEST(Renderer_Level_Test, 摆放旋转)
+{
+	write_box_assets();
+	//零旋转关卡
+	write_text(level_dir() / L"旋转零.level",
+		"level 零旋转\n"
+		"camera position 0 0 3\n"
+		"mesh 方盒 box.obj\n"
+		"mtl 方盒材质 box.mtl\n"
+		"place 方盒 方盒材质 0 0 0 1 1 1 0 0 0\n");
+	//绕 Y 45°
+	write_text(level_dir() / L"旋转四十五.level",
+		"level 旋转四十五\n"
+		"camera position 0 0 3\n"
+		"mesh 方盒 box.obj\n"
+		"mtl 方盒材质 box.mtl\n"
+		"place 方盒 方盒材质 0 0 0 1 1 1 0 45 0\n");
+
+	engine::Renderer_Config config;
+	config.width = LEVEL_WIDTH;
+	config.height = LEVEL_HEIGHT;
+	config.hidden = true;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(config));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+
+	//零旋转：对象字段为 0；用构造矩阵绘制与 nullptr 画面一致
+	engine::Level_Data 零关卡;
+	engine::Asset_Scene 零场景;
+	ASSERT_TRUE(renderer.level_load(零关卡, 零场景, level_utf8("旋转零.level")));
+	ASSERT_EQ(零场景.objects.size(), 1u);
+	EXPECT_EQ(零场景.objects[0].rotation_deg[1], 0.0f);
+	std::vector<uint8_t> 旧画面(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+	ASSERT_TRUE(renderer.mesh_draw_sections(零场景.objects[0].mesh, nullptr,
+		零场景.objects[0].materials.data(), static_cast<uint32_t>(零场景.objects[0].materials.size())));
+	ASSERT_TRUE(renderer.frame_render(旧画面.data(), static_cast<uint32_t>(旧画面.size())));
+	renderer.level_unload(零场景);
+
+	//重新装载（对象已释放）并改用构造矩阵
+	ASSERT_TRUE(renderer.level_load(零关卡, 零场景, level_utf8("旋转零.level")));
+	ASSERT_EQ(零场景.objects.size(), 1u);
+	float 矩阵[16] = {};
+	engine::level_transform_build(零场景.objects[0].position, 零场景.objects[0].rotation_deg,
+		零场景.objects[0].scale, 矩阵);
+	ASSERT_TRUE(renderer.mesh_draw_sections(零场景.objects[0].mesh, 矩阵,
+		零场景.objects[0].materials.data(), static_cast<uint32_t>(零场景.objects[0].materials.size())));
+	std::vector<uint8_t> 矩阵画面(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+	ASSERT_TRUE(renderer.frame_render(矩阵画面.data(), static_cast<uint32_t>(矩阵画面.size())));
+	EXPECT_EQ(changed_pixels(旧画面, 矩阵画面), 0u) << "零旋转构造矩阵应与 nullptr 画面一致";
+	renderer.level_unload(零场景);
+
+	//绕 Y 45°：对象字段 45；画面应变化
+	engine::Level_Data 旋转关卡;
+	engine::Asset_Scene 旋转场景;
+	ASSERT_TRUE(renderer.level_load(旋转关卡, 旋转场景, level_utf8("旋转四十五.level")));
+	ASSERT_EQ(旋转场景.objects.size(), 1u);
+	EXPECT_FLOAT_EQ(旋转场景.objects[0].rotation_deg[1], 45.0f);
+	float 旋转矩阵[16] = {};
+	engine::level_transform_build(旋转场景.objects[0].position, 旋转场景.objects[0].rotation_deg,
+		旋转场景.objects[0].scale, 旋转矩阵);
+	ASSERT_TRUE(renderer.mesh_draw_sections(旋转场景.objects[0].mesh, 旋转矩阵,
+		旋转场景.objects[0].materials.data(), static_cast<uint32_t>(旋转场景.objects[0].materials.size())));
+	std::vector<uint8_t> 旋转画面(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+	ASSERT_TRUE(renderer.frame_render(旋转画面.data(), static_cast<uint32_t>(旋转画面.size())));
+	const uint32_t 差异 = changed_pixels(旧画面, 旋转画面);
+	std::cout << "[关卡] 旋转 45° 画面差异 " << 差异 << " 像素" << std::endl;
+	EXPECT_GT(差异, 50u) << "旋转未生效";
+	renderer.level_unload(旋转场景);
+}
