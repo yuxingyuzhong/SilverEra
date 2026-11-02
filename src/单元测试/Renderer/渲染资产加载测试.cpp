@@ -562,3 +562,112 @@ TEST(Renderer_Asset_Load_Test, 场景清单端到端装载)
 	EXPECT_TRUE(场景.objects.empty());
 	EXPECT_TRUE(场景.meshes.empty());
 }
+
+/*
+共享网格复用与引用计数（第四百二十五轮）
+口径：同路径两次共享加载 → 句柄相同、缓存条目 1；释放一次仍可绘制，释放归零后绘制失败且条目 0。
+*/
+TEST(Renderer_Asset_Load_Test, 共享网格复用与引用计数)
+{
+	write_text(mtl_dir() / L"shared.obj",
+		"v -1 -1 0\nv 1 -1 0\nv 1 1 0\nv -1 1 0\n"
+		"vn 0 0 1\n"
+		"f 1//1 2//1 3//1\nf 1//1 3//1 4//1\n");
+
+	engine::Renderer_Config config;
+	config.width = ASSET_WIDTH;
+	config.height = ASSET_HEIGHT;
+	config.hidden = true;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(config));
+
+	engine::Mesh_Handle 甲 = 0;
+	engine::Mesh_Handle 乙 = 0;
+	ASSERT_TRUE(renderer.mesh_load_obj_shared(甲, mtl_utf8("shared.obj")));
+	ASSERT_TRUE(renderer.mesh_load_obj_shared(乙, mtl_utf8("shared.obj")));
+	EXPECT_EQ(甲, 乙);
+	EXPECT_EQ(renderer.asset_cache_count(), 1u);
+	//大小写不同但归一化后同键 → 仍是同一资源
+	engine::Mesh_Handle 丙 = 0;
+	ASSERT_TRUE(renderer.mesh_load_obj_shared(丙, "out/asset_test/SHARED.OBJ"));
+	EXPECT_EQ(丙, 甲);
+	EXPECT_EQ(renderer.asset_cache_count(), 1u);
+
+	//释放一次：仍可绘制
+	renderer.mesh_release(甲);
+	EXPECT_EQ(renderer.asset_cache_count(), 1u);
+	EXPECT_TRUE(renderer.mesh_draw(乙, nullptr));
+
+	//释放归零：真正卸载，缓存条目清零
+	renderer.mesh_release(乙);
+	renderer.mesh_release(丙);
+	EXPECT_EQ(renderer.asset_cache_count(), 0u);
+	EXPECT_FALSE(renderer.mesh_draw(丙, nullptr)) << "引用计数归零后网格仍可用";
+	std::cout << "[资产加载] 共享网格：复用 3 次、释放归零后条目 0" << std::endl;
+}
+
+/*
+共享加载的隔离与失败（第四百二十五轮）
+口径：不同路径各自一份（条目 2）；不存在的路径加载失败且不新增条目。
+*/
+TEST(Renderer_Asset_Load_Test, 共享加载隔离与失败)
+{
+	write_text(mtl_dir() / L"iso1.obj",
+		"v -1 -1 0\nv 1 -1 0\nv 0 1 0\nvn 0 0 1\nf 1//1 2//1 3//1\n");
+	write_text(mtl_dir() / L"iso2.obj",
+		"v -1 -1 0\nv 1 -1 0\nv 0 1 0\nv 0 -1 0\nvn 0 0 1\nf 1//1 2//1 3//1\nf 1//1 3//1 4//1\n");
+
+	engine::Renderer_Config config;
+	config.width = ASSET_WIDTH;
+	config.height = ASSET_HEIGHT;
+	config.hidden = true;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(config));
+
+	engine::Mesh_Handle 甲 = 0;
+	engine::Mesh_Handle 乙 = 0;
+	ASSERT_TRUE(renderer.mesh_load_obj_shared(甲, mtl_utf8("iso1.obj")));
+	ASSERT_TRUE(renderer.mesh_load_obj_shared(乙, mtl_utf8("iso2.obj")));
+	EXPECT_NE(甲, 乙);
+	EXPECT_EQ(renderer.asset_cache_count(), 2u);
+
+	//失败不入缓存
+	engine::Mesh_Handle 缺失 = 0;
+	EXPECT_FALSE(renderer.mesh_load_obj_shared(缺失, mtl_utf8("不存在.obj")));
+	EXPECT_EQ(缺失, 0u);
+	EXPECT_EQ(renderer.asset_cache_count(), 2u);
+
+	renderer.mesh_release(甲);
+	renderer.mesh_release(乙);
+	EXPECT_EQ(renderer.asset_cache_count(), 0u);
+}
+
+/*
+共享纹理复用（第四百二十五轮）
+口径：同一 BMP 两次共享加载 → 同一句柄、条目不重复；释放两次后条目清零。
+*/
+TEST(Renderer_Asset_Load_Test, 共享纹理复用与引用计数)
+{
+	write_bmp(mtl_dir() / L"shared_tex.bmp", 4, 4);
+
+	engine::Renderer_Config config;
+	config.width = 64;
+	config.height = 36;
+	config.hidden = true;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(config));
+
+	uint64_t 甲 = 0;
+	uint64_t 乙 = 0;
+	ASSERT_TRUE(renderer.texture_load_file_shared(甲, mtl_utf8("shared_tex.bmp")));
+	ASSERT_TRUE(renderer.texture_load_file_shared(乙, mtl_utf8("shared_tex.bmp")));
+	EXPECT_EQ(甲, 乙);
+	EXPECT_NE(甲, 0u);
+	EXPECT_EQ(renderer.asset_cache_count(), 1u);
+
+	renderer.texture_release(甲);
+	EXPECT_EQ(renderer.asset_cache_count(), 1u);
+	renderer.texture_release(乙);
+	EXPECT_EQ(renderer.asset_cache_count(), 0u);
+	std::cout << "[资产加载] 共享纹理：复用 2 次、释放归零后条目 0" << std::endl;
+}
