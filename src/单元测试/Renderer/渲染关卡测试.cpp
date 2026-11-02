@@ -1372,6 +1372,63 @@ TEST(Renderer_Level_Test, 关卡聚光阴影按需重绘)
 }
 
 /*
+聚光灯阴影分辨率切换（第四百八十七轮）
+口径：1024 → 512 → 1024 三次渲染均成功；回到 1024 后画面与首次 1024 逐字节一致（≤ 2）。
+*/
+TEST(Renderer_Level_Test, 关卡聚光阴影分辨率切换)
+{
+	write_cube_assets();
+	write_text(level_dir() / L"聚光分辨率.level",
+		"level 聚光分辨率\n"
+		"camera position 0 6 6\n"
+		"camera target 0 0 0\n"
+		"light direction 0 -1 0\n"
+		"light color 0.2 0.2 0.2\n"
+		"light intensity 0.2\n"
+		"light spot 0 4 0 0 -1 0 1 1 1 12 2 20 40 0 0 16\n"
+		"mesh 方块 cube.obj\n"
+		"mtl 方块材质 cube.mtl\n"
+		"place 方块 方块材质 0 -1.5 0 8 0.2 8\n"
+		"place 方块 方块材质 0 0.6 0 1.2 1.2 1.2\n");
+
+	engine::Renderer_Config config;
+	config.width = LEVEL_WIDTH;
+	config.height = LEVEL_HEIGHT;
+	config.hidden = true;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(config));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+
+	engine::Level_Data 关卡;
+	engine::Asset_Scene 场景;
+	ASSERT_TRUE(renderer.level_load(关卡, 场景, level_utf8("聚光分辨率.level"), false));
+	engine::Light_Data 灯光 = 关卡.light;
+	灯光.spot_shadow_enabled = 1;
+	灯光.spot_shadow_index = 0;
+	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
+	ASSERT_TRUE(renderer.scene_draw(场景) == 2u);
+	std::vector<uint8_t> 原图(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+	ASSERT_TRUE(renderer.frame_render(原图.data(), static_cast<uint32_t>(原图.size())));
+
+	//切到 512 再切回 1024
+	renderer.shadow_resolution_set(512);
+	ASSERT_TRUE(renderer.scene_draw(场景) == 2u);
+	std::vector<uint8_t> 低分辨率(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+	ASSERT_TRUE(renderer.frame_render(低分辨率.data(), static_cast<uint32_t>(低分辨率.size())));
+	renderer.shadow_resolution_set(1024);
+	ASSERT_TRUE(renderer.scene_draw(场景) == 2u);
+	std::vector<uint8_t> 复原(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+	ASSERT_TRUE(renderer.frame_render(复原.data(), static_cast<uint32_t>(复原.size())));
+
+	const uint32_t 差异 = changed_pixels(原图, 复原);
+	std::cout << "[关卡] 分辨率往返差异 " << 差异 << std::endl;
+	EXPECT_LE(差异, 2u) << "分辨率往返后画面未复原";
+	EXPECT_GE(changed_pixels(原图, 低分辨率), 1u) << "512 分辨率未改变阴影细节";
+	renderer.level_unload(场景);
+}
+
+/*
 聚光灯阴影开关文本往返（第四百七十五轮）
 口径：`light spot_shadow 0/1` 结构化保存；写出再读回一致。
 */
