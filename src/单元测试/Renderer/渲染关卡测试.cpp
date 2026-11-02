@@ -1429,6 +1429,69 @@ TEST(Renderer_Level_Test, 关卡聚光阴影分辨率切换)
 }
 
 /*
+Cluster 路径聚光阴影（第四百八十八轮）
+口径：开启 Cluster 后聚光阴影仍生效（同一场景，开启/关闭阴影的画面差异 > 100 像素）。
+*/
+TEST(Renderer_Level_Test, 关卡Cluster聚光阴影)
+{
+	write_cube_assets();
+	write_text(level_dir() / L"聚光簇.level",
+		"level 聚光簇\n"
+		"camera position 0 6 6\n"
+		"camera target 0 0 0\n"
+		"light direction 0 -1 0\n"
+		"light color 0.2 0.2 0.2\n"
+		"light intensity 0.2\n"
+		"light spot 0 4 0 0 -1 0 1 1 1 12 2 20 40 0 0 16\n"
+		"mesh 方块 cube.obj\n"
+		"mtl 方块材质 cube.mtl\n"
+		"place 方块 方块材质 0 -1.5 0 8 0.2 8\n"
+		"place 方块 方块材质 0 0.6 0 1.2 1.2 1.2\n");
+
+	engine::Renderer_Config config;
+	config.width = LEVEL_WIDTH;
+	config.height = LEVEL_HEIGHT;
+	config.hidden = true;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(config));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	if (!renderer.cluster_supported())
+		GTEST_SKIP() << "本机不支持 Cluster 计算路径";
+
+	engine::Level_Data 关卡;
+	engine::Asset_Scene 场景;
+	ASSERT_TRUE(renderer.level_load(关卡, 场景, level_utf8("聚光簇.level"), false));
+
+	engine::Light_Data 灯光 = 关卡.light;
+	灯光.spot_shadow_enabled = 1;
+	灯光.spot_shadow_index = 0;
+	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
+	//开启 Cluster（默认网格）
+	renderer.cluster_enable_set(true);
+
+	//关闭阴影（Cluster 路径）
+	灯光.spot_shadow_enabled = 0;
+	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
+	ASSERT_TRUE(renderer.scene_draw(场景) == 2u);
+	std::vector<uint8_t> 无影(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+	ASSERT_TRUE(renderer.frame_render(无影.data(), static_cast<uint32_t>(无影.size())));
+
+	//开启阴影（Cluster 路径）
+	灯光.spot_shadow_enabled = 1;
+	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
+	ASSERT_TRUE(renderer.scene_draw(场景) == 2u);
+	std::vector<uint8_t> 有影(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+	ASSERT_TRUE(renderer.frame_render(有影.data(), static_cast<uint32_t>(有影.size())));
+
+	const uint32_t 差异 = changed_pixels(无影, 有影);
+	std::cout << "[关卡] Cluster 聚光阴影差异 " << 差异 << std::endl;
+	EXPECT_GT(差异, 100u) << "Cluster 路径聚光阴影未生效";
+	renderer.cluster_enable_set(false);
+	renderer.level_unload(场景);
+}
+
+/*
 聚光灯阴影开关文本往返（第四百七十五轮）
 口径：`light spot_shadow 0/1` 结构化保存；写出再读回一致。
 */
