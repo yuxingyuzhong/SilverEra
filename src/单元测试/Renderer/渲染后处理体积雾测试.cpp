@@ -13,7 +13,9 @@ namespace
 	const std::array<float, 3> FOG_COLOR = { 0.6f, 0.7f, 0.9f };
 
 	//渲染一帧：单级体积雾链 ＋ 中央四边形；noise 为密度噪声强度、base_height 为雾基准高度（第四百零四轮）
-	std::vector<uint8_t> render_fog(const std::array<float, 4>& params, float noise = 0.0f, float base_height = 0.0f)
+	//seed 为时域抖动种子、denoise 为空间降噪强度（第四百二十轮；均默认 0 = 关闭）
+	std::vector<uint8_t> render_fog(const std::array<float, 4>& params, float noise = 0.0f, float base_height = 0.0f,
+		float seed = 0.0f, float denoise = 0.0f)
 	{
 		engine::Renderer renderer;
 		EXPECT_TRUE(renderer.init(hidden_config()));
@@ -27,7 +29,8 @@ namespace
 		renderer.post_stage_vec4_set(0, params[0], params[1], params[2], params[3]);
 		renderer.post_stage_color4_set(0, FOG_COLOR[0], FOG_COLOR[1], FOG_COLOR[2], noise);
 		//基准高度走逐级 extra 第一分量（未设置时为 0，与引入前逐字节一致）
-		renderer.post_stage_extra_set(0, base_height, 0.0f, 0.0f, 0.0f);
+		//第二分量为抖动种子、第三分量为空间降噪强度（第四百二十轮；均 0 = 关闭）
+		renderer.post_stage_extra_set(0, base_height, seed, denoise, 0.0f);
 		renderer.render_target_present_set(scene_target);
 		engine::Mesh_Handle plane = 0;
 		EXPECT_TRUE(renderer.mesh_load(plane, quad_data()));
@@ -522,4 +525,41 @@ TEST_F(Renderer_Post_Chain_Test, 雾基准高度可配)
 	EXPECT_GT(changed, 20u) << "基准高度未改变画面";
 	//基准抬高后低空雾更浓 → 整帧应更接近雾色（亮度下降或上升取决于雾色，这里以差异为准）
 	EXPECT_NE(luma_ground, luma_raised);
+}
+
+/*
+雾时域抖动与空间降噪（第四百二十轮；方向三候选 E 路径 B）
+口径：同一场景与参数（密度 0.3、高度衰减 1.0、最大距离 20、12 步），只改逐级 extra 的抖动种子与降噪强度。
+1. 种子 0（关闭）：两次渲染逐字节一致（与引入抖动前行为一致）；
+2. 种子 3：相对种子 0 差异像素 > 100（相位抖动确实改变了采样位置）；
+3. 种子 3 ＋ 降噪 1.0：相对「种子 3 无降噪」差异像素 > 50（互补相位二次采样生效）。
+*/
+TEST_F(Renderer_Post_Chain_Test, 雾时域抖动与空间降噪)
+{
+	engine::Renderer probe;
+	ASSERT_TRUE(probe.init(hidden_config()));
+	if (!probe.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+
+	const std::array<float, 4> params = { 0.3f, 1.0f, 20.0f, 0.6f };
+	std::vector<uint8_t> off_a = render_fog(params, 0.0f, 0.0f, 0.0f, 0.0f);
+	std::vector<uint8_t> off_b = render_fog(params, 0.0f, 0.0f, 0.0f, 0.0f);
+	//种子 0 时抖动整段关闭：两次渲染必须逐字节一致
+	int off_diff = max_channel_diff(off_a, off_b);
+	RecordProperty("fog_jitter_off_diff", off_diff);
+	EXPECT_EQ(off_diff, 0) << "抖动关闭时画面不稳定（最大通道差 " << off_diff << "）";
+
+	//抖动开启（单相位）
+	std::vector<uint8_t> jittered = render_fog(params, 0.0f, 0.0f, 3.0f, 0.0f);
+	uint32_t jitter_changed = differing_pixels(off_a, jittered, 2);
+	RecordProperty("fog_jitter_changed_pixels", static_cast<int>(jitter_changed));
+	std::cout << "[雾抖动] 差异像素=" << jitter_changed << std::endl;
+	EXPECT_GT(jitter_changed, 100u) << "抖动未改变采样相位";
+
+	//抖动 ＋ 空间降噪（互补相位平均）
+	std::vector<uint8_t> denoised = render_fog(params, 0.0f, 0.0f, 3.0f, 1.0f);
+	uint32_t denoise_changed = differing_pixels(jittered, denoised, 2);
+	RecordProperty("fog_denoise_changed_pixels", static_cast<int>(denoise_changed));
+	std::cout << "[雾降噪] 差异像素=" << denoise_changed << std::endl;
+	EXPECT_GT(denoise_changed, 50u) << "空间降噪未生效";
 }
