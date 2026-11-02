@@ -886,6 +886,116 @@ TEST(Renderer_Level_Test, 八盏点光边界)
 }
 
 /*
+随机关卡往返（第四百四十轮 · 属性用例）
+口径：固定种子生成 100 份关卡（随机相机 / 光照 / 雾 / 0–2 点光 / 0–1 聚光），写出再读回后全字段逐位相等。
+*/
+TEST(Renderer_Level_Test, 随机关卡往返逐位一致)
+{
+	//线性同余发生器（固定种子，结果可复现）
+	uint32_t seed = 20261102u;
+	auto next_unit = [&seed]()
+	{
+		seed = seed * 1664525u + 1013904223u;
+		return static_cast<float>((seed >> 8) & 0xFFFFFFu) / 16777215.0f;
+	};
+	//区间随机
+	auto next_range = [&next_unit](float low, float high)
+	{
+		return low + (high - low) * next_unit();
+	};
+
+	for (uint32_t 轮次 = 0; 轮次 < 100; ++轮次)
+	{
+		engine::Level_Data 随机;
+		随机.name = "随机关卡" + std::to_string(轮次);
+		//相机（合法域内随机）
+		随机.camera.position[0] = next_range(-50.0f, 50.0f);
+		随机.camera.position[1] = next_range(-10.0f, 30.0f);
+		随机.camera.position[2] = next_range(-200.0f, 50.0f);
+		随机.camera.target[0] = next_range(-20.0f, 20.0f);
+		随机.camera.target[1] = next_range(-10.0f, 10.0f);
+		随机.camera.target[2] = next_range(-200.0f, 0.0f);
+		随机.camera.fov = next_range(0.2f, 2.8f);
+		随机.camera.near_plane = next_range(0.01f, 1.0f);
+		随机.camera.far_plane = next_range(20.0f, 2000.0f);
+		随机.camera.ortho = (next_unit() < 0.3f);
+		随机.camera.ortho_height = next_range(0.5f, 50.0f);
+		随机.camera.aspect = next_range(0.0f, 3.0f);
+		随机.camera.clear_color[0] = next_unit();
+		随机.camera.clear_color[1] = next_unit();
+		随机.camera.clear_color[2] = next_unit();
+		随机.camera.clear_color[3] = next_unit();
+		//光照
+		随机.light.direction[0] = next_range(-1.0f, 1.0f);
+		随机.light.direction[1] = next_range(-1.0f, 1.0f);
+		随机.light.direction[2] = next_range(-1.0f, 1.0f);
+		随机.light.color[0] = next_unit();
+		随机.light.color[1] = next_unit();
+		随机.light.color[2] = next_unit();
+		随机.light.intensity = next_range(0.0f, 8.0f);
+		随机.light.ambient = next_range(0.0f, 1.0f);
+		随机.light.specular_intensity = next_range(0.0f, 2.0f);
+		随机.light.specular_shininess = next_range(1.0f, 1000.0f);
+		随机.light.attenuation_mode = static_cast<uint32_t>(next_range(0.0f, 2.99f));
+		随机.light.shadow_enabled = (next_unit() < 0.5f) ? 1 : 0;
+		随机.light.pbr_enabled = (next_unit() < 0.5f) ? 1 : 0;
+		随机.light.toon_steps = static_cast<uint32_t>(next_range(0.0f, 8.99f));
+		//点光 0..2 盏
+		随机.light.point_count = static_cast<uint32_t>(next_range(0.0f, 2.99f));
+		for (uint32_t index = 0; index < 随机.light.point_count; ++index)
+		{
+			随机.light.point_position[index][0] = next_range(-20.0f, 20.0f);
+			随机.light.point_position[index][1] = next_range(0.0f, 20.0f);
+			随机.light.point_position[index][2] = next_range(-50.0f, 0.0f);
+			随机.light.point_color[index][0] = next_unit();
+			随机.light.point_color[index][1] = next_unit();
+			随机.light.point_color[index][2] = next_unit();
+			随机.light.point_radius[index] = next_range(0.5f, 30.0f);
+			随机.light.point_intensity[index] = next_range(0.0f, 5.0f);
+			随机.light.point_attenuation[index] = static_cast<uint32_t>(next_range(0.0f, 2.99f));
+			随机.light.point_specular[index] = next_range(0.0f, 1.0f);
+			随机.light.point_shininess[index] = next_range(0.0f, 500.0f);
+		}
+		//聚光 0..1 盏
+		随机.light.spot_count = (next_unit() < 0.5f) ? 1u : 0u;
+		if (随机.light.spot_count == 1u)
+		{
+			for (uint32_t axis = 0; axis < 3; ++axis)
+			{
+				随机.light.spot_position[0][axis] = next_range(-20.0f, 20.0f);
+				随机.light.spot_direction[0][axis] = next_range(-1.0f, 1.0f);
+				随机.light.spot_color[0][axis] = next_unit();
+			}
+			随机.light.spot_radius[0] = next_range(1.0f, 40.0f);
+			随机.light.spot_intensity[0] = next_range(0.0f, 6.0f);
+			随机.light.spot_inner_deg[0] = next_range(1.0f, 30.0f);
+			随机.light.spot_outer_deg[0] = next_range(31.0f, 90.0f);
+			随机.light.spot_attenuation[0] = static_cast<uint32_t>(next_range(0.0f, 2.99f));
+			随机.light.spot_specular[0] = next_range(0.0f, 1.0f);
+			随机.light.spot_shininess[0] = next_range(0.0f, 500.0f);
+		}
+		//雾
+		随机.fog.color[0] = next_unit();
+		随机.fog.color[1] = next_unit();
+		随机.fog.color[2] = next_unit();
+		随机.fog.density = next_range(0.0f, 1.0f);
+		随机.fog.start = next_range(0.0f, 5.0f);
+		随机.fog.end = next_range(6.0f, 500.0f);
+		随机.fog.mode = static_cast<uint32_t>(next_range(0.0f, 1.99f));
+		随机.fog.height_falloff = next_range(0.0f, 1.0f);
+		//固定资产段落
+		随机.asset_lines.push_back("mesh 甲 box.obj");
+		随机.asset_lines.push_back("place 甲 0 0 0 1 1 1 0 30 0");
+
+		ASSERT_TRUE(engine::level_text_write(随机, level_utf8("随机.level")));
+		engine::Level_Data 读回;
+		ASSERT_TRUE(engine::level_text_read(level_utf8("随机.level"), 读回)) << "第 " << 轮次 << " 份随机关卡读取失败";
+		expect_level_equal(随机, 读回);
+	}
+	std::cout << "[关卡] 随机往返 100 份完成" << std::endl;
+}
+
+/*
 关卡大量摆放（第四百三十四轮 · 稳定性）
 口径：同一网格 / 材质摆放 20 个对象（含旋转）；对象数、句柄复用与绘制登记量正确。
 */
