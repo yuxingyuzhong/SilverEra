@@ -1725,6 +1725,100 @@ TEST(Renderer_Level_Test, 八盏聚光软度开销)
 }
 
 /*
+关卡偏置自校准开关往返（第五百二十九轮）
+口径：`light spot_shadow_bias_auto 1` 读回为 1、写出再读回一致；缺省为 0；
+非法值（2 / 非数字 / 缺值）整份拒绝。
+*/
+TEST(Renderer_Level_Test, 关卡偏置自校准开关往返)
+{
+	write_text(level_dir() / L"偏置自校准开关.level",
+		"level 偏置自校准开关\n"
+		"light spot_shadow_bias_auto 1\n");
+
+	engine::Level_Data 读取;
+	ASSERT_TRUE(engine::level_text_read(level_utf8("偏置自校准开关.level"), 读取));
+	EXPECT_EQ(读取.light.spot_shadow_bias_auto, 1);
+
+	//写出再读回一致
+	ASSERT_TRUE(engine::level_text_write(读取, level_utf8("偏置自校准开关_回写.level")));
+	engine::Level_Data 回读;
+	ASSERT_TRUE(engine::level_text_read(level_utf8("偏置自校准开关_回写.level"), 回读));
+	EXPECT_EQ(回读.light.spot_shadow_bias_auto, 1);
+
+	//缺省为 0
+	write_text(level_dir() / L"偏置自校准缺省.level", "level 偏置自校准缺省\n");
+	engine::Level_Data 缺省;
+	ASSERT_TRUE(engine::level_text_read(level_utf8("偏置自校准缺省.level"), 缺省));
+	EXPECT_EQ(缺省.light.spot_shadow_bias_auto, 0);
+
+	//非法值整份拒绝
+	const char* 非法值[3] = { "2", "x", "" };
+	for (const char* 值 : 非法值)
+	{
+		std::string 文本 = std::string("level 偏置自校准非法\nlight spot_shadow_bias_auto ") + 值 + "\n";
+		write_text(level_dir() / L"偏置自校准非法.level", 文本);
+		engine::Level_Data 拒绝;
+		EXPECT_FALSE(engine::level_text_read(level_utf8("偏置自校准非法.level"), 拒绝))
+			<< "非法值未拒绝：" << 值;
+	}
+}
+
+/*
+关卡偏置自校准生效（第五百二十九轮）
+口径：八盏关卡追加 `light spot_shadow_bias_auto 1` 后装载并应用，门面为真、
+逐瓦片偏置按 9 / 8.9 ≈ 0.010112（八盏半径均为 9）；关闭后恢复全局 0.010。
+*/
+TEST(Renderer_Level_Test, 关卡偏置自校准生效)
+{
+	write_cube_assets();
+	write_eight_spot_level();
+	//读取原关卡文本并追加自校准行（独立文件，避免影响其它八盏用例）
+	std::string 原文;
+	{
+		std::ifstream 输入(level_dir() / L"八盏聚光.level", std::ios::binary);
+		std::string 行;
+		while (std::getline(输入, 行))
+			原文 += 行 + "\n";
+	}
+	write_text(level_dir() / L"八盏聚光校准.level", 原文 + "light spot_shadow_bias_auto 1\n");
+
+	engine::Renderer_Config config;
+	config.width = LEVEL_WIDTH;
+	config.height = LEVEL_HEIGHT;
+	config.hidden = true;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(config));
+
+	engine::Level_Data 关卡;
+	engine::Asset_Scene 场景;
+	ASSERT_TRUE(renderer.level_load(关卡, 场景, level_utf8("八盏聚光校准.level"), false));
+	EXPECT_EQ(关卡.light.spot_shadow_bias_auto, 1);
+
+	//应用场景后门面应为开启
+	engine::Light_Data 灯光 = 关卡.light;
+		灯光.spot_shadow_enabled = 1;
+		灯光.spot_shadow_all = 1;
+	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
+	EXPECT_TRUE(renderer.spot_shadow_bias_auto());
+	EXPECT_EQ(renderer.scene_draw(场景), 9u);
+	ASSERT_TRUE(renderer.frame_render());
+	float 偏置[8] = {};
+	renderer.spot_shadow_bias_tiles_get(偏置);
+	for (std::size_t index = 0; index < 8; ++index)
+		EXPECT_NEAR(偏置[index], 0.010f * 9.0f / 8.9f, 1e-4f) << "瓦片 " << index;
+
+	//关闭自校准：恢复全局 0.010
+	renderer.spot_shadow_bias_auto_set(false);
+	EXPECT_FALSE(renderer.spot_shadow_bias_auto());
+	EXPECT_EQ(renderer.scene_draw(场景), 9u);
+	ASSERT_TRUE(renderer.frame_render());
+	renderer.spot_shadow_bias_tiles_get(偏置);
+	for (std::size_t index = 0; index < 8; ++index)
+		EXPECT_NEAR(偏置[index], 0.010f, 1e-5f) << "瓦片 " << index;
+	renderer.level_unload(场景);
+}
+
+/*
 聚光灯阴影开关文本往返（第四百七十五轮）
 口径：`light spot_shadow 0/1` 结构化保存；写出再读回一致。
 */
