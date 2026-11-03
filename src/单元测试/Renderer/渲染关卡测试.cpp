@@ -261,6 +261,28 @@ namespace
 		ASSERT_EQ(left.asset_lines.size(), right.asset_lines.size());
 		for (std::size_t index = 0; index < left.asset_lines.size(); ++index)
 			EXPECT_EQ(left.asset_lines[index], right.asset_lines[index]) << "资产行不一致";
+
+		//材质实例段落（第五百八十三轮）
+		ASSERT_EQ(left.materials.size(), right.materials.size());
+		for (std::size_t index = 0; index < left.materials.size(); ++index)
+		{
+			const engine::Level_Material& 左 = left.materials[index];
+			const engine::Level_Material& 右 = right.materials[index];
+			EXPECT_EQ(左.实例名, 右.实例名);
+			EXPECT_EQ(左.模板, 右.模板);
+			EXPECT_EQ(左.use_tint, 右.use_tint);
+			EXPECT_EQ(左.use_emissive, 右.use_emissive);
+			EXPECT_EQ(左.use_toon, 右.use_toon);
+			EXPECT_EQ(左.use_pbr, 右.use_pbr);
+			EXPECT_TRUE(bit_equal(左.emissive, 右.emissive));
+			EXPECT_TRUE(bit_equal(左.toon_steps, 右.toon_steps));
+			EXPECT_TRUE(bit_equal(左.toon_rim, 右.toon_rim));
+			EXPECT_TRUE(bit_equal(左.toon_specular, 右.toon_specular));
+			EXPECT_TRUE(bit_equal(左.pbr_roughness, 右.pbr_roughness));
+			EXPECT_TRUE(bit_equal(左.pbr_metallic, 右.pbr_metallic));
+			for (std::size_t channel = 0; channel < 4; ++channel)
+				EXPECT_TRUE(bit_equal(左.tint[channel], 右.tint[channel])) << "实例底色不一致";
+		}
 	}
 
 	//构造一份「全字段非默认」的关卡
@@ -2990,6 +3012,36 @@ TEST(Renderer_Level_Test, 随机关卡往返逐位一致)
 		随机.fog.end = next_range(6.0f, 500.0f);
 		随机.fog.mode = static_cast<uint32_t>(next_range(0.0f, 1.99f));
 		随机.fog.height_falloff = next_range(0.0f, 1.0f);
+		//材质实例 0..2 条（随机覆盖项；第五百八十三轮）
+		const uint32_t 实例数 = static_cast<uint32_t>(next_range(0.0f, 2.99f));
+		for (uint32_t index = 0; index < 实例数; ++index)
+		{
+			engine::Level_Material material;
+			material.实例名 = "实例" + std::to_string(index);
+			material.模板 = "甲";
+			material.use_tint = (next_unit() < 0.5f);
+			//未启用项保持默认值（写出不落、读回即默认，逐位比较才成立）
+			if (material.use_tint)
+				for (uint32_t channel = 0; channel < 4; ++channel)
+					material.tint[channel] = next_unit();
+			material.use_emissive = (next_unit() < 0.5f);
+			if (material.use_emissive)
+				material.emissive = next_unit();
+			material.use_toon = (next_unit() < 0.5f);
+			if (material.use_toon)
+			{
+				material.toon_steps = static_cast<float>(static_cast<uint32_t>(next_range(0.0f, 8.99f)));
+				material.toon_rim = next_unit();
+				material.toon_specular = next_unit();
+			}
+			material.use_pbr = (next_unit() < 0.5f);
+			if (material.use_pbr)
+			{
+				material.pbr_roughness = next_range(0.06f, 4.0f);
+				material.pbr_metallic = next_unit();
+			}
+			随机.materials.push_back(material);
+		}
 		//固定资产段落
 		随机.asset_lines.push_back("mesh 甲 box.obj");
 		随机.asset_lines.push_back("place 甲 0 0 0 1 1 1 0 30 0");
