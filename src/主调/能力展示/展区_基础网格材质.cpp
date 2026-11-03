@@ -40,10 +40,23 @@ namespace engine
 			const float 角度 = 展示::圆周率 * 2.0f * static_cast<float>(序号) / static_cast<float>(个数);
 			const float x = -14.0f + std::cos(角度) * 1.85f;
 			const float z = -10.0f + std::sin(角度) * 1.85f;
+			/*
+			二维图元（平面 5 / 圆盘 6 / 三角 9）单独处理
+			三者天生没有厚度：沿用统一朝向时侧看只剩一条薄片，背面还会被剔除。
+			故改用「法线朝环外」的绕 Y 朝向 ＋ 双面材质，任意绕行角度都能看到完整面。
+			*/
+			const bool 二维图元 = (序号 == 5u || 序号 == 6u || 序号 == 9u);
+			if (二维图元 && 资源.双面材质 != 0)
+				渲染器.material_bind_set(资源.双面材质);
 			渲染器.material_tint_set(色调表[序号][0], 色调表[序号][1], 色调表[序号][2], 1.0f);
-			//竖立图元统一放在圆台上方
-			const std::array<float, 16> 矩阵 = 展示::变换(x, 0.95f, z, 0.5f);
+			//法线朝外所需偏航角：+Z 法线经 R_y(θ) 后为 (sinθ, 0, cosθ)，令其等于 (cos角度, 0, sin角度)
+			const float 偏航 = 展示::圆周率 * 0.5f - 角度;
+			const std::array<float, 16> 矩阵 = 二维图元
+				? 展示::绕Y变换(x, 0.95f, z, 偏航, 0.5f)
+				: 展示::变换(x, 0.95f, z, 0.5f);
 			(void)渲染器.mesh_draw(网格[序号], 矩阵.data());
+			if (二维图元 && 资源.双面材质 != 0)
+				渲染器.material_bind_set(0);
 		}
 		渲染器.material_tint_clear();
 	}

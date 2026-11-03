@@ -245,12 +245,21 @@ namespace engine
 		*/
 		Material_Data 卡通甲描述;
 		卡通甲描述.toon_override = true;
-		卡通甲描述.toon_steps = 1.0f;
+		/*
+		二值化改为三档
+		单档二值化把球面直接切成「深蓝暗面 ＋ 浅色亮面」两块，边界像被削掉一角（观感上是缺面）；
+		改三档后仍有明显色阶，但过渡不再是单一切口。
+		*/
+		卡通甲描述.toon_steps = 3.0f;
 		卡通甲描述.tint_override = true;
 		卡通甲描述.tint[0] = 1.0f;
 		卡通甲描述.tint[1] = 0.62f;
 		卡通甲描述.tint[2] = 0.45f;
 		卡通甲描述.tint[3] = 1.0f;
+		//暗部色调提亮（旧口径下球面暗部只剩深蓝大块，亮部一块硬边暖色，观感像缺面）
+		卡通甲描述.toon_shadow_tint[0] = 0.66f;
+		卡通甲描述.toon_shadow_tint[1] = 0.70f;
+		卡通甲描述.toon_shadow_tint[2] = 0.88f;
 		if (!渲染器.material_load(资源.卡通材质甲, 卡通甲描述))
 			return false;
 		Material_Data 卡通乙描述;
@@ -262,6 +271,9 @@ namespace engine
 		卡通乙描述.tint[1] = 0.85f;
 		卡通乙描述.tint[2] = 1.0f;
 		卡通乙描述.tint[3] = 1.0f;
+		卡通乙描述.toon_shadow_tint[0] = 0.66f;
+		卡通乙描述.toon_shadow_tint[1] = 0.70f;
+		卡通乙描述.toon_shadow_tint[2] = 0.88f;
 		if (!渲染器.material_load(资源.卡通材质乙, 卡通乙描述))
 			return false;
 		Material_Data 卡通丙描述;
@@ -273,6 +285,9 @@ namespace engine
 		卡通丙描述.tint[1] = 0.85f;
 		卡通丙描述.tint[2] = 0.45f;
 		卡通丙描述.tint[3] = 1.0f;
+		卡通丙描述.toon_shadow_tint[0] = 0.66f;
+		卡通丙描述.toon_shadow_tint[1] = 0.70f;
+		卡通丙描述.toon_shadow_tint[2] = 0.88f;
 		if (!渲染器.material_load(资源.卡通材质丙, 卡通丙描述))
 			return false;
 
@@ -292,6 +307,15 @@ namespace engine
 		分段乙描述.tint[2] = 1.0f;
 		分段乙描述.tint[3] = 1.0f;
 		if (!渲染器.material_load(资源.分段材质乙, 分段乙描述))
+			return false;
+
+		/*
+		双面材质（展区① 的平面 / 圆盘 / 三角）
+		关闭背面剔除后，二维图元从任意方向都能看到完整面；色调仍由逐项 material_tint_set 下发。
+		*/
+		Material_Data 双面描述;
+		双面描述.double_sided = true;
+		if (!渲染器.material_load(资源.双面材质, 双面描述))
 			return false;
 
 		//—— 中间目标（与交换链同尺寸，后处理 1:1 取源） ——
@@ -363,6 +387,8 @@ namespace engine
 			渲染器.material_unload(资源.分段材质甲);
 		if (资源.分段材质乙 != 0)
 			渲染器.material_unload(资源.分段材质乙);
+		if (资源.双面材质 != 0)
+			渲染器.material_unload(资源.双面材质);
 		资源.贴图材质 = 0;
 		资源.光晕材质 = 0;
 		资源.清漆材质 = 0;
@@ -374,6 +400,7 @@ namespace engine
 		资源.卡通材质丙 = 0;
 		资源.分段材质甲 = 0;
 		资源.分段材质乙 = 0;
+		资源.双面材质 = 0;
 
 		//字体与纹理
 		if (资源.字体 != 0)
