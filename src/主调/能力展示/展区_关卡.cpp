@@ -9,9 +9,9 @@
 */
 #include "src/主调/能力展示/展区公共.h"
 //应用层装配桥（关卡文本 → 渲染资源 → 绘制登记）
-#include "src/主调/能力展示/关卡装配桥.h"
+#include "Engine/EngineSystem/src/scene/装配/场景装配.h"
 
-#include "Application/Renderer/src/render/Renderer/渲染器.h"
+#include "Engine/EngineSystem/src/core/Renderer/src/render/Renderer/渲染器.h"
 
 #include <cstdint>
 #include <filesystem>

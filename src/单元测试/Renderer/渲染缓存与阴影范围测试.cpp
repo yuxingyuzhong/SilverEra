@@ -1,4 +1,4 @@
-﻿/*
+/*
 渲染层管线缓存与阴影视锥测试（第一百零六～一百零七轮）
 覆盖：管线缓存文件写入 / 载入后仍可渲染；阴影视锥范围默认值、设置与非法值忽略。
 说明：本用例只按渲染层公共面编写，不涉及 Vulkan 细节。
@@ -10,7 +10,7 @@
 #include <vector>
 
 //获取渲染器门面与网格数据
-#include "Application/Renderer/src/render/Renderer/渲染器.h"
+#include "Engine/EngineSystem/src/core/Renderer/src/render/Renderer/渲染器.h"
 
 namespace
 {

@@ -5,7 +5,7 @@
 #include "渲染后处理链测试辅助.h"
 
 //UI 通道（后处理链「UI 后置」用例需要向帧链路挂接绘制回调）
-#include "Application/Renderer/src/render/Renderer/渲染器_UI通道.h"
+#include "Engine/EngineSystem/src/core/Renderer/src/render/Renderer/渲染器_UI通道.h"
 
 TEST_F(Renderer_Post_Chain_Test, 未初始化设置无副作用)
 {

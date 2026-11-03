@@ -10,7 +10,7 @@
 #include <string>
 
 //网格数据结构（文字 / 场景网格共用；Vulkan-free）
-#include "Application/Renderer/src/render/Mesh/网格数据.h"
+#include "Engine/EngineSystem/src/core/Renderer/src/render/Mesh/网格数据.h"
 //资源台账与展示状态（本目录内的统一上下文）
 #include "src/主调/能力展示/能力展示场景.h"
 

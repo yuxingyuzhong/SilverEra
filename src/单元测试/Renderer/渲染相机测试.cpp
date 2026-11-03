@@ -1,4 +1,4 @@
-﻿/*
+/*
 渲染相机测试（L2 隐藏窗口）
 覆盖：相机位置 / 注视点 / 视场角 / 近远平面设置后推进帧不报错；极端视场角不崩溃；
       未初始化时设置相机为安全无操作。
@@ -6,7 +6,7 @@
 #include <gtest/gtest.h>
 
 //获取渲染器门面与配置
-#include "Application/Renderer/src/render/Renderer/渲染器.h"
+#include "Engine/EngineSystem/src/core/Renderer/src/render/Renderer/渲染器.h"
 
 namespace
 {

@@ -73,7 +73,7 @@ namespace
 	}
 
 	//相机组逐位比对
-	void expect_camera_equal(const engine::Level_Camera& left, const engine::Level_Camera& right)
+	void expect_camera_equal(const engine::Camera_Data& left, const engine::Camera_Data& right)
 	{
 		expect_floats_equal(left.position, right.position, 3, "相机位置");
 		expect_floats_equal(left.target, right.target, 3, "相机注视点");
@@ -89,7 +89,7 @@ namespace
 	}
 
 	//雾组逐位比对
-	void expect_fog_equal(const engine::Level_Fog& left, const engine::Level_Fog& right)
+	void expect_fog_equal(const engine::Fog_Data& left, const engine::Fog_Data& right)
 	{
 		expect_floats_equal(left.color, right.color, 3, "雾色");
 		expect_floats_equal(&left.density, &right.density, 1, "雾密度");
@@ -99,7 +99,7 @@ namespace
 	}
 
 	//光照组逐位比对（含全部有效光源槽位）
-	void expect_light_equal(const engine::Level_Light& left, const engine::Level_Light& right)
+	void expect_light_equal(const engine::Light_Data& left, const engine::Light_Data& right)
 	{
 		expect_floats_equal(left.direction, right.direction, 3, "光方向");
 		expect_floats_equal(left.color, right.color, 3, "光颜色");

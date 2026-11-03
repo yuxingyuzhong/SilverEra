@@ -1,4 +1,4 @@
-﻿/*
+/*
 逐绘制项纹理测试（第一百七十四轮，L2 隐藏窗口 + 像素回读）
 覆盖：同一帧内不同绘制项各自采样自己的反照率纹理（同帧多纹理）、
       静态合批不跨纹理合并、文字绘制不覆盖场景纹理（文字图集与场景纹理共存）。
@@ -22,7 +22,7 @@
 #include <vector>
 
 //获取渲染器门面与网格数据
-#include "Application/Renderer/src/render/Renderer/渲染器.h"
+#include "Engine/EngineSystem/src/core/Renderer/src/render/Renderer/渲染器.h"
 
 namespace
 {

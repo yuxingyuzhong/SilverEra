@@ -2,9 +2,9 @@
 #include "src/主调/能力展示/展区公共.h"
 
 //渲染器门面（Vulkan-free 公共面）
-#include "Application/Renderer/src/render/Renderer/渲染器.h"
+#include "Engine/EngineSystem/src/core/Renderer/src/render/Renderer/渲染器.h"
 //应用层粒子模拟宿主（模拟状态归应用层）
-#include "src/主调/能力展示/粒子模拟.h"
+#include "Engine/EngineSystem/src/effect/Particle/粒子模拟.h"
 
 #include <cmath>
 #include <cstdint>

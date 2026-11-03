@@ -1,4 +1,4 @@
-﻿/*
+/*
 渲染材质测试（L2 隐藏窗口 + 像素回读）
 覆盖：未初始化登记材质失败；登记 / 卸载材质幂等与句柄槽复用；无效句柄回落默认；
       非不透明混合档材质自动登记具名管线；
@@ -18,7 +18,7 @@
 #include <vector>
 
 //获取渲染器门面（含材质 / 混合档枚举）与网格数据
-#include "Application/Renderer/src/render/Renderer/渲染器.h"
+#include "Engine/EngineSystem/src/core/Renderer/src/render/Renderer/渲染器.h"
 
 namespace
 {

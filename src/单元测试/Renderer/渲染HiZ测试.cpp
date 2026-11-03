@@ -1,4 +1,4 @@
-﻿/*
+/*
 渲染 Hi-Z 测试（第二百五十三轮）
 覆盖：资源惰性构建（默认关闭不分配）、开关可反复切换且资源保留、金字塔级数 / 逐级尺寸、
       计算路径强制关闭时的能力降级，以及开关切换前后出帧与绘制实例数守恒。
@@ -13,7 +13,7 @@
 #include <vector>
 
 //获取渲染器门面
-#include "Application/Renderer/src/render/Renderer/渲染器.h"
+#include "Engine/EngineSystem/src/core/Renderer/src/render/Renderer/渲染器.h"
 
 namespace
 {

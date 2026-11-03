@@ -13,7 +13,7 @@
 #include <vector>
 
 //遮挡测试公开面（Vulkan-free）
-#include "Application/Renderer/src/render/HiZ/遮挡测试.h"
+#include "Engine/EngineSystem/src/core/Renderer/src/render/HiZ/遮挡测试.h"
 
 namespace
 {

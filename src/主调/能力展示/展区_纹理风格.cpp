@@ -1,7 +1,7 @@
 //展区⑥⑦⑧：纹理与动态、卡通渲染、Cluster 灯墙
 #include "src/主调/能力展示/展区公共.h"
 
-#include "Application/Renderer/src/render/Renderer/渲染器.h"
+#include "Engine/EngineSystem/src/core/Renderer/src/render/Renderer/渲染器.h"
 
 #include <cmath>
 #include <vector>

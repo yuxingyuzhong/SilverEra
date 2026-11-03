@@ -2,8 +2,8 @@
 #include "src/主调/图形操作界面.h"
 
 //渲染器门面与 UI 通道（含 Vulkan / SDL3 类型；相关包含根由渲染层对外面传递）
-#include "Application/Renderer/src/render/Renderer/渲染器.h"
-#include "Application/Renderer/src/render/Renderer/渲染器_UI通道.h"
+#include "Engine/EngineSystem/src/core/Renderer/src/render/Renderer/渲染器.h"
+#include "Engine/EngineSystem/src/core/Renderer/src/render/Renderer/渲染器_UI通道.h"
 
 //测试运行器与测试界面
 #include "src/主调/测试运行器.h"

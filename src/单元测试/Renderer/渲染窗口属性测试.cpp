@@ -1,11 +1,11 @@
-﻿/*
+/*
 渲染层窗口属性测试（第一百一十一～一百一十二轮）
 覆盖：全屏切换与查询（后端拒绝时仅验证状态一致）、显示缩放比例查询。
 */
 #include <gtest/gtest.h>
 
 //获取渲染器门面
-#include "Application/Renderer/src/render/Renderer/渲染器.h"
+#include "Engine/EngineSystem/src/core/Renderer/src/render/Renderer/渲染器.h"
 
 namespace
 {

@@ -1,4 +1,4 @@
-﻿/*
+/*
 渲染网格与纹理测试（L2 隐藏窗口）
 覆盖：未初始化守卫、三角形网格加载与绘制、同一帧多网格绘制、无效句柄绘制被拒、
       卸载后绘制被拒与重复卸载幂等、纹理加载（RGBA8 字节流 / 程序生成棋盘格）、
@@ -13,7 +13,7 @@
 #include <vector>
 
 //获取渲染器门面与网格数据
-#include "Application/Renderer/src/render/Renderer/渲染器.h"
+#include "Engine/EngineSystem/src/core/Renderer/src/render/Renderer/渲染器.h"
 
 namespace
 {

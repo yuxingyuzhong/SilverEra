@@ -1,4 +1,4 @@
-﻿/*
+/*
 动态网格顶点更新测试（第一百五十九轮；L2 隐藏窗口 + 像素回读）
 覆盖：未初始化 / 无效句柄 / 区间越界 / 空指针拒绝；顶点整体平移后画面随之移动；
       局部包围盒只扩不缩（保守扩张）。
@@ -13,7 +13,7 @@
 #include <vector>
 
 //获取渲染器门面与网格数据
-#include "Application/Renderer/src/render/Renderer/渲染器.h"
+#include "Engine/EngineSystem/src/core/Renderer/src/render/Renderer/渲染器.h"
 
 namespace
 {

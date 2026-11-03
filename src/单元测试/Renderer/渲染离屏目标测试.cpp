@@ -1,4 +1,4 @@
-﻿/*
+/*
 渲染离屏目标测试（L2 隐藏窗口 + 像素回读）
 覆盖：渲染目标的创建 / 销毁；把场景渲染到离屏目标并回读目标内容；
       以目标作纹理采样做「离屏 → 采样合成」闭环；无效目标句柄回落交换链路径。
@@ -16,7 +16,7 @@
 #include <vector>
 
 //获取渲染器门面（含混合档枚举）与网格数据
-#include "Application/Renderer/src/render/Renderer/渲染器.h"
+#include "Engine/EngineSystem/src/core/Renderer/src/render/Renderer/渲染器.h"
 
 namespace
 {

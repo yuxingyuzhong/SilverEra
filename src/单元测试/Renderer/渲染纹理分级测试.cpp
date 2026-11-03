@@ -1,4 +1,4 @@
-﻿/*
+/*
 渲染纹理分级测试（第一百五十八 / 一百六十一轮拆分）
 覆盖：mip 级子区域更新（仅重建下游）、分级读回参数校验、分级尺寸查询。
 从「渲染网格纹理测试.cpp」拆出，保持断言不变（单文件 ≤ 800 行约束）。
@@ -9,7 +9,7 @@
 #include <vector>
 
 //获取渲染器门面与配置
-#include "Application/Renderer/src/render/Renderer/渲染器.h"
+#include "Engine/EngineSystem/src/core/Renderer/src/render/Renderer/渲染器.h"
 
 namespace
 {

@@ -2,7 +2,7 @@
 #include "src/主调/能力展示/展区公共.h"
 
 //渲染器门面（Vulkan-free 公共面；材质描述亦在其中）
-#include "Application/Renderer/src/render/Renderer/渲染器.h"
+#include "Engine/EngineSystem/src/core/Renderer/src/render/Renderer/渲染器.h"
 
 #include <cstdint>
 #include <vector>

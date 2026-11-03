@@ -2,7 +2,7 @@
 #include "src/主调/能力展示/能力展示场景.h"
 #include "src/主调/能力展示/展区公共.h"
 
-#include "Application/Renderer/src/render/Renderer/渲染器.h"
+#include "Engine/EngineSystem/src/core/Renderer/src/render/Renderer/渲染器.h"
 
 #include <cmath>
 #include <vector>

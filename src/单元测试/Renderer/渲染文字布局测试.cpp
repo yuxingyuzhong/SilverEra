@@ -18,7 +18,7 @@
 #include <vector>
 
 //获取渲染器门面（含文字布局语义类型）
-#include "Application/Renderer/src/render/Renderer/渲染器.h"
+#include "Engine/EngineSystem/src/core/Renderer/src/render/Renderer/渲染器.h"
 
 namespace
 {

@@ -17,7 +17,7 @@
 #include <cstdint>
 
 //场景数据（相机 / 光照 / 雾；Vulkan-free，供进区重登记使用）
-#include "Application/Renderer/src/render/Scene/场景数据.h"
+#include "Engine/EngineSystem/src/core/Renderer/src/render/Scene/场景数据.h"
 
 //引擎命名空间
 namespace engine

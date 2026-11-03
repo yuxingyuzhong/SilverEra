@@ -76,7 +76,7 @@ set(BYJY_RENDERER_LIB_PATH "" CACHE STRING
     "渲染层静态库路径（分号列表，单库 RendererCore）；留空则自动探测（Application/Renderer/out/build/x64-Debug/lib 优先）")
 
 byjy_jieru_xiaceng(
-    "${PROJECT_ROOT_DIR}/../Renderer/cmake/对外接口.cmake"
+    "${PROJECT_ROOT_DIR}/../../Engine/EngineSystem/src/core/Renderer/cmake/对外接口.cmake"
     "BYJY_RENDERER"
     "BYJY_RENDERER_LIB_PATH"
 )
@@ -363,13 +363,6 @@ else()
     #用例目标：编一次，EngineTests 取一份 .obj
     add_library(EngineTestObjects OBJECT)
     include("${PROJECT_ROOT_DIR}/源文件列表_EngineTestObjects.cmake")
-    # 应用层装配桥：渲染层职责下沉后，用例与展示层共用同一份「关卡/清单 → 渲染资源」桥接实现。
-    # 不进 GLOB 清单（位于 src/主调/，该目录不参与用例清单生成），此处显式加入；
-    # EngineTests 经 $<TARGET_OBJECTS:EngineTestObjects> 取得同一份对象文件。
-    target_sources(EngineTestObjects PRIVATE
-        "${PROJECT_ROOT_DIR}/src/主调/能力展示/关卡装配桥.cpp"
-        "${PROJECT_ROOT_DIR}/src/主调/能力展示/资产缓存桥.cpp"
-    )
 
     #包含根：下层快照 + 项目根（用例要 include "Application/Test/src/主调/测试选择模型.h"）
     target_include_directories(EngineTestObjects PUBLIC ${BYJY_APP_INC})

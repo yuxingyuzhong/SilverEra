@@ -7,7 +7,7 @@
 #include <gtest/gtest.h>
 
 //获取渲染器门面与配置
-#include "Application/Renderer/src/render/Renderer/渲染器.h"
+#include "Engine/EngineSystem/src/core/Renderer/src/render/Renderer/渲染器.h"
 
 namespace
 {

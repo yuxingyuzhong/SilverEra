@@ -18,9 +18,9 @@
 #include <limits>
 #include <vector>
 
-#include "Application/Renderer/src/render/Renderer/渲染器.h"
+#include "Engine/EngineSystem/src/core/Renderer/src/render/Renderer/渲染器.h"
 #include "src/主调/能力展示/能力展示场景.h"
-#include "src/主调/能力展示/粒子模拟.h"
+#include "Engine/EngineSystem/src/effect/Particle/粒子模拟.h"
 
 namespace
 {
