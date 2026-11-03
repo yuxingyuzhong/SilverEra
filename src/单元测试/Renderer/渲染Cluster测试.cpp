@@ -1366,7 +1366,7 @@ TEST(Renderer_Cluster_Test, 能力展示灯墙_簇灯光登记)
 	}
 	else
 	{
-		//不支持计算路径时只保留基础 7 盏
+		//不支持计算路径时只保留基础 7 盏（3 点光 ＋ 4 聚光）
 		EXPECT_EQ(renderer.point_light_count(), 7u);
 		EXPECT_EQ(renderer.light_record_count(), 9u);
 	}
