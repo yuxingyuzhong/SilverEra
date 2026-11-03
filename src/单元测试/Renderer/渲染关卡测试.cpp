@@ -1866,6 +1866,66 @@ TEST(Renderer_Level_Test, 八盏聚光阴影按需重绘)
 }
 
 /*
+八盏偏置自校准画面差异（第五百三十四轮）
+口径：八盏全投影时，开启偏置自校准后逐瓦片偏置均为 0.010 × 9 / 8.9 ≈ 0.010112（统计口径）；
+八盏同半径时该差异仅 1.1%，小画面不可见（差异只记录且上限 20 像素）；
+关闭后与默认图逐字节一致（默认关闭 → 画面与引入前一致）。
+*/
+TEST(Renderer_Level_Test, 八盏偏置自校准画面差异)
+{
+	write_cube_assets();
+	write_eight_spot_level();
+
+	engine::Renderer_Config config;
+	config.width = LEVEL_WIDTH;
+	config.height = LEVEL_HEIGHT;
+	config.hidden = true;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(config));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+
+	engine::Level_Data 关卡;
+	engine::Asset_Scene 场景;
+	ASSERT_TRUE(renderer.level_load(关卡, 场景, level_utf8("八盏聚光.level"), false));
+
+	engine::Light_Data 灯光 = 关卡.light;
+		灯光.spot_shadow_enabled = 1;
+		灯光.spot_shadow_all = 1;
+	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
+	EXPECT_EQ(renderer.scene_draw(场景), 9u);
+	std::vector<uint8_t> 默认图(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+	ASSERT_TRUE(renderer.frame_render(默认图.data(), static_cast<uint32_t>(默认图.size())));
+
+	//开启自校准：逐瓦片偏置 ≈ 0.010112，画面应有边界偏移差异
+	renderer.spot_shadow_bias_auto_set(true);
+	EXPECT_TRUE(renderer.spot_shadow_bias_auto());
+	EXPECT_EQ(renderer.scene_draw(场景), 9u);
+	std::vector<uint8_t> 校准图(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+	ASSERT_TRUE(renderer.frame_render(校准图.data(), static_cast<uint32_t>(校准图.size())));
+	float 偏置[8] = {};
+	renderer.spot_shadow_bias_tiles_get(偏置);
+	for (std::size_t index = 0; index < 8; ++index)
+		EXPECT_NEAR(偏置[index], 0.010f * 9.0f / 8.9f, 1e-4f) << "瓦片 " << index;
+	const uint32_t 校准差异 = changed_pixels(默认图, 校准图);
+	std::cout << "[关卡] 八盏偏置自校准画面差异 " << 校准差异 << std::endl;
+	/*
+	八盏半径均为 9 → 归一化偏置只变化 1.1%（0.010 → 0.010112），128×72 画面下不可见，
+	故此差异只记录、不作下限断言；统计口径由上面的逐瓦片偏置断言覆盖。
+	*/
+	EXPECT_LE(校准差异, 20u) << "开启偏置自校准改变了过多像素（应仅为边界抖动）";
+
+	//关闭自校准：与默认图逐字节一致
+	renderer.spot_shadow_bias_auto_set(false);
+	EXPECT_FALSE(renderer.spot_shadow_bias_auto());
+	EXPECT_EQ(renderer.scene_draw(场景), 9u);
+	std::vector<uint8_t> 复原图(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+	ASSERT_TRUE(renderer.frame_render(复原图.data(), static_cast<uint32_t>(复原图.size())));
+	EXPECT_EQ(changed_pixels(默认图, 复原图), 0u) << "关闭偏置自校准后画面未复原";
+	renderer.level_unload(场景);
+}
+
+/*
 聚光灯阴影开关文本往返（第四百七十五轮）
 口径：`light spot_shadow 0/1` 结构化保存；写出再读回一致。
 */
