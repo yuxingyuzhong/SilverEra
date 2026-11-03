@@ -22,6 +22,7 @@
 # =============================================================================
 #
 target_sources(EngineSystem PRIVATE
+    "src/assets/资产缓存.cpp"
     "src/effect/Effect/core/效应.cpp"
     "src/effect/Effect_Manager/core/效应管理器.cpp"
     "src/entity/Entity/core/实体.cpp"
@@ -33,15 +34,18 @@ target_sources(EngineSystem PRIVATE
     "src/scene/Level/core/关卡变换.cpp"
     "src/scene/Level/core/关卡文本.cpp"
     "src/scene/Manifest/core/场景清单解析.cpp"
+    "src/scene/装配/场景装配.cpp"
 )
 
 # 头文件不参与编译，只为让 IDE 建立文件索引；同样经 target_sources 列出，
 # 使头文件改名 / 迁移时 VS 也能改写引用
 target_sources(EngineSystem PRIVATE
+    "src/assets/资产缓存.h"
     "src/effect/Effect/局部命名空间使用.h"
     "src/effect/Effect/效应.h"
     "src/effect/Effect_Manager/局部命名空间使用.h"
     "src/effect/Effect_Manager/效应管理器.h"
+    "src/effect/Particle/粒子模拟.h"
     "src/entity/Entity/实体.h"
     "src/entity/Entity/局部命名空间使用.h"
     "src/entity/Entity_Manager/实体管理器.h"
@@ -54,4 +58,5 @@ target_sources(EngineSystem PRIVATE
     "src/scene/Level/局部命名空间使用.h"
     "src/scene/Manifest/场景清单.h"
     "src/scene/Manifest/局部命名空间使用.h"
+    "src/scene/装配/场景装配.h"
 )

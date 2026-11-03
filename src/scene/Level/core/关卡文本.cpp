@@ -212,7 +212,7 @@ namespace engine
 			//版本
 			if (level.version < 1)
 				return false;
-			const Level_Camera& camera = level.camera;
+			const Camera_Data& camera = level.camera;
 			if (!finite_many(camera.position, 3) || !finite_many(camera.target, 3)
 				|| !finite_many(camera.up, 3) || !finite_many(&camera.fov, 1)
 				|| !finite_many(&camera.near_plane, 1) || !finite_many(&camera.far_plane, 1)
@@ -220,7 +220,7 @@ namespace engine
 				|| !finite_many(camera.clear_color, 4))
 				return false;
 
-			const Level_Light& light = level.light;
+			const Light_Data& light = level.light;
 			if (!finite_many(light.direction, 3) || !finite_many(light.color, 3)
 				|| !finite_many(&light.intensity, 1) || !finite_many(&light.ambient, 1)
 				|| !finite_many(&light.specular_intensity, 2)
@@ -275,7 +275,7 @@ namespace engine
 					return false;
 			}
 
-			const Level_Fog& fog = level.fog;
+			const Fog_Data& fog = level.fog;
 			if (!finite_many(fog.color, 3) || !finite_many(&fog.density, 1)
 				|| !finite_many(&fog.start, 2) || !finite_many(&fog.height_falloff, 1))
 				return false;

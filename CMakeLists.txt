@@ -89,10 +89,25 @@ byjy_jieru_xiaceng(
 )
 
 # =============================================================================
+# 1.2 渲染层（已整体迁入本层：src/core/Renderer；独立仓库与 CMake 随迁保留）
+# =============================================================================
+# 渲染层在物理上已成为本层子目录，但仍以「先构建好的 RendererCore 静态库」接入：
+#   EngineCore → Renderer（GPU 执行） → EngineSystem（场景 / 装配 / 特效） → 应用层
+# 构建顺序因此为 EngineCore → Renderer → EngineSystem → Test。
+set(BYJY_RENDERER_LIB_PATH "" CACHE STRING
+    "迁入的渲染层静态库路径（分号列表，单库 RendererCore）；留空则自动探测（src/core/Renderer/out/build/x64-Debug/lib 优先）")
+
+byjy_jieru_xiaceng(
+    "${PROJECT_ROOT_DIR}/src/core/Renderer/cmake/对外接口.cmake"
+    "BYJY_RENDERER"
+    "BYJY_RENDERER_LIB_PATH"
+)
+
+# =============================================================================
 # 2. 源文件收集
 # =============================================================================
-# 当前收录 src/entity（实体 / 实体管理器）、src/prop（属性 / 属性槽分发器）、src/effect（效应 / 效应管理器）
-# 与 src/scene（关卡数据与文本读写：从渲染层下放的场景序列化职责）
+# 当前收录 src/entity（实体 / 实体管理器）、src/prop（属性 / 属性槽分发器）、src/effect（效应 / 效应管理器 / 粒子模拟宿主）
+# src/scene（关卡数据、文本读写、场景清单、场景装配）与 src/assets（资产缓存与异步）
 file(GLOB_RECURSE SYSTEM_SOURCES CONFIGURE_DEPENDS
     "${PROJECT_ROOT_DIR}/src/entity/*.cpp"
     "${PROJECT_ROOT_DIR}/src/entity/*.c"
@@ -102,6 +117,8 @@ file(GLOB_RECURSE SYSTEM_SOURCES CONFIGURE_DEPENDS
     "${PROJECT_ROOT_DIR}/src/effect/*.c"
     "${PROJECT_ROOT_DIR}/src/scene/*.cpp"
     "${PROJECT_ROOT_DIR}/src/scene/*.c"
+    "${PROJECT_ROOT_DIR}/src/assets/*.cpp"
+    "${PROJECT_ROOT_DIR}/src/assets/*.c"
 )
 
 # 导出编译数据库（供 IDE / 语言工具链读取本层包含路径与宏）
@@ -117,6 +134,8 @@ file(GLOB_RECURSE SYSTEM_HEADERS CONFIGURE_DEPENDS
     "${PROJECT_ROOT_DIR}/src/effect/*.hpp"
     "${PROJECT_ROOT_DIR}/src/scene/*.h"
     "${PROJECT_ROOT_DIR}/src/scene/*.hpp"
+    "${PROJECT_ROOT_DIR}/src/assets/*.h"
+    "${PROJECT_ROOT_DIR}/src/assets/*.hpp"
 )
 
 # 任务<1>：把被 GLOB 的目录登记为配置依赖 —— 目录内容变化（增删文件）时，
@@ -131,6 +150,7 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
     "${PROJECT_ROOT_DIR}/src/prop"
     "${PROJECT_ROOT_DIR}/src/effect"
     "${PROJECT_ROOT_DIR}/src/scene"
+    "${PROJECT_ROOT_DIR}/src/assets"
 )
 
 if(SYSTEM_SOURCES)
@@ -193,10 +213,13 @@ include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/对外接口.cmake")
 #       目标自身的 -I 恒在导入目标传递来的 /external:I 之前，快照因此必然先命中。
 # =============================================================================
 byjy_tou_kuaizhao_gen(BYJY_ENGINE_CORE_SNAPSHOT EngineCore)
+byjy_tou_kuaizhao_gen(BYJY_RENDERER_SNAPSHOT RendererCore)
 
-# 本层包含根：EngineCore 头快照在前、项目根在后
+# 本层包含根：EngineCore / Renderer 头快照在前、项目根在后
+#（渲染层已迁入本层，未来本层模块可直接引用其公共头，无需再经应用层桥接）
 set(BYJY_ENGINE_SYSTEM_INC
     "${BYJY_ENGINE_CORE_SNAPSHOT}"
+    "${BYJY_RENDERER_SNAPSHOT}"
     "${BYJY_PROJECT_ROOT}"
 )
 
@@ -220,6 +243,7 @@ endif()
 
 target_link_libraries(EngineSystem PUBLIC
     EngineCore
+    RendererCore
     ${BYJY_ENGINE_SYSTEM_OUT_LINK}
     ${BYJY_ENGINE_SYSTEM_OUT_SYS}
 )
@@ -255,7 +279,7 @@ add_custom_target(EngineSystemIncludeSnapshot ALL
     COMMAND "${CMAKE_COMMAND}"
         "-DSRC_ROOT=${BYJY_PROJECT_ROOT}"
         "-DDST_ROOT=${BYJY_ENGINE_SYSTEM_INCLUDE_SNAPSHOT_DIR}"
-        "-DMIRROR_DIRS=Engine/EngineSystem/common;Engine/EngineSystem/src"
+        "-DMIRROR_DIRS=Engine/EngineSystem/common;Engine/EngineSystem/src/scene;Engine/EngineSystem/src/assets;Engine/EngineSystem/src/effect;Engine/EngineSystem/src/entity;Engine/EngineSystem/src/prop;Engine/EngineSystem/src/gui"
         -P "${PROJECT_ROOT_DIR}/../EngineCore/cmake/导出头快照.cmake"
     COMMENT "导出 EngineSystem 对外头快照 → ${BYJY_ENGINE_SYSTEM_INCLUDE_SNAPSHOT_DIR}"
     VERBATIM
