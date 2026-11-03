@@ -274,7 +274,10 @@ namespace
 			EXPECT_EQ(左.use_emissive, 右.use_emissive);
 			EXPECT_EQ(左.use_toon, 右.use_toon);
 			EXPECT_EQ(左.use_pbr, 右.use_pbr);
+			EXPECT_EQ(左.use_clearcoat, 右.use_clearcoat);
 			EXPECT_TRUE(bit_equal(左.emissive, 右.emissive));
+			EXPECT_TRUE(bit_equal(左.clear_coat, 右.clear_coat));
+			EXPECT_TRUE(bit_equal(左.clear_coat_roughness, 右.clear_coat_roughness));
 			EXPECT_TRUE(bit_equal(左.toon_steps, 右.toon_steps));
 			EXPECT_TRUE(bit_equal(左.toon_rim, 右.toon_rim));
 			EXPECT_TRUE(bit_equal(左.toon_specular, 右.toon_specular));
@@ -1131,6 +1134,146 @@ TEST(Renderer_Level_Test, 关卡材质实例PBR生效)
 	const uint32_t 差异 = changed_pixels(帧甲, 帧乙);
 	std::cout << "[关卡] 实例 PBR 差异 " << 差异 << std::endl;
 	EXPECT_GT(差异, 20u) << "实例 pbr 覆盖未生效";
+	renderer.level_unload(场景乙);
+}
+
+/*
+材质实例清漆行往返（第五百九十四轮）
+口径：`material` 行可带 `clearcoat <强度> <粗糙度>`（pbr 之后）；结构化保存、写出再读回逐位一致。
+*/
+TEST(Renderer_Level_Test, 关卡材质实例清漆往返)
+{
+	const std::string text =
+		"level 清漆关卡\n"
+		"material 瓷甲 甲 clearcoat 0.8 0.05\n"
+		"material 素甲 甲\n";
+
+	write_text(level_dir() / L"实例清漆.level", text);
+
+	engine::Level_Data loaded;
+	ASSERT_TRUE(engine::level_text_read(level_utf8("实例清漆.level"), loaded));
+	ASSERT_EQ(loaded.materials.size(), 2u);
+	EXPECT_TRUE(loaded.materials[0].use_clearcoat);
+	EXPECT_TRUE(bit_equal(loaded.materials[0].clear_coat, 0.8f));
+	EXPECT_TRUE(bit_equal(loaded.materials[0].clear_coat_roughness, 0.05f));
+	EXPECT_FALSE(loaded.materials[1].use_clearcoat);
+
+	//写出再读回：清漆两项一致
+	ASSERT_TRUE(engine::level_text_write(loaded, level_utf8("实例清漆_回写.level")));
+	engine::Level_Data reread;
+	ASSERT_TRUE(engine::level_text_read(level_utf8("实例清漆_回写.level"), reread));
+	ASSERT_EQ(reread.materials.size(), 2u);
+	EXPECT_EQ(reread.materials[0].use_clearcoat, loaded.materials[0].use_clearcoat);
+	EXPECT_TRUE(bit_equal(reread.materials[0].clear_coat, loaded.materials[0].clear_coat));
+	EXPECT_TRUE(bit_equal(reread.materials[0].clear_coat_roughness, loaded.materials[0].clear_coat_roughness));
+}
+
+/*
+材质实例清漆非法（第五百九十四轮）
+口径：强度须落在 (0, 1]、粗糙度 [0.03, 1]；越界 / 缺字段 / 重复 / 顺序非法整份拒绝。
+*/
+TEST(Renderer_Level_Test, 关卡材质实例清漆非法)
+{
+	//强度下界等于 0（不含）→ 拒绝
+	write_text(level_dir() / L"清漆强度零.level",
+		"level 清漆强度零\nmaterial 甲 模板 clearcoat 0 0.2\n");
+	engine::Level_Data zero;
+	EXPECT_FALSE(engine::level_text_read(level_utf8("清漆强度零.level"), zero));
+	//强度越界 → 拒绝
+	write_text(level_dir() / L"清漆强度高.level",
+		"level 清漆强度高\nmaterial 甲 模板 clearcoat 1.5 0.2\n");
+	engine::Level_Data high;
+	EXPECT_FALSE(engine::level_text_read(level_utf8("清漆强度高.level"), high));
+	//粗糙度低于下界 → 拒绝
+	write_text(level_dir() / L"清漆粗糙低.level",
+		"level 清漆粗糙低\nmaterial 甲 模板 clearcoat 0.5 0.02\n");
+	engine::Level_Data rough_low;
+	EXPECT_FALSE(engine::level_text_read(level_utf8("清漆粗糙低.level"), rough_low));
+	//缺一个字段 → 拒绝
+	write_text(level_dir() / L"清漆缺字段.level",
+		"level 清漆缺字段\nmaterial 甲 模板 clearcoat 0.5\n");
+	engine::Level_Data missing;
+	EXPECT_FALSE(engine::level_text_read(level_utf8("清漆缺字段.level"), missing));
+	//重复覆盖 → 拒绝
+	write_text(level_dir() / L"清漆重复.level",
+		"level 清漆重复\nmaterial 甲 模板 clearcoat 0.5 0.2 clearcoat 0.6 0.3\n");
+	engine::Level_Data repeated;
+	EXPECT_FALSE(engine::level_text_read(level_utf8("清漆重复.level"), repeated));
+	//顺序非法（clearcoat 之后出现 pbr）→ 拒绝
+	write_text(level_dir() / L"清漆顺序.level",
+		"level 清漆顺序\nmaterial 甲 模板 clearcoat 0.5 0.2 pbr 0.3 0.5\n");
+	engine::Level_Data order;
+	EXPECT_FALSE(engine::level_text_read(level_utf8("清漆顺序.level"), order));
+}
+
+/*
+材质实例清漆生效（第五百九十四轮）
+口径：同模板「无清漆」与「clearcoat 1 0.05」两个实例 → 画面差异明显（覆盖即启用清漆层）。
+*/
+TEST(Renderer_Level_Test, 关卡材质实例清漆生效)
+{
+	write_cube_assets();
+	write_text(level_dir() / L"清漆甲.level",
+		"level 清漆甲\n"
+		"camera position 0 0 3\n"
+		"light direction 0 0 -1\n"
+		"light intensity 1.2\n"
+		"light ambient 0.2\n"
+		"light specular 1 32\n"
+		"light pbr 1 0.5 0\n"
+		"material 素 甲 tint 1 1 1 1\n"
+		"mesh 方盒 cube.obj\n"
+		"mtl 方盒材质 cube.mtl\n"
+		"place 方盒 素 0 0 0 1 1 1\n");
+	write_text(level_dir() / L"清漆乙.level",
+		"level 清漆乙\n"
+		"camera position 0 0 3\n"
+		"light direction 0 0 -1\n"
+		"light intensity 1.2\n"
+		"light ambient 0.2\n"
+		"light specular 1 32\n"
+		"light pbr 1 0.5 0\n"
+		"material 瓷甲 甲 tint 1 1 1 1 clearcoat 1 0.05\n"
+		"mesh 方盒 cube.obj\n"
+		"mtl 方盒材质 cube.mtl\n"
+		"place 方盒 瓷甲 0 0 0 1 1 1\n");
+
+	engine::Renderer_Config config;
+	config.width = LEVEL_WIDTH;
+	config.height = LEVEL_HEIGHT;
+	config.hidden = true;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(config));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+
+	//甲：无清漆
+	engine::Level_Data 甲;
+	engine::Asset_Scene 场景甲;
+	ASSERT_TRUE(renderer.level_load(甲, 场景甲, level_utf8("清漆甲.level")));
+	EXPECT_EQ(renderer.scene_draw(场景甲), 1u);
+	std::vector<uint8_t> 帧甲(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+	ASSERT_TRUE(renderer.frame_render(帧甲.data(), static_cast<uint32_t>(帧甲.size())));
+	renderer.level_unload(场景甲);
+
+	//乙：实例清漆
+	engine::Level_Data 乙;
+	engine::Asset_Scene 场景乙;
+	ASSERT_TRUE(renderer.level_load(乙, 场景乙, level_utf8("清漆乙.level")));
+	//装配结果携带清漆覆盖（模板句柄 ＋ 两项参数）
+	ASSERT_EQ(场景乙.objects.size(), 1u);
+	ASSERT_EQ(场景乙.objects[0].material_instances.size(), 1u);
+	EXPECT_TRUE(场景乙.objects[0].material_instances[0].use_clearcoat);
+	EXPECT_TRUE(bit_equal(场景乙.objects[0].material_instances[0].clear_coat, 1.0f));
+	EXPECT_TRUE(bit_equal(场景乙.objects[0].material_instances[0].clear_coat_roughness, 0.05f));
+	EXPECT_EQ(renderer.scene_draw(场景乙), 1u);
+	std::vector<uint8_t> 帧乙(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+	ASSERT_TRUE(renderer.frame_render(帧乙.data(), static_cast<uint32_t>(帧乙.size())));
+
+	const uint32_t 差异 = changed_pixels(帧甲, 帧乙);
+	std::cout << "[关卡] 实例清漆差异 " << 差异 << std::endl;
+	//清漆为锐利高光（粗糙度 0.05），改动只落在高光斑内；阈值取 10
+	EXPECT_GT(差异, 10u) << "实例 clearcoat 覆盖未生效";
 	renderer.level_unload(场景乙);
 }
 
@@ -3114,6 +3257,12 @@ TEST(Renderer_Level_Test, 随机关卡往返逐位一致)
 			{
 				material.pbr_roughness = next_range(0.06f, 4.0f);
 				material.pbr_metallic = next_unit();
+			}
+			material.use_clearcoat = (next_unit() < 0.5f);
+			if (material.use_clearcoat)
+			{
+				material.clear_coat = next_range(0.01f, 1.0f);
+				material.clear_coat_roughness = next_range(0.03f, 1.0f);
 			}
 			随机.materials.push_back(material);
 		}
