@@ -1891,6 +1891,92 @@ TEST(Renderer_Level_Test, 关卡八盏聚光阴影)
 }
 
 /*
+八盏聚光质量参数组合（第五百二十三轮）
+口径：八盏聚光全部投影时，强度 0 应与「关闭聚光阴影」画面逐字节一致（着色器 mix 结果恒为 1）；
+强度 0.5 保留半遮蔽（与全强度差异 > 100 像素）；软度满档（1.0，7×7 邻域）只改变阴影边缘；
+恢复默认参数后与全强度基准逐字节一致。
+*/
+TEST(Renderer_Level_Test, 八盏聚光质量参数组合)
+{
+	write_cube_assets();
+	write_eight_spot_level();
+
+	engine::Renderer_Config config;
+	config.width = LEVEL_WIDTH;
+	config.height = LEVEL_HEIGHT;
+	config.hidden = true;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(config));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+
+	engine::Level_Data 关卡;
+	engine::Asset_Scene 场景;
+	ASSERT_TRUE(renderer.level_load(关卡, 场景, level_utf8("八盏聚光.level"), false));
+
+	//关闭聚光阴影：无阴影参照图
+	engine::Light_Data 灯光 = 关卡.light;
+		灯光.spot_shadow_enabled = 0;
+	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
+	EXPECT_EQ(renderer.scene_draw(场景), 9u);
+	std::vector<uint8_t> 无阴影(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+	ASSERT_TRUE(renderer.frame_render(无阴影.data(), static_cast<uint32_t>(无阴影.size())));
+
+	//八盏全投影 ＋ 默认参数（强度 1）
+		灯光.spot_shadow_enabled = 1;
+		灯光.spot_shadow_all = 1;
+	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
+	EXPECT_EQ(renderer.scene_draw(场景), 9u);
+	std::vector<uint8_t> 全强度(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+	ASSERT_TRUE(renderer.frame_render(全强度.data(), static_cast<uint32_t>(全强度.size())));
+	//门面回读默认三值
+	float 偏置 = 0.0f;
+	float 软度 = 0.0f;
+	float 强度 = 0.0f;
+	renderer.spot_shadow_params_get(&偏置, &软度, &强度);
+	EXPECT_NEAR(偏置, 0.010f, 1e-6f);
+	EXPECT_NEAR(软度, 0.0f, 1e-6f);
+	EXPECT_NEAR(强度, 1.0f, 1e-6f);
+	const uint32_t 全强度差异 = changed_pixels(无阴影, 全强度);
+	std::cout << "[关卡] 八盏全强度差异 " << 全强度差异 << std::endl;
+	EXPECT_GT(全强度差异, 100u) << "八盏全强度阴影未生效";
+
+	//强度 0：应与无阴影画面逐字节一致
+	renderer.spot_shadow_params_set(0.010f, 0.0f, 0.0f);
+	EXPECT_EQ(renderer.scene_draw(场景), 9u);
+	std::vector<uint8_t> 零强度(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+	ASSERT_TRUE(renderer.frame_render(零强度.data(), static_cast<uint32_t>(零强度.size())));
+	EXPECT_EQ(changed_pixels(无阴影, 零强度), 0u) << "强度 0 未与关闭聚光阴影逐字节一致";
+
+	//强度 0.5：半遮蔽仍在
+	renderer.spot_shadow_params_set(0.010f, 0.0f, 0.5f);
+	EXPECT_EQ(renderer.scene_draw(场景), 9u);
+	std::vector<uint8_t> 半强度(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+	ASSERT_TRUE(renderer.frame_render(半强度.data(), static_cast<uint32_t>(半强度.size())));
+	const uint32_t 半强度差异 = changed_pixels(全强度, 半强度);
+	std::cout << "[关卡] 八盏半强度差异 " << 半强度差异 << std::endl;
+	EXPECT_GT(半强度差异, 100u) << "强度 0.5 未产生半遮蔽差异";
+	EXPECT_GT(changed_pixels(无阴影, 半强度), 100u) << "强度 0.5 未保留可见阴影";
+
+	//软度满档（7×7 邻域）：仅阴影边缘变化
+	renderer.spot_shadow_params_set(0.010f, 1.0f, 1.0f);
+	EXPECT_EQ(renderer.scene_draw(场景), 9u);
+	std::vector<uint8_t> 软边(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+	ASSERT_TRUE(renderer.frame_render(软边.data(), static_cast<uint32_t>(软边.size())));
+	const uint32_t 软边差异 = changed_pixels(全强度, 软边);
+	std::cout << "[关卡] 八盏软度满档差异 " << 软边差异 << std::endl;
+	EXPECT_GT(软边差异, 0u) << "软度满档未改变阴影边缘";
+
+	//恢复默认参数：与全强度基准逐字节一致
+	renderer.spot_shadow_params_set(0.010f, 0.0f, 1.0f);
+	EXPECT_EQ(renderer.scene_draw(场景), 9u);
+	std::vector<uint8_t> 恢复(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+	ASSERT_TRUE(renderer.frame_render(恢复.data(), static_cast<uint32_t>(恢复.size())));
+	EXPECT_EQ(changed_pixels(全强度, 恢复), 0u) << "恢复默认参数后画面未复原";
+	renderer.level_unload(场景);
+}
+
+/*
 八盏聚光分辨率切换（第五百一十七轮）
 口径：八盏全部投影时，阴影图 1024 → 512 → 1024 往返；切到 512 画面应有细节变化，切回后逐字节一致。
 覆盖分辨率切换路径对瓦片 4..7 的重建与重绑。
