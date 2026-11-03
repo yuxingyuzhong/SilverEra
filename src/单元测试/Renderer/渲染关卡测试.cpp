@@ -1526,6 +1526,65 @@ TEST(Renderer_Level_Test, 关卡Cluster聚光阴影)
 }
 
 /*
+Cluster 路径八盏聚光阴影（第五百二十五轮）
+口径：八盏关卡在 Cluster 开启下，关闭 / 开启八盏阴影差异 > 100 像素且瓦片数为 8；
+随后关闭 Cluster 再出图，应与此前 Cluster 开启的有影图逐字节一致（两条路径同结果）。
+*/
+TEST(Renderer_Level_Test, 关卡Cluster八盏聚光阴影)
+{
+	write_cube_assets();
+	write_eight_spot_level();
+
+	engine::Renderer_Config config;
+	config.width = LEVEL_WIDTH;
+	config.height = LEVEL_HEIGHT;
+	config.hidden = true;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(config));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	if (!renderer.cluster_supported())
+		GTEST_SKIP() << "本机不支持 Cluster 计算路径";
+
+	engine::Level_Data 关卡;
+	engine::Asset_Scene 场景;
+	ASSERT_TRUE(renderer.level_load(关卡, 场景, level_utf8("八盏聚光.level"), false));
+	ASSERT_EQ(关卡.light.spot_count, 8u);
+
+	//Cluster 开启：关闭聚光阴影出参照图
+	ASSERT_TRUE(renderer.cluster_enable_set(true));
+	engine::Light_Data 灯光 = 关卡.light;
+		灯光.spot_shadow_enabled = 0;
+	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
+	EXPECT_EQ(renderer.scene_draw(场景), 9u);
+	std::vector<uint8_t> 无影(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+	ASSERT_TRUE(renderer.frame_render(无影.data(), static_cast<uint32_t>(无影.size())));
+
+	//Cluster 开启：八盏全投影
+		灯光.spot_shadow_enabled = 1;
+		灯光.spot_shadow_all = 1;
+	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
+	EXPECT_EQ(renderer.scene_draw(场景), 9u);
+	std::vector<uint8_t> 簇有影(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+	ASSERT_TRUE(renderer.frame_render(簇有影.data(), static_cast<uint32_t>(簇有影.size())));
+	EXPECT_EQ(renderer.frame_stats_get().spot_shadow_tiles, 8u);
+	const uint32_t 簇差异 = changed_pixels(无影, 簇有影);
+	std::cout << "[关卡] Cluster 八盏聚光阴影差异 " << 簇差异 << std::endl;
+	EXPECT_GT(簇差异, 100u) << "Cluster 路径八盏聚光阴影未生效";
+
+	//关闭 Cluster：前向路径应得到同一结果
+	ASSERT_TRUE(renderer.cluster_enable_set(false));
+	EXPECT_EQ(renderer.scene_draw(场景), 9u);
+	std::vector<uint8_t> 前向有影(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+	ASSERT_TRUE(renderer.frame_render(前向有影.data(), static_cast<uint32_t>(前向有影.size())));
+	EXPECT_EQ(renderer.frame_stats_get().spot_shadow_tiles, 8u);
+	const uint32_t 路径差异 = changed_pixels(簇有影, 前向有影);
+	std::cout << "[关卡] 八盏阴影前后向路径差异 " << 路径差异 << std::endl;
+	EXPECT_EQ(路径差异, 0u) << "Cluster 与前向路径的八盏阴影结果不一致";
+	renderer.level_unload(场景);
+}
+
+/*
 聚光灯阴影开关文本往返（第四百七十五轮）
 口径：`light spot_shadow 0/1` 结构化保存；写出再读回一致。
 */
