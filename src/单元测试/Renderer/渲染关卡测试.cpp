@@ -2419,6 +2419,68 @@ TEST(Renderer_Level_Test, 关卡八盏聚光阴影)
 }
 
 /*
+八盏聚光逐瓦片互异（第五百五十一轮）
+口径：序号 0..7 逐盏单盏投影，每盏使用独立视图矩阵与独立阴影图；
+各序号单盏画面均应偏离关闭聚光阴影基准，且相邻序号单盏画面互不相同（每盏遮蔽不同遮挡体）。
+*/
+TEST(Renderer_Level_Test, 八盏聚光逐瓦片互异)
+{
+	write_cube_assets();
+	write_eight_spot_level();
+
+	engine::Renderer_Config config;
+	config.width = LEVEL_WIDTH;
+	config.height = LEVEL_HEIGHT;
+	config.hidden = true;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(config));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+
+	engine::Level_Data 关卡;
+	engine::Asset_Scene 场景;
+	ASSERT_TRUE(renderer.level_load(关卡, 场景, level_utf8("八盏聚光.level"), false));
+	ASSERT_EQ(关卡.light.spot_count, 8u);
+
+	//关闭聚光阴影基准
+	engine::Light_Data 灯光 = 关卡.light;
+	灯光.spot_shadow_enabled = 0;
+	灯光.spot_shadow_all = 0;
+	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
+	EXPECT_EQ(renderer.scene_draw(场景), 9u);
+	std::vector<uint8_t> 基准(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+	ASSERT_TRUE(renderer.frame_render(基准.data(), static_cast<uint32_t>(基准.size())));
+
+	//逐序号单盏投影（瓦片 1）
+	灯光.spot_shadow_enabled = 1;
+	std::vector<uint8_t> 上帧;
+	for (uint32_t 序号 = 0; 序号 < 8; ++序号)
+	{
+		灯光.spot_shadow_index = static_cast<int>(序号);
+		renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
+		EXPECT_EQ(renderer.scene_draw(场景), 9u);
+		std::vector<uint8_t> 当前(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+		ASSERT_TRUE(renderer.frame_render(当前.data(), static_cast<uint32_t>(当前.size())));
+		EXPECT_EQ(renderer.frame_stats_get().spot_shadow_tiles, 1u);
+
+		//与关闭基准的差异（每盏都应产生遮蔽）
+		const uint32_t 基准差异 = changed_pixels(基准, 当前);
+		std::cout << "[关卡] 第 " << 序号 << " 盏基准差异 " << 基准差异 << std::endl;
+		EXPECT_GT(基准差异, 0u) << "第 " << 序号 << " 盏单盏投影未生效";
+
+		//与上一序号单盏的差异（相邻瓦片画面应不同）
+		if (序号 > 0)
+		{
+			const uint32_t 相邻差异 = changed_pixels(上帧, 当前);
+			std::cout << "[关卡] 第 " << 序号 - 1 << " / " << 序号 << " 盏瓦片差异 " << 相邻差异 << std::endl;
+			EXPECT_GT(相邻差异, 0u) << "第 " << 序号 << " 盏与上一盏投影画面相同（瓦片未独立）";
+		}
+		上帧 = std::move(当前);
+	}
+	renderer.level_unload(场景);
+}
+
+/*
 八盏聚光质量参数组合（第五百二十三轮）
 口径：八盏聚光全部投影时，强度 0 应与「关闭聚光阴影」画面逐字节一致（着色器 mix 结果恒为 1）；
 强度 0.5 保留半遮蔽（与全强度差异 > 100 像素）；软度满档（1.0，7×7 邻域）只改变阴影边缘；
