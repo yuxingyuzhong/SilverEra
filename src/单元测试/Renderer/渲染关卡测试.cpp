@@ -1926,6 +1926,77 @@ TEST(Renderer_Level_Test, 八盏偏置自校准画面差异)
 }
 
 /*
+八盏聚光与方向光阴影共存（第五百三十九轮）
+口径：八盏全投影 ＋ 方向光阴影同时开启；三态对照（共存 / 仅方向光 / 仅八盏聚光），
+共存图与「仅聚光」差异 > 100（聚光生效）、与「仅方向光」差异 > 0（方向光生效），两套阴影互不干扰。
+*/
+TEST(Renderer_Level_Test, 八盏聚光与方向光阴影共存)
+{
+	write_cube_assets();
+	write_eight_spot_level();
+
+	engine::Renderer_Config config;
+	config.width = LEVEL_WIDTH;
+	config.height = LEVEL_HEIGHT;
+	config.hidden = true;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(config));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+
+	engine::Level_Data 关卡;
+	engine::Asset_Scene 场景;
+	ASSERT_TRUE(renderer.level_load(关卡, 场景, level_utf8("八盏聚光.level"), false));
+
+	//方向光调高并斜射（原关卡 0.1 且正下，方向光阴影与聚光阴影完全重叠而不可见）
+	engine::Light_Data 灯光 = 关卡.light;
+		灯光.intensity = 0.6f;
+		灯光.direction[0] = 0.6f;
+		灯光.direction[1] = -0.62f;
+		灯光.direction[2] = -0.24f;
+		for (std::size_t 通道 = 0; 通道 < 3; ++通道)
+			灯光.color[通道] = 0.4f;
+		灯光.shadow_enabled = 1;
+		灯光.shadow_bias = 0.004f;
+		灯光.shadow_softness = 0.35f;
+		灯光.shadow_strength = 0.8f;
+		灯光.spot_shadow_enabled = 1;
+		灯光.spot_shadow_all = 1;
+
+	//共存：方向光 ＋ 八盏聚光
+	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
+	EXPECT_EQ(renderer.scene_draw(场景), 9u);
+	std::vector<uint8_t> 共存(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+	ASSERT_TRUE(renderer.frame_render(共存.data(), static_cast<uint32_t>(共存.size())));
+
+	//仅方向光（关闭聚光阴影）
+	engine::Light_Data 仅方向 = 灯光;
+		仅方向.spot_shadow_enabled = 0;
+	renderer.scene_apply(关卡.camera, 仅方向, 关卡.fog);
+	EXPECT_EQ(renderer.scene_draw(场景), 9u);
+	std::vector<uint8_t> 仅方向图(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+	ASSERT_TRUE(renderer.frame_render(仅方向图.data(), static_cast<uint32_t>(仅方向图.size())));
+
+	//仅八盏聚光（关闭方向光阴影）
+	engine::Light_Data 仅聚光 = 灯光;
+		仅聚光.shadow_enabled = 0;
+	renderer.scene_apply(关卡.camera, 仅聚光, 关卡.fog);
+	EXPECT_EQ(renderer.scene_draw(场景), 9u);
+	std::vector<uint8_t> 仅聚光图(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+	ASSERT_TRUE(renderer.frame_render(仅聚光图.data(), static_cast<uint32_t>(仅聚光图.size())));
+
+	//聚光生效
+	const uint32_t 聚光差异 = changed_pixels(共存, 仅方向图);
+	std::cout << "[关卡] 八盏共存 聚光贡献 " << 聚光差异 << std::endl;
+	EXPECT_GT(聚光差异, 100u) << "共存态中八盏聚光阴影未生效";
+	//方向光生效（八盏场景方向光阴影覆盖较弱，只要求非零）
+	const uint32_t 方向差异 = changed_pixels(共存, 仅聚光图);
+	std::cout << "[关卡] 八盏共存 方向光贡献 " << 方向差异 << std::endl;
+	EXPECT_GT(方向差异, 0u) << "共存态中方向光阴影未生效";
+	renderer.level_unload(场景);
+}
+
+/*
 聚光灯阴影开关文本往返（第四百七十五轮）
 口径：`light spot_shadow 0/1` 结构化保存；写出再读回一致。
 */
