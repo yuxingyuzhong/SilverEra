@@ -517,8 +517,8 @@ TEST(Renderer_Particle_Test, 粒子颜色覆盖绘制)
 	EXPECT_GT(static_cast<uint32_t>(pixels[center + 1]), static_cast<uint32_t>(pixels[center + 0]) + 60u);
 	//常驻 GPU 路径：GPU 侧发射后单步推进（年龄 ≈ 0）
 	ASSERT_TRUE(renderer.particle_resident_set(true));
-	ASSERT_EQ(renderer.particle_gpu_emit(1), 1u);
-	ASSERT_TRUE(renderer.particle_gpu_step_resident(0.01f));
+	ASSERT_EQ(engine::particle_gpu::emit(renderer, 1), 1u);
+	ASSERT_TRUE(engine::particle_gpu::step_resident(renderer, 0.01f));
 	//GPU 直接绘制
 	ASSERT_TRUE(renderer.particle_gpu_draw(0.6f));
 	ASSERT_TRUE(renderer.frame_render());
@@ -1503,21 +1503,21 @@ TEST(Renderer_Particle_Test, 常驻GPU发射)
 	ASSERT_TRUE(renderer.particle_params_set(params));
 	//常驻关闭：GPU 发射不生效
 	EXPECT_FALSE(renderer.particle_resident_get());
-	EXPECT_EQ(renderer.particle_gpu_emit(5), 0u);
+	EXPECT_EQ(engine::particle_gpu::emit(renderer, 5), 0u);
 	//开启常驻
 	ASSERT_TRUE(renderer.particle_resident_set(true));
 	EXPECT_TRUE(renderer.particle_resident_get());
 	EXPECT_EQ(粒子.active_count(), 0u);
 	//三次发射
-	EXPECT_EQ(renderer.particle_gpu_emit(10), 10u);
+	EXPECT_EQ(engine::particle_gpu::emit(renderer, 10), 10u);
 	EXPECT_EQ(粒子.active_count(), 10u);
-	EXPECT_EQ(renderer.particle_gpu_emit(10), 10u);
+	EXPECT_EQ(engine::particle_gpu::emit(renderer, 10), 10u);
 	EXPECT_EQ(粒子.active_count(), 20u);
 	//池满截断（64 容量）
-	EXPECT_EQ(renderer.particle_gpu_emit(64), 44u);
+	EXPECT_EQ(engine::particle_gpu::emit(renderer, 64), 44u);
 	EXPECT_EQ(粒子.active_count(), 64u);
 	//已满
-	EXPECT_EQ(renderer.particle_gpu_emit(8), 0u);
+	EXPECT_EQ(engine::particle_gpu::emit(renderer, 8), 0u);
 	EXPECT_EQ(renderer.frame_stats_get().particle_born_total, 64u);
 	//关闭常驻：回到 CPU 镜像（未发射 → 0）
 	ASSERT_TRUE(renderer.particle_resident_set(false));
@@ -1533,7 +1533,7 @@ TEST(Renderer_Particle_Test, 常驻GPU发射)
 	ASSERT_TRUE(renderer_off.particle_enable_set(true));
 	EXPECT_FALSE(renderer_off.particle_resident_set(true));
 	EXPECT_FALSE(renderer_off.particle_resident_get());
-	EXPECT_EQ(renderer_off.particle_gpu_emit(4), 0u);
+	EXPECT_EQ(engine::particle_gpu::emit(renderer_off, 4), 0u);
 }
 
 /*
@@ -1562,14 +1562,14 @@ TEST(Renderer_Particle_Test, 常驻推进与死亡压缩)
 	ASSERT_TRUE(renderer.particle_params_set(params));
 	ASSERT_TRUE(renderer.particle_resident_set(true));
 	//常驻发射 32
-	EXPECT_EQ(renderer.particle_gpu_emit(32), 32u);
+	EXPECT_EQ(engine::particle_gpu::emit(renderer, 32), 32u);
 	EXPECT_EQ(粒子.active_count(), 32u);
 	//十二步 0.05 s → 全部死亡
 	const auto begin = std::chrono::high_resolution_clock::now();
 	uint32_t died_total = 0;
 	for (uint32_t step = 0; step < 12; ++step)
 	{
-		ASSERT_TRUE(renderer.particle_gpu_step_resident(0.05f));
+		ASSERT_TRUE(engine::particle_gpu::step_resident(renderer, 0.05f));
 		died_total += renderer.particle_gpu_died_last();
 	}
 	const auto end = std::chrono::high_resolution_clock::now();
@@ -1578,7 +1578,7 @@ TEST(Renderer_Particle_Test, 常驻推进与死亡压缩)
 	EXPECT_EQ(died_total, 32u);
 	EXPECT_EQ(renderer.frame_stats_get().particle_died_total, 32u);
 	//再次发射沿用环形指针
-	EXPECT_EQ(renderer.particle_gpu_emit(8), 8u);
+	EXPECT_EQ(engine::particle_gpu::emit(renderer, 8), 8u);
 	EXPECT_EQ(粒子.active_count(), 8u);
 	//常驻下同步链推进 / 自检被拒
 	EXPECT_FALSE(renderer.particle_gpu_step(0.05f));
@@ -1622,7 +1622,7 @@ TEST(Renderer_Particle_Test, 常驻百万粒子基线)
 	const auto emit_begin = std::chrono::high_resolution_clock::now();
 	uint32_t total = 0;
 	for (uint32_t batch = 0; batch < 16; ++batch)
-		total += renderer.particle_gpu_emit(engine::PARTICLE_EMIT_COUNT_MAX);
+		total += engine::particle_gpu::emit(renderer, engine::PARTICLE_EMIT_COUNT_MAX);
 	const auto emit_end = std::chrono::high_resolution_clock::now();
 	double emit_ms = std::chrono::duration<double, std::milli>(emit_end - emit_begin).count();
 	EXPECT_EQ(total, engine::PARTICLE_CAPACITY_MAX);
@@ -1630,7 +1630,7 @@ TEST(Renderer_Particle_Test, 常驻百万粒子基线)
 	//五步常驻推进
 	const auto step_begin = std::chrono::high_resolution_clock::now();
 	for (uint32_t step = 0; step < 5; ++step)
-		ASSERT_TRUE(renderer.particle_gpu_step_resident(1.0f / 60.0f));
+		ASSERT_TRUE(engine::particle_gpu::step_resident(renderer, 1.0f / 60.0f));
 	const auto step_end = std::chrono::high_resolution_clock::now();
 	double per_step_ms = std::chrono::duration<double, std::milli>(step_end - step_begin).count() / 5.0;
 	//寿命 100 s 内不死亡 → 活跃守恒
@@ -1675,9 +1675,9 @@ TEST(Renderer_Particle_Test, 粒子GPU绘制)
 	//未开启常驻：拒绝
 	EXPECT_FALSE(renderer.particle_gpu_draw(0.1f));
 	ASSERT_TRUE(renderer.particle_resident_set(true));
-	ASSERT_EQ(renderer.particle_gpu_emit(256), 256u);
+	ASSERT_EQ(engine::particle_gpu::emit(renderer, 256), 256u);
 	for (uint32_t step = 0; step < 5; ++step)
-		ASSERT_TRUE(renderer.particle_gpu_step_resident(0.05f));
+		ASSERT_TRUE(engine::particle_gpu::step_resident(renderer, 0.05f));
 	//相机先就位（绘制时按相机位置构造 billboard 基向量），再登记 GPU 绘制项
 	const float clear[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
 	renderer.clear_color_set(clear);
@@ -1746,9 +1746,9 @@ TEST(Renderer_Particle_Test, 粒子间接绘制)
 	//未开启常驻：拒绝
 	EXPECT_FALSE(renderer.particle_indirect_draw(0.1f));
 	ASSERT_TRUE(renderer.particle_resident_set(true));
-	ASSERT_EQ(renderer.particle_gpu_emit(256), 256u);
+	ASSERT_EQ(engine::particle_gpu::emit(renderer, 256), 256u);
 	for (uint32_t step = 0; step < 5; ++step)
-		ASSERT_TRUE(renderer.particle_gpu_step_resident(0.05f));
+		ASSERT_TRUE(engine::particle_gpu::step_resident(renderer, 0.05f));
 	//相机就位后生成间接命令
 	const float clear[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
 	renderer.clear_color_set(clear);
@@ -1816,7 +1816,7 @@ TEST(Renderer_Particle_Test, 百万粒子间接命令基线)
 	//分 16 批发射满池
 	uint32_t total = 0;
 	for (uint32_t batch = 0; batch < 16; ++batch)
-		total += renderer.particle_gpu_emit(engine::PARTICLE_EMIT_COUNT_MAX);
+		total += engine::particle_gpu::emit(renderer, engine::PARTICLE_EMIT_COUNT_MAX);
 	ASSERT_EQ(total, engine::PARTICLE_CAPACITY_MAX);
 	//三次间接绘制（前两次预热），取最后一次耗时
 	double draw_ms = 0.0;
@@ -1883,9 +1883,9 @@ TEST(Renderer_Particle_Test, 常驻绘制统计等价)
 		ASSERT_TRUE(renderer.particle_emitter_set(emitter));
 		ASSERT_TRUE(renderer.particle_params_set(params));
 		ASSERT_TRUE(renderer.particle_resident_set(true));
-		ASSERT_EQ(renderer.particle_gpu_emit(64), 64u);
+		ASSERT_EQ(engine::particle_gpu::emit(renderer, 64), 64u);
 		for (uint32_t step = 0; step < 5; ++step)
-			ASSERT_TRUE(renderer.particle_gpu_step_resident(0.05f));
+			ASSERT_TRUE(engine::particle_gpu::step_resident(renderer, 0.05f));
 		EXPECT_EQ(粒子.active_count(), 64u);
 		ASSERT_TRUE(renderer.particle_draw(0.1f));
 		ASSERT_TRUE(renderer.frame_render());
@@ -1926,7 +1926,7 @@ TEST(Renderer_Particle_Test, 常驻紧凑百万基线)
 	//分 16 批发射满池
 	uint32_t total = 0;
 	for (uint32_t batch = 0; batch < 16; ++batch)
-		total += renderer.particle_gpu_emit(engine::PARTICLE_EMIT_COUNT_MAX);
+		total += engine::particle_gpu::emit(renderer, engine::PARTICLE_EMIT_COUNT_MAX);
 	ASSERT_EQ(total, engine::PARTICLE_CAPACITY_MAX);
 	//三次紧凑，取最后一次耗时（前两次作预热）
 	double compact_ms = 0.0;
@@ -1979,15 +1979,15 @@ TEST(Renderer_Particle_Test, 紧凑索引环形回绕)
 	ASSERT_TRUE(renderer.particle_params_set(params));
 	ASSERT_TRUE(renderer.particle_resident_set(true));
 	//满池发射
-	ASSERT_EQ(renderer.particle_gpu_emit(128), 128u);
+	ASSERT_EQ(engine::particle_gpu::emit(renderer, 128), 128u);
 	EXPECT_EQ(粒子.active_count(), 128u);
 	//推进 0.55 s：寿命 ≤ 0.55 的粒子死亡，其余存活
 	for (uint32_t step = 0; step < 11; ++step)
-		ASSERT_TRUE(renderer.particle_gpu_step_resident(0.05f));
+		ASSERT_TRUE(engine::particle_gpu::step_resident(renderer, 0.05f));
 	const uint32_t survivors = 粒子.active_count();
 	ASSERT_LT(survivors, 128u);
 	//再发射：环形指针回绕，部分落点仍活跃（旧实现会把重叠槽位重复计数 → 活跃数越过容量）
-	const uint32_t spawned = renderer.particle_gpu_emit(128);
+	const uint32_t spawned = engine::particle_gpu::emit(renderer, 128);
 	EXPECT_GT(spawned, 0u);
 	const uint32_t active_after = 粒子.active_count();
 	EXPECT_LE(active_after, 128u);
@@ -2035,7 +2035,7 @@ TEST(Renderer_Particle_Test, 常驻绘制)
 	ASSERT_TRUE(renderer.particle_emitter_set(emitter));
 	ASSERT_TRUE(renderer.particle_params_set(params));
 	ASSERT_TRUE(renderer.particle_resident_set(true));
-	ASSERT_EQ(renderer.particle_gpu_emit(256), 256u);
+	ASSERT_EQ(engine::particle_gpu::emit(renderer, 256), 256u);
 	EXPECT_EQ(粒子.active_count(), 256u);
 	const float clear[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
 	renderer.clear_color_set(clear);
@@ -2095,7 +2095,7 @@ TEST(Renderer_Particle_Test, 常驻紧凑索引)
 	EXPECT_FALSE(renderer.particle_gpu_compact());
 	EXPECT_EQ(renderer.particle_compact_count_get(), 0u);
 	ASSERT_TRUE(renderer.particle_resident_set(true));
-	ASSERT_EQ(renderer.particle_gpu_emit(96), 96u);
+	ASSERT_EQ(engine::particle_gpu::emit(renderer, 96), 96u);
 	//紧凑：索引数与活跃数一致
 	ASSERT_TRUE(renderer.particle_gpu_compact());
 	EXPECT_EQ(renderer.particle_compact_count_get(), 96u);
@@ -2113,7 +2113,7 @@ TEST(Renderer_Particle_Test, 常驻紧凑索引)
 	EXPECT_EQ(std::count(seen.begin(), seen.end(), static_cast<uint8_t>(1)), 96);
 	//推进至全部死亡：紧凑数归零
 	for (uint32_t step = 0; step < 14; ++step)
-		ASSERT_TRUE(renderer.particle_gpu_step_resident(0.05f));
+		ASSERT_TRUE(engine::particle_gpu::step_resident(renderer, 0.05f));
 	EXPECT_EQ(粒子.active_count(), 0u);
 	ASSERT_TRUE(renderer.particle_gpu_compact());
 	EXPECT_EQ(renderer.particle_compact_count_get(), 0u);
@@ -2141,8 +2141,8 @@ TEST(Renderer_Particle_Test, 展廊粒子常驻接入)
 	//三轮区内发射 ＋ 推进（寿命 1.4 s 起，三步 0.08 s 不死亡）
 	for (uint32_t frame = 0; frame < 3; ++frame)
 	{
-		ASSERT_EQ(renderer.particle_gpu_emit(64), 64u);
-		ASSERT_TRUE(renderer.particle_gpu_step_resident(0.08f));
+		ASSERT_EQ(engine::particle_gpu::emit(renderer, 64), 64u);
+		ASSERT_TRUE(engine::particle_gpu::step_resident(renderer, 0.08f));
 	}
 	const engine::Frame_Stats stats = renderer.frame_stats_get();
 	EXPECT_EQ(stats.particle_born_total, 192u);
@@ -2177,8 +2177,8 @@ TEST(Renderer_Particle_Test, 展廊粒子GPU绘制接入)
 	ASSERT_TRUE(renderer.particle_resident_set(true));
 	for (uint32_t frame = 0; frame < 3; ++frame)
 	{
-		ASSERT_EQ(renderer.particle_gpu_emit(64), 64u);
-		ASSERT_TRUE(renderer.particle_gpu_step_resident(0.08f));
+		ASSERT_EQ(engine::particle_gpu::emit(renderer, 64), 64u);
+		ASSERT_TRUE(engine::particle_gpu::step_resident(renderer, 0.08f));
 	}
 	EXPECT_EQ(粒子.active_count(), 192u);
 	//场景登记绘制：常驻可用 → GPU 绘制路径（紧凑索引由该路径产生）
@@ -2239,9 +2239,9 @@ TEST(Renderer_Particle_Test, 粒子绘制路径观测)
 	EXPECT_EQ(renderer.frame_stats_get().particle_draw_path, 1u);
 	//GPU 直接路径（常驻）
 	ASSERT_TRUE(renderer.particle_resident_set(true));
-	ASSERT_EQ(renderer.particle_gpu_emit(64), 64u);
+	ASSERT_EQ(engine::particle_gpu::emit(renderer, 64), 64u);
 	for (uint32_t step = 0; step < 3; ++step)
-		ASSERT_TRUE(renderer.particle_gpu_step_resident(0.05f));
+		ASSERT_TRUE(engine::particle_gpu::step_resident(renderer, 0.05f));
 	ASSERT_TRUE(renderer.particle_gpu_draw(0.2f));
 	EXPECT_EQ(renderer.frame_stats_get().particle_draw_path, 2u);
 	//GPU 间接路径
@@ -2283,7 +2283,7 @@ TEST(Renderer_Particle_Test, 粒子三路径绘制对照)
 	ASSERT_TRUE(renderer.particle_emitter_set(emitter));
 	ASSERT_TRUE(renderer.particle_params_set(params));
 	ASSERT_TRUE(renderer.particle_resident_set(true));
-	ASSERT_EQ(renderer.particle_gpu_emit(engine::PARTICLE_EMIT_COUNT_MAX), engine::PARTICLE_EMIT_COUNT_MAX);
+	ASSERT_EQ(engine::particle_gpu::emit(renderer, engine::PARTICLE_EMIT_COUNT_MAX), engine::PARTICLE_EMIT_COUNT_MAX);
 	//相机与清屏
 	const float clear[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
 	renderer.clear_color_set(clear);
@@ -2525,7 +2525,7 @@ TEST(Renderer_Particle_Test, 离屏软粒子深度淡化)
 		ASSERT_TRUE(renderer.particle_params_set(params));
 		//GPU 路径须常驻；发射一枚后不推进（粒子停在发射点 z=0.6）
 		ASSERT_TRUE(renderer.particle_resident_set(true));
-		ASSERT_EQ(renderer.particle_gpu_emit(1), 1u);
+		ASSERT_EQ(engine::particle_gpu::emit(renderer, 1), 1u);
 		//墙面（4×4，向相机方向平移到 z=0.58；染黑避免其蓝通道遮挡比较）
 		engine::Mesh_Handle wall = 0;
 		ASSERT_TRUE(renderer.mesh_plane_load(wall, 4.0f, 4.0f));
@@ -2628,7 +2628,7 @@ TEST(Renderer_Particle_Test, 软粒子档位开销)
 		ASSERT_TRUE(renderer.particle_emitter_set(emitter));
 		ASSERT_TRUE(renderer.particle_params_set(params));
 		ASSERT_TRUE(renderer.particle_resident_set(true));
-		ASSERT_EQ(renderer.particle_gpu_emit(10000), 10000u);
+		ASSERT_EQ(engine::particle_gpu::emit(renderer, 10000), 10000u);
 		//八帧：前两帧建历史（第 1 帧无历史、档位自动清零），取第 3..8 帧稳定段
 		double record_sum = 0.0;
 		double gpu_sum = 0.0;
@@ -2748,7 +2748,7 @@ TEST(Renderer_Particle_Test, 软粒子档位扫掠)
 		ASSERT_TRUE(renderer.particle_emitter_set(emitter));
 		ASSERT_TRUE(renderer.particle_params_set(params));
 		ASSERT_TRUE(renderer.particle_resident_set(true));
-		ASSERT_EQ(renderer.particle_gpu_emit(1), 1u);
+		ASSERT_EQ(engine::particle_gpu::emit(renderer, 1), 1u);
 		//墙面（4×4，向相机方向平移到 z=0.58；染黑避免其蓝通道遮挡比较）
 		engine::Mesh_Handle wall = 0;
 		ASSERT_TRUE(renderer.mesh_plane_load(wall, 4.0f, 4.0f));

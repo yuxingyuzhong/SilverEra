@@ -532,8 +532,8 @@ namespace engine
 				//常驻路径：发射与推进均在 GPU
 				if (状态.粒子常驻)
 				{
-					(void)渲染器.particle_gpu_emit(256);
-					(void)渲染器.particle_gpu_step_resident(0.08f);
+					(void)engine::particle_gpu::emit(渲染器, 256);
+					(void)engine::particle_gpu::step_resident(渲染器, 0.08f);
 				}
 				//回落路径：CPU 参考模拟（应用层持有状态，渲染层只绘制）
 				else
