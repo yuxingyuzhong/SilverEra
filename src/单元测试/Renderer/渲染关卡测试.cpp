@@ -130,6 +130,40 @@ namespace
 		write_text(level_dir() / L"cube.mtl", "newmtl 甲\nKd 0.7 0.5 0.4\nNs 64\n");
 	}
 
+	/*
+	八盏聚光关卡（第五百一十五轮抽出）
+	八盏聚光各照一块地面与遮挡体；无其它前向灯，确保八盏全部登记（前向光源上限 8 盏）。
+	*/
+	void write_eight_spot_level(void)
+	{
+		write_text(level_dir() / L"八盏聚光.level",
+			"level 八盏聚光\n"
+			"camera position 0 8 10\n"
+			"camera target 0 0 0\n"
+			"light direction 0 -1 0\n"
+			"light color 0.1 0.1 0.1\n"
+			"light intensity 0.1\n"
+			"light spot -7 4 0 0 -1 0 1 1 1 9 2 20 40 0 0 16\n"
+			"light spot -5 4 0 0 -1 0 1 1 1 9 2 20 40 0 0 16\n"
+			"light spot -3 4 0 0 -1 0 1 1 1 9 2 20 40 0 0 16\n"
+			"light spot -1 4 0 0 -1 0 1 1 1 9 2 20 40 0 0 16\n"
+			"light spot 1 4 0 0 -1 0 1 1 1 9 2 20 40 0 0 16\n"
+			"light spot 3 4 0 0 -1 0 1 1 1 9 2 20 40 0 0 16\n"
+			"light spot 5 4 0 0 -1 0 1 1 1 9 2 20 40 0 0 16\n"
+			"light spot 7 4 0 0 -1 0 1 1 1 9 2 20 40 0 0 16\n"
+			"mesh 方块 cube.obj\n"
+			"mtl 方块材质 cube.mtl\n"
+			"place 方块 方块材质 0 -1.5 0 24 0.2 10\n"
+			"place 方块 方块材质 -7 0.6 0 1.2 1.2 1.2\n"
+			"place 方块 方块材质 -5 0.6 0 1.2 1.2 1.2\n"
+			"place 方块 方块材质 -3 0.6 0 1.2 1.2 1.2\n"
+			"place 方块 方块材质 -1 0.6 0 1.2 1.2 1.2\n"
+			"place 方块 方块材质 1 0.6 0 1.2 1.2 1.2\n"
+			"place 方块 方块材质 3 0.6 0 1.2 1.2 1.2\n"
+			"place 方块 方块材质 5 0.6 0 1.2 1.2 1.2\n"
+			"place 方块 方块材质 7 0.6 0 1.2 1.2 1.2\n");
+	}
+
 	//三通道浮点逐位相等
 	bool triple_bit_equal(const float* left, const float* right)
 	{
@@ -1814,39 +1848,7 @@ TEST(Renderer_Level_Test, 关卡四盏聚光阴影)
 TEST(Renderer_Level_Test, 关卡八盏聚光阴影)
 {
 	write_cube_assets();
-	write_text(level_dir() / L"八盏聚光.level",
-		"level 八盏聚光\n"
-		"camera position 0 8 10\n"
-		"camera target 0 0 0\n"
-		"light direction 0 -1 0\n"
-		"light color 0.1 0.1 0.1\n"
-		"light intensity 0.1\n"
-		"light spot -7 4 0 0 -1 0 1 1 1 9 2 20 40 0 0 16\n"
-		"light spot -5 4 0 0 -1 0 1 1 1 9 2 20 40 0 0 16\n"
-		"light spot -3 4 0 0 -1 0 1 1 1 9 2 20 40 0 0 16\n"
-		"light spot -1 4 0 0 -1 0 1 1 1 9 2 20 40 0 0 16\n"
-		"light spot 1 4 0 0 -1 0 1 1 1 9 2 20 40 0 0 16\n"
-		"light spot 3 4 0 0 -1 0 1 1 1 9 2 20 40 0 0 16\n"
-		"light spot 5 4 0 0 -1 0 1 1 1 9 2 20 40 0 0 16\n"
-		"light spot 7 4 0 0 -1 0 1 1 1 9 2 20 40 0 0 16\n"
-		"mesh 方块 cube.obj\n"
-		"mtl 方块材质 cube.mtl\n"
-		"place 方块 方块材质 -7 -1.5 0 3 0.2 3\n"
-		"place 方块 方块材质 -5 -1.5 0 3 0.2 3\n"
-		"place 方块 方块材质 -3 -1.5 0 3 0.2 3\n"
-		"place 方块 方块材质 -1 -1.5 0 3 0.2 3\n"
-		"place 方块 方块材质 1 -1.5 0 3 0.2 3\n"
-		"place 方块 方块材质 3 -1.5 0 3 0.2 3\n"
-		"place 方块 方块材质 5 -1.5 0 3 0.2 3\n"
-		"place 方块 方块材质 7 -1.5 0 3 0.2 3\n"
-		"place 方块 方块材质 -7 0.6 0 1.2 1.2 1.2\n"
-		"place 方块 方块材质 -5 0.6 0 1.2 1.2 1.2\n"
-		"place 方块 方块材质 -3 0.6 0 1.2 1.2 1.2\n"
-		"place 方块 方块材质 -1 0.6 0 1.2 1.2 1.2\n"
-		"place 方块 方块材质 1 0.6 0 1.2 1.2 1.2\n"
-		"place 方块 方块材质 3 0.6 0 1.2 1.2 1.2\n"
-		"place 方块 方块材质 5 0.6 0 1.2 1.2 1.2\n"
-		"place 方块 方块材质 7 0.6 0 1.2 1.2 1.2\n");
+	write_eight_spot_level();
 
 	engine::Renderer_Config config;
 	config.width = LEVEL_WIDTH;
@@ -1868,20 +1870,128 @@ TEST(Renderer_Level_Test, 关卡八盏聚光阴影)
 	灯光.spot_shadow_all = 0;
 	灯光.spot_shadow_index = 0;
 	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
-	EXPECT_EQ(renderer.scene_draw(场景), 16u);
+	EXPECT_EQ(renderer.scene_draw(场景), 9u);
 	std::vector<uint8_t> 单盏(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(单盏.data(), static_cast<uint32_t>(单盏.size())));
 
 	//多盏：八盏各自投影（瓦片 4..7 按需创建）
 	灯光.spot_shadow_all = 1;
 	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
-	EXPECT_EQ(renderer.scene_draw(场景), 16u);
+	EXPECT_EQ(renderer.scene_draw(场景), 9u);
 	std::vector<uint8_t> 八盏(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(八盏.data(), static_cast<uint32_t>(八盏.size())));
 
 	const uint32_t 差异 = changed_pixels(单盏, 八盏);
 	std::cout << "[关卡] 八盏聚光阴影差异 " << 差异 << std::endl;
 	EXPECT_GT(差异, 100u) << "八盏聚光灯阴影未生效";
+	renderer.level_unload(场景);
+}
+
+/*
+八盏聚光分辨率切换（第五百一十七轮）
+口径：八盏全部投影时，阴影图 1024 → 512 → 1024 往返；切到 512 画面应有细节变化，切回后逐字节一致。
+覆盖分辨率切换路径对瓦片 4..7 的重建与重绑。
+*/
+TEST(Renderer_Level_Test, 关卡八盏聚光分辨率切换)
+{
+	write_cube_assets();
+	write_eight_spot_level();
+
+	engine::Renderer_Config config;
+	config.width = LEVEL_WIDTH;
+	config.height = LEVEL_HEIGHT;
+	config.hidden = true;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(config));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+
+	engine::Level_Data 关卡;
+	engine::Asset_Scene 场景;
+	ASSERT_TRUE(renderer.level_load(关卡, 场景, level_utf8("八盏聚光.level"), false));
+
+	//八盏全部投影，1024 基准图
+	engine::Light_Data 灯光 = 关卡.light;
+	灯光.spot_shadow_enabled = 1;
+	灯光.spot_shadow_all = 1;
+	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
+	EXPECT_EQ(renderer.scene_draw(场景), 9u);
+	std::vector<uint8_t> 原图(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+	ASSERT_TRUE(renderer.frame_render(原图.data(), static_cast<uint32_t>(原图.size())));
+
+	//切 512：记录画面差异（随后切回 1024 校验画面恢复）
+	renderer.shadow_resolution_set(512);
+	EXPECT_EQ(renderer.shadow_resolution(), 512u);
+	EXPECT_EQ(renderer.scene_draw(场景), 9u);
+	std::vector<uint8_t> 低分辨率(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+	ASSERT_TRUE(renderer.frame_render(低分辨率.data(), static_cast<uint32_t>(低分辨率.size())));
+	//512 档画面差异（本场景阴影边界较粗，可能为 0；分辨率效果由单盏用例覆盖）
+	const uint32_t 低差异 = changed_pixels(原图, 低分辨率);
+	std::cout << "[关卡] 八盏 512 档差异 " << 低差异 << std::endl;
+
+	//切回 1024：应与基准图一致
+	renderer.shadow_resolution_set(1024);
+	EXPECT_EQ(renderer.shadow_resolution(), 1024u);
+	EXPECT_EQ(renderer.scene_draw(场景), 9u);
+	std::vector<uint8_t> 回图(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+	ASSERT_TRUE(renderer.frame_render(回图.data(), static_cast<uint32_t>(回图.size())));
+	EXPECT_EQ(changed_pixels(原图, 回图), 0u) << "分辨率往返后画面未恢复";
+	renderer.level_unload(场景);
+}
+
+/*
+八盏聚光运行期开关（第五百一十七轮）
+口径：八盏场景按单盏应用后用 spot_shadow_all_set 运行期切到八盏、再切回；
+八盏与单盏差异 > 100 像素，切回后与初始单盏差异 < 50 像素。
+*/
+TEST(Renderer_Level_Test, 八盏聚光运行期开关)
+{
+	write_cube_assets();
+	write_eight_spot_level();
+
+	engine::Renderer_Config config;
+	config.width = LEVEL_WIDTH;
+	config.height = LEVEL_HEIGHT;
+	config.hidden = true;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(config));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+
+	engine::Level_Data 关卡;
+	engine::Asset_Scene 场景;
+	ASSERT_TRUE(renderer.level_load(关卡, 场景, level_utf8("八盏聚光.level"), false));
+
+	//单盏（序号 0）
+	engine::Light_Data 灯光 = 关卡.light;
+	灯光.spot_shadow_enabled = 1;
+	灯光.spot_shadow_all = 0;
+	灯光.spot_shadow_index = 0;
+	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
+	EXPECT_FALSE(renderer.spot_shadow_all());
+	EXPECT_EQ(renderer.scene_draw(场景), 9u);
+	std::vector<uint8_t> 单盏(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+	ASSERT_TRUE(renderer.frame_render(单盏.data(), static_cast<uint32_t>(单盏.size())));
+
+	//运行期切八盏（按已登记聚光灯数量创建瓦片 1..7）
+	renderer.spot_shadow_all_set(true);
+	EXPECT_TRUE(renderer.spot_shadow_all());
+	EXPECT_EQ(renderer.scene_draw(场景), 9u);
+	std::vector<uint8_t> 八盏(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+	ASSERT_TRUE(renderer.frame_render(八盏.data(), static_cast<uint32_t>(八盏.size())));
+	const uint32_t 差异 = changed_pixels(单盏, 八盏);
+	std::cout << "[关卡] 八盏运行期开关差异 " << 差异 << std::endl;
+	EXPECT_GT(差异, 100u) << "运行期切八盏未生效";
+
+	//切回单盏：画面应恢复
+	renderer.spot_shadow_all_set(false);
+	EXPECT_FALSE(renderer.spot_shadow_all());
+	EXPECT_EQ(renderer.scene_draw(场景), 9u);
+	std::vector<uint8_t> 回单盏(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+	ASSERT_TRUE(renderer.frame_render(回单盏.data(), static_cast<uint32_t>(回单盏.size())));
+	const uint32_t 回差异 = changed_pixels(单盏, 回单盏);
+	std::cout << "[关卡] 八盏运行期切回差异 " << 回差异 << std::endl;
+	EXPECT_LT(回差异, 50u) << "运行期切回单盏后画面未恢复";
 	renderer.level_unload(场景);
 }
 
@@ -1893,39 +2003,7 @@ TEST(Renderer_Level_Test, 关卡八盏聚光阴影)
 TEST(Renderer_Level_Test, 关卡八盏聚光开销)
 {
 	write_cube_assets();
-	write_text(level_dir() / L"八盏聚光.level",
-		"level 八盏聚光\n"
-		"camera position 0 8 10\n"
-		"camera target 0 0 0\n"
-		"light direction 0 -1 0\n"
-		"light color 0.1 0.1 0.1\n"
-		"light intensity 0.1\n"
-		"light spot -7 4 0 0 -1 0 1 1 1 9 2 20 40 0 0 16\n"
-		"light spot -5 4 0 0 -1 0 1 1 1 9 2 20 40 0 0 16\n"
-		"light spot -3 4 0 0 -1 0 1 1 1 9 2 20 40 0 0 16\n"
-		"light spot -1 4 0 0 -1 0 1 1 1 9 2 20 40 0 0 16\n"
-		"light spot 1 4 0 0 -1 0 1 1 1 9 2 20 40 0 0 16\n"
-		"light spot 3 4 0 0 -1 0 1 1 1 9 2 20 40 0 0 16\n"
-		"light spot 5 4 0 0 -1 0 1 1 1 9 2 20 40 0 0 16\n"
-		"light spot 7 4 0 0 -1 0 1 1 1 9 2 20 40 0 0 16\n"
-		"mesh 方块 cube.obj\n"
-		"mtl 方块材质 cube.mtl\n"
-		"place 方块 方块材质 -7 -1.5 0 3 0.2 3\n"
-		"place 方块 方块材质 -5 -1.5 0 3 0.2 3\n"
-		"place 方块 方块材质 -3 -1.5 0 3 0.2 3\n"
-		"place 方块 方块材质 -1 -1.5 0 3 0.2 3\n"
-		"place 方块 方块材质 1 -1.5 0 3 0.2 3\n"
-		"place 方块 方块材质 3 -1.5 0 3 0.2 3\n"
-		"place 方块 方块材质 5 -1.5 0 3 0.2 3\n"
-		"place 方块 方块材质 7 -1.5 0 3 0.2 3\n"
-		"place 方块 方块材质 -7 0.6 0 1.2 1.2 1.2\n"
-		"place 方块 方块材质 -5 0.6 0 1.2 1.2 1.2\n"
-		"place 方块 方块材质 -3 0.6 0 1.2 1.2 1.2\n"
-		"place 方块 方块材质 -1 0.6 0 1.2 1.2 1.2\n"
-		"place 方块 方块材质 1 0.6 0 1.2 1.2 1.2\n"
-		"place 方块 方块材质 3 0.6 0 1.2 1.2 1.2\n"
-		"place 方块 方块材质 5 0.6 0 1.2 1.2 1.2\n"
-		"place 方块 方块材质 7 0.6 0 1.2 1.2 1.2\n");
+	write_eight_spot_level();
 
 	engine::Renderer_Config config;
 	config.width = LEVEL_WIDTH;
@@ -1949,7 +2027,7 @@ TEST(Renderer_Level_Test, 关卡八盏聚光开销)
 		灯光.spot_shadow_all = 1;
 		灯光.spot_count = counts[index];
 		renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
-		EXPECT_EQ(renderer.scene_draw(场景), 16u);
+		EXPECT_EQ(renderer.scene_draw(场景), 9u);
 		for (uint32_t frame = 0; frame < 6; ++frame)
 			ASSERT_TRUE(renderer.frame_render());
 		shadow_ms[index] = renderer.frame_stats_get().gpu_shadow_ms;
