@@ -16,6 +16,9 @@
 */
 #include <cstdint>
 
+//场景数据（相机 / 光照 / 雾；Vulkan-free，供进区重登记使用）
+#include "Application/Renderer/src/render/Scene/场景数据.h"
+
 //引擎命名空间
 namespace engine
 {
@@ -123,6 +126,10 @@ namespace engine
 		uint64_t 目标乙 = 0;
 		uint32_t 目标宽 = 0;
 		uint32_t 目标高 = 0;
+
+		//—— 场景配置快照（第五百三十一轮：进区③ 切换簇光照后按当前相机重新登记光源） ——
+		Light_Data 光照配置;
+		Fog_Data 雾配置;
 	};
 
 	/*

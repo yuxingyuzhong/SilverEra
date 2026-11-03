@@ -4,8 +4,57 @@
 //渲染器门面（Vulkan-free 公共面）
 #include "Application/Renderer/src/render/Renderer/渲染器.h"
 
+#include <cmath>
+
 namespace engine
 {
+	namespace
+	{
+		//灯墙灯色（6 档循环）
+		const float 灯墙颜色[6][3] = {
+			{ 1.0f, 0.38f, 0.32f }, { 1.0f, 0.72f, 0.30f }, { 0.55f, 0.95f, 0.55f },
+			{ 0.35f, 0.90f, 0.95f }, { 0.45f, 0.62f, 1.0f }, { 0.85f, 0.55f, 1.0f },
+		};
+
+		/*
+		灯墙登记（16 × 8 盏彩色点光）
+		调用方须已开启簇光照（记录容量由簇路径提供）；灯位略在墙前（-48.8），半径 2.5 覆盖邻近墙面。
+		*/
+		void 灯墙登记(Renderer& 渲染器)
+		{
+			for (uint32_t 行 = 0; 行 < 8; ++行)
+			{
+				for (uint32_t 列 = 0; 列 < 16; ++列)
+				{
+					const uint32_t 序号 = 行 * 16 + 列;
+					const float 灯位置[3] = { -19.0f + 0.64f * static_cast<float>(列),
+						1.0f + 0.7f * static_cast<float>(行), -48.8f };
+					(void)渲染器.light_add_point(灯位置, 灯墙颜色[序号 % 6], 2.5f, 0.16f, 0.0f);
+				}
+			}
+		}
+
+		//当前相机数据（与 update 的注视点同口径）
+		void 当前相机数据(展示状态& 状态, Camera_Data& 相机)
+		{
+			const float cos俯仰 = std::cos(状态.俯仰);
+			const float 前x = std::sin(状态.偏航);
+			const float 前z = -std::cos(状态.偏航);
+			相机.position[0] = 状态.位置[0];
+			相机.position[1] = 状态.位置[1];
+			相机.position[2] = 状态.位置[2];
+			相机.target[0] = 状态.位置[0] + 前x * cos俯仰;
+			相机.target[1] = 状态.位置[1] + std::sin(状态.俯仰);
+			相机.target[2] = 状态.位置[2] + 前z * cos俯仰;
+			相机.fov = 1.30f;
+			相机.far_plane = 260.0f;
+			相机.clear_color[0] = 0.03f;
+			相机.clear_color[1] = 0.05f;
+			相机.clear_color[2] = 0.09f;
+			相机.clear_color[3] = 1.0f;
+		}
+	}
+
 	//引擎命名空间
 	void 场景配置(展示资源& 资源, 展示状态& 状态, Renderer& 渲染器)
 	{
@@ -128,6 +177,9 @@ namespace engine
 		雾.end = 240.0f;
 		//高度衰减：高处物体比贴地物体更通透
 		雾.height_falloff = 0.012f;
+		//保存配置快照（第五百三十一轮：进区③ 切换簇光照后按当前相机重新应用）
+		资源.光照配置 = 光照;
+		资源.雾配置 = 雾;
 		渲染器.scene_apply(相机, 光照, 雾);
 
 		/*
@@ -138,21 +190,8 @@ namespace engine
 		if (渲染器.cluster_supported())
 		{
 			渲染器.cluster_enable_set(true);
-			const float 灯墙色[6][3] = {
-				{ 1.0f, 0.38f, 0.32f }, { 1.0f, 0.72f, 0.30f }, { 0.55f, 0.95f, 0.55f },
-				{ 0.35f, 0.90f, 0.95f }, { 0.45f, 0.62f, 1.0f }, { 0.85f, 0.55f, 1.0f },
-			};
-			for (uint32_t 行 = 0; 行 < 8; ++行)
-			{
-				for (uint32_t 列 = 0; 列 < 16; ++列)
-				{
-					const uint32_t 序号 = 行 * 16 + 列;
-					//灯位略在墙前（-48.8），半径 2.5 覆盖邻近墙面
-					const float 灯位置[3] = { -19.0f + 0.64f * static_cast<float>(列),
-						1.0f + 0.7f * static_cast<float>(行), -48.8f };
-					(void)渲染器.light_add_point(灯位置, 灯墙色[序号 % 6], 2.5f, 0.16f, 0.0f);
-				}
-			}
+			//灯墙登记（场景灯已由 scene_apply 登记）
+			灯墙登记(渲染器);
 			渲染器.cluster_enable_set(false);
 		}
 
@@ -232,5 +271,35 @@ namespace engine
 				渲染器.particle_enable_set(false);
 			}
 		}
+	}
+
+	/*
+	场景重应用（第五百三十一轮）
+	进区③ 切换簇光照后调用：按当前相机重新登记全部光源（簇开时 8 聚光 ＋ 3 点光全部登记，
+	簇关时回落前向 8 盏截断），并重建灯墙（scene_apply 会清空全部点光记录）。
+	*/
+	void 场景重应用(展示资源& 资源, 展示状态& 状态, Renderer& 渲染器)
+	{
+		//按当前位姿出具相机数据
+		Camera_Data 相机;
+		当前相机数据(状态, 相机);
+		//先切换簇光照到期望状态，再重放场景（簇开时 8 聚光 ＋ 3 点光共 11 盏全部登记）
+		if (渲染器.cluster_supported())
+			渲染器.cluster_enable_set(状态.光照阴影区激活);
+		渲染器.scene_apply(相机, 资源.光照配置, 资源.雾配置);
+		//灯墙随场景灯一并重建（内部临时开关簇，结束后恢复到「进区③」的期望状态）
+		if (渲染器.cluster_supported())
+		{
+			渲染器.cluster_enable_set(true);
+			灯墙登记(渲染器);
+			渲染器.cluster_enable_set(状态.光照阴影区激活);
+		}
+		//scene_apply 会按相机数据覆盖位姿，按当前状态恢复
+		渲染器.camera_position_set(状态.位置[0], 状态.位置[1], 状态.位置[2]);
+		const float cos俯仰 = std::cos(状态.俯仰);
+		const float 前x = std::sin(状态.偏航);
+		const float 前z = -std::cos(状态.偏航);
+		渲染器.camera_target_set(状态.位置[0] + 前x * cos俯仰, 状态.位置[1] + std::sin(状态.俯仰),
+			状态.位置[2] + 前z * cos俯仰);
 	}
 }

@@ -622,3 +622,39 @@ TEST(Renderer_Showcase_Probe_Test, 各展区随机位置与朝向均有显示)
 	EXPECT_EQ(失败样本, 0u) << "存在未显示或过暗的随机样本（详见输出目录内 F_ 前缀 PNG）";
 	scene.shutdown(renderer);
 }
+
+/*
+区③ 八盏聚光瓦片（第五百三十一轮）
+口径：相机进入展区③ 后进区开关开启簇光照（8 聚光 ＋ 3 点光共 11 盏超前向 8 盏上限），
+断言本帧 `spot_shadow_tiles == 8`；离开区③ 回到展廊起点后簇光照关闭。
+*/
+TEST(Renderer_Showcase_Probe_Test, 区三八盏聚光瓦片)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(probe_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	if (!renderer.cluster_supported())
+		GTEST_SKIP() << "本机不支持 Cluster 计算路径";
+
+	engine::能力展示场景 scene;
+	ASSERT_TRUE(scene.init(renderer));
+
+	//进入区③（区中心 (14, -10)，眼位在半径 9 判定圈内）
+	const float 眼位[3] = { 14.0f, 3.0f, -4.0f };
+	const float 方向[3] = { 0.0f, -0.35f, -1.0f };
+	apply_pose(scene, renderer, 眼位, 方向);
+	EXPECT_TRUE(renderer.cluster_enable_get());
+	scene.frame_draw(renderer);
+	ASSERT_TRUE(renderer.frame_render());
+	EXPECT_EQ(renderer.frame_stats_get().spot_shadow_tiles, 8u) << "区③ 未按八盏瓦片投影";
+
+	//回到展廊起点：簇光照关闭
+	const float 起点[3] = { 0.0f, 9.5f, 14.0f };
+	const float 起点方向[3] = { 0.0f, -0.3f, -1.0f };
+	apply_pose(scene, renderer, 起点, 起点方向);
+	EXPECT_FALSE(renderer.cluster_enable_get());
+	scene.frame_draw(renderer);
+	ASSERT_TRUE(renderer.frame_render());
+	scene.shutdown(renderer);
+}
