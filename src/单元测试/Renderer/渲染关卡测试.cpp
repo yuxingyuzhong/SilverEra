@@ -1997,6 +1997,63 @@ TEST(Renderer_Level_Test, 八盏聚光与方向光阴影共存)
 }
 
 /*
+八盏聚光阴影 512 档细节（第五百四十二轮）
+口径：517 轮在 128×72 画幅下 512 档差异为 0（阴影边界过粗）；本轮改 512×288 画幅，
+验证 512 档相对 1024 档有可见细节变化，切回 1024 后逐字节恢复。
+*/
+TEST(Renderer_Level_Test, 八盏聚光阴影512档细节)
+{
+	write_cube_assets();
+	write_eight_spot_level();
+
+	//较大画幅（512×288）以显现分辨率差异
+	const uint32_t 宽 = 512;
+	const uint32_t 高 = 288;
+	engine::Renderer_Config config;
+	config.width = 宽;
+	config.height = 高;
+	config.hidden = true;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(config));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+
+	engine::Level_Data 关卡;
+	engine::Asset_Scene 场景;
+	ASSERT_TRUE(renderer.level_load(关卡, 场景, level_utf8("八盏聚光.level"), false));
+
+	engine::Light_Data 灯光 = 关卡.light;
+		灯光.spot_shadow_enabled = 1;
+		灯光.spot_shadow_all = 1;
+	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
+
+	//1024 档基准
+	EXPECT_EQ(renderer.shadow_resolution(), 1024u);
+	EXPECT_EQ(renderer.scene_draw(场景), 9u);
+	std::vector<uint8_t> 原图(宽 * 高 * 4);
+	ASSERT_TRUE(renderer.frame_render(原图.data(), static_cast<uint32_t>(原图.size())));
+
+	//512 档：应有可见细节变化
+	renderer.shadow_resolution_set(512);
+	EXPECT_EQ(renderer.shadow_resolution(), 512u);
+	EXPECT_EQ(renderer.scene_draw(场景), 9u);
+	std::vector<uint8_t> 低分辨率(宽 * 高 * 4);
+	ASSERT_TRUE(renderer.frame_render(低分辨率.data(), static_cast<uint32_t>(低分辨率.size())));
+	const uint32_t 低差异 = changed_pixels(原图, 低分辨率);
+	std::cout << "[关卡] 八盏 512x288 画幅 512 档差异 " << 低差异 << std::endl;
+	EXPECT_GT(低差异, 0u) << "512 档在较大画幅下仍未改变阴影细节";
+
+	//切回 1024：逐字节恢复
+	renderer.shadow_resolution_set(1024);
+	EXPECT_EQ(renderer.shadow_resolution(), 1024u);
+	EXPECT_EQ(renderer.scene_draw(场景), 9u);
+	std::vector<uint8_t> 回图(宽 * 高 * 4);
+	ASSERT_TRUE(renderer.frame_render(回图.data(), static_cast<uint32_t>(回图.size())));
+	EXPECT_EQ(changed_pixels(原图, 回图), 0u) << "分辨率往返后画面未恢复";
+	renderer.level_unload(场景);
+}
+
+/*
 聚光灯阴影开关文本往返（第四百七十五轮）
 口径：`light spot_shadow 0/1` 结构化保存；写出再读回一致。
 */
