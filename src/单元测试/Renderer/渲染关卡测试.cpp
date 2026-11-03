@@ -1651,6 +1651,80 @@ TEST(Renderer_Level_Test, 八盏聚光阴影与MSAA组合)
 }
 
 /*
+八盏聚光阴影软度开销（第五百二十七轮）
+口径：1920×1080 ＋ 八盏聚光全投影；三态（关闭阴影 / 软度 0 单点 / 软度 1 的 7×7 邻域）
+每态预热 2 帧后取样 5 帧，记录场景 GPU 帧耗时均值（设备不支持时间戳时三态均为 0）。
+只记录数据与弱断言（软度 1 不低于软度 0 减 0.1 ms），不做跨机器阈值断言。
+*/
+TEST(Renderer_Level_Test, 八盏聚光软度开销)
+{
+	write_cube_assets();
+	write_eight_spot_level();
+
+	engine::Renderer_Config config;
+	config.width = 1920;
+	config.height = 1080;
+	config.hidden = true;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(config));
+
+	engine::Level_Data 关卡;
+	engine::Asset_Scene 场景;
+	ASSERT_TRUE(renderer.level_load(关卡, 场景, level_utf8("八盏聚光.level"), false));
+
+	//三态软度（负值表示关闭阴影）
+	const float 软度值[3] = { -1.0f, 0.0f, 1.0f };
+	const char* 记录键[3] = { "spot_softness_gpu_ms_off", "spot_softness_gpu_ms_hard",
+		"spot_softness_gpu_ms_soft" };
+	double 帧耗时[3] = { 0.0, 0.0, 0.0 };
+	for (std::size_t index = 0; index < 3; ++index)
+	{
+		//关闭态：直接应用无阴影
+		engine::Light_Data 灯光 = 关卡.light;
+		if (软度值[index] < 0.0f)
+			灯光.spot_shadow_enabled = 0;
+		else
+		{
+			灯光.spot_shadow_enabled = 1;
+			灯光.spot_shadow_all = 1;
+		}
+		renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
+		//scene_apply 会按关卡字段重置质量参数，故在其后显式设置软度
+		if (软度值[index] >= 0.0f)
+			renderer.spot_shadow_params_set(0.010f, 软度值[index], 1.0f);
+		EXPECT_EQ(renderer.scene_draw(场景), 9u);
+		//预热 2 帧
+		for (uint32_t frame = 0; frame < 2; ++frame)
+			ASSERT_TRUE(renderer.frame_render());
+		//取样 5 帧取均值
+		double 合计 = 0.0;
+		for (uint32_t frame = 0; frame < 5; ++frame)
+		{
+			ASSERT_TRUE(renderer.frame_render());
+			合计 += renderer.frame_stats_get().gpu_frame_ms;
+		}
+		帧耗时[index] = 合计 / 5.0;
+		RecordProperty(记录键[index], 帧耗时[index]);
+		std::cout << "[关卡] 软度开销 " << 记录键[index] << " " << 帧耗时[index] << " ms" << std::endl;
+	}
+
+	if (renderer.gpu_timestamp_supported())
+	{
+		//三态均应产生非零帧耗时
+		for (std::size_t index = 0; index < 3; ++index)
+			EXPECT_GT(帧耗时[index], 0.0) << "软度开销态 " << index << " 未产生帧耗时";
+		//软度 1 不应显著低于软度 0（容差 0.1 ms）
+		EXPECT_GE(帧耗时[2], 帧耗时[1] - 0.1) << "软度 1 帧耗时异常低于软度 0";
+	}
+	else
+	{
+		for (std::size_t index = 0; index < 3; ++index)
+			EXPECT_EQ(帧耗时[index], 0.0);
+	}
+	renderer.level_unload(场景);
+}
+
+/*
 聚光灯阴影开关文本往返（第四百七十五轮）
 口径：`light spot_shadow 0/1` 结构化保存；写出再读回一致。
 */
