@@ -1430,6 +1430,81 @@ TEST(Renderer_Level_Test, 关卡材质实例更新)
 }
 
 /*
+关卡材质实例增删（第五百九十三轮）
+口径：`level_material_add` 追加声明（重名 / 空名 / 达上限 256 条拒绝）；`level_material_remove` 按名删除首个匹配，
+其余声明顺序不变；增删后写出再读回只剩剩余声明。
+*/
+TEST(Renderer_Level_Test, 关卡材质实例增删)
+{
+	write_text(level_dir() / L"实例增删.level",
+		"level 实例增删\n"
+		"material 红甲 甲 tint 0.8 0.2 0.2 1 emissive 0.35\n"
+		"material 素甲 甲\n");
+	engine::Level_Data loaded;
+	ASSERT_TRUE(engine::level_text_read(level_utf8("实例增删.level"), loaded));
+	ASSERT_EQ(loaded.materials.size(), 2u);
+
+	//追加蓝甲：落到末尾且字段保留
+	engine::Level_Material 新实例;
+	新实例.实例名 = "蓝甲";
+	新实例.模板 = "甲";
+	新实例.use_tint = true;
+	新实例.tint[0] = 0.2f;
+	新实例.tint[2] = 0.9f;
+	新实例.tint[3] = 1.0f;
+	ASSERT_TRUE(engine::level_material_add(loaded, 新实例));
+	ASSERT_EQ(loaded.materials.size(), 3u);
+	EXPECT_EQ(loaded.materials[2].实例名, "蓝甲");
+	engine::Level_Material found;
+	ASSERT_TRUE(engine::level_material_find(loaded, "蓝甲", found));
+	EXPECT_TRUE(bit_equal(found.tint[2], 0.9f));
+
+	//重名 / 空名：返回假且声明数不变
+	EXPECT_FALSE(engine::level_material_add(loaded, 新实例));
+	engine::Level_Material 空名实例;
+	EXPECT_FALSE(engine::level_material_add(loaded, 空名实例));
+	EXPECT_EQ(loaded.materials.size(), 3u);
+
+	//删除红甲：查找失败，其余顺序不变
+	ASSERT_TRUE(engine::level_material_remove(loaded, "红甲"));
+	ASSERT_EQ(loaded.materials.size(), 2u);
+	EXPECT_EQ(loaded.materials[0].实例名, "素甲");
+	EXPECT_EQ(loaded.materials[1].实例名, "蓝甲");
+	EXPECT_FALSE(engine::level_material_find(loaded, "红甲", found));
+
+	//重复删除 / 未登记名 / 空名：返回假
+	EXPECT_FALSE(engine::level_material_remove(loaded, "红甲"));
+	EXPECT_FALSE(engine::level_material_remove(loaded, "蓝乙"));
+	EXPECT_FALSE(engine::level_material_remove(loaded, ""));
+
+	//写出再读回：只剩素甲 / 蓝甲
+	ASSERT_TRUE(engine::level_text_write(loaded, level_utf8("实例增删_回写.level")));
+	engine::Level_Data reread;
+	ASSERT_TRUE(engine::level_text_read(level_utf8("实例增删_回写.level"), reread));
+	ASSERT_EQ(reread.materials.size(), 2u);
+	EXPECT_EQ(reread.materials[0].实例名, "素甲");
+	EXPECT_EQ(reread.materials[1].实例名, "蓝甲");
+	EXPECT_TRUE(reread.materials[1].use_tint);
+
+	//上限：填满 256 条后追加被拒，删除后可再追加
+	loaded.materials.clear();
+	for (uint32_t index = 0; index < 256u; ++index)
+	{
+		engine::Level_Material 批量实例;
+		批量实例.实例名 = "批" + std::to_string(index);
+		批量实例.模板 = "甲";
+		ASSERT_TRUE(engine::level_material_add(loaded, 批量实例));
+	}
+	engine::Level_Material 超额实例;
+	超额实例.实例名 = "超额";
+	超额实例.模板 = "甲";
+	EXPECT_FALSE(engine::level_material_add(loaded, 超额实例));
+	ASSERT_TRUE(engine::level_material_remove(loaded, "批0"));
+	EXPECT_TRUE(engine::level_material_add(loaded, 超额实例));
+	EXPECT_EQ(loaded.materials.size(), 256u);
+}
+
+/*
 聚光灯阴影（第四百七十四轮；方案 A）
 口径：第 1 盏聚光灯从上方照地面，遮挡立方体开启阴影后在地面投下暗区；开启前后差异 > 200 像素。
 */
