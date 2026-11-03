@@ -1157,6 +1157,96 @@ TEST(Renderer_Level_Test, 实例PBR状态复位)
 }
 
 /*
+实例 PBR 与卡通组合（第五百七十四轮）
+口径：同一实例同时带 `toon` 与 `pbr`，两者互不吞并：相对「仅卡通」与「仅 PBR」两张图都应产生可见差异。
+*/
+TEST(Renderer_Level_Test, 实例PBR与卡通组合)
+{
+	write_cube_assets();
+	write_text(level_dir() / L"组合甲.level",
+		"level 组合甲\n"
+		"camera position 1 0 3\n"
+		"light pbr 1 1 0\n"
+		"material 甲实例 甲 tint 1 1 1 1 toon 1 1.0 0.5\n"
+		"mesh 方盒 cube.obj\n"
+		"mtl 方盒材质 cube.mtl\n"
+		"place 方盒 甲实例 0 0 0 1 1 1\n");
+	write_text(level_dir() / L"组合乙.level",
+		"level 组合乙\n"
+		"camera position 1 0 3\n"
+		"light pbr 1 1 0\n"
+		"material 乙实例 甲 tint 1 1 1 1 pbr 0.2 0.9\n"
+		"mesh 方盒 cube.obj\n"
+		"mtl 方盒材质 cube.mtl\n"
+		"place 方盒 乙实例 0 0 0 1 1 1\n");
+	write_text(level_dir() / L"组合丙.level",
+		"level 组合丙\n"
+		"camera position 1 0 3\n"
+		"light pbr 1 1 0\n"
+		"material 丙实例 甲 tint 1 1 1 1 toon 1 1.0 0.5 pbr 0.2 0.9\n"
+		"mesh 方盒 cube.obj\n"
+		"mtl 方盒材质 cube.mtl\n"
+		"place 方盒 丙实例 0 0 0 1 1 1\n");
+
+	engine::Renderer_Config config;
+	config.width = LEVEL_WIDTH;
+	config.height = LEVEL_HEIGHT;
+	config.hidden = true;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(config));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+
+	//三张图：仅卡通 / 仅 PBR / 组合
+	std::vector<uint8_t> 帧列表[3];
+	const char* const 关卡名[3] = { "组合甲.level", "组合乙.level", "组合丙.level" };
+	for (std::size_t index = 0; index < 3; ++index)
+	{
+		engine::Level_Data 关卡;
+		engine::Asset_Scene 场景;
+		ASSERT_TRUE(renderer.level_load(关卡, 场景, level_utf8(关卡名[index])));
+		EXPECT_EQ(renderer.scene_draw(场景), 1u);
+		帧列表[index].assign(LEVEL_WIDTH * LEVEL_HEIGHT * 4, 0);
+		ASSERT_TRUE(renderer.frame_render(帧列表[index].data(), static_cast<uint32_t>(帧列表[index].size())));
+		renderer.level_unload(场景);
+	}
+
+	//组合相对两类单独覆盖都应不同
+	const uint32_t 对卡通差异 = changed_pixels(帧列表[0], 帧列表[2]);
+	const uint32_t 对PBR差异 = changed_pixels(帧列表[1], 帧列表[2]);
+	std::cout << "[关卡] 组合 PBR 对卡通差异 " << 对卡通差异 << " 对 PBR 差异 " << 对PBR差异 << std::endl;
+	EXPECT_GT(对卡通差异, 10u) << "组合中的 PBR 项未生效";
+	EXPECT_GT(对PBR差异, 10u) << "组合中的卡通项未生效";
+}
+
+/*
+实例 PBR 写出拒绝（第五百七十四轮）
+口径：`Level_Data` 中实例 `pbr` 值越界时，`level_text_write` 写出前校验失败且不落盘。
+*/
+TEST(Renderer_Level_Test, 实例PBR写出拒绝)
+{
+	engine::Level_Data level;
+	level.name = "PBR写出";
+	engine::Level_Material material;
+	material.实例名 = "甲实例";
+	material.模板 = "甲";
+	material.use_pbr = true;
+	material.pbr_roughness = 5.0f;
+	material.pbr_metallic = 0.5f;
+	level.materials.push_back(material);
+	EXPECT_FALSE(engine::level_text_write(level, level_utf8("PBR写出坏粗.level")));
+
+	//金属度越界
+	level.materials[0].pbr_roughness = 1.0f;
+	level.materials[0].pbr_metallic = 1.5f;
+	EXPECT_FALSE(engine::level_text_write(level, level_utf8("PBR写出坏金属.level")));
+
+	//合法值可写出
+	level.materials[0].pbr_metallic = 0.5f;
+	EXPECT_TRUE(engine::level_text_write(level, level_utf8("PBR写出好.level")));
+}
+
+/*
 关卡材质实例查找（第五百六十三轮）
 口径：`level_material_find` 按实例名取首个匹配，字段（底色 / 自发光 / 卡通）与关卡文本逐位一致；
 空实例名与未登记名返回假，且不改写出参。
