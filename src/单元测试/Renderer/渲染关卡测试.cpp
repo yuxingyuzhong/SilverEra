@@ -1161,6 +1161,59 @@ TEST(Renderer_Level_Test, 关卡材质实例查找)
 }
 
 /*
+关卡材质实例更新（第五百六十七轮）
+口径：按实例名整体替换声明；替换后查找 / 写出 / 读回一致，未涉及项不变；
+空名与未登记名返回假且关卡不变。
+*/
+TEST(Renderer_Level_Test, 关卡材质实例更新)
+{
+	write_text(level_dir() / L"实例更新.level",
+		"level 实例更新\n"
+		"material 红甲 甲 tint 0.8 0.2 0.2 1 emissive 0.35\n"
+		"material 素甲 甲\n");
+	engine::Level_Data loaded;
+	ASSERT_TRUE(engine::level_text_read(level_utf8("实例更新.level"), loaded));
+	ASSERT_EQ(loaded.materials.size(), 2u);
+
+	//替换红甲：改底色 ＋ 增 PBR
+	engine::Level_Material 新声明;
+	新声明.实例名 = "红甲";
+	新声明.模板 = "甲";
+	新声明.use_tint = true;
+	新声明.tint[0] = 0.2f;
+	新声明.tint[1] = 0.4f;
+	新声明.tint[2] = 0.9f;
+	新声明.tint[3] = 1.0f;
+	新声明.use_pbr = true;
+	新声明.pbr_roughness = 0.3f;
+	新声明.pbr_metallic = 0.8f;
+	ASSERT_TRUE(engine::level_material_update(loaded, "红甲", 新声明));
+
+	//替换后查找：新值生效、旧自发光被清掉
+	engine::Level_Material after;
+	ASSERT_TRUE(engine::level_material_find(loaded, "红甲", after));
+	EXPECT_FALSE(after.use_emissive);
+	EXPECT_TRUE(after.use_pbr);
+	EXPECT_TRUE(bit_equal(after.pbr_roughness, 0.3f));
+	EXPECT_TRUE(bit_equal(after.tint[2], 0.9f));
+	//未涉及项：素甲不变
+	EXPECT_FALSE(loaded.materials[1].use_tint);
+	EXPECT_FALSE(loaded.materials[1].use_pbr);
+
+	//写出再读回：替换值保留
+	ASSERT_TRUE(engine::level_text_write(loaded, level_utf8("实例更新_回写.level")));
+	engine::Level_Data reread;
+	ASSERT_TRUE(engine::level_text_read(level_utf8("实例更新_回写.level"), reread));
+	ASSERT_EQ(reread.materials.size(), 2u);
+	EXPECT_TRUE(reread.materials[0].use_pbr);
+	EXPECT_TRUE(bit_equal(reread.materials[0].pbr_metallic, 0.8f));
+
+	//未登记名 / 空名：返回假
+	EXPECT_FALSE(engine::level_material_update(loaded, "蓝甲", 新声明));
+	EXPECT_FALSE(engine::level_material_update(loaded, "", 新声明));
+}
+
+/*
 聚光灯阴影（第四百七十四轮；方案 A）
 口径：第 1 盏聚光灯从上方照地面，遮挡立方体开启阴影后在地面投下暗区；开启前后差异 > 200 像素。
 */
