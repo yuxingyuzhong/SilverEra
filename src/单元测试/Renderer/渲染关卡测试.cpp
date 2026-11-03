@@ -1808,6 +1808,84 @@ TEST(Renderer_Level_Test, 关卡四盏聚光阴影)
 }
 
 /*
+多盏聚光灯运行期开关（第五百一十一轮）
+口径：场景先按单盏（序号 0）应用，再用 spot_shadow_all_set 在运行期切到四盏、再切回单盏，
+不重新 scene_apply；四盏画面与单盏差异 > 100 像素，切回后与初始单盏画面基本一致（差异 < 50 像素）。
+*/
+TEST(Renderer_Level_Test, 聚光灯多盏运行期开关)
+{
+	write_cube_assets();
+	write_text(level_dir() / L"四盏聚光.level",
+		"level 四盏聚光\n"
+		"camera position 0 8 10\n"
+		"camera target 0 0 0\n"
+		"light direction 0 -1 0\n"
+		"light color 0.1 0.1 0.1\n"
+		"light intensity 0.1\n"
+		"light spot -6 4 0 0 -1 0 1 1 1 9 2 20 40 0 0 16\n"
+		"light spot -2 4 0 0 -1 0 1 1 1 9 2 20 40 0 0 16\n"
+		"light spot 2 4 0 0 -1 0 1 1 1 9 2 20 40 0 0 16\n"
+		"light spot 6 4 0 0 -1 0 1 1 1 9 2 20 40 0 0 16\n"
+		"mesh 方块 cube.obj\n"
+		"mtl 方块材质 cube.mtl\n"
+		"place 方块 方块材质 -6 -1.5 0 3 0.2 3\n"
+		"place 方块 方块材质 -2 -1.5 0 3 0.2 3\n"
+		"place 方块 方块材质 2 -1.5 0 3 0.2 3\n"
+		"place 方块 方块材质 6 -1.5 0 3 0.2 3\n"
+		"place 方块 方块材质 -6 0.6 0 1.2 1.2 1.2\n"
+		"place 方块 方块材质 -2 0.6 0 1.2 1.2 1.2\n"
+		"place 方块 方块材质 2 0.6 0 1.2 1.2 1.2\n"
+		"place 方块 方块材质 6 0.6 0 1.2 1.2 1.2\n");
+
+	engine::Renderer_Config config;
+	config.width = LEVEL_WIDTH;
+	config.height = LEVEL_HEIGHT;
+	config.hidden = true;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(config));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+
+	engine::Level_Data 关卡;
+	engine::Asset_Scene 场景;
+	ASSERT_TRUE(renderer.level_load(关卡, 场景, level_utf8("四盏聚光.level"), false));
+
+	//单盏（序号 0）应用后：门面默认与场景一致
+	engine::Light_Data 灯光 = 关卡.light;
+	灯光.spot_shadow_enabled = 1;
+	灯光.spot_shadow_all = 0;
+	灯光.spot_shadow_index = 0;
+	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
+	EXPECT_FALSE(renderer.spot_shadow_all());
+	EXPECT_EQ(renderer.scene_draw(场景), 8u);
+	std::vector<uint8_t> 单盏(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+	ASSERT_TRUE(renderer.frame_render(单盏.data(), static_cast<uint32_t>(单盏.size())));
+
+	//运行期切到四盏（不重新 scene_apply）
+	renderer.spot_shadow_all_set(true);
+	EXPECT_TRUE(renderer.spot_shadow_all());
+	EXPECT_EQ(renderer.scene_draw(场景), 8u);
+	std::vector<uint8_t> 四盏(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+	ASSERT_TRUE(renderer.frame_render(四盏.data(), static_cast<uint32_t>(四盏.size())));
+
+	const uint32_t 差异 = changed_pixels(单盏, 四盏);
+	std::cout << "[关卡] 运行期多盏开关差异 " << 差异 << std::endl;
+	EXPECT_GT(差异, 100u) << "运行期开启多盏聚光灯阴影未生效";
+
+	//切回单盏：画面应与初始单盏基本一致
+	renderer.spot_shadow_all_set(false);
+	EXPECT_FALSE(renderer.spot_shadow_all());
+	EXPECT_EQ(renderer.scene_draw(场景), 8u);
+	std::vector<uint8_t> 回单盏(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+	ASSERT_TRUE(renderer.frame_render(回单盏.data(), static_cast<uint32_t>(回单盏.size())));
+
+	const uint32_t 回差异 = changed_pixels(单盏, 回单盏);
+	std::cout << "[关卡] 运行期切回单盏差异 " << 回差异 << std::endl;
+	EXPECT_LT(回差异, 50u) << "运行期切回单盏后画面未恢复";
+	renderer.level_unload(场景);
+}
+
+/*
 多盏聚光灯开销基线（第五百零八轮）
 口径：同一场景（四盏聚光各照一块地面与遮挡体），分别登记 1 / 2 / 4 盏并全部投影；
 记录阴影 pass 的单遍 GPU 耗时（gpu_shadow_ms 为最后一次聚光提交的耗时；设备不支持时间戳时各项为 0）；

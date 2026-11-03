@@ -158,6 +158,10 @@ namespace engine
 		bool 线程区激活 = false;
 		//正交投影区是否激活（展区㉒）
 		bool 正交区激活 = false;
+		//聚光灯阴影模式（true = 前 4 盏各自投影，false = 单盏；K 键切换）
+		bool 聚光多盏 = true;
+		//已提交给渲染器的聚光灯阴影模式（避免逐帧重复设置）
+		bool 聚光多盏已提交 = true;
 	};
 
 	/*
@@ -188,6 +192,10 @@ namespace engine
 		//当前偏航 / 俯仰（弧度；Overlay 显示用）
 		float 偏航(void) const;
 		float 俯仰(void) const;
+		//当前聚光灯阴影模式（true = 四盏各自投影；Overlay 显示用）
+		bool 聚光多盏(void) const;
+		//切换聚光灯阴影模式（在 update 里提交给渲染器）
+		void 聚光多盏切换(void);
 		//展区数量与标题（Overlay 图例用；标题以「①」「②」…开头）
 		uint32_t 展区数量(void) const;
 		const char* 展区标题(uint32_t 序号) const;

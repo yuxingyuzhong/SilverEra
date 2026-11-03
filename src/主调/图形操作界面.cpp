@@ -280,6 +280,9 @@ namespace engine
                 上下文.运行状态.msaa_samples,
                 上下文.运行状态.last_shadow_items,
                 上下文.运行状态.shadow_last_redrawn != 0 ? "重绘" : "复用");
+            //聚光灯阴影模式（第五百一十一轮；K 键切换，用于对比单盏 / 四盏的画面与开销）
+            ImGui::TextWrapped("聚光灯阴影：%s（K 切换）",
+                场景.聚光多盏() ? "四盏各自投影" : "单盏投影");
             ImGui::TextWrapped("渲染线程 %u   并行派发 %llu   最近一帧并行段 %u   阴影段 %u",
                 上下文.运行状态.render_threads,
                 static_cast<unsigned long long>(上下文.运行状态.parallel_dispatches),
@@ -305,7 +308,7 @@ namespace engine
                 static_cast<unsigned long long>(上下文.运行状态.scan_parallel_dispatches),
                 static_cast<unsigned long long>(上下文.运行状态.cache_parallel_dispatches));
             ImGui::Separator();
-            ImGui::TextWrapped("操作：WASD 移动 · E / 空格 上升 · Q / Shift 下降 · 右键拖拽看向 · 滚轮调速 · M 收起说明 · ESC 返回");
+            ImGui::TextWrapped("操作：WASD 移动 · E / 空格 上升 · Q / Shift 下降 · 右键拖拽看向 · 滚轮调速 · M 收起说明 · K 切换聚光阴影 · ESC 返回");
             if (ImGui::Button("返回测试界面", ImVec2(150.0f, 30.0f)))
                 上下文.请求退出展示 = true;
             ImGui::SameLine();
@@ -419,6 +422,11 @@ namespace engine
                     //M：展示模式下折叠 / 展开说明面板（后处理类展区观察更清晰）
                     if (按下 && 上下文.展示模式)
                         上下文.展示面板可见 = !上下文.展示面板可见;
+                    break;
+                case SDL_SCANCODE_K:
+                    //K：展示模式下切换聚光灯阴影（四盏各自投影 / 单盏）
+                    if (按下 && 上下文.展示模式 && 上下文.展示场景 != nullptr)
+                        上下文.展示场景->聚光多盏切换();
                     break;
                 default:
                     break;
