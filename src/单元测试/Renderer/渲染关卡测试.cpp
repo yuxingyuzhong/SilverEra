@@ -989,6 +989,54 @@ TEST(Renderer_Level_Test, 关卡材质实例卡通生效)
 }
 
 /*
+关卡材质实例查找（第五百六十三轮）
+口径：`level_material_find` 按实例名取首个匹配，字段（底色 / 自发光 / 卡通）与关卡文本逐位一致；
+空实例名与未登记名返回假，且不改写出参。
+*/
+TEST(Renderer_Level_Test, 关卡材质实例查找)
+{
+	write_text(level_dir() / L"实例查找.level",
+		"level 实例查找\n"
+		"material 红甲 甲 tint 0.8 0.2 0.2 1 emissive 0.35 toon 4 0.6 0.5\n"
+		"material 素甲 甲\n");
+
+	engine::Level_Data loaded;
+	ASSERT_TRUE(engine::level_text_read(level_utf8("实例查找.level"), loaded));
+	ASSERT_EQ(loaded.materials.size(), 2u);
+
+	//命中：逐字段一致
+	engine::Level_Material found;
+	ASSERT_TRUE(engine::level_material_find(loaded, "红甲", found));
+	EXPECT_EQ(found.实例名, "红甲");
+	EXPECT_EQ(found.模板, "甲");
+	EXPECT_TRUE(found.use_tint);
+	EXPECT_TRUE(bit_equal(found.tint[0], 0.8f));
+	EXPECT_TRUE(bit_equal(found.tint[2], 0.2f));
+	EXPECT_TRUE(found.use_emissive);
+	EXPECT_TRUE(bit_equal(found.emissive, 0.35f));
+	EXPECT_TRUE(found.use_toon);
+	EXPECT_TRUE(bit_equal(found.toon_steps, 4.0f));
+	EXPECT_TRUE(bit_equal(found.toon_rim, 0.6f));
+	EXPECT_TRUE(bit_equal(found.toon_specular, 0.5f));
+
+	//缺省实例：两项覆盖为假
+	engine::Level_Material plain;
+	ASSERT_TRUE(engine::level_material_find(loaded, "素甲", plain));
+	EXPECT_FALSE(plain.use_tint);
+	EXPECT_FALSE(plain.use_emissive);
+	EXPECT_FALSE(plain.use_toon);
+
+	//未登记名：返回假且出参不变
+	engine::Level_Material untouched;
+	untouched.实例名 = "占位";
+	EXPECT_FALSE(engine::level_material_find(loaded, "蓝甲", untouched));
+	EXPECT_EQ(untouched.实例名, "占位");
+
+	//空名：返回假
+	EXPECT_FALSE(engine::level_material_find(loaded, "", untouched));
+}
+
+/*
 聚光灯阴影（第四百七十四轮；方案 A）
 口径：第 1 盏聚光灯从上方照地面，遮挡立方体开启阴影后在地面投下暗区；开启前后差异 > 200 像素。
 */
