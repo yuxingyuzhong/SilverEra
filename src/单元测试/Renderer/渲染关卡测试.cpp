@@ -1585,6 +1585,72 @@ TEST(Renderer_Level_Test, 关卡Cluster八盏聚光阴影)
 }
 
 /*
+八盏聚光阴影与 MSAA 组合（第五百二十六轮）
+口径：1× 与 4× 采样下八盏阴影均生效（关闭 / 开启差异 > 100 且瓦片 8）；
+4× 档追加 Cluster 开 / 关两态，画面逐字节一致（与 278 轮方向光组合矩阵同口径）。
+*/
+TEST(Renderer_Level_Test, 八盏聚光阴影与MSAA组合)
+{
+	write_cube_assets();
+	write_eight_spot_level();
+
+	const uint32_t msaa_list[2] = { 1u, 4u };
+	for (uint32_t msaa_index = 0; msaa_index < 2; ++msaa_index)
+	{
+		engine::Renderer_Config config;
+		config.width = LEVEL_WIDTH;
+		config.height = LEVEL_HEIGHT;
+		config.hidden = true;
+		config.msaa_samples = msaa_list[msaa_index];
+		engine::Renderer renderer;
+		ASSERT_TRUE(renderer.init(config));
+		if (!renderer.readback_supported())
+			GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+
+		engine::Level_Data 关卡;
+		engine::Asset_Scene 场景;
+		ASSERT_TRUE(renderer.level_load(关卡, 场景, level_utf8("八盏聚光.level"), false));
+
+		//关闭聚光阴影：参照图
+		engine::Light_Data 灯光 = 关卡.light;
+			灯光.spot_shadow_enabled = 0;
+		renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
+		EXPECT_EQ(renderer.scene_draw(场景), 9u);
+		std::vector<uint8_t> 无影(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+		ASSERT_TRUE(renderer.frame_render(无影.data(), static_cast<uint32_t>(无影.size())));
+
+		//八盏全投影
+			灯光.spot_shadow_enabled = 1;
+			灯光.spot_shadow_all = 1;
+		renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
+		EXPECT_EQ(renderer.scene_draw(场景), 9u);
+		std::vector<uint8_t> 有影(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+		ASSERT_TRUE(renderer.frame_render(有影.data(), static_cast<uint32_t>(有影.size())));
+		EXPECT_EQ(renderer.frame_stats_get().spot_shadow_tiles, 8u);
+		const uint32_t 差异 = changed_pixels(无影, 有影);
+		std::cout << "[关卡] 八盏阴影 " << msaa_list[msaa_index] << "x 差异 " << 差异 << std::endl;
+		EXPECT_GT(差异, 100u) << "MSAA " << msaa_list[msaa_index] << "x 下八盏聚光阴影未生效";
+
+		//4× 档：Cluster 开 / 关两态逐字节一致
+		if (msaa_list[msaa_index] == 4u && renderer.cluster_supported())
+		{
+			ASSERT_TRUE(renderer.cluster_enable_set(true));
+			EXPECT_EQ(renderer.scene_draw(场景), 9u);
+			std::vector<uint8_t> 簇有影(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+			ASSERT_TRUE(renderer.frame_render(簇有影.data(), static_cast<uint32_t>(簇有影.size())));
+			ASSERT_TRUE(renderer.cluster_enable_set(false));
+			EXPECT_EQ(renderer.scene_draw(场景), 9u);
+			std::vector<uint8_t> 前向有影(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+			ASSERT_TRUE(renderer.frame_render(前向有影.data(), static_cast<uint32_t>(前向有影.size())));
+			const uint32_t 开关差异 = changed_pixels(簇有影, 前向有影);
+			std::cout << "[关卡] 4x 下 Cluster 两态差异 " << 开关差异 << std::endl;
+			EXPECT_EQ(开关差异, 0u) << "4x 下 Cluster 开关改变了八盏阴影画面";
+		}
+		renderer.level_unload(场景);
+	}
+}
+
+/*
 聚光灯阴影开关文本往返（第四百七十五轮）
 口径：`light spot_shadow 0/1` 结构化保存；写出再读回一致。
 */
