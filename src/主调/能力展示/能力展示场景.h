@@ -144,6 +144,8 @@ namespace engine
 		bool 卡通区激活 = false;
 		//Cluster 灯墙区是否激活
 		bool 灯墙区激活 = false;
+		//光照阴影区（展区③）是否激活（进入开簇光照以容纳 8 盏聚光 ＋ 3 盏点光）
+		bool 光照阴影区激活 = false;
 		//粒子喷泉区激活 / 已配置 / 是否走常驻路径
 		bool 粒子区激活 = false;
 		bool 粒子已配置 = false;
@@ -158,7 +160,7 @@ namespace engine
 		bool 线程区激活 = false;
 		//正交投影区是否激活（展区㉒）
 		bool 正交区激活 = false;
-		//聚光灯阴影模式（true = 前 4 盏各自投影，false = 单盏；K 键切换）
+		//聚光灯阴影模式（true = 前 8 盏各自投影，false = 单盏；K 键切换）
 		bool 聚光多盏 = true;
 		//已提交给渲染器的聚光灯阴影模式（避免逐帧重复设置）
 		bool 聚光多盏已提交 = true;
@@ -192,7 +194,7 @@ namespace engine
 		//当前偏航 / 俯仰（弧度；Overlay 显示用）
 		float 偏航(void) const;
 		float 俯仰(void) const;
-		//当前聚光灯阴影模式（true = 四盏各自投影；Overlay 显示用）
+		//当前聚光灯阴影模式（true = 八盏各自投影；Overlay 显示用）
 		bool 聚光多盏(void) const;
 		//切换聚光灯阴影模式（在 update 里提交给渲染器）
 		void 聚光多盏切换(void);

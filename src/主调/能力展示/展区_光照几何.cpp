@@ -8,13 +8,13 @@
 
 namespace engine
 {
-	//展区③：光照与阴影（四根立柱 ＋ 顶部聚光 ＋ 三盏点光可见光源球）
+	//展区③：光照与阴影（八根立柱 ＋ 顶部聚光 ＋ 三盏点光可见光源球）
 	void 展区03_绘制(展示资源& 资源, 展示状态& 状态, Renderer& 渲染器)
 	{
 		(void)状态;
-		for (uint32_t 序号 = 0; 序号 < 4; ++序号)
+		for (uint32_t 序号 = 0; 序号 < 8; ++序号)
 		{
-			const float x = 11.4f + 1.7f * static_cast<float>(序号);
+			const float x = 10.5f + 1.0f * static_cast<float>(序号);
 			//柱身（圆柱）
 			const std::array<float, 16> 柱身 = 展示::非均匀变换(x, 1.0f, -10.0f, 0.4f, 1.2f, 0.4f);
 			(void)渲染器.mesh_draw(资源.圆柱, 柱身.data());
