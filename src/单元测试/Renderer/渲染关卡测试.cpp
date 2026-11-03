@@ -1819,6 +1819,53 @@ TEST(Renderer_Level_Test, 关卡偏置自校准生效)
 }
 
 /*
+八盏聚光阴影按需重绘（第五百三十三轮）
+口径：八盏全投影时静态连续 4 帧阴影 pass 计数不增长；
+把第 7 盏聚光灯位置移动后签名变化 → 重绘一次（与 486 轮单盏口径同规则，扩到 8 瓦片）。
+*/
+TEST(Renderer_Level_Test, 八盏聚光阴影按需重绘)
+{
+	write_cube_assets();
+	write_eight_spot_level();
+
+	engine::Renderer_Config config;
+	config.width = LEVEL_WIDTH;
+	config.height = LEVEL_HEIGHT;
+	config.hidden = true;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(config));
+
+	engine::Level_Data 关卡;
+	engine::Asset_Scene 场景;
+	ASSERT_TRUE(renderer.level_load(关卡, 场景, level_utf8("八盏聚光.level"), false));
+
+	engine::Light_Data 灯光 = 关卡.light;
+		灯光.spot_shadow_enabled = 1;
+		灯光.spot_shadow_all = 1;
+	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
+	EXPECT_EQ(renderer.scene_draw(场景), 9u);
+	ASSERT_TRUE(renderer.frame_render());
+	EXPECT_EQ(renderer.frame_stats_get().spot_shadow_tiles, 8u);
+
+	//静态连续渲染：阴影 pass 不应再增长
+	const uint64_t 静态后 = renderer.shadow_pass_count();
+	for (int frame = 0; frame < 4; ++frame)
+	{
+		EXPECT_EQ(renderer.scene_draw(场景), 9u);
+		ASSERT_TRUE(renderer.frame_render());
+	}
+	EXPECT_EQ(renderer.shadow_pass_count(), 静态后) << "八盏静态场景仍重绘阴影";
+
+	//移动第 7 盏聚光灯（瓦片 6）：签名变化 → 重绘一次
+	灯光.spot_position[6][0] += 1.0f;
+	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
+	EXPECT_EQ(renderer.scene_draw(场景), 9u);
+	ASSERT_TRUE(renderer.frame_render());
+	EXPECT_GT(renderer.shadow_pass_count(), 静态后) << "八盏中单盏移动后未重绘阴影";
+	renderer.level_unload(场景);
+}
+
+/*
 聚光灯阴影开关文本往返（第四百七十五轮）
 口径：`light spot_shadow 0/1` 结构化保存；写出再读回一致。
 */
