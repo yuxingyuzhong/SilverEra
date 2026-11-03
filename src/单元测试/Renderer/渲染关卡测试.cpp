@@ -1278,6 +1278,122 @@ TEST(Renderer_Level_Test, 关卡材质实例清漆生效)
 }
 
 /*
+实例清漆与 PBR 组合（第五百九十七轮）
+口径：同一实例同时带 `pbr` 与 `clearcoat`，PBR 覆盖不被清漆吞并：相对「仅清漆」画面应出现可见差异。
+注：清漆以 `max` 叠加到高光上，故「基础高光已更强」时清漆不产生额外差异（组合宜以「仅清漆」为基准）。
+*/
+TEST(Renderer_Level_Test, 实例清漆与PBR组合)
+{
+	write_cube_assets();
+	write_text(level_dir() / L"清漆PBR甲.level",
+		"level 清漆PBR甲\n"
+		"camera position 0 0 3\n"
+		"light direction 0 0 -1\n"
+		"light intensity 1.2\n"
+		"light ambient 0.2\n"
+		"light specular 1 32\n"
+		"light pbr 1 0.5 0\n"
+		"material 瓷甲 甲 tint 1 1 1 1 clearcoat 1 0.05\n"
+		"mesh 方盒 cube.obj\n"
+		"mtl 方盒材质 cube.mtl\n"
+		"place 方盒 瓷甲 0 0 0 1 1 1\n");
+	write_text(level_dir() / L"清漆PBR乙.level",
+		"level 清漆PBR乙\n"
+		"camera position 0 0 3\n"
+		"light direction 0 0 -1\n"
+		"light intensity 1.2\n"
+		"light ambient 0.2\n"
+		"light specular 1 32\n"
+		"light pbr 1 0.5 0\n"
+		"material 组合甲 甲 tint 1 1 1 1 pbr 1 0 clearcoat 1 0.05\n"
+		"mesh 方盒 cube.obj\n"
+		"mtl 方盒材质 cube.mtl\n"
+		"place 方盒 组合甲 0 0 0 1 1 1\n");
+
+	engine::Renderer_Config config;
+	config.width = LEVEL_WIDTH;
+	config.height = LEVEL_HEIGHT;
+	config.hidden = true;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(config));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+
+	//甲：仅清漆
+	engine::Level_Data 甲;
+	engine::Asset_Scene 场景甲;
+	ASSERT_TRUE(renderer.level_load(甲, 场景甲, level_utf8("清漆PBR甲.level")));
+	EXPECT_EQ(renderer.scene_draw(场景甲), 1u);
+	std::vector<uint8_t> 帧甲(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+	ASSERT_TRUE(renderer.frame_render(帧甲.data(), static_cast<uint32_t>(帧甲.size())));
+	renderer.level_unload(场景甲);
+
+	//乙：PBR ＋ 清漆
+	engine::Level_Data 乙;
+	engine::Asset_Scene 场景乙;
+	ASSERT_TRUE(renderer.level_load(乙, 场景乙, level_utf8("清漆PBR乙.level")));
+	ASSERT_EQ(场景乙.objects.size(), 1u);
+	ASSERT_EQ(场景乙.objects[0].material_instances.size(), 1u);
+	EXPECT_TRUE(场景乙.objects[0].material_instances[0].use_clearcoat);
+	EXPECT_TRUE(场景乙.objects[0].material_instances[0].use_pbr);
+	EXPECT_EQ(renderer.scene_draw(场景乙), 1u);
+	std::vector<uint8_t> 帧乙(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+	ASSERT_TRUE(renderer.frame_render(帧乙.data(), static_cast<uint32_t>(帧乙.size())));
+
+	const uint32_t 差异 = changed_pixels(帧甲, 帧乙);
+	std::cout << "[关卡] 清漆叠加 PBR 差异 " << 差异 << std::endl;
+	EXPECT_GT(差异, 10u) << "PBR 覆盖被清漆吞并";
+	renderer.level_unload(场景乙);
+}
+
+/*
+实例清漆状态复位（第五百九十七轮）
+口径：实例清漆只在本次绘制生效；`scene_draw` 结束后清漆强度 / 粗糙度回到绘制前状态，不污染后续对象。
+*/
+TEST(Renderer_Level_Test, 实例清漆状态复位)
+{
+	write_cube_assets();
+	write_text(level_dir() / L"清漆复位.level",
+		"level 清漆复位\n"
+		"camera position 0 0 3\n"
+		"light direction 0 0 -1\n"
+		"light intensity 1.2\n"
+		"light ambient 0.2\n"
+		"light specular 1 32\n"
+		"light pbr 1 0.5 0\n"
+		"material 瓷甲 甲 tint 1 1 1 1 clearcoat 1 0.05\n"
+		"mesh 方盒 cube.obj\n"
+		"mtl 方盒材质 cube.mtl\n"
+		"place 方盒 瓷甲 0 0 0 1 1 1\n");
+
+	engine::Renderer_Config config;
+	config.width = LEVEL_WIDTH;
+	config.height = LEVEL_HEIGHT;
+	config.hidden = true;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(config));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+
+	engine::Level_Data 关卡;
+	engine::Asset_Scene 场景;
+	ASSERT_TRUE(renderer.level_load(关卡, 场景, level_utf8("清漆复位.level")));
+	//绘制前状态（关卡装配不改变全局清漆状态）
+	const bool 前激活 = renderer.material_clear_coat_active();
+	const float 前强度 = renderer.material_clear_coat_strength();
+	const float 前粗糙 = renderer.material_clear_coat_roughness();
+
+	//绘制：实例覆盖生效后应复位
+	EXPECT_EQ(renderer.scene_draw(场景), 1u);
+	std::vector<uint8_t> 帧(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+	ASSERT_TRUE(renderer.frame_render(帧.data(), static_cast<uint32_t>(帧.size())));
+	EXPECT_EQ(renderer.material_clear_coat_active(), 前激活) << "实例清漆状态在绘制后泄漏";
+	EXPECT_TRUE(bit_equal(renderer.material_clear_coat_strength(), 前强度)) << "清漆强度状态泄漏";
+	EXPECT_TRUE(bit_equal(renderer.material_clear_coat_roughness(), 前粗糙)) << "清漆粗糙度状态泄漏";
+	renderer.level_unload(场景);
+}
+
+/*
 实例 PBR 状态复位（第五百七十二轮）
 口径：实例覆盖只在本次绘制生效；`scene_draw` 结束后 `material_pbr_active` 必须回到绘制前的状态，
 避免后续对象被上一次实例的 PBR 状态污染。
