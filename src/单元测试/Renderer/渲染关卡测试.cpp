@@ -2481,6 +2481,71 @@ TEST(Renderer_Level_Test, 八盏聚光逐瓦片互异)
 }
 
 /*
+八盏聚光逐瓦片互异（簇路径）（第五百五十九轮）
+口径：同上例，但灯光经 Cluster 计算路径登记；序号 0..7 逐盏单盏投影，
+各序号与关闭基准有差异、相邻序号画面互不相同，确认簇路径亦按盏绑定独立瓦片。
+*/
+TEST(Renderer_Level_Test, 八盏聚光逐瓦片互异_簇路径)
+{
+	write_cube_assets();
+	write_eight_spot_level();
+
+	engine::Renderer_Config config;
+	config.width = LEVEL_WIDTH;
+	config.height = LEVEL_HEIGHT;
+	config.hidden = true;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(config));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	if (!renderer.cluster_supported())
+		GTEST_SKIP() << "本机不支持 Cluster 计算路径";
+
+	engine::Level_Data 关卡;
+	engine::Asset_Scene 场景;
+	ASSERT_TRUE(renderer.level_load(关卡, 场景, level_utf8("八盏聚光.level"), false));
+	ASSERT_EQ(关卡.light.spot_count, 8u);
+	ASSERT_TRUE(renderer.cluster_enable_set(true));
+
+	//簇路径关闭聚光阴影基准
+	engine::Light_Data 灯光 = 关卡.light;
+	灯光.spot_shadow_enabled = 0;
+	灯光.spot_shadow_all = 0;
+	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
+	EXPECT_EQ(renderer.scene_draw(场景), 9u);
+	std::vector<uint8_t> 基准(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+	ASSERT_TRUE(renderer.frame_render(基准.data(), static_cast<uint32_t>(基准.size())));
+
+	//簇路径逐序号单盏投影（瓦片 1）
+	灯光.spot_shadow_enabled = 1;
+	std::vector<uint8_t> 上帧;
+	for (uint32_t 序号 = 0; 序号 < 8; ++序号)
+	{
+		灯光.spot_shadow_index = static_cast<int>(序号);
+		renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
+		EXPECT_EQ(renderer.scene_draw(场景), 9u);
+		std::vector<uint8_t> 当前(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+		ASSERT_TRUE(renderer.frame_render(当前.data(), static_cast<uint32_t>(当前.size())));
+		EXPECT_EQ(renderer.frame_stats_get().spot_shadow_tiles, 1u);
+
+		//与关闭基准的差异
+		const uint32_t 基准差异 = changed_pixels(基准, 当前);
+		std::cout << "[关卡] 簇路径第 " << 序号 << " 盏基准差异 " << 基准差异 << std::endl;
+		EXPECT_GT(基准差异, 0u) << "簇路径第 " << 序号 << " 盏单盏投影未生效";
+
+		//与上一序号单盏的差异
+		if (序号 > 0)
+		{
+			const uint32_t 相邻差异 = changed_pixels(上帧, 当前);
+			std::cout << "[关卡] 簇路径第 " << 序号 - 1 << " / " << 序号 << " 盏瓦片差异 " << 相邻差异 << std::endl;
+			EXPECT_GT(相邻差异, 0u) << "簇路径第 " << 序号 << " 盏瓦片未独立";
+		}
+		上帧 = std::move(当前);
+	}
+	renderer.level_unload(场景);
+}
+
+/*
 八盏聚光质量参数组合（第五百二十三轮）
 口径：八盏聚光全部投影时，强度 0 应与「关闭聚光阴影」画面逐字节一致（着色器 mix 结果恒为 1）；
 强度 0.5 保留半遮蔽（与全强度差异 > 100 像素）；软度满档（1.0，7×7 邻域）只改变阴影边缘；
