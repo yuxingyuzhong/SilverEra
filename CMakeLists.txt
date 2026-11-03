@@ -91,7 +91,8 @@ byjy_jieru_xiaceng(
 # =============================================================================
 # 2. 源文件收集
 # =============================================================================
-# 当前收录 src/entity（实体 / 实体管理器）、src/prop（属性 / 属性槽分发器）与 src/effect（效应 / 效应管理器）
+# 当前收录 src/entity（实体 / 实体管理器）、src/prop（属性 / 属性槽分发器）、src/effect（效应 / 效应管理器）
+# 与 src/scene（关卡数据与文本读写：从渲染层下放的场景序列化职责）
 file(GLOB_RECURSE SYSTEM_SOURCES CONFIGURE_DEPENDS
     "${PROJECT_ROOT_DIR}/src/entity/*.cpp"
     "${PROJECT_ROOT_DIR}/src/entity/*.c"
@@ -99,6 +100,8 @@ file(GLOB_RECURSE SYSTEM_SOURCES CONFIGURE_DEPENDS
     "${PROJECT_ROOT_DIR}/src/prop/*.c"
     "${PROJECT_ROOT_DIR}/src/effect/*.cpp"
     "${PROJECT_ROOT_DIR}/src/effect/*.c"
+    "${PROJECT_ROOT_DIR}/src/scene/*.cpp"
+    "${PROJECT_ROOT_DIR}/src/scene/*.c"
 )
 
 # 导出编译数据库（供 IDE / 语言工具链读取本层包含路径与宏）
@@ -112,11 +115,13 @@ file(GLOB_RECURSE SYSTEM_HEADERS CONFIGURE_DEPENDS
     "${PROJECT_ROOT_DIR}/src/prop/*.hpp"
     "${PROJECT_ROOT_DIR}/src/effect/*.h"
     "${PROJECT_ROOT_DIR}/src/effect/*.hpp"
+    "${PROJECT_ROOT_DIR}/src/scene/*.h"
+    "${PROJECT_ROOT_DIR}/src/scene/*.hpp"
 )
 
 # 任务<1>：把被 GLOB 的目录登记为配置依赖 —— 目录内容变化（增删文件）时，
 # 生成系统自动重跑配置并重扫 GLOB，不必手动「重新生成缓存」才刷新目录视图。
-# 说明：本层 GLOB 只覆盖 entity / prop / effect 三个模块目录；此处连同它们的共同父目录
+# 说明：本层 GLOB 覆盖 entity / prop / effect / scene 四个模块目录；此处连同它们的共同父目录
 #       src/ 一并登记 —— 新建 src/新模块/ 或直接在 src/ 下放文件时，父目录 mtime 变化
 #       即触发重配（否则要等下一次构建的 GLOB 内容比对兜底）。
 #       ⚠ 新增模块目录时，须同时把该目录补进上方 GLOB 模式与本登记列表，二者缺一不可。
@@ -125,6 +130,7 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
     "${PROJECT_ROOT_DIR}/src/entity"
     "${PROJECT_ROOT_DIR}/src/prop"
     "${PROJECT_ROOT_DIR}/src/effect"
+    "${PROJECT_ROOT_DIR}/src/scene"
 )
 
 if(SYSTEM_SOURCES)

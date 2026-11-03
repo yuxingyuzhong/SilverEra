@@ -30,6 +30,9 @@ target_sources(EngineSystem PRIVATE
     "src/entity/Entity_Manager/core/属性槽处理.cpp"
     "src/entity/Entity_Manager/core/配置处理.cpp"
     "src/prop/Prop_Distributor/core/属性槽分发器.cpp"
+    "src/scene/Level/core/关卡变换.cpp"
+    "src/scene/Level/core/关卡文本.cpp"
+    "src/scene/Manifest/core/场景清单解析.cpp"
 )
 
 # 头文件不参与编译，只为让 IDE 建立文件索引；同样经 target_sources 列出，
@@ -46,4 +49,9 @@ target_sources(EngineSystem PRIVATE
     "src/prop/Prop/属性.h"
     "src/prop/Prop_Distributor/局部命名空间使用.h"
     "src/prop/Prop_Distributor/属性槽分发器.h"
+    "src/scene/Level/关卡数据.h"
+    "src/scene/Level/关卡文本.h"
+    "src/scene/Level/局部命名空间使用.h"
+    "src/scene/Manifest/场景清单.h"
+    "src/scene/Manifest/局部命名空间使用.h"
 )
