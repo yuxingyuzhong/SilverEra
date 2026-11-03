@@ -1943,6 +1943,76 @@ TEST(Renderer_Level_Test, 关卡八盏聚光分辨率切换)
 }
 
 /*
+聚光灯阴影偏置自校准（第五百二十一轮）
+口径：两盏 radius 26 / 9 的聚光；关闭自校准（默认）时逐瓦片偏置都等于全局值；
+开启后按参考跨度 9 归一化，小半径瓦片略增、大半径瓦片显著减小，比值 ≈ 两瓦片跨度比。
+*/
+TEST(Renderer_Level_Test, 聚光灯偏置自校准)
+{
+	write_cube_assets();
+	write_text(level_dir() / L"偏置自校准.level",
+		"level 偏置自校准\n"
+		"camera position 0 6 8\n"
+		"camera target 0 0 0\n"
+		"light direction 0 -1 0\n"
+		"light color 0.2 0.2 0.2\n"
+		"light intensity 0.2\n"
+		"light spot -4 4 0 0 -1 0 1 1 1 26 2 20 40 0 0 16\n"
+		"light spot 4 4 0 0 -1 0 1 1 1 9 2 20 40 0 0 16\n"
+		"mesh 方块 cube.obj\n"
+		"mtl 方块材质 cube.mtl\n"
+		"place 方块 方块材质 0 -1.5 0 16 0.2 8\n"
+		"place 方块 方块材质 -4 0.6 0 1.2 1.2 1.2\n"
+		"place 方块 方块材质 4 0.6 0 1.2 1.2 1.2\n");
+
+	engine::Renderer_Config config;
+	config.width = LEVEL_WIDTH;
+	config.height = LEVEL_HEIGHT;
+	config.hidden = true;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(config));
+
+	engine::Level_Data 关卡;
+	engine::Asset_Scene 场景;
+	ASSERT_TRUE(renderer.level_load(关卡, 场景, level_utf8("偏置自校准.level"), false));
+
+	engine::Light_Data 灯光 = 关卡.light;
+	灯光.spot_shadow_enabled = 1;
+	灯光.spot_shadow_all = 1;
+	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
+
+	//默认关闭：两瓦片都等于全局偏置 0.010
+	EXPECT_FALSE(renderer.spot_shadow_bias_auto());
+	EXPECT_EQ(renderer.scene_draw(场景), 3u);
+	ASSERT_TRUE(renderer.frame_render());
+	float 偏置[8] = {};
+	renderer.spot_shadow_bias_tiles_get(偏置);
+	EXPECT_NEAR(偏置[0], 0.010f, 1e-5f);
+	EXPECT_NEAR(偏置[1], 0.010f, 1e-5f);
+
+	//开启自校准：瓦片 0（radius 26）≈ 0.010 × 9 / 25.9，瓦片 1（radius 9）≈ 0.010 × 9 / 8.9
+	renderer.spot_shadow_bias_auto_set(true);
+	EXPECT_TRUE(renderer.spot_shadow_bias_auto());
+	EXPECT_EQ(renderer.scene_draw(场景), 3u);
+	ASSERT_TRUE(renderer.frame_render());
+	renderer.spot_shadow_bias_tiles_get(偏置);
+	EXPECT_NEAR(偏置[0], 0.010f * 9.0f / 25.9f, 1e-4f);
+	EXPECT_NEAR(偏置[1], 0.010f * 9.0f / 8.9f, 1e-4f);
+	//比值应接近跨度比 25.9 / 8.9
+	EXPECT_NEAR(偏置[0] * (25.9f / 8.9f), 偏置[1], 5e-4f);
+
+	//关闭后恢复全局偏置
+	renderer.spot_shadow_bias_auto_set(false);
+	EXPECT_FALSE(renderer.spot_shadow_bias_auto());
+	EXPECT_EQ(renderer.scene_draw(场景), 3u);
+	ASSERT_TRUE(renderer.frame_render());
+	renderer.spot_shadow_bias_tiles_get(偏置);
+	EXPECT_NEAR(偏置[0], 0.010f, 1e-5f);
+	EXPECT_NEAR(偏置[1], 0.010f, 1e-5f);
+	renderer.level_unload(场景);
+}
+
+/*
 八盏聚光运行期开关（第五百一十七轮）
 口径：八盏场景按单盏应用后用 spot_shadow_all_set 运行期切到八盏、再切回；
 八盏与单盏差异 > 100 像素，切回后与初始单盏差异 < 50 像素。
