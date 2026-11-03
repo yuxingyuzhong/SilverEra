@@ -989,6 +989,130 @@ TEST(Renderer_Level_Test, 关卡材质实例卡通生效)
 }
 
 /*
+材质实例 PBR 行往返（第五百六十四轮）
+口径：`material` 行可带 `pbr <粗糙度> <金属度>`；结构化保存、写出再读回逐位一致。
+*/
+TEST(Renderer_Level_Test, 关卡材质实例PBR往返)
+{
+	const std::string text =
+		"level PBR关卡\n"
+		"material 金属 甲 tint 0.5 0.5 0.5 1 pbr 0.25 0.9\n"
+		"material 素甲 甲\n";
+
+	write_text(level_dir() / L"实例PBR.level", text);
+
+	engine::Level_Data loaded;
+	ASSERT_TRUE(engine::level_text_read(level_utf8("实例PBR.level"), loaded));
+	ASSERT_EQ(loaded.materials.size(), 2u);
+	EXPECT_TRUE(loaded.materials[0].use_pbr);
+	EXPECT_TRUE(bit_equal(loaded.materials[0].pbr_roughness, 0.25f));
+	EXPECT_TRUE(bit_equal(loaded.materials[0].pbr_metallic, 0.9f));
+	EXPECT_FALSE(loaded.materials[1].use_pbr);
+
+	//写出再读回：PBR 三项一致
+	ASSERT_TRUE(engine::level_text_write(loaded, level_utf8("实例PBR_回写.level")));
+	engine::Level_Data reread;
+	ASSERT_TRUE(engine::level_text_read(level_utf8("实例PBR_回写.level"), reread));
+	ASSERT_EQ(reread.materials.size(), 2u);
+	EXPECT_EQ(reread.materials[0].use_pbr, loaded.materials[0].use_pbr);
+	EXPECT_TRUE(bit_equal(reread.materials[0].pbr_roughness, loaded.materials[0].pbr_roughness));
+	EXPECT_TRUE(bit_equal(reread.materials[0].pbr_metallic, loaded.materials[0].pbr_metallic));
+}
+
+/*
+材质实例 PBR 非法（第五百六十四轮）
+口径：粗糙度须落在 (0.05, 4]、金属度 [0, 1]；越界 / 缺字段 / 重复 / 顺序非法整份拒绝。
+*/
+TEST(Renderer_Level_Test, 关卡材质实例PBR非法)
+{
+	//粗糙度下界等于 0.05（不含）→ 拒绝
+	write_text(level_dir() / L"PBR下界.level",
+		"level PBR下界\nmaterial 甲 模板 pbr 0.05 0.5\n");
+	engine::Level_Data lower;
+	EXPECT_FALSE(engine::level_text_read(level_utf8("PBR下界.level"), lower));
+	//粗糙度上界越界 → 拒绝
+	write_text(level_dir() / L"PBR上界.level",
+		"level PBR上界\nmaterial 甲 模板 pbr 4.5 0.5\n");
+	engine::Level_Data upper;
+	EXPECT_FALSE(engine::level_text_read(level_utf8("PBR上界.level"), upper));
+	//金属度越界 → 拒绝
+	write_text(level_dir() / L"PBR金属.level",
+		"level PBR金属\nmaterial 甲 模板 pbr 0.3 -0.1\n");
+	engine::Level_Data metallic;
+	EXPECT_FALSE(engine::level_text_read(level_utf8("PBR金属.level"), metallic));
+	//缺一个字段 → 拒绝
+	write_text(level_dir() / L"PBR缺字段.level",
+		"level PBR缺字段\nmaterial 甲 模板 pbr 0.3\n");
+	engine::Level_Data missing;
+	EXPECT_FALSE(engine::level_text_read(level_utf8("PBR缺字段.level"), missing));
+	//重复覆盖 → 拒绝
+	write_text(level_dir() / L"PBR重复.level",
+		"level PBR重复\nmaterial 甲 模板 pbr 0.3 0.5 pbr 0.4 0.6\n");
+	engine::Level_Data repeated;
+	EXPECT_FALSE(engine::level_text_read(level_utf8("PBR重复.level"), repeated));
+	//顺序非法（pbr 之后出现 tint）→ 拒绝
+	write_text(level_dir() / L"PBR顺序.level",
+		"level PBR顺序\nmaterial 甲 模板 pbr 0.3 0.5 tint 1 1 1 1\n");
+	engine::Level_Data order;
+	EXPECT_FALSE(engine::level_text_read(level_utf8("PBR顺序.level"), order));
+}
+
+/*
+材质实例 PBR 生效（第五百六十四轮）
+口径：同模板「无 PBR」与「pbr 0.2 0.9」两个实例 → 画面差异明显（覆盖即启用 PBR）。
+*/
+TEST(Renderer_Level_Test, 关卡材质实例PBR生效)
+{
+	write_cube_assets();
+	write_text(level_dir() / L"PBR甲.level",
+		"level PBR甲\n"
+		"camera position 1 0 3\n"
+		"light pbr 1 1 0\n"
+		"material 素 甲 tint 1 1 1 1\n"
+		"mesh 方盒 cube.obj\n"
+		"mtl 方盒材质 cube.mtl\n"
+		"place 方盒 素 0 0 0 1 1 1\n");
+	write_text(level_dir() / L"PBR乙.level",
+		"level PBR乙\n"
+		"camera position 1 0 3\n"
+		"light pbr 1 1 0\n"
+		"material 金属甲 甲 tint 1 1 1 1 pbr 0.2 0.9\n"
+		"mesh 方盒 cube.obj\n"
+		"mtl 方盒材质 cube.mtl\n"
+		"place 方盒 金属甲 0 0 0 1 1 1\n");
+
+	engine::Renderer_Config config;
+	config.width = LEVEL_WIDTH;
+	config.height = LEVEL_HEIGHT;
+	config.hidden = true;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(config));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+
+	//甲：无 PBR
+	engine::Level_Data 甲;
+	engine::Asset_Scene 场景甲;
+	ASSERT_TRUE(renderer.level_load(甲, 场景甲, level_utf8("PBR甲.level")));
+	EXPECT_EQ(renderer.scene_draw(场景甲), 1u);
+	std::vector<uint8_t> 帧甲(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+	ASSERT_TRUE(renderer.frame_render(帧甲.data(), static_cast<uint32_t>(帧甲.size())));
+	renderer.level_unload(场景甲);
+
+	//乙：实例 PBR
+	engine::Level_Data 乙;
+	engine::Asset_Scene 场景乙;
+	ASSERT_TRUE(renderer.level_load(乙, 场景乙, level_utf8("PBR乙.level")));
+	EXPECT_EQ(renderer.scene_draw(场景乙), 1u);
+	std::vector<uint8_t> 帧乙(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+	ASSERT_TRUE(renderer.frame_render(帧乙.data(), static_cast<uint32_t>(帧乙.size())));
+	const uint32_t 差异 = changed_pixels(帧甲, 帧乙);
+	std::cout << "[关卡] 实例 PBR 差异 " << 差异 << std::endl;
+	EXPECT_GT(差异, 20u) << "实例 pbr 覆盖未生效";
+	renderer.level_unload(场景乙);
+}
+
+/*
 关卡材质实例查找（第五百六十三轮）
 口径：`level_material_find` 按实例名取首个匹配，字段（底色 / 自发光 / 卡通）与关卡文本逐位一致；
 空实例名与未登记名返回假，且不改写出参。
