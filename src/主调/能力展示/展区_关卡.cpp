@@ -8,6 +8,8 @@
 下次装载即按新配色出图（演示实例声明热更新）。
 */
 #include "src/主调/能力展示/展区公共.h"
+//应用层装配桥（关卡文本 → 渲染资源 → 绘制登记）
+#include "src/主调/能力展示/关卡装配桥.h"
 
 #include "Application/Renderer/src/render/Renderer/渲染器.h"
 
@@ -121,10 +123,10 @@ namespace
 	{
 		//卸载当前资产
 		if (已装载)
-			渲染器.level_unload(关卡场景);
+			level_bridge_unload(渲染器, 关卡场景);
 		已装载 = false;
 		//装载新关卡
-		if (!渲染器.level_load(关卡数据, 关卡场景, 关卡路径[序号], false))
+		if (!level_bridge_load(渲染器, 关卡数据, 关卡场景, 关卡路径[序号], false))
 		{
 			std::cout << "[关卡展示] 装载失败：" << 关卡路径[序号] << std::endl;
 			return false;
@@ -167,8 +169,8 @@ void engine::展区24_绘制(展示资源& 资源, 展示状态& 状态, Rendere
 	(void)状态;
 	if (!已装载)
 		return;
-	//逐对象登记绘制（门面 scene_draw：位置 / 旋转 / 缩放 ＋ 逐段绑材质）
-	(void)渲染器.scene_draw(关卡场景);
+	//逐对象登记绘制（装配桥：位置 / 旋转 / 缩放 ＋ 逐段绑材质）
+	(void)level_bridge_draw(渲染器, 关卡场景);
 }
 
 //释放关卡资产（幂等）
@@ -176,6 +178,6 @@ void engine::展示::关卡区释放(Renderer& 渲染器)
 {
 	if (!已装载)
 		return;
-	渲染器.level_unload(关卡场景);
+	level_bridge_unload(渲染器, 关卡场景);
 	已装载 = false;
 }

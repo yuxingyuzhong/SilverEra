@@ -21,6 +21,9 @@
 #include <thread>
 
 #include "Application/Renderer/src/render/Asset/资产加载.h"
+#include "Engine/EngineSystem/src/scene/Manifest/场景清单.h"
+#include "src/主调/能力展示/关卡装配桥.h"
+#include "src/主调/能力展示/资产缓存桥.h"
 #include "Application/Renderer/src/render/Renderer/渲染器.h"
 
 namespace
@@ -526,7 +529,7 @@ TEST(Renderer_Asset_Load_Test, 场景清单端到端装载)
 	ASSERT_TRUE(renderer.frame_render(reference.data(), static_cast<uint32_t>(reference.size())));
 
 	engine::Asset_Scene 场景;
-	ASSERT_TRUE(renderer.scene_load(场景, asset_utf8("场景.txt")));
+	ASSERT_TRUE(scene_bundle_load(renderer, 场景, asset_utf8("场景.txt")));
 	ASSERT_EQ(场景.meshes.size(), 1u);
 	ASSERT_EQ(场景.materials.size(), 1u);
 	ASSERT_EQ(场景.objects.size(), 2u);
@@ -546,7 +549,7 @@ TEST(Renderer_Asset_Load_Test, 场景清单端到端装载)
 	EXPECT_GE(covered, ASSET_MIN_PIXELS) << "场景清单装载的网格没有画出来";
 
 	//释放（幂等）
-	renderer.scene_unload(场景);
+	level_bridge_unload(renderer, 场景);
 	EXPECT_TRUE(场景.objects.empty());
 	EXPECT_TRUE(场景.meshes.empty());
 }
@@ -571,25 +574,25 @@ TEST(Renderer_Asset_Load_Test, 共享网格复用与引用计数)
 
 	engine::Mesh_Handle 甲 = 0;
 	engine::Mesh_Handle 乙 = 0;
-	ASSERT_TRUE(renderer.mesh_load_obj_shared(甲, asset_utf8("shared.obj")));
-	ASSERT_TRUE(renderer.mesh_load_obj_shared(乙, asset_utf8("shared.obj")));
+	ASSERT_TRUE(asset_mesh_shared_load(renderer, 甲, asset_utf8("shared.obj")));
+	ASSERT_TRUE(asset_mesh_shared_load(renderer, 乙, asset_utf8("shared.obj")));
 	EXPECT_EQ(甲, 乙);
-	EXPECT_EQ(renderer.asset_cache_count(), 1u);
+	EXPECT_EQ(asset_cache_count(renderer), 1u);
 	//大小写不同但归一化后同键 → 仍是同一资源
 	engine::Mesh_Handle 丙 = 0;
-	ASSERT_TRUE(renderer.mesh_load_obj_shared(丙, "out/资产测试/SHARED.OBJ"));
+	ASSERT_TRUE(asset_mesh_shared_load(renderer, 丙, "out/资产测试/SHARED.OBJ"));
 	EXPECT_EQ(丙, 甲);
-	EXPECT_EQ(renderer.asset_cache_count(), 1u);
+	EXPECT_EQ(asset_cache_count(renderer), 1u);
 
 	//释放一次：仍可绘制
-	renderer.mesh_release(甲);
-	EXPECT_EQ(renderer.asset_cache_count(), 1u);
+	asset_mesh_release(renderer, 甲);
+	EXPECT_EQ(asset_cache_count(renderer), 1u);
 	EXPECT_TRUE(renderer.mesh_draw(乙, nullptr));
 
 	//释放归零：真正卸载，缓存条目清零
-	renderer.mesh_release(乙);
-	renderer.mesh_release(丙);
-	EXPECT_EQ(renderer.asset_cache_count(), 0u);
+	asset_mesh_release(renderer, 乙);
+	asset_mesh_release(renderer, 丙);
+	EXPECT_EQ(asset_cache_count(renderer), 0u);
 	EXPECT_FALSE(renderer.mesh_draw(丙, nullptr)) << "引用计数归零后网格仍可用";
 	std::cout << "[资产加载] 共享网格：复用 3 次、释放归零后条目 0" << std::endl;
 }
@@ -614,20 +617,20 @@ TEST(Renderer_Asset_Load_Test, 共享加载隔离与失败)
 
 	engine::Mesh_Handle 甲 = 0;
 	engine::Mesh_Handle 乙 = 0;
-	ASSERT_TRUE(renderer.mesh_load_obj_shared(甲, asset_utf8("iso1.obj")));
-	ASSERT_TRUE(renderer.mesh_load_obj_shared(乙, asset_utf8("iso2.obj")));
+	ASSERT_TRUE(asset_mesh_shared_load(renderer, 甲, asset_utf8("iso1.obj")));
+	ASSERT_TRUE(asset_mesh_shared_load(renderer, 乙, asset_utf8("iso2.obj")));
 	EXPECT_NE(甲, 乙);
-	EXPECT_EQ(renderer.asset_cache_count(), 2u);
+	EXPECT_EQ(asset_cache_count(renderer), 2u);
 
 	//失败不入缓存
 	engine::Mesh_Handle 缺失 = 0;
-	EXPECT_FALSE(renderer.mesh_load_obj_shared(缺失, asset_utf8("不存在.obj")));
+	EXPECT_FALSE(asset_mesh_shared_load(renderer, 缺失, asset_utf8("不存在.obj")));
 	EXPECT_EQ(缺失, 0u);
-	EXPECT_EQ(renderer.asset_cache_count(), 2u);
+	EXPECT_EQ(asset_cache_count(renderer), 2u);
 
-	renderer.mesh_release(甲);
-	renderer.mesh_release(乙);
-	EXPECT_EQ(renderer.asset_cache_count(), 0u);
+	asset_mesh_release(renderer, 甲);
+	asset_mesh_release(renderer, 乙);
+	EXPECT_EQ(asset_cache_count(renderer), 0u);
 }
 
 /*
@@ -647,16 +650,16 @@ TEST(Renderer_Asset_Load_Test, 共享纹理复用与引用计数)
 
 	uint64_t 甲 = 0;
 	uint64_t 乙 = 0;
-	ASSERT_TRUE(renderer.texture_load_file_shared(甲, asset_utf8("shared_tex.bmp")));
-	ASSERT_TRUE(renderer.texture_load_file_shared(乙, asset_utf8("shared_tex.bmp")));
+	ASSERT_TRUE(asset_texture_shared_load(renderer, 甲, asset_utf8("shared_tex.bmp")));
+	ASSERT_TRUE(asset_texture_shared_load(renderer, 乙, asset_utf8("shared_tex.bmp")));
 	EXPECT_EQ(甲, 乙);
 	EXPECT_NE(甲, 0u);
-	EXPECT_EQ(renderer.asset_cache_count(), 1u);
+	EXPECT_EQ(asset_cache_count(renderer), 1u);
 
-	renderer.texture_release(甲);
-	EXPECT_EQ(renderer.asset_cache_count(), 1u);
-	renderer.texture_release(乙);
-	EXPECT_EQ(renderer.asset_cache_count(), 0u);
+	asset_texture_release(renderer, 甲);
+	EXPECT_EQ(asset_cache_count(renderer), 1u);
+	asset_texture_release(renderer, 乙);
+	EXPECT_EQ(asset_cache_count(renderer), 0u);
 	std::cout << "[资产加载] 共享纹理：复用 2 次、释放归零后条目 0" << std::endl;
 }
 
@@ -683,11 +686,11 @@ TEST(Renderer_Asset_Load_Test, 纹理中文目录加载)
 
 	//共享入口（同一中文路径）
 	uint64_t 共享 = 0;
-	ASSERT_TRUE(renderer.texture_load_file_shared(共享, asset_utf8("中文贴图.bmp")));
+	ASSERT_TRUE(asset_texture_shared_load(renderer, 共享, asset_utf8("中文贴图.bmp")));
 	ASSERT_NE(共享, 0u);
-	EXPECT_EQ(renderer.asset_cache_count(), 1u);
-	renderer.texture_release(共享);
-	EXPECT_EQ(renderer.asset_cache_count(), 0u);
+	EXPECT_EQ(asset_cache_count(renderer), 1u);
+	asset_texture_release(renderer, 共享);
+	EXPECT_EQ(asset_cache_count(renderer), 0u);
 	std::cout << "[资产加载] 中文目录贴图可加载（句柄 " << 共享 << "）" << std::endl;
 }
 
@@ -746,16 +749,16 @@ TEST(Renderer_Asset_Load_Test, 异步加载完成后可绘制)
 	ASSERT_TRUE(renderer.init(config));
 
 	engine::Asset_Async_Task 任务;
-	ASSERT_TRUE(renderer.mesh_load_obj_async(任务, asset_utf8("async.obj")));
+	ASSERT_TRUE(asset_mesh_async_load(renderer, 任务, asset_utf8("async.obj")));
 	//在途任务不允许被覆盖
-	EXPECT_FALSE(renderer.mesh_load_obj_async(任务, asset_utf8("async.obj")));
+	EXPECT_FALSE(asset_mesh_async_load(renderer, 任务, asset_utf8("async.obj")));
 
 	engine::Mesh_Handle 句柄 = 0;
 	bool 就绪 = false;
 	//最长等待 5 秒（每 2 ms 轮询一次）
 	for (uint32_t 尝试 = 0; 尝试 < 2500 && !就绪; ++尝试)
 	{
-		就绪 = renderer.mesh_load_obj_async_poll(任务, 句柄);
+		就绪 = asset_mesh_async_poll(renderer, 任务, 句柄);
 		if (!就绪)
 			std::this_thread::sleep_for(std::chrono::milliseconds(2));
 	}
@@ -764,7 +767,7 @@ TEST(Renderer_Asset_Load_Test, 异步加载完成后可绘制)
 	EXPECT_TRUE(renderer.mesh_draw(句柄, nullptr));
 	//幂等：再次轮询同一句柄
 	engine::Mesh_Handle 再次 = 0;
-	EXPECT_TRUE(renderer.mesh_load_obj_async_poll(任务, 再次));
+	EXPECT_TRUE(asset_mesh_async_poll(renderer, 任务, 再次));
 	EXPECT_EQ(再次, 句柄);
 	std::cout << "[资产加载] 异步加载就绪，句柄 " << 句柄 << std::endl;
 	renderer.mesh_unload(句柄);
@@ -784,13 +787,13 @@ TEST(Renderer_Asset_Load_Test, 异步加载失败)
 	ASSERT_TRUE(renderer.init(config));
 
 	engine::Asset_Async_Task 任务;
-	ASSERT_TRUE(renderer.mesh_load_obj_async(任务, asset_utf8("不存在_async.obj")));
+	ASSERT_TRUE(asset_mesh_async_load(renderer, 任务, asset_utf8("不存在_async.obj")));
 	engine::Mesh_Handle 句柄 = 0;
 	bool 就绪 = false;
 	//最长等待 5 秒
 	for (uint32_t 尝试 = 0; 尝试 < 2500 && !就绪; ++尝试)
 	{
-		就绪 = renderer.mesh_load_obj_async_poll(任务, 句柄);
+		就绪 = asset_mesh_async_poll(renderer, 任务, 句柄);
 		if (!就绪)
 			std::this_thread::sleep_for(std::chrono::milliseconds(2));
 	}
@@ -813,9 +816,9 @@ TEST(Renderer_Asset_Load_Test, 异步提交入参保护)
 
 	engine::Asset_Async_Task 任务;
 	//空路径
-	EXPECT_FALSE(renderer.mesh_load_obj_async(任务, ""));
+	EXPECT_FALSE(asset_mesh_async_load(renderer, 任务, ""));
 	//未建立任务时轮询返回假
 	engine::Mesh_Handle 句柄 = 0;
-	EXPECT_FALSE(renderer.mesh_load_obj_async_poll(任务, 句柄));
+	EXPECT_FALSE(asset_mesh_async_poll(renderer, 任务, 句柄));
 	EXPECT_EQ(句柄, 0u);
 }

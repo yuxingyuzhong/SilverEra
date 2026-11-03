@@ -16,11 +16,23 @@
 #include <utility>
 #include <vector>
 
-#include "Application/Renderer/src/render/Level/关卡文件.h"
+#include "Engine/EngineSystem/src/scene/Level/关卡文本.h"
+#include "src/主调/能力展示/关卡装配桥.h"
 #include "Application/Renderer/src/render/Renderer/渲染器.h"
 
 namespace
 {
+	//按关卡数据提交渲染层场景（相机 / 雾逐字段映射；光照由调用方给定）
+	void apply_level_scene(engine::Renderer& renderer, const engine::Level_Data& level,
+		const engine::Light_Data& light)
+	{
+		engine::Camera_Data camera;
+		engine::level_camera_map(level.camera, camera);
+		engine::Fog_Data fog;
+		engine::level_fog_map(level.fog, fog);
+		renderer.scene_apply(camera, light, fog);
+	}
+
 	//端到端窗口尺寸
 	constexpr uint32_t LEVEL_WIDTH = 128;
 	constexpr uint32_t LEVEL_HEIGHT = 72;
@@ -157,23 +169,24 @@ TEST(Renderer_Level_Test, 关卡Cluster八盏聚光阴影)
 
 	engine::Level_Data 关卡;
 	engine::Asset_Scene 场景;
-	ASSERT_TRUE(renderer.level_load(关卡, 场景, level_utf8("八盏聚光.level"), false));
+	ASSERT_TRUE(level_bridge_load(renderer, 关卡, 场景, level_utf8("八盏聚光.level"), false));
 	ASSERT_EQ(关卡.light.spot_count, 8u);
 
 	//Cluster 开启：关闭聚光阴影出参照图
 	ASSERT_TRUE(renderer.cluster_enable_set(true));
-	engine::Light_Data 灯光 = 关卡.light;
+	engine::Light_Data 灯光;
+	engine::level_light_map(关卡.light, 灯光);
 		灯光.spot_shadow_enabled = 0;
-	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
-	EXPECT_EQ(renderer.scene_draw(场景), 9u);
+	apply_level_scene(renderer, 关卡, 灯光);
+	EXPECT_EQ(level_bridge_draw(renderer, 场景), 9u);
 	std::vector<uint8_t> 无影(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(无影.data(), static_cast<uint32_t>(无影.size())));
 
 	//Cluster 开启：八盏全投影
 		灯光.spot_shadow_enabled = 1;
 		灯光.spot_shadow_all = 1;
-	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
-	EXPECT_EQ(renderer.scene_draw(场景), 9u);
+	apply_level_scene(renderer, 关卡, 灯光);
+	EXPECT_EQ(level_bridge_draw(renderer, 场景), 9u);
 	std::vector<uint8_t> 簇有影(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(簇有影.data(), static_cast<uint32_t>(簇有影.size())));
 	EXPECT_EQ(renderer.frame_stats_get().spot_shadow_tiles, 8u);
@@ -183,14 +196,14 @@ TEST(Renderer_Level_Test, 关卡Cluster八盏聚光阴影)
 
 	//关闭 Cluster：前向路径应得到同一结果
 	ASSERT_TRUE(renderer.cluster_enable_set(false));
-	EXPECT_EQ(renderer.scene_draw(场景), 9u);
+	EXPECT_EQ(level_bridge_draw(renderer, 场景), 9u);
 	std::vector<uint8_t> 前向有影(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(前向有影.data(), static_cast<uint32_t>(前向有影.size())));
 	EXPECT_EQ(renderer.frame_stats_get().spot_shadow_tiles, 8u);
 	const uint32_t 路径差异 = changed_pixels(簇有影, 前向有影);
 	std::cout << "[关卡] 八盏阴影前后向路径差异 " << 路径差异 << std::endl;
 	EXPECT_EQ(路径差异, 0u) << "Cluster 与前向路径的八盏阴影结果不一致";
-	renderer.level_unload(场景);
+	level_bridge_unload(renderer, 场景);
 }
 
 /*
@@ -218,21 +231,22 @@ TEST(Renderer_Level_Test, 八盏聚光阴影与MSAA组合)
 
 		engine::Level_Data 关卡;
 		engine::Asset_Scene 场景;
-		ASSERT_TRUE(renderer.level_load(关卡, 场景, level_utf8("八盏聚光.level"), false));
+		ASSERT_TRUE(level_bridge_load(renderer, 关卡, 场景, level_utf8("八盏聚光.level"), false));
 
 		//关闭聚光阴影：参照图
-		engine::Light_Data 灯光 = 关卡.light;
+		engine::Light_Data 灯光;
+	engine::level_light_map(关卡.light, 灯光);
 			灯光.spot_shadow_enabled = 0;
-		renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
-		EXPECT_EQ(renderer.scene_draw(场景), 9u);
+		apply_level_scene(renderer, 关卡, 灯光);
+		EXPECT_EQ(level_bridge_draw(renderer, 场景), 9u);
 		std::vector<uint8_t> 无影(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 		ASSERT_TRUE(renderer.frame_render(无影.data(), static_cast<uint32_t>(无影.size())));
 
 		//八盏全投影
 			灯光.spot_shadow_enabled = 1;
 			灯光.spot_shadow_all = 1;
-		renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
-		EXPECT_EQ(renderer.scene_draw(场景), 9u);
+		apply_level_scene(renderer, 关卡, 灯光);
+		EXPECT_EQ(level_bridge_draw(renderer, 场景), 9u);
 		std::vector<uint8_t> 有影(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 		ASSERT_TRUE(renderer.frame_render(有影.data(), static_cast<uint32_t>(有影.size())));
 		EXPECT_EQ(renderer.frame_stats_get().spot_shadow_tiles, 8u);
@@ -244,18 +258,18 @@ TEST(Renderer_Level_Test, 八盏聚光阴影与MSAA组合)
 		if (msaa_list[msaa_index] == 4u && renderer.cluster_supported())
 		{
 			ASSERT_TRUE(renderer.cluster_enable_set(true));
-			EXPECT_EQ(renderer.scene_draw(场景), 9u);
+			EXPECT_EQ(level_bridge_draw(renderer, 场景), 9u);
 			std::vector<uint8_t> 簇有影(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 			ASSERT_TRUE(renderer.frame_render(簇有影.data(), static_cast<uint32_t>(簇有影.size())));
 			ASSERT_TRUE(renderer.cluster_enable_set(false));
-			EXPECT_EQ(renderer.scene_draw(场景), 9u);
+			EXPECT_EQ(level_bridge_draw(renderer, 场景), 9u);
 			std::vector<uint8_t> 前向有影(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 			ASSERT_TRUE(renderer.frame_render(前向有影.data(), static_cast<uint32_t>(前向有影.size())));
 			const uint32_t 开关差异 = changed_pixels(簇有影, 前向有影);
 			std::cout << "[关卡] 4x 下 Cluster 两态差异 " << 开关差异 << std::endl;
 			EXPECT_EQ(开关差异, 0u) << "4x 下 Cluster 开关改变了八盏阴影画面";
 		}
-		renderer.level_unload(场景);
+		level_bridge_unload(renderer, 场景);
 	}
 }
 
@@ -279,7 +293,7 @@ TEST(Renderer_Level_Test, 八盏聚光软度开销)
 
 	engine::Level_Data 关卡;
 	engine::Asset_Scene 场景;
-	ASSERT_TRUE(renderer.level_load(关卡, 场景, level_utf8("八盏聚光.level"), false));
+	ASSERT_TRUE(level_bridge_load(renderer, 关卡, 场景, level_utf8("八盏聚光.level"), false));
 
 	//三态软度（负值表示关闭阴影）
 	const float 软度值[3] = { -1.0f, 0.0f, 1.0f };
@@ -289,7 +303,8 @@ TEST(Renderer_Level_Test, 八盏聚光软度开销)
 	for (std::size_t index = 0; index < 3; ++index)
 	{
 		//关闭态：直接应用无阴影
-		engine::Light_Data 灯光 = 关卡.light;
+		engine::Light_Data 灯光;
+	engine::level_light_map(关卡.light, 灯光);
 		if (软度值[index] < 0.0f)
 			灯光.spot_shadow_enabled = 0;
 		else
@@ -297,11 +312,11 @@ TEST(Renderer_Level_Test, 八盏聚光软度开销)
 			灯光.spot_shadow_enabled = 1;
 			灯光.spot_shadow_all = 1;
 		}
-		renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
+		apply_level_scene(renderer, 关卡, 灯光);
 		//scene_apply 会按关卡字段重置质量参数，故在其后显式设置软度
 		if (软度值[index] >= 0.0f)
 			renderer.spot_shadow_params_set(0.010f, 软度值[index], 1.0f);
-		EXPECT_EQ(renderer.scene_draw(场景), 9u);
+		EXPECT_EQ(level_bridge_draw(renderer, 场景), 9u);
 		//预热 2 帧
 		for (uint32_t frame = 0; frame < 2; ++frame)
 			ASSERT_TRUE(renderer.frame_render());
@@ -330,7 +345,7 @@ TEST(Renderer_Level_Test, 八盏聚光软度开销)
 		for (std::size_t index = 0; index < 3; ++index)
 			EXPECT_EQ(帧耗时[index], 0.0);
 	}
-	renderer.level_unload(场景);
+	level_bridge_unload(renderer, 场景);
 }
 
 /*
@@ -400,16 +415,17 @@ TEST(Renderer_Level_Test, 关卡偏置自校准生效)
 
 	engine::Level_Data 关卡;
 	engine::Asset_Scene 场景;
-	ASSERT_TRUE(renderer.level_load(关卡, 场景, level_utf8("八盏聚光校准.level"), false));
+	ASSERT_TRUE(level_bridge_load(renderer, 关卡, 场景, level_utf8("八盏聚光校准.level"), false));
 	EXPECT_EQ(关卡.light.spot_shadow_bias_auto, 1);
 
 	//应用场景后门面应为开启
-	engine::Light_Data 灯光 = 关卡.light;
+	engine::Light_Data 灯光;
+	engine::level_light_map(关卡.light, 灯光);
 		灯光.spot_shadow_enabled = 1;
 		灯光.spot_shadow_all = 1;
-	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
+	apply_level_scene(renderer, 关卡, 灯光);
 	EXPECT_TRUE(renderer.spot_shadow_bias_auto());
-	EXPECT_EQ(renderer.scene_draw(场景), 9u);
+	EXPECT_EQ(level_bridge_draw(renderer, 场景), 9u);
 	ASSERT_TRUE(renderer.frame_render());
 	float 偏置[8] = {};
 	renderer.spot_shadow_bias_tiles_get(偏置);
@@ -419,12 +435,12 @@ TEST(Renderer_Level_Test, 关卡偏置自校准生效)
 	//关闭自校准：恢复全局 0.010
 	renderer.spot_shadow_bias_auto_set(false);
 	EXPECT_FALSE(renderer.spot_shadow_bias_auto());
-	EXPECT_EQ(renderer.scene_draw(场景), 9u);
+	EXPECT_EQ(level_bridge_draw(renderer, 场景), 9u);
 	ASSERT_TRUE(renderer.frame_render());
 	renderer.spot_shadow_bias_tiles_get(偏置);
 	for (std::size_t index = 0; index < 8; ++index)
 		EXPECT_NEAR(偏置[index], 0.010f, 1e-5f) << "瓦片 " << index;
-	renderer.level_unload(场景);
+	level_bridge_unload(renderer, 场景);
 }
 
 /*
@@ -446,13 +462,14 @@ TEST(Renderer_Level_Test, 八盏聚光阴影按需重绘)
 
 	engine::Level_Data 关卡;
 	engine::Asset_Scene 场景;
-	ASSERT_TRUE(renderer.level_load(关卡, 场景, level_utf8("八盏聚光.level"), false));
+	ASSERT_TRUE(level_bridge_load(renderer, 关卡, 场景, level_utf8("八盏聚光.level"), false));
 
-	engine::Light_Data 灯光 = 关卡.light;
+	engine::Light_Data 灯光;
+	engine::level_light_map(关卡.light, 灯光);
 		灯光.spot_shadow_enabled = 1;
 		灯光.spot_shadow_all = 1;
-	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
-	EXPECT_EQ(renderer.scene_draw(场景), 9u);
+	apply_level_scene(renderer, 关卡, 灯光);
+	EXPECT_EQ(level_bridge_draw(renderer, 场景), 9u);
 	ASSERT_TRUE(renderer.frame_render());
 	EXPECT_EQ(renderer.frame_stats_get().spot_shadow_tiles, 8u);
 
@@ -460,18 +477,18 @@ TEST(Renderer_Level_Test, 八盏聚光阴影按需重绘)
 	const uint64_t 静态后 = renderer.shadow_pass_count();
 	for (int frame = 0; frame < 4; ++frame)
 	{
-		EXPECT_EQ(renderer.scene_draw(场景), 9u);
+		EXPECT_EQ(level_bridge_draw(renderer, 场景), 9u);
 		ASSERT_TRUE(renderer.frame_render());
 	}
 	EXPECT_EQ(renderer.shadow_pass_count(), 静态后) << "八盏静态场景仍重绘阴影";
 
 	//移动第 7 盏聚光灯（瓦片 6）：签名变化 → 重绘一次
 	灯光.spot_position[6][0] += 1.0f;
-	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
-	EXPECT_EQ(renderer.scene_draw(场景), 9u);
+	apply_level_scene(renderer, 关卡, 灯光);
+	EXPECT_EQ(level_bridge_draw(renderer, 场景), 9u);
 	ASSERT_TRUE(renderer.frame_render());
 	EXPECT_GT(renderer.shadow_pass_count(), 静态后) << "八盏中单盏移动后未重绘阴影";
-	renderer.level_unload(场景);
+	level_bridge_unload(renderer, 场景);
 }
 
 /*
@@ -496,20 +513,21 @@ TEST(Renderer_Level_Test, 八盏偏置自校准画面差异)
 
 	engine::Level_Data 关卡;
 	engine::Asset_Scene 场景;
-	ASSERT_TRUE(renderer.level_load(关卡, 场景, level_utf8("八盏聚光.level"), false));
+	ASSERT_TRUE(level_bridge_load(renderer, 关卡, 场景, level_utf8("八盏聚光.level"), false));
 
-	engine::Light_Data 灯光 = 关卡.light;
+	engine::Light_Data 灯光;
+	engine::level_light_map(关卡.light, 灯光);
 		灯光.spot_shadow_enabled = 1;
 		灯光.spot_shadow_all = 1;
-	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
-	EXPECT_EQ(renderer.scene_draw(场景), 9u);
+	apply_level_scene(renderer, 关卡, 灯光);
+	EXPECT_EQ(level_bridge_draw(renderer, 场景), 9u);
 	std::vector<uint8_t> 默认图(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(默认图.data(), static_cast<uint32_t>(默认图.size())));
 
 	//开启自校准：逐瓦片偏置 ≈ 0.010112，画面应有边界偏移差异
 	renderer.spot_shadow_bias_auto_set(true);
 	EXPECT_TRUE(renderer.spot_shadow_bias_auto());
-	EXPECT_EQ(renderer.scene_draw(场景), 9u);
+	EXPECT_EQ(level_bridge_draw(renderer, 场景), 9u);
 	std::vector<uint8_t> 校准图(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(校准图.data(), static_cast<uint32_t>(校准图.size())));
 	float 偏置[8] = {};
@@ -527,11 +545,11 @@ TEST(Renderer_Level_Test, 八盏偏置自校准画面差异)
 	//关闭自校准：与默认图逐字节一致
 	renderer.spot_shadow_bias_auto_set(false);
 	EXPECT_FALSE(renderer.spot_shadow_bias_auto());
-	EXPECT_EQ(renderer.scene_draw(场景), 9u);
+	EXPECT_EQ(level_bridge_draw(renderer, 场景), 9u);
 	std::vector<uint8_t> 复原图(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(复原图.data(), static_cast<uint32_t>(复原图.size())));
 	EXPECT_EQ(changed_pixels(默认图, 复原图), 0u) << "关闭偏置自校准后画面未复原";
-	renderer.level_unload(场景);
+	level_bridge_unload(renderer, 场景);
 }
 
 /*
@@ -555,10 +573,11 @@ TEST(Renderer_Level_Test, 八盏聚光与方向光阴影共存)
 
 	engine::Level_Data 关卡;
 	engine::Asset_Scene 场景;
-	ASSERT_TRUE(renderer.level_load(关卡, 场景, level_utf8("八盏聚光.level"), false));
+	ASSERT_TRUE(level_bridge_load(renderer, 关卡, 场景, level_utf8("八盏聚光.level"), false));
 
 	//方向光调高并斜射（原关卡 0.1 且正下，方向光阴影与聚光阴影完全重叠而不可见）
-	engine::Light_Data 灯光 = 关卡.light;
+	engine::Light_Data 灯光;
+	engine::level_light_map(关卡.light, 灯光);
 		灯光.intensity = 0.6f;
 		灯光.direction[0] = 0.6f;
 		灯光.direction[1] = -0.62f;
@@ -573,24 +592,24 @@ TEST(Renderer_Level_Test, 八盏聚光与方向光阴影共存)
 		灯光.spot_shadow_all = 1;
 
 	//共存：方向光 ＋ 八盏聚光
-	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
-	EXPECT_EQ(renderer.scene_draw(场景), 9u);
+	apply_level_scene(renderer, 关卡, 灯光);
+	EXPECT_EQ(level_bridge_draw(renderer, 场景), 9u);
 	std::vector<uint8_t> 共存(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(共存.data(), static_cast<uint32_t>(共存.size())));
 
 	//仅方向光（关闭聚光阴影）
 	engine::Light_Data 仅方向 = 灯光;
 		仅方向.spot_shadow_enabled = 0;
-	renderer.scene_apply(关卡.camera, 仅方向, 关卡.fog);
-	EXPECT_EQ(renderer.scene_draw(场景), 9u);
+	apply_level_scene(renderer, 关卡, 仅方向);
+	EXPECT_EQ(level_bridge_draw(renderer, 场景), 9u);
 	std::vector<uint8_t> 仅方向图(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(仅方向图.data(), static_cast<uint32_t>(仅方向图.size())));
 
 	//仅八盏聚光（关闭方向光阴影）
 	engine::Light_Data 仅聚光 = 灯光;
 		仅聚光.shadow_enabled = 0;
-	renderer.scene_apply(关卡.camera, 仅聚光, 关卡.fog);
-	EXPECT_EQ(renderer.scene_draw(场景), 9u);
+	apply_level_scene(renderer, 关卡, 仅聚光);
+	EXPECT_EQ(level_bridge_draw(renderer, 场景), 9u);
 	std::vector<uint8_t> 仅聚光图(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(仅聚光图.data(), static_cast<uint32_t>(仅聚光图.size())));
 
@@ -602,7 +621,7 @@ TEST(Renderer_Level_Test, 八盏聚光与方向光阴影共存)
 	const uint32_t 方向差异 = changed_pixels(共存, 仅聚光图);
 	std::cout << "[关卡] 八盏共存 方向光贡献 " << 方向差异 << std::endl;
 	EXPECT_GT(方向差异, 0u) << "共存态中方向光阴影未生效";
-	renderer.level_unload(场景);
+	level_bridge_unload(renderer, 场景);
 }
 
 /*
@@ -629,23 +648,24 @@ TEST(Renderer_Level_Test, 八盏聚光阴影512档细节)
 
 	engine::Level_Data 关卡;
 	engine::Asset_Scene 场景;
-	ASSERT_TRUE(renderer.level_load(关卡, 场景, level_utf8("八盏聚光.level"), false));
+	ASSERT_TRUE(level_bridge_load(renderer, 关卡, 场景, level_utf8("八盏聚光.level"), false));
 
-	engine::Light_Data 灯光 = 关卡.light;
+	engine::Light_Data 灯光;
+	engine::level_light_map(关卡.light, 灯光);
 		灯光.spot_shadow_enabled = 1;
 		灯光.spot_shadow_all = 1;
-	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
+	apply_level_scene(renderer, 关卡, 灯光);
 
 	//1024 档基准
 	EXPECT_EQ(renderer.shadow_resolution(), 1024u);
-	EXPECT_EQ(renderer.scene_draw(场景), 9u);
+	EXPECT_EQ(level_bridge_draw(renderer, 场景), 9u);
 	std::vector<uint8_t> 原图(宽 * 高 * 4);
 	ASSERT_TRUE(renderer.frame_render(原图.data(), static_cast<uint32_t>(原图.size())));
 
 	//512 档：应有可见细节变化
 	renderer.shadow_resolution_set(512);
 	EXPECT_EQ(renderer.shadow_resolution(), 512u);
-	EXPECT_EQ(renderer.scene_draw(场景), 9u);
+	EXPECT_EQ(level_bridge_draw(renderer, 场景), 9u);
 	std::vector<uint8_t> 低分辨率(宽 * 高 * 4);
 	ASSERT_TRUE(renderer.frame_render(低分辨率.data(), static_cast<uint32_t>(低分辨率.size())));
 	const uint32_t 低差异 = changed_pixels(原图, 低分辨率);
@@ -655,11 +675,11 @@ TEST(Renderer_Level_Test, 八盏聚光阴影512档细节)
 	//切回 1024：逐字节恢复
 	renderer.shadow_resolution_set(1024);
 	EXPECT_EQ(renderer.shadow_resolution(), 1024u);
-	EXPECT_EQ(renderer.scene_draw(场景), 9u);
+	EXPECT_EQ(level_bridge_draw(renderer, 场景), 9u);
 	std::vector<uint8_t> 回图(宽 * 高 * 4);
 	ASSERT_TRUE(renderer.frame_render(回图.data(), static_cast<uint32_t>(回图.size())));
 	EXPECT_EQ(changed_pixels(原图, 回图), 0u) << "分辨率往返后画面未恢复";
-	renderer.level_unload(场景);
+	level_bridge_unload(renderer, 场景);
 }
 
 /*
@@ -682,16 +702,17 @@ TEST(Renderer_Level_Test, 关卡八盏聚光阴影)
 
 	engine::Level_Data 关卡;
 	engine::Asset_Scene 场景;
-	ASSERT_TRUE(renderer.level_load(关卡, 场景, level_utf8("八盏聚光.level"), false));
+	ASSERT_TRUE(level_bridge_load(renderer, 关卡, 场景, level_utf8("八盏聚光.level"), false));
 	ASSERT_EQ(关卡.light.spot_count, 8u);
 
 	//单盏（序号 0）：只遮蔽最左
-	engine::Light_Data 灯光 = 关卡.light;
+	engine::Light_Data 灯光;
+	engine::level_light_map(关卡.light, 灯光);
 	灯光.spot_shadow_enabled = 1;
 	灯光.spot_shadow_all = 0;
 	灯光.spot_shadow_index = 0;
-	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
-	EXPECT_EQ(renderer.scene_draw(场景), 9u);
+	apply_level_scene(renderer, 关卡, 灯光);
+	EXPECT_EQ(level_bridge_draw(renderer, 场景), 9u);
 	std::vector<uint8_t> 单盏(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(单盏.data(), static_cast<uint32_t>(单盏.size())));
 	//本帧参与投影的瓦片数（第五百二十轮）
@@ -699,8 +720,8 @@ TEST(Renderer_Level_Test, 关卡八盏聚光阴影)
 
 	//多盏：八盏各自投影（瓦片 4..7 按需创建）
 	灯光.spot_shadow_all = 1;
-	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
-	EXPECT_EQ(renderer.scene_draw(场景), 9u);
+	apply_level_scene(renderer, 关卡, 灯光);
+	EXPECT_EQ(level_bridge_draw(renderer, 场景), 9u);
 	std::vector<uint8_t> 八盏(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(八盏.data(), static_cast<uint32_t>(八盏.size())));
 	EXPECT_EQ(renderer.frame_stats_get().spot_shadow_tiles, 8u);
@@ -708,7 +729,7 @@ TEST(Renderer_Level_Test, 关卡八盏聚光阴影)
 	const uint32_t 差异 = changed_pixels(单盏, 八盏);
 	std::cout << "[关卡] 八盏聚光阴影差异 " << 差异 << std::endl;
 	EXPECT_GT(差异, 100u) << "八盏聚光灯阴影未生效";
-	renderer.level_unload(场景);
+	level_bridge_unload(renderer, 场景);
 }
 
 /*
@@ -732,15 +753,16 @@ TEST(Renderer_Level_Test, 八盏聚光逐瓦片互异)
 
 	engine::Level_Data 关卡;
 	engine::Asset_Scene 场景;
-	ASSERT_TRUE(renderer.level_load(关卡, 场景, level_utf8("八盏聚光.level"), false));
+	ASSERT_TRUE(level_bridge_load(renderer, 关卡, 场景, level_utf8("八盏聚光.level"), false));
 	ASSERT_EQ(关卡.light.spot_count, 8u);
 
 	//关闭聚光阴影基准
-	engine::Light_Data 灯光 = 关卡.light;
+	engine::Light_Data 灯光;
+	engine::level_light_map(关卡.light, 灯光);
 	灯光.spot_shadow_enabled = 0;
 	灯光.spot_shadow_all = 0;
-	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
-	EXPECT_EQ(renderer.scene_draw(场景), 9u);
+	apply_level_scene(renderer, 关卡, 灯光);
+	EXPECT_EQ(level_bridge_draw(renderer, 场景), 9u);
 	std::vector<uint8_t> 基准(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(基准.data(), static_cast<uint32_t>(基准.size())));
 
@@ -750,8 +772,8 @@ TEST(Renderer_Level_Test, 八盏聚光逐瓦片互异)
 	for (uint32_t 序号 = 0; 序号 < 8; ++序号)
 	{
 		灯光.spot_shadow_index = static_cast<int>(序号);
-		renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
-		EXPECT_EQ(renderer.scene_draw(场景), 9u);
+		apply_level_scene(renderer, 关卡, 灯光);
+		EXPECT_EQ(level_bridge_draw(renderer, 场景), 9u);
 		std::vector<uint8_t> 当前(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 		ASSERT_TRUE(renderer.frame_render(当前.data(), static_cast<uint32_t>(当前.size())));
 		EXPECT_EQ(renderer.frame_stats_get().spot_shadow_tiles, 1u);
@@ -770,7 +792,7 @@ TEST(Renderer_Level_Test, 八盏聚光逐瓦片互异)
 		}
 		上帧 = std::move(当前);
 	}
-	renderer.level_unload(场景);
+	level_bridge_unload(renderer, 场景);
 }
 
 /*
@@ -796,16 +818,17 @@ TEST(Renderer_Level_Test, 八盏聚光逐瓦片互异_簇路径)
 
 	engine::Level_Data 关卡;
 	engine::Asset_Scene 场景;
-	ASSERT_TRUE(renderer.level_load(关卡, 场景, level_utf8("八盏聚光.level"), false));
+	ASSERT_TRUE(level_bridge_load(renderer, 关卡, 场景, level_utf8("八盏聚光.level"), false));
 	ASSERT_EQ(关卡.light.spot_count, 8u);
 	ASSERT_TRUE(renderer.cluster_enable_set(true));
 
 	//簇路径关闭聚光阴影基准
-	engine::Light_Data 灯光 = 关卡.light;
+	engine::Light_Data 灯光;
+	engine::level_light_map(关卡.light, 灯光);
 	灯光.spot_shadow_enabled = 0;
 	灯光.spot_shadow_all = 0;
-	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
-	EXPECT_EQ(renderer.scene_draw(场景), 9u);
+	apply_level_scene(renderer, 关卡, 灯光);
+	EXPECT_EQ(level_bridge_draw(renderer, 场景), 9u);
 	std::vector<uint8_t> 基准(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(基准.data(), static_cast<uint32_t>(基准.size())));
 
@@ -815,8 +838,8 @@ TEST(Renderer_Level_Test, 八盏聚光逐瓦片互异_簇路径)
 	for (uint32_t 序号 = 0; 序号 < 8; ++序号)
 	{
 		灯光.spot_shadow_index = static_cast<int>(序号);
-		renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
-		EXPECT_EQ(renderer.scene_draw(场景), 9u);
+		apply_level_scene(renderer, 关卡, 灯光);
+		EXPECT_EQ(level_bridge_draw(renderer, 场景), 9u);
 		std::vector<uint8_t> 当前(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 		ASSERT_TRUE(renderer.frame_render(当前.data(), static_cast<uint32_t>(当前.size())));
 		EXPECT_EQ(renderer.frame_stats_get().spot_shadow_tiles, 1u);
@@ -835,7 +858,7 @@ TEST(Renderer_Level_Test, 八盏聚光逐瓦片互异_簇路径)
 		}
 		上帧 = std::move(当前);
 	}
-	renderer.level_unload(场景);
+	level_bridge_unload(renderer, 场景);
 }
 
 /*
@@ -860,21 +883,22 @@ TEST(Renderer_Level_Test, 八盏聚光质量参数组合)
 
 	engine::Level_Data 关卡;
 	engine::Asset_Scene 场景;
-	ASSERT_TRUE(renderer.level_load(关卡, 场景, level_utf8("八盏聚光.level"), false));
+	ASSERT_TRUE(level_bridge_load(renderer, 关卡, 场景, level_utf8("八盏聚光.level"), false));
 
 	//关闭聚光阴影：无阴影参照图
-	engine::Light_Data 灯光 = 关卡.light;
+	engine::Light_Data 灯光;
+	engine::level_light_map(关卡.light, 灯光);
 		灯光.spot_shadow_enabled = 0;
-	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
-	EXPECT_EQ(renderer.scene_draw(场景), 9u);
+	apply_level_scene(renderer, 关卡, 灯光);
+	EXPECT_EQ(level_bridge_draw(renderer, 场景), 9u);
 	std::vector<uint8_t> 无阴影(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(无阴影.data(), static_cast<uint32_t>(无阴影.size())));
 
 	//八盏全投影 ＋ 默认参数（强度 1）
 		灯光.spot_shadow_enabled = 1;
 		灯光.spot_shadow_all = 1;
-	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
-	EXPECT_EQ(renderer.scene_draw(场景), 9u);
+	apply_level_scene(renderer, 关卡, 灯光);
+	EXPECT_EQ(level_bridge_draw(renderer, 场景), 9u);
 	std::vector<uint8_t> 全强度(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(全强度.data(), static_cast<uint32_t>(全强度.size())));
 	//门面回读默认三值
@@ -891,14 +915,14 @@ TEST(Renderer_Level_Test, 八盏聚光质量参数组合)
 
 	//强度 0：应与无阴影画面逐字节一致
 	renderer.spot_shadow_params_set(0.010f, 0.0f, 0.0f);
-	EXPECT_EQ(renderer.scene_draw(场景), 9u);
+	EXPECT_EQ(level_bridge_draw(renderer, 场景), 9u);
 	std::vector<uint8_t> 零强度(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(零强度.data(), static_cast<uint32_t>(零强度.size())));
 	EXPECT_EQ(changed_pixels(无阴影, 零强度), 0u) << "强度 0 未与关闭聚光阴影逐字节一致";
 
 	//强度 0.5：半遮蔽仍在
 	renderer.spot_shadow_params_set(0.010f, 0.0f, 0.5f);
-	EXPECT_EQ(renderer.scene_draw(场景), 9u);
+	EXPECT_EQ(level_bridge_draw(renderer, 场景), 9u);
 	std::vector<uint8_t> 半强度(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(半强度.data(), static_cast<uint32_t>(半强度.size())));
 	const uint32_t 半强度差异 = changed_pixels(全强度, 半强度);
@@ -908,7 +932,7 @@ TEST(Renderer_Level_Test, 八盏聚光质量参数组合)
 
 	//软度满档（7×7 邻域）：仅阴影边缘变化
 	renderer.spot_shadow_params_set(0.010f, 1.0f, 1.0f);
-	EXPECT_EQ(renderer.scene_draw(场景), 9u);
+	EXPECT_EQ(level_bridge_draw(renderer, 场景), 9u);
 	std::vector<uint8_t> 软边(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(软边.data(), static_cast<uint32_t>(软边.size())));
 	const uint32_t 软边差异 = changed_pixels(全强度, 软边);
@@ -917,11 +941,11 @@ TEST(Renderer_Level_Test, 八盏聚光质量参数组合)
 
 	//恢复默认参数：与全强度基准逐字节一致
 	renderer.spot_shadow_params_set(0.010f, 0.0f, 1.0f);
-	EXPECT_EQ(renderer.scene_draw(场景), 9u);
+	EXPECT_EQ(level_bridge_draw(renderer, 场景), 9u);
 	std::vector<uint8_t> 恢复(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(恢复.data(), static_cast<uint32_t>(恢复.size())));
 	EXPECT_EQ(changed_pixels(全强度, 恢复), 0u) << "恢复默认参数后画面未复原";
-	renderer.level_unload(场景);
+	level_bridge_unload(renderer, 场景);
 }
 
 /*
@@ -945,21 +969,22 @@ TEST(Renderer_Level_Test, 关卡八盏聚光分辨率切换)
 
 	engine::Level_Data 关卡;
 	engine::Asset_Scene 场景;
-	ASSERT_TRUE(renderer.level_load(关卡, 场景, level_utf8("八盏聚光.level"), false));
+	ASSERT_TRUE(level_bridge_load(renderer, 关卡, 场景, level_utf8("八盏聚光.level"), false));
 
 	//八盏全部投影，1024 基准图
-	engine::Light_Data 灯光 = 关卡.light;
+	engine::Light_Data 灯光;
+	engine::level_light_map(关卡.light, 灯光);
 	灯光.spot_shadow_enabled = 1;
 	灯光.spot_shadow_all = 1;
-	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
-	EXPECT_EQ(renderer.scene_draw(场景), 9u);
+	apply_level_scene(renderer, 关卡, 灯光);
+	EXPECT_EQ(level_bridge_draw(renderer, 场景), 9u);
 	std::vector<uint8_t> 原图(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(原图.data(), static_cast<uint32_t>(原图.size())));
 
 	//切 512：记录画面差异（随后切回 1024 校验画面恢复）
 	renderer.shadow_resolution_set(512);
 	EXPECT_EQ(renderer.shadow_resolution(), 512u);
-	EXPECT_EQ(renderer.scene_draw(场景), 9u);
+	EXPECT_EQ(level_bridge_draw(renderer, 场景), 9u);
 	std::vector<uint8_t> 低分辨率(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(低分辨率.data(), static_cast<uint32_t>(低分辨率.size())));
 	//512 档画面差异（本场景阴影边界较粗，可能为 0；分辨率效果由单盏用例覆盖）
@@ -969,11 +994,11 @@ TEST(Renderer_Level_Test, 关卡八盏聚光分辨率切换)
 	//切回 1024：应与基准图一致
 	renderer.shadow_resolution_set(1024);
 	EXPECT_EQ(renderer.shadow_resolution(), 1024u);
-	EXPECT_EQ(renderer.scene_draw(场景), 9u);
+	EXPECT_EQ(level_bridge_draw(renderer, 场景), 9u);
 	std::vector<uint8_t> 回图(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(回图.data(), static_cast<uint32_t>(回图.size())));
 	EXPECT_EQ(changed_pixels(原图, 回图), 0u) << "分辨率往返后画面未恢复";
-	renderer.level_unload(场景);
+	level_bridge_unload(renderer, 场景);
 }
 
 /*
@@ -1008,16 +1033,17 @@ TEST(Renderer_Level_Test, 聚光灯偏置自校准)
 
 	engine::Level_Data 关卡;
 	engine::Asset_Scene 场景;
-	ASSERT_TRUE(renderer.level_load(关卡, 场景, level_utf8("偏置自校准.level"), false));
+	ASSERT_TRUE(level_bridge_load(renderer, 关卡, 场景, level_utf8("偏置自校准.level"), false));
 
-	engine::Light_Data 灯光 = 关卡.light;
+	engine::Light_Data 灯光;
+	engine::level_light_map(关卡.light, 灯光);
 	灯光.spot_shadow_enabled = 1;
 	灯光.spot_shadow_all = 1;
-	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
+	apply_level_scene(renderer, 关卡, 灯光);
 
 	//默认关闭：两瓦片都等于全局偏置 0.010
 	EXPECT_FALSE(renderer.spot_shadow_bias_auto());
-	EXPECT_EQ(renderer.scene_draw(场景), 3u);
+	EXPECT_EQ(level_bridge_draw(renderer, 场景), 3u);
 	ASSERT_TRUE(renderer.frame_render());
 	float 偏置[8] = {};
 	renderer.spot_shadow_bias_tiles_get(偏置);
@@ -1027,7 +1053,7 @@ TEST(Renderer_Level_Test, 聚光灯偏置自校准)
 	//开启自校准：瓦片 0（radius 26）≈ 0.010 × 9 / 25.9，瓦片 1（radius 9）≈ 0.010 × 9 / 8.9
 	renderer.spot_shadow_bias_auto_set(true);
 	EXPECT_TRUE(renderer.spot_shadow_bias_auto());
-	EXPECT_EQ(renderer.scene_draw(场景), 3u);
+	EXPECT_EQ(level_bridge_draw(renderer, 场景), 3u);
 	ASSERT_TRUE(renderer.frame_render());
 	renderer.spot_shadow_bias_tiles_get(偏置);
 	EXPECT_NEAR(偏置[0], 0.010f * 9.0f / 25.9f, 1e-4f);
@@ -1038,12 +1064,12 @@ TEST(Renderer_Level_Test, 聚光灯偏置自校准)
 	//关闭后恢复全局偏置
 	renderer.spot_shadow_bias_auto_set(false);
 	EXPECT_FALSE(renderer.spot_shadow_bias_auto());
-	EXPECT_EQ(renderer.scene_draw(场景), 3u);
+	EXPECT_EQ(level_bridge_draw(renderer, 场景), 3u);
 	ASSERT_TRUE(renderer.frame_render());
 	renderer.spot_shadow_bias_tiles_get(偏置);
 	EXPECT_NEAR(偏置[0], 0.010f, 1e-5f);
 	EXPECT_NEAR(偏置[1], 0.010f, 1e-5f);
-	renderer.level_unload(场景);
+	level_bridge_unload(renderer, 场景);
 }
 
 /*
@@ -1067,23 +1093,24 @@ TEST(Renderer_Level_Test, 八盏聚光运行期开关)
 
 	engine::Level_Data 关卡;
 	engine::Asset_Scene 场景;
-	ASSERT_TRUE(renderer.level_load(关卡, 场景, level_utf8("八盏聚光.level"), false));
+	ASSERT_TRUE(level_bridge_load(renderer, 关卡, 场景, level_utf8("八盏聚光.level"), false));
 
 	//单盏（序号 0）
-	engine::Light_Data 灯光 = 关卡.light;
+	engine::Light_Data 灯光;
+	engine::level_light_map(关卡.light, 灯光);
 	灯光.spot_shadow_enabled = 1;
 	灯光.spot_shadow_all = 0;
 	灯光.spot_shadow_index = 0;
-	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
+	apply_level_scene(renderer, 关卡, 灯光);
 	EXPECT_FALSE(renderer.spot_shadow_all());
-	EXPECT_EQ(renderer.scene_draw(场景), 9u);
+	EXPECT_EQ(level_bridge_draw(renderer, 场景), 9u);
 	std::vector<uint8_t> 单盏(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(单盏.data(), static_cast<uint32_t>(单盏.size())));
 
 	//运行期切八盏（按已登记聚光灯数量创建瓦片 1..7）
 	renderer.spot_shadow_all_set(true);
 	EXPECT_TRUE(renderer.spot_shadow_all());
-	EXPECT_EQ(renderer.scene_draw(场景), 9u);
+	EXPECT_EQ(level_bridge_draw(renderer, 场景), 9u);
 	std::vector<uint8_t> 八盏(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(八盏.data(), static_cast<uint32_t>(八盏.size())));
 	const uint32_t 差异 = changed_pixels(单盏, 八盏);
@@ -1093,13 +1120,13 @@ TEST(Renderer_Level_Test, 八盏聚光运行期开关)
 	//切回单盏：画面应恢复
 	renderer.spot_shadow_all_set(false);
 	EXPECT_FALSE(renderer.spot_shadow_all());
-	EXPECT_EQ(renderer.scene_draw(场景), 9u);
+	EXPECT_EQ(level_bridge_draw(renderer, 场景), 9u);
 	std::vector<uint8_t> 回单盏(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(回单盏.data(), static_cast<uint32_t>(回单盏.size())));
 	const uint32_t 回差异 = changed_pixels(单盏, 回单盏);
 	std::cout << "[关卡] 八盏运行期切回差异 " << 回差异 << std::endl;
 	EXPECT_LT(回差异, 50u) << "运行期切回单盏后画面未恢复";
-	renderer.level_unload(场景);
+	level_bridge_unload(renderer, 场景);
 }
 
 /*
@@ -1121,7 +1148,7 @@ TEST(Renderer_Level_Test, 关卡八盏聚光开销)
 
 	engine::Level_Data 关卡;
 	engine::Asset_Scene 场景;
-	ASSERT_TRUE(renderer.level_load(关卡, 场景, level_utf8("八盏聚光.level"), false));
+	ASSERT_TRUE(level_bridge_load(renderer, 关卡, 场景, level_utf8("八盏聚光.level"), false));
 
 	//分别按 1 / 8 盏登记，全部投影并预热 6 帧
 	const uint32_t counts[2] = { 1u, 8u };
@@ -1129,12 +1156,13 @@ TEST(Renderer_Level_Test, 关卡八盏聚光开销)
 	std::string keys[2] = { "spot_shadow_gpu_ms_1of8", "spot_shadow_gpu_ms_8of8" };
 	for (std::size_t index = 0; index < 2; ++index)
 	{
-		engine::Light_Data 灯光 = 关卡.light;
+		engine::Light_Data 灯光;
+	engine::level_light_map(关卡.light, 灯光);
 		灯光.spot_shadow_enabled = 1;
 		灯光.spot_shadow_all = 1;
 		灯光.spot_count = counts[index];
-		renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
-		EXPECT_EQ(renderer.scene_draw(场景), 9u);
+		apply_level_scene(renderer, 关卡, 灯光);
+		EXPECT_EQ(level_bridge_draw(renderer, 场景), 9u);
 		for (uint32_t frame = 0; frame < 6; ++frame)
 			ASSERT_TRUE(renderer.frame_render());
 		shadow_ms[index] = renderer.frame_stats_get().gpu_shadow_ms;
@@ -1152,7 +1180,7 @@ TEST(Renderer_Level_Test, 关卡八盏聚光开销)
 		for (std::size_t index = 0; index < 2; ++index)
 			EXPECT_EQ(shadow_ms[index], 0.0);
 	}
-	renderer.level_unload(场景);
+	level_bridge_unload(renderer, 场景);
 }
 
 /*

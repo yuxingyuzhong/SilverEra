@@ -24,7 +24,9 @@
 #include <utility>
 #include <vector>
 
-#include "Application/Renderer/src/render/Level/关卡文件.h"
+#include "Engine/EngineSystem/src/scene/Level/关卡文本.h"
+#include "src/主调/能力展示/关卡装配桥.h"
+#include "src/主调/能力展示/资产缓存桥.h"
 #include "Application/Renderer/src/render/Renderer/渲染器.h"
 
 namespace
@@ -54,6 +56,17 @@ namespace
 		std::filesystem::create_directories(path.parent_path(), code);
 		std::ofstream file(path, std::ios::binary);
 		file << text;
+	}
+
+	//按关卡数据提交渲染层场景（相机 / 雾逐字段映射；光照由调用方给定）
+	void apply_level_scene(engine::Renderer& renderer, const engine::Level_Data& level,
+		const engine::Light_Data& light)
+	{
+		engine::Camera_Data camera;
+		engine::level_camera_map(level.camera, camera);
+		engine::Fog_Data fog;
+		engine::level_fog_map(level.fog, fog);
+		renderer.scene_apply(camera, light, fog);
 	}
 
 	//浮点逐位相等（往返口径：%.9g 必须能唯一还原二进制 32 位浮点）
@@ -697,7 +710,7 @@ TEST(Renderer_Level_Test, 关卡材质实例装配拒绝)
 		write_text(level_dir() / L"实例装配.level", item.second);
 		engine::Level_Data 关卡;
 		engine::Asset_Scene 场景;
-		EXPECT_FALSE(renderer.level_load(关卡, 场景, level_utf8("实例装配.level"))) << item.first;
+		EXPECT_FALSE(level_bridge_load(renderer, 关卡, 场景, level_utf8("实例装配.level"))) << item.first;
 		//失败契约：关卡与场景输出清空
 		EXPECT_TRUE(场景.objects.empty()) << item.first;
 		EXPECT_TRUE(场景.meshes.empty()) << item.first;
@@ -744,28 +757,28 @@ TEST(Renderer_Level_Test, 关卡材质实例等价装配)
 	//甲：直接引用材质库
 	engine::Level_Data 甲;
 	engine::Asset_Scene 场景甲;
-	ASSERT_TRUE(renderer.level_load(甲, 场景甲, level_utf8("实例等价甲.level")));
+	ASSERT_TRUE(level_bridge_load(renderer, 甲, 场景甲, level_utf8("实例等价甲.level")));
 	ASSERT_EQ(场景甲.objects.size(), 1u);
 	EXPECT_TRUE(场景甲.objects[0].material_instances.empty());
-	EXPECT_EQ(renderer.scene_draw(场景甲), 1u);
+	EXPECT_EQ(level_bridge_draw(renderer, 场景甲), 1u);
 	std::vector<uint8_t> 帧甲(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(帧甲.data(), static_cast<uint32_t>(帧甲.size())));
-	renderer.level_unload(场景甲);
+	level_bridge_unload(renderer, 场景甲);
 
 	//乙：同模板实例（默认覆盖）
 	engine::Level_Data 乙;
 	engine::Asset_Scene 场景乙;
-	ASSERT_TRUE(renderer.level_load(乙, 场景乙, level_utf8("实例等价乙.level")));
+	ASSERT_TRUE(level_bridge_load(renderer, 乙, 场景乙, level_utf8("实例等价乙.level")));
 	ASSERT_EQ(场景乙.objects.size(), 1u);
 	ASSERT_EQ(场景乙.objects[0].material_instances.size(), 1u);
 	//实例模板句柄与绑定句柄一致
 	EXPECT_EQ(场景乙.objects[0].material_instances[0].模板, 场景乙.objects[0].materials[0]);
-	EXPECT_EQ(renderer.scene_draw(场景乙), 1u);
+	EXPECT_EQ(level_bridge_draw(renderer, 场景乙), 1u);
 	std::vector<uint8_t> 帧乙(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(帧乙.data(), static_cast<uint32_t>(帧乙.size())));
 	//默认覆盖等价：画面逐字节 0 差异
 	EXPECT_EQ(changed_pixels(帧甲, 帧乙), 0u);
-	renderer.level_unload(场景乙);
+	level_bridge_unload(renderer, 场景乙);
 }
 
 /*
@@ -804,27 +817,27 @@ TEST(Renderer_Level_Test, 关卡材质实例覆盖生效)
 	//甲：默认覆盖
 	engine::Level_Data 甲;
 	engine::Asset_Scene 场景甲;
-	ASSERT_TRUE(renderer.level_load(甲, 场景甲, level_utf8("覆盖甲.level")));
-	EXPECT_EQ(renderer.scene_draw(场景甲), 1u);
+	ASSERT_TRUE(level_bridge_load(renderer, 甲, 场景甲, level_utf8("覆盖甲.level")));
+	EXPECT_EQ(level_bridge_draw(renderer, 场景甲), 1u);
 	//绘制后吸附状态复位
 	EXPECT_FALSE(renderer.material_tint_active());
 	EXPECT_EQ(renderer.material_emissive(), 0.0f);
 	std::vector<uint8_t> 帧甲(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(帧甲.data(), static_cast<uint32_t>(帧甲.size())));
-	renderer.level_unload(场景甲);
+	level_bridge_unload(renderer, 场景甲);
 
 	//乙：深灰覆盖
 	engine::Level_Data 乙;
 	engine::Asset_Scene 场景乙;
-	ASSERT_TRUE(renderer.level_load(乙, 场景乙, level_utf8("覆盖乙.level")));
-	EXPECT_EQ(renderer.scene_draw(场景乙), 1u);
+	ASSERT_TRUE(level_bridge_load(renderer, 乙, 场景乙, level_utf8("覆盖乙.level")));
+	EXPECT_EQ(level_bridge_draw(renderer, 场景乙), 1u);
 	std::vector<uint8_t> 帧乙(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(帧乙.data(), static_cast<uint32_t>(帧乙.size())));
 	//不同 tint → 明显差异
 	const uint32_t 差异 = changed_pixels(帧甲, 帧乙);
 	std::cout << "[关卡] 实例色调差异 " << 差异 << std::endl;
 	EXPECT_GT(差异, 200u) << "实例 tint 覆盖未生效";
-	renderer.level_unload(场景乙);
+	level_bridge_unload(renderer, 场景乙);
 }
 
 /*
@@ -861,23 +874,23 @@ TEST(Renderer_Level_Test, 关卡材质实例自发光生效)
 	//甲：emissive 0
 	engine::Level_Data 甲;
 	engine::Asset_Scene 场景甲;
-	ASSERT_TRUE(renderer.level_load(甲, 场景甲, level_utf8("自发甲.level")));
-	EXPECT_EQ(renderer.scene_draw(场景甲), 1u);
+	ASSERT_TRUE(level_bridge_load(renderer, 甲, 场景甲, level_utf8("自发甲.level")));
+	EXPECT_EQ(level_bridge_draw(renderer, 场景甲), 1u);
 	std::vector<uint8_t> 帧甲(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(帧甲.data(), static_cast<uint32_t>(帧甲.size())));
-	renderer.level_unload(场景甲);
+	level_bridge_unload(renderer, 场景甲);
 
 	//乙：emissive 0.6
 	engine::Level_Data 乙;
 	engine::Asset_Scene 场景乙;
-	ASSERT_TRUE(renderer.level_load(乙, 场景乙, level_utf8("自发乙.level")));
-	EXPECT_EQ(renderer.scene_draw(场景乙), 1u);
+	ASSERT_TRUE(level_bridge_load(renderer, 乙, 场景乙, level_utf8("自发乙.level")));
+	EXPECT_EQ(level_bridge_draw(renderer, 场景乙), 1u);
 	std::vector<uint8_t> 帧乙(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(帧乙.data(), static_cast<uint32_t>(帧乙.size())));
 	const uint32_t 差异 = changed_pixels(帧甲, 帧乙);
 	std::cout << "[关卡] 实例自发光差异 " << 差异 << std::endl;
 	EXPECT_GT(差异, 100u) << "实例 emissive 覆盖未生效";
-	renderer.level_unload(场景乙);
+	level_bridge_unload(renderer, 场景乙);
 }
 
 /*
@@ -993,24 +1006,24 @@ TEST(Renderer_Level_Test, 关卡材质实例卡通生效)
 	//甲：无卡通
 	engine::Level_Data 甲;
 	engine::Asset_Scene 场景甲;
-	ASSERT_TRUE(renderer.level_load(甲, 场景甲, level_utf8("卡通甲.level")));
-	EXPECT_EQ(renderer.scene_draw(场景甲), 1u);
+	ASSERT_TRUE(level_bridge_load(renderer, 甲, 场景甲, level_utf8("卡通甲.level")));
+	EXPECT_EQ(level_bridge_draw(renderer, 场景甲), 1u);
 	std::vector<uint8_t> 帧甲(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(帧甲.data(), static_cast<uint32_t>(帧甲.size())));
-	renderer.level_unload(场景甲);
+	level_bridge_unload(renderer, 场景甲);
 
 	//乙：实例卡通
 	engine::Level_Data 乙;
 	engine::Asset_Scene 场景乙;
-	ASSERT_TRUE(renderer.level_load(乙, 场景乙, level_utf8("卡通乙.level")));
-	EXPECT_EQ(renderer.scene_draw(场景乙), 1u);
+	ASSERT_TRUE(level_bridge_load(renderer, 乙, 场景乙, level_utf8("卡通乙.level")));
+	EXPECT_EQ(level_bridge_draw(renderer, 场景乙), 1u);
 	std::vector<uint8_t> 帧乙(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(帧乙.data(), static_cast<uint32_t>(帧乙.size())));
 	const uint32_t 差异 = changed_pixels(帧甲, 帧乙);
 	std::cout << "[关卡] 实例卡通差异 " << 差异 << std::endl;
 	//立方体各面照明接近饱和，色阶量化差异有限；可观测差异主要来自边缘光（阈值取 10）
 	EXPECT_GT(差异, 10u) << "实例 toon 覆盖未生效";
-	renderer.level_unload(场景乙);
+	level_bridge_unload(renderer, 场景乙);
 }
 
 /*
@@ -1118,23 +1131,23 @@ TEST(Renderer_Level_Test, 关卡材质实例PBR生效)
 	//甲：无 PBR
 	engine::Level_Data 甲;
 	engine::Asset_Scene 场景甲;
-	ASSERT_TRUE(renderer.level_load(甲, 场景甲, level_utf8("PBR甲.level")));
-	EXPECT_EQ(renderer.scene_draw(场景甲), 1u);
+	ASSERT_TRUE(level_bridge_load(renderer, 甲, 场景甲, level_utf8("PBR甲.level")));
+	EXPECT_EQ(level_bridge_draw(renderer, 场景甲), 1u);
 	std::vector<uint8_t> 帧甲(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(帧甲.data(), static_cast<uint32_t>(帧甲.size())));
-	renderer.level_unload(场景甲);
+	level_bridge_unload(renderer, 场景甲);
 
 	//乙：实例 PBR
 	engine::Level_Data 乙;
 	engine::Asset_Scene 场景乙;
-	ASSERT_TRUE(renderer.level_load(乙, 场景乙, level_utf8("PBR乙.level")));
-	EXPECT_EQ(renderer.scene_draw(场景乙), 1u);
+	ASSERT_TRUE(level_bridge_load(renderer, 乙, 场景乙, level_utf8("PBR乙.level")));
+	EXPECT_EQ(level_bridge_draw(renderer, 场景乙), 1u);
 	std::vector<uint8_t> 帧乙(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(帧乙.data(), static_cast<uint32_t>(帧乙.size())));
 	const uint32_t 差异 = changed_pixels(帧甲, 帧乙);
 	std::cout << "[关卡] 实例 PBR 差异 " << 差异 << std::endl;
 	EXPECT_GT(差异, 20u) << "实例 pbr 覆盖未生效";
-	renderer.level_unload(场景乙);
+	level_bridge_unload(renderer, 场景乙);
 }
 
 /*
@@ -1250,23 +1263,23 @@ TEST(Renderer_Level_Test, 关卡材质实例清漆生效)
 	//甲：无清漆
 	engine::Level_Data 甲;
 	engine::Asset_Scene 场景甲;
-	ASSERT_TRUE(renderer.level_load(甲, 场景甲, level_utf8("清漆甲.level")));
-	EXPECT_EQ(renderer.scene_draw(场景甲), 1u);
+	ASSERT_TRUE(level_bridge_load(renderer, 甲, 场景甲, level_utf8("清漆甲.level")));
+	EXPECT_EQ(level_bridge_draw(renderer, 场景甲), 1u);
 	std::vector<uint8_t> 帧甲(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(帧甲.data(), static_cast<uint32_t>(帧甲.size())));
-	renderer.level_unload(场景甲);
+	level_bridge_unload(renderer, 场景甲);
 
 	//乙：实例清漆
 	engine::Level_Data 乙;
 	engine::Asset_Scene 场景乙;
-	ASSERT_TRUE(renderer.level_load(乙, 场景乙, level_utf8("清漆乙.level")));
+	ASSERT_TRUE(level_bridge_load(renderer, 乙, 场景乙, level_utf8("清漆乙.level")));
 	//装配结果携带清漆覆盖（模板句柄 ＋ 两项参数）
 	ASSERT_EQ(场景乙.objects.size(), 1u);
 	ASSERT_EQ(场景乙.objects[0].material_instances.size(), 1u);
 	EXPECT_TRUE(场景乙.objects[0].material_instances[0].use_clearcoat);
 	EXPECT_TRUE(bit_equal(场景乙.objects[0].material_instances[0].clear_coat, 1.0f));
 	EXPECT_TRUE(bit_equal(场景乙.objects[0].material_instances[0].clear_coat_roughness, 0.05f));
-	EXPECT_EQ(renderer.scene_draw(场景乙), 1u);
+	EXPECT_EQ(level_bridge_draw(renderer, 场景乙), 1u);
 	std::vector<uint8_t> 帧乙(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(帧乙.data(), static_cast<uint32_t>(帧乙.size())));
 
@@ -1274,7 +1287,7 @@ TEST(Renderer_Level_Test, 关卡材质实例清漆生效)
 	std::cout << "[关卡] 实例清漆差异 " << 差异 << std::endl;
 	//清漆为锐利高光（粗糙度 0.05），改动只落在高光斑内；阈值取 10
 	EXPECT_GT(差异, 10u) << "实例 clearcoat 覆盖未生效";
-	renderer.level_unload(场景乙);
+	level_bridge_unload(renderer, 场景乙);
 }
 
 /*
@@ -1322,28 +1335,28 @@ TEST(Renderer_Level_Test, 实例清漆与PBR组合)
 	//甲：仅清漆
 	engine::Level_Data 甲;
 	engine::Asset_Scene 场景甲;
-	ASSERT_TRUE(renderer.level_load(甲, 场景甲, level_utf8("清漆PBR甲.level")));
-	EXPECT_EQ(renderer.scene_draw(场景甲), 1u);
+	ASSERT_TRUE(level_bridge_load(renderer, 甲, 场景甲, level_utf8("清漆PBR甲.level")));
+	EXPECT_EQ(level_bridge_draw(renderer, 场景甲), 1u);
 	std::vector<uint8_t> 帧甲(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(帧甲.data(), static_cast<uint32_t>(帧甲.size())));
-	renderer.level_unload(场景甲);
+	level_bridge_unload(renderer, 场景甲);
 
 	//乙：PBR ＋ 清漆
 	engine::Level_Data 乙;
 	engine::Asset_Scene 场景乙;
-	ASSERT_TRUE(renderer.level_load(乙, 场景乙, level_utf8("清漆PBR乙.level")));
+	ASSERT_TRUE(level_bridge_load(renderer, 乙, 场景乙, level_utf8("清漆PBR乙.level")));
 	ASSERT_EQ(场景乙.objects.size(), 1u);
 	ASSERT_EQ(场景乙.objects[0].material_instances.size(), 1u);
 	EXPECT_TRUE(场景乙.objects[0].material_instances[0].use_clearcoat);
 	EXPECT_TRUE(场景乙.objects[0].material_instances[0].use_pbr);
-	EXPECT_EQ(renderer.scene_draw(场景乙), 1u);
+	EXPECT_EQ(level_bridge_draw(renderer, 场景乙), 1u);
 	std::vector<uint8_t> 帧乙(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(帧乙.data(), static_cast<uint32_t>(帧乙.size())));
 
 	const uint32_t 差异 = changed_pixels(帧甲, 帧乙);
 	std::cout << "[关卡] 清漆叠加 PBR 差异 " << 差异 << std::endl;
 	EXPECT_GT(差异, 10u) << "PBR 覆盖被清漆吞并";
-	renderer.level_unload(场景乙);
+	level_bridge_unload(renderer, 场景乙);
 }
 
 /*
@@ -1377,20 +1390,20 @@ TEST(Renderer_Level_Test, 实例清漆状态复位)
 
 	engine::Level_Data 关卡;
 	engine::Asset_Scene 场景;
-	ASSERT_TRUE(renderer.level_load(关卡, 场景, level_utf8("清漆复位.level")));
+	ASSERT_TRUE(level_bridge_load(renderer, 关卡, 场景, level_utf8("清漆复位.level")));
 	//绘制前状态（关卡装配不改变全局清漆状态）
 	const bool 前激活 = renderer.material_clear_coat_active();
 	const float 前强度 = renderer.material_clear_coat_strength();
 	const float 前粗糙 = renderer.material_clear_coat_roughness();
 
 	//绘制：实例覆盖生效后应复位
-	EXPECT_EQ(renderer.scene_draw(场景), 1u);
+	EXPECT_EQ(level_bridge_draw(renderer, 场景), 1u);
 	std::vector<uint8_t> 帧(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(帧.data(), static_cast<uint32_t>(帧.size())));
 	EXPECT_EQ(renderer.material_clear_coat_active(), 前激活) << "实例清漆状态在绘制后泄漏";
 	EXPECT_TRUE(bit_equal(renderer.material_clear_coat_strength(), 前强度)) << "清漆强度状态泄漏";
 	EXPECT_TRUE(bit_equal(renderer.material_clear_coat_roughness(), 前粗糙)) << "清漆粗糙度状态泄漏";
-	renderer.level_unload(场景);
+	level_bridge_unload(renderer, 场景);
 }
 
 /*
@@ -1421,20 +1434,20 @@ TEST(Renderer_Level_Test, 实例PBR状态复位)
 
 	engine::Level_Data 关卡;
 	engine::Asset_Scene 场景;
-	ASSERT_TRUE(renderer.level_load(关卡, 场景, level_utf8("PBR复位.level")));
+	ASSERT_TRUE(level_bridge_load(renderer, 关卡, 场景, level_utf8("PBR复位.level")));
 	//绘制前状态（关卡装配不改变全局材质状态）
 	const bool 前激活 = renderer.material_pbr_active();
 	const float 前粗糙 = renderer.material_pbr_roughness();
 	const float 前金属 = renderer.material_pbr_metallic();
 
 	//绘制：实例覆盖生效后应复位
-	EXPECT_EQ(renderer.scene_draw(场景), 1u);
+	EXPECT_EQ(level_bridge_draw(renderer, 场景), 1u);
 	std::vector<uint8_t> 帧(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(帧.data(), static_cast<uint32_t>(帧.size())));
 	EXPECT_EQ(renderer.material_pbr_active(), 前激活) << "实例 PBR 状态在绘制后泄漏";
 	EXPECT_TRUE(bit_equal(renderer.material_pbr_roughness(), 前粗糙)) << "粗糙度状态泄漏";
 	EXPECT_TRUE(bit_equal(renderer.material_pbr_metallic(), 前金属)) << "金属度状态泄漏";
-	renderer.level_unload(场景);
+	level_bridge_unload(renderer, 场景);
 }
 
 /*
@@ -1485,11 +1498,11 @@ TEST(Renderer_Level_Test, 实例PBR与卡通组合)
 	{
 		engine::Level_Data 关卡;
 		engine::Asset_Scene 场景;
-		ASSERT_TRUE(renderer.level_load(关卡, 场景, level_utf8(关卡名[index])));
-		EXPECT_EQ(renderer.scene_draw(场景), 1u);
+		ASSERT_TRUE(level_bridge_load(renderer, 关卡, 场景, level_utf8(关卡名[index])));
+		EXPECT_EQ(level_bridge_draw(renderer, 场景), 1u);
 		帧列表[index].assign(LEVEL_WIDTH * LEVEL_HEIGHT * 4, 0);
 		ASSERT_TRUE(renderer.frame_render(帧列表[index].data(), static_cast<uint32_t>(帧列表[index].size())));
-		renderer.level_unload(场景);
+		level_bridge_unload(renderer, 场景);
 	}
 
 	//组合相对两类单独覆盖都应不同
@@ -1567,23 +1580,23 @@ TEST(Renderer_Level_Test, 实例PBR与MSAA组合)
 		//甲：无 PBR
 		engine::Level_Data 甲;
 		engine::Asset_Scene 场景甲;
-		ASSERT_TRUE(renderer.level_load(甲, 场景甲, level_utf8("PBRMSAA甲.level")));
-		EXPECT_EQ(renderer.scene_draw(场景甲), 1u);
+		ASSERT_TRUE(level_bridge_load(renderer, 甲, 场景甲, level_utf8("PBRMSAA甲.level")));
+		EXPECT_EQ(level_bridge_draw(renderer, 场景甲), 1u);
 		std::vector<uint8_t> 帧甲(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 		ASSERT_TRUE(renderer.frame_render(帧甲.data(), static_cast<uint32_t>(帧甲.size())));
-		renderer.level_unload(场景甲);
+		level_bridge_unload(renderer, 场景甲);
 
 		//乙：实例 PBR
 		engine::Level_Data 乙;
 		engine::Asset_Scene 场景乙;
-		ASSERT_TRUE(renderer.level_load(乙, 场景乙, level_utf8("PBRMSAA乙.level")));
-		EXPECT_EQ(renderer.scene_draw(场景乙), 1u);
+		ASSERT_TRUE(level_bridge_load(renderer, 乙, 场景乙, level_utf8("PBRMSAA乙.level")));
+		EXPECT_EQ(level_bridge_draw(renderer, 场景乙), 1u);
 		std::vector<uint8_t> 帧乙(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 		ASSERT_TRUE(renderer.frame_render(帧乙.data(), static_cast<uint32_t>(帧乙.size())));
 		const uint32_t 差异 = changed_pixels(帧甲, 帧乙);
 		std::cout << "[关卡] 实例 PBR " << msaa_list[msaa_index] << "x 差异 " << 差异 << std::endl;
 		EXPECT_GT(差异, 20u) << "MSAA " << msaa_list[msaa_index] << "x 下实例 pbr 未生效";
-		renderer.level_unload(场景乙);
+		level_bridge_unload(renderer, 场景乙);
 	}
 }
 
@@ -1795,28 +1808,29 @@ TEST(Renderer_Level_Test, 关卡聚光灯阴影)
 
 	engine::Level_Data 关卡;
 	engine::Asset_Scene 场景;
-	ASSERT_TRUE(renderer.level_load(关卡, 场景, level_utf8("聚光阴影.level"), false));
+	ASSERT_TRUE(level_bridge_load(renderer, 关卡, 场景, level_utf8("聚光阴影.level"), false));
 
 	//关闭阴影：基线
-	engine::Light_Data 灯光 = 关卡.light;
+	engine::Light_Data 灯光;
+	engine::level_light_map(关卡.light, 灯光);
 	ASSERT_EQ(灯光.spot_count, 1u);
 	灯光.spot_shadow_enabled = 0;
-	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
-	EXPECT_EQ(renderer.scene_draw(场景), 2u);
+	apply_level_scene(renderer, 关卡, 灯光);
+	EXPECT_EQ(level_bridge_draw(renderer, 场景), 2u);
 	std::vector<uint8_t> 无影(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(无影.data(), static_cast<uint32_t>(无影.size())));
 
 	//开启聚光灯阴影
 	灯光.spot_shadow_enabled = 1;
-	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
-	EXPECT_EQ(renderer.scene_draw(场景), 2u);
+	apply_level_scene(renderer, 关卡, 灯光);
+	EXPECT_EQ(level_bridge_draw(renderer, 场景), 2u);
 	std::vector<uint8_t> 有影(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(有影.data(), static_cast<uint32_t>(有影.size())));
 
 	const uint32_t 差异 = changed_pixels(无影, 有影);
 	std::cout << "[关卡] 聚光阴影差异 " << 差异 << std::endl;
 	EXPECT_GT(差异, 200u) << "聚光灯阴影未生效";
-	renderer.level_unload(场景);
+	level_bridge_unload(renderer, 场景);
 }
 
 /*
@@ -1850,21 +1864,22 @@ TEST(Renderer_Level_Test, 关卡聚光阴影强度)
 
 	engine::Level_Data 关卡;
 	engine::Asset_Scene 场景;
-	ASSERT_TRUE(renderer.level_load(关卡, 场景, level_utf8("聚光强度.level"), false));
+	ASSERT_TRUE(level_bridge_load(renderer, 关卡, 场景, level_utf8("聚光强度.level"), false));
 
-	engine::Light_Data 灯光 = 关卡.light;
+	engine::Light_Data 灯光;
+	engine::level_light_map(关卡.light, 灯光);
 	//基线：未开聚光阴影
 	灯光.spot_shadow_enabled = 0;
-	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
-	EXPECT_EQ(renderer.scene_draw(场景), 2u);
+	apply_level_scene(renderer, 关卡, 灯光);
+	EXPECT_EQ(level_bridge_draw(renderer, 场景), 2u);
 	std::vector<uint8_t> 无影(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(无影.data(), static_cast<uint32_t>(无影.size())));
 
 	//强度 0：应等价于未开阴影
 	灯光.spot_shadow_enabled = 1;
 	灯光.spot_shadow_strength = 0.0f;
-	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
-	EXPECT_EQ(renderer.scene_draw(场景), 2u);
+	apply_level_scene(renderer, 关卡, 灯光);
+	EXPECT_EQ(level_bridge_draw(renderer, 场景), 2u);
 	std::vector<uint8_t> 零强度(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(零强度.data(), static_cast<uint32_t>(零强度.size())));
 	const uint32_t 零差异 = changed_pixels(无影, 零强度);
@@ -1873,14 +1888,14 @@ TEST(Renderer_Level_Test, 关卡聚光阴影强度)
 
 	//强度 1：恢复遮蔽
 	灯光.spot_shadow_strength = 1.0f;
-	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
-	EXPECT_EQ(renderer.scene_draw(场景), 2u);
+	apply_level_scene(renderer, 关卡, 灯光);
+	EXPECT_EQ(level_bridge_draw(renderer, 场景), 2u);
 	std::vector<uint8_t> 全强度(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(全强度.data(), static_cast<uint32_t>(全强度.size())));
 	const uint32_t 全差异 = changed_pixels(无影, 全强度);
 	std::cout << "[关卡] 聚光阴影全强度差异 " << 全差异 << std::endl;
 	EXPECT_GT(全差异, 200u) << "强度 1 未产生遮蔽";
-	renderer.level_unload(场景);
+	level_bridge_unload(renderer, 场景);
 }
 
 /*
@@ -1914,28 +1929,29 @@ TEST(Renderer_Level_Test, 关卡聚光阴影软度)
 
 	engine::Level_Data 关卡;
 	engine::Asset_Scene 场景;
-	ASSERT_TRUE(renderer.level_load(关卡, 场景, level_utf8("聚光软度.level"), false));
+	ASSERT_TRUE(level_bridge_load(renderer, 关卡, 场景, level_utf8("聚光软度.level"), false));
 
-	engine::Light_Data 灯光 = 关卡.light;
+	engine::Light_Data 灯光;
+	engine::level_light_map(关卡.light, 灯光);
 	灯光.spot_shadow_enabled = 1;
 	//硬边
 	灯光.spot_shadow_softness = 0.0f;
-	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
-	EXPECT_EQ(renderer.scene_draw(场景), 2u);
+	apply_level_scene(renderer, 关卡, 灯光);
+	EXPECT_EQ(level_bridge_draw(renderer, 场景), 2u);
 	std::vector<uint8_t> 硬边(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(硬边.data(), static_cast<uint32_t>(硬边.size())));
 
 	//软边（0.75 → 5×5 邻域）
 	灯光.spot_shadow_softness = 0.75f;
-	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
-	EXPECT_EQ(renderer.scene_draw(场景), 2u);
+	apply_level_scene(renderer, 关卡, 灯光);
+	EXPECT_EQ(level_bridge_draw(renderer, 场景), 2u);
 	std::vector<uint8_t> 软边(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(软边.data(), static_cast<uint32_t>(软边.size())));
 
 	const uint32_t 差异 = changed_pixels(硬边, 软边);
 	std::cout << "[关卡] 聚光阴影软度差异 " << 差异 << std::endl;
 	EXPECT_GT(差异, 10u) << "聚光灯软度未生效";
-	renderer.level_unload(场景);
+	level_bridge_unload(renderer, 场景);
 }
 
 /*
@@ -1972,29 +1988,30 @@ TEST(Renderer_Level_Test, 关卡聚光阴影序号)
 
 	engine::Level_Data 关卡;
 	engine::Asset_Scene 场景;
-	ASSERT_TRUE(renderer.level_load(关卡, 场景, level_utf8("聚光序号.level"), false));
+	ASSERT_TRUE(level_bridge_load(renderer, 关卡, 场景, level_utf8("聚光序号.level"), false));
 	ASSERT_EQ(关卡.light.spot_count, 2u);
 
 	//序号 0：只遮蔽左灯
-	engine::Light_Data 灯光 = 关卡.light;
+	engine::Light_Data 灯光;
+	engine::level_light_map(关卡.light, 灯光);
 	灯光.spot_shadow_enabled = 1;
 	灯光.spot_shadow_index = 0;
-	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
-	EXPECT_EQ(renderer.scene_draw(场景), 4u);
+	apply_level_scene(renderer, 关卡, 灯光);
+	EXPECT_EQ(level_bridge_draw(renderer, 场景), 4u);
 	std::vector<uint8_t> 左影(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(左影.data(), static_cast<uint32_t>(左影.size())));
 
 	//序号 1：只遮蔽右灯
 	灯光.spot_shadow_index = 1;
-	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
-	EXPECT_EQ(renderer.scene_draw(场景), 4u);
+	apply_level_scene(renderer, 关卡, 灯光);
+	EXPECT_EQ(level_bridge_draw(renderer, 场景), 4u);
 	std::vector<uint8_t> 右影(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(右影.data(), static_cast<uint32_t>(右影.size())));
 
 	const uint32_t 差异 = changed_pixels(左影, 右影);
 	std::cout << "[关卡] 聚光阴影序号差异 " << 差异 << std::endl;
 	EXPECT_GT(差异, 100u) << "聚光灯阴影序号未生效";
-	renderer.level_unload(场景);
+	level_bridge_unload(renderer, 场景);
 }
 
 /*
@@ -2031,28 +2048,29 @@ TEST(Renderer_Level_Test, 关卡聚光阴影序号越界)
 
 	engine::Level_Data 关卡;
 	engine::Asset_Scene 场景;
-	ASSERT_TRUE(renderer.level_load(关卡, 场景, level_utf8("聚光越界.level"), false));
+	ASSERT_TRUE(level_bridge_load(renderer, 关卡, 场景, level_utf8("聚光越界.level"), false));
 
-	engine::Light_Data 灯光 = 关卡.light;
+	engine::Light_Data 灯光;
+	engine::level_light_map(关卡.light, 灯光);
 	//基线：关闭聚光阴影
 	灯光.spot_shadow_enabled = 0;
-	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
-	EXPECT_EQ(renderer.scene_draw(场景), 4u);
+	apply_level_scene(renderer, 关卡, 灯光);
+	EXPECT_EQ(level_bridge_draw(renderer, 场景), 4u);
 	std::vector<uint8_t> 无影(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(无影.data(), static_cast<uint32_t>(无影.size())));
 
 	//开启但序号越界
 	灯光.spot_shadow_enabled = 1;
 	灯光.spot_shadow_index = 5;
-	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
-	EXPECT_EQ(renderer.scene_draw(场景), 4u);
+	apply_level_scene(renderer, 关卡, 灯光);
+	EXPECT_EQ(level_bridge_draw(renderer, 场景), 4u);
 	std::vector<uint8_t> 越界(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(越界.data(), static_cast<uint32_t>(越界.size())));
 
 	const uint32_t 差异 = changed_pixels(无影, 越界);
 	std::cout << "[关卡] 聚光阴影越界差异 " << 差异 << std::endl;
 	EXPECT_LE(差异, 2u) << "越界序号仍产生阴影";
-	renderer.level_unload(场景);
+	level_bridge_unload(renderer, 场景);
 }
 
 /*
@@ -2087,22 +2105,23 @@ TEST(Renderer_Level_Test, 关卡聚光与方向光阴影共存)
 
 	engine::Level_Data 关卡;
 	engine::Asset_Scene 场景;
-	ASSERT_TRUE(renderer.level_load(关卡, 场景, level_utf8("共存阴影.level"), false));
+	ASSERT_TRUE(level_bridge_load(renderer, 关卡, 场景, level_utf8("共存阴影.level"), false));
 
-	engine::Light_Data 灯光 = 关卡.light;
+	engine::Light_Data 灯光;
+	engine::level_light_map(关卡.light, 灯光);
 	//基线：两套阴影都关
 	灯光.shadow_enabled = 0;
 	灯光.spot_shadow_enabled = 0;
-	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
-	EXPECT_EQ(renderer.scene_draw(场景), 2u);
+	apply_level_scene(renderer, 关卡, 灯光);
+	EXPECT_EQ(level_bridge_draw(renderer, 场景), 2u);
 	std::vector<uint8_t> 无影(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(无影.data(), static_cast<uint32_t>(无影.size())));
 
 	//仅方向光阴影
 	灯光.shadow_enabled = 1;
 	灯光.spot_shadow_enabled = 0;
-	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
-	EXPECT_EQ(renderer.scene_draw(场景), 2u);
+	apply_level_scene(renderer, 关卡, 灯光);
+	EXPECT_EQ(level_bridge_draw(renderer, 场景), 2u);
 	std::vector<uint8_t> 方向影(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(方向影.data(), static_cast<uint32_t>(方向影.size())));
 	const uint32_t 方向差异 = changed_pixels(无影, 方向影);
@@ -2112,14 +2131,14 @@ TEST(Renderer_Level_Test, 关卡聚光与方向光阴影共存)
 	//方向光 ＋ 聚光阴影
 	灯光.spot_shadow_enabled = 1;
 	灯光.spot_shadow_index = 0;
-	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
-	EXPECT_EQ(renderer.scene_draw(场景), 2u);
+	apply_level_scene(renderer, 关卡, 灯光);
+	EXPECT_EQ(level_bridge_draw(renderer, 场景), 2u);
 	std::vector<uint8_t> 双影(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(双影.data(), static_cast<uint32_t>(双影.size())));
 	const uint32_t 共存差异 = changed_pixels(方向影, 双影);
 	std::cout << "[关卡] 聚光叠加方向光差异 " << 共存差异 << std::endl;
 	EXPECT_GT(共存差异, 50u) << "聚光阴影未与方向光阴影共存";
-	renderer.level_unload(场景);
+	level_bridge_unload(renderer, 场景);
 }
 
 /*
@@ -2153,31 +2172,32 @@ TEST(Renderer_Level_Test, 关卡聚光阴影按需重绘)
 
 	engine::Level_Data 关卡;
 	engine::Asset_Scene 场景;
-	ASSERT_TRUE(renderer.level_load(关卡, 场景, level_utf8("聚光重绘.level"), false));
+	ASSERT_TRUE(level_bridge_load(renderer, 关卡, 场景, level_utf8("聚光重绘.level"), false));
 
-	engine::Light_Data 灯光 = 关卡.light;
+	engine::Light_Data 灯光;
+	engine::level_light_map(关卡.light, 灯光);
 	灯光.spot_shadow_enabled = 1;
 	灯光.spot_shadow_index = 0;
-	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
-	ASSERT_TRUE(renderer.scene_draw(场景) == 2u);
+	apply_level_scene(renderer, 关卡, 灯光);
+	ASSERT_TRUE(level_bridge_draw(renderer, 场景) == 2u);
 	ASSERT_TRUE(renderer.frame_render());
 
 	//静态连续渲染：阴影 pass 不应再增长
 	const uint64_t 静态后 = renderer.shadow_pass_count();
 	for (int frame = 0; frame < 4; ++frame)
 	{
-		ASSERT_TRUE(renderer.scene_draw(场景) == 2u);
+		ASSERT_TRUE(level_bridge_draw(renderer, 场景) == 2u);
 		ASSERT_TRUE(renderer.frame_render());
 	}
 	EXPECT_EQ(renderer.shadow_pass_count(), 静态后) << "静态场景仍重绘阴影";
 
 	//移动聚光灯位置：签名变化 → 重绘一次
 	灯光.spot_position[0][0] = 1.0f;
-	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
-	ASSERT_TRUE(renderer.scene_draw(场景) == 2u);
+	apply_level_scene(renderer, 关卡, 灯光);
+	ASSERT_TRUE(level_bridge_draw(renderer, 场景) == 2u);
 	ASSERT_TRUE(renderer.frame_render());
 	EXPECT_GT(renderer.shadow_pass_count(), 静态后) << "聚光灯移动后未重绘阴影";
-	renderer.level_unload(场景);
+	level_bridge_unload(renderer, 场景);
 }
 
 /*
@@ -2211,22 +2231,23 @@ TEST(Renderer_Level_Test, 关卡聚光阴影分辨率切换)
 
 	engine::Level_Data 关卡;
 	engine::Asset_Scene 场景;
-	ASSERT_TRUE(renderer.level_load(关卡, 场景, level_utf8("聚光分辨率.level"), false));
-	engine::Light_Data 灯光 = 关卡.light;
+	ASSERT_TRUE(level_bridge_load(renderer, 关卡, 场景, level_utf8("聚光分辨率.level"), false));
+	engine::Light_Data 灯光;
+	engine::level_light_map(关卡.light, 灯光);
 	灯光.spot_shadow_enabled = 1;
 	灯光.spot_shadow_index = 0;
-	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
-	ASSERT_TRUE(renderer.scene_draw(场景) == 2u);
+	apply_level_scene(renderer, 关卡, 灯光);
+	ASSERT_TRUE(level_bridge_draw(renderer, 场景) == 2u);
 	std::vector<uint8_t> 原图(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(原图.data(), static_cast<uint32_t>(原图.size())));
 
 	//切到 512 再切回 1024
 	renderer.shadow_resolution_set(512);
-	ASSERT_TRUE(renderer.scene_draw(场景) == 2u);
+	ASSERT_TRUE(level_bridge_draw(renderer, 场景) == 2u);
 	std::vector<uint8_t> 低分辨率(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(低分辨率.data(), static_cast<uint32_t>(低分辨率.size())));
 	renderer.shadow_resolution_set(1024);
-	ASSERT_TRUE(renderer.scene_draw(场景) == 2u);
+	ASSERT_TRUE(level_bridge_draw(renderer, 场景) == 2u);
 	std::vector<uint8_t> 复原(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(复原.data(), static_cast<uint32_t>(复原.size())));
 
@@ -2234,7 +2255,7 @@ TEST(Renderer_Level_Test, 关卡聚光阴影分辨率切换)
 	std::cout << "[关卡] 分辨率往返差异 " << 差异 << std::endl;
 	EXPECT_LE(差异, 2u) << "分辨率往返后画面未复原";
 	EXPECT_GE(changed_pixels(原图, 低分辨率), 1u) << "512 分辨率未改变阴影细节";
-	renderer.level_unload(场景);
+	level_bridge_unload(renderer, 场景);
 }
 
 /*
@@ -2270,26 +2291,27 @@ TEST(Renderer_Level_Test, 关卡Cluster聚光阴影)
 
 	engine::Level_Data 关卡;
 	engine::Asset_Scene 场景;
-	ASSERT_TRUE(renderer.level_load(关卡, 场景, level_utf8("聚光簇.level"), false));
+	ASSERT_TRUE(level_bridge_load(renderer, 关卡, 场景, level_utf8("聚光簇.level"), false));
 
-	engine::Light_Data 灯光 = 关卡.light;
+	engine::Light_Data 灯光;
+	engine::level_light_map(关卡.light, 灯光);
 	灯光.spot_shadow_enabled = 1;
 	灯光.spot_shadow_index = 0;
-	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
+	apply_level_scene(renderer, 关卡, 灯光);
 	//开启 Cluster（默认网格）
 	renderer.cluster_enable_set(true);
 
 	//关闭阴影（Cluster 路径）
 	灯光.spot_shadow_enabled = 0;
-	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
-	ASSERT_TRUE(renderer.scene_draw(场景) == 2u);
+	apply_level_scene(renderer, 关卡, 灯光);
+	ASSERT_TRUE(level_bridge_draw(renderer, 场景) == 2u);
 	std::vector<uint8_t> 无影(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(无影.data(), static_cast<uint32_t>(无影.size())));
 
 	//开启阴影（Cluster 路径）
 	灯光.spot_shadow_enabled = 1;
-	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
-	ASSERT_TRUE(renderer.scene_draw(场景) == 2u);
+	apply_level_scene(renderer, 关卡, 灯光);
+	ASSERT_TRUE(level_bridge_draw(renderer, 场景) == 2u);
 	std::vector<uint8_t> 有影(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(有影.data(), static_cast<uint32_t>(有影.size())));
 
@@ -2297,7 +2319,7 @@ TEST(Renderer_Level_Test, 关卡Cluster聚光阴影)
 	std::cout << "[关卡] Cluster 聚光阴影差异 " << 差异 << std::endl;
 	EXPECT_GT(差异, 100u) << "Cluster 路径聚光阴影未生效";
 	renderer.cluster_enable_set(false);
-	renderer.level_unload(场景);
+	level_bridge_unload(renderer, 场景);
 }
 
 
@@ -2478,30 +2500,31 @@ TEST(Renderer_Level_Test, 关卡多盏聚光阴影)
 
 	engine::Level_Data 关卡;
 	engine::Asset_Scene 场景;
-	ASSERT_TRUE(renderer.level_load(关卡, 场景, level_utf8("多盏聚光.level"), false));
+	ASSERT_TRUE(level_bridge_load(renderer, 关卡, 场景, level_utf8("多盏聚光.level"), false));
 	ASSERT_EQ(关卡.light.spot_count, 2u);
 
 	//单盏（序号 0）：只遮蔽左侧
-	engine::Light_Data 灯光 = 关卡.light;
+	engine::Light_Data 灯光;
+	engine::level_light_map(关卡.light, 灯光);
 	灯光.spot_shadow_enabled = 1;
 	灯光.spot_shadow_all = 0;
 	灯光.spot_shadow_index = 0;
-	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
-	EXPECT_EQ(renderer.scene_draw(场景), 4u);
+	apply_level_scene(renderer, 关卡, 灯光);
+	EXPECT_EQ(level_bridge_draw(renderer, 场景), 4u);
 	std::vector<uint8_t> 单盏(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(单盏.data(), static_cast<uint32_t>(单盏.size())));
 
 	//多盏：两盏各自投影
 	灯光.spot_shadow_all = 1;
-	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
-	EXPECT_EQ(renderer.scene_draw(场景), 4u);
+	apply_level_scene(renderer, 关卡, 灯光);
+	EXPECT_EQ(level_bridge_draw(renderer, 场景), 4u);
 	std::vector<uint8_t> 多盏(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(多盏.data(), static_cast<uint32_t>(多盏.size())));
 
 	const uint32_t 差异 = changed_pixels(单盏, 多盏);
 	std::cout << "[关卡] 多盏聚光阴影差异 " << 差异 << std::endl;
 	EXPECT_GT(差异, 100u) << "多盏聚光灯阴影未生效";
-	renderer.level_unload(场景);
+	level_bridge_unload(renderer, 场景);
 }
 
 /*
@@ -2591,30 +2614,31 @@ TEST(Renderer_Level_Test, 关卡四盏聚光阴影)
 
 	engine::Level_Data 关卡;
 	engine::Asset_Scene 场景;
-	ASSERT_TRUE(renderer.level_load(关卡, 场景, level_utf8("四盏聚光.level"), false));
+	ASSERT_TRUE(level_bridge_load(renderer, 关卡, 场景, level_utf8("四盏聚光.level"), false));
 	ASSERT_EQ(关卡.light.spot_count, 4u);
 
 	//单盏（序号 0）：只遮蔽最左
-	engine::Light_Data 灯光 = 关卡.light;
+	engine::Light_Data 灯光;
+	engine::level_light_map(关卡.light, 灯光);
 		灯光.spot_shadow_enabled = 1;
 		灯光.spot_shadow_all = 0;
 		灯光.spot_shadow_index = 0;
-	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
-	EXPECT_EQ(renderer.scene_draw(场景), 8u);
+	apply_level_scene(renderer, 关卡, 灯光);
+	EXPECT_EQ(level_bridge_draw(renderer, 场景), 8u);
 	std::vector<uint8_t> 单盏(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(单盏.data(), static_cast<uint32_t>(单盏.size())));
 
 	//多盏：四盏各自投影
 		灯光.spot_shadow_all = 1;
-	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
-	EXPECT_EQ(renderer.scene_draw(场景), 8u);
+	apply_level_scene(renderer, 关卡, 灯光);
+	EXPECT_EQ(level_bridge_draw(renderer, 场景), 8u);
 	std::vector<uint8_t> 四盏(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(四盏.data(), static_cast<uint32_t>(四盏.size())));
 
 	const uint32_t 差异 = changed_pixels(单盏, 四盏);
 	std::cout << "[关卡] 四盏聚光阴影差异 " << 差异 << std::endl;
 	EXPECT_GT(差异, 100u) << "四盏聚光灯阴影未生效";
-	renderer.level_unload(场景);
+	level_bridge_unload(renderer, 场景);
 }
 
 
@@ -2659,23 +2683,24 @@ TEST(Renderer_Level_Test, 聚光灯多盏运行期开关)
 
 	engine::Level_Data 关卡;
 	engine::Asset_Scene 场景;
-	ASSERT_TRUE(renderer.level_load(关卡, 场景, level_utf8("四盏聚光.level"), false));
+	ASSERT_TRUE(level_bridge_load(renderer, 关卡, 场景, level_utf8("四盏聚光.level"), false));
 
 	//单盏（序号 0）应用后：门面默认与场景一致
-	engine::Light_Data 灯光 = 关卡.light;
+	engine::Light_Data 灯光;
+	engine::level_light_map(关卡.light, 灯光);
 	灯光.spot_shadow_enabled = 1;
 	灯光.spot_shadow_all = 0;
 	灯光.spot_shadow_index = 0;
-	renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
+	apply_level_scene(renderer, 关卡, 灯光);
 	EXPECT_FALSE(renderer.spot_shadow_all());
-	EXPECT_EQ(renderer.scene_draw(场景), 8u);
+	EXPECT_EQ(level_bridge_draw(renderer, 场景), 8u);
 	std::vector<uint8_t> 单盏(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(单盏.data(), static_cast<uint32_t>(单盏.size())));
 
 	//运行期切到四盏（不重新 scene_apply）
 	renderer.spot_shadow_all_set(true);
 	EXPECT_TRUE(renderer.spot_shadow_all());
-	EXPECT_EQ(renderer.scene_draw(场景), 8u);
+	EXPECT_EQ(level_bridge_draw(renderer, 场景), 8u);
 	std::vector<uint8_t> 四盏(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(四盏.data(), static_cast<uint32_t>(四盏.size())));
 
@@ -2686,14 +2711,14 @@ TEST(Renderer_Level_Test, 聚光灯多盏运行期开关)
 	//切回单盏：画面应与初始单盏基本一致
 	renderer.spot_shadow_all_set(false);
 	EXPECT_FALSE(renderer.spot_shadow_all());
-	EXPECT_EQ(renderer.scene_draw(场景), 8u);
+	EXPECT_EQ(level_bridge_draw(renderer, 场景), 8u);
 	std::vector<uint8_t> 回单盏(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(回单盏.data(), static_cast<uint32_t>(回单盏.size())));
 
 	const uint32_t 回差异 = changed_pixels(单盏, 回单盏);
 	std::cout << "[关卡] 运行期切回单盏差异 " << 回差异 << std::endl;
 	EXPECT_LT(回差异, 50u) << "运行期切回单盏后画面未恢复";
-	renderer.level_unload(场景);
+	level_bridge_unload(renderer, 场景);
 }
 
 /*
@@ -2736,7 +2761,7 @@ TEST(Renderer_Level_Test, 关卡多盏聚光开销)
 
 	engine::Level_Data 关卡;
 	engine::Asset_Scene 场景;
-	ASSERT_TRUE(renderer.level_load(关卡, 场景, level_utf8("多盏开销.level"), false));
+	ASSERT_TRUE(level_bridge_load(renderer, 关卡, 场景, level_utf8("多盏开销.level"), false));
 
 	//分别按 1 / 2 / 4 盏登记，全部投影并预热 6 帧
 	const uint32_t counts[3] = { 1u, 2u, 4u };
@@ -2744,13 +2769,14 @@ TEST(Renderer_Level_Test, 关卡多盏聚光开销)
 	std::string keys[3] = { "spot_shadow_gpu_ms_1", "spot_shadow_gpu_ms_2", "spot_shadow_gpu_ms_4" };
 	for (std::size_t index = 0; index < 3; ++index)
 	{
-		engine::Light_Data 灯光 = 关卡.light;
+		engine::Light_Data 灯光;
+	engine::level_light_map(关卡.light, 灯光);
 		灯光.spot_shadow_enabled = 1;
 		灯光.spot_shadow_all = 1;
 		灯光.spot_count = counts[index];
-		renderer.scene_apply(关卡.camera, 灯光, 关卡.fog);
+		apply_level_scene(renderer, 关卡, 灯光);
 		灯光.spot_count = counts[index];
-		EXPECT_EQ(renderer.scene_draw(场景), 8u);
+		EXPECT_EQ(level_bridge_draw(renderer, 场景), 8u);
 		for (uint32_t frame = 0; frame < 6; ++frame)
 			ASSERT_TRUE(renderer.frame_render());
 		shadow_ms[index] = renderer.frame_stats_get().gpu_shadow_ms;
@@ -2769,7 +2795,7 @@ TEST(Renderer_Level_Test, 关卡多盏聚光开销)
 		for (std::size_t index = 0; index < 3; ++index)
 			EXPECT_EQ(shadow_ms[index], 0.0);
 	}
-	renderer.level_unload(场景);
+	level_bridge_unload(renderer, 场景);
 }
 
 /*
@@ -2822,7 +2848,7 @@ TEST(Renderer_Level_Test, 关卡装载端到端)
 
 	engine::Level_Data 关卡;
 	engine::Asset_Scene 场景;
-	ASSERT_TRUE(renderer.level_load(关卡, 场景, level_utf8("端到端.level")));
+	ASSERT_TRUE(level_bridge_load(renderer, 关卡, 场景, level_utf8("端到端.level")));
 	EXPECT_EQ(关卡.name, "端到端关卡");
 	EXPECT_EQ(关卡.asset_lines.size(), 3u);
 	ASSERT_EQ(场景.meshes.size(), 1u);
@@ -2831,7 +2857,7 @@ TEST(Renderer_Level_Test, 关卡装载端到端)
 	ASSERT_EQ(场景.objects[0].materials.size(), 1u);
 
 	//逐段绑材质绘制（门面 scene_draw）
-	EXPECT_EQ(renderer.scene_draw(场景), 1u);
+	EXPECT_EQ(level_bridge_draw(renderer, 场景), 1u);
 	std::vector<uint8_t> shown(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(shown.data(), static_cast<uint32_t>(shown.size())));
 	const uint32_t covered = changed_pixels(reference, shown);
@@ -2839,14 +2865,14 @@ TEST(Renderer_Level_Test, 关卡装载端到端)
 	EXPECT_GE(covered, LEVEL_MIN_PIXELS) << "关卡装载的网格没有画出来";
 
 	//门面保存：写回后再读，名称与资产行数量一致
-	ASSERT_TRUE(renderer.level_save(关卡, level_utf8("端到端_保存.level")));
+	ASSERT_TRUE(engine::level_text_write(关卡, level_utf8("端到端_保存.level")));
 	engine::Level_Data reread;
 	ASSERT_TRUE(engine::level_text_read(level_utf8("端到端_保存.level"), reread));
 	EXPECT_EQ(reread.name, 关卡.name);
 	EXPECT_EQ(reread.asset_lines.size(), 关卡.asset_lines.size());
 
 	//幂等释放
-	renderer.level_unload(场景);
+	level_bridge_unload(renderer, 场景);
 	EXPECT_TRUE(场景.objects.empty());
 	EXPECT_TRUE(场景.meshes.empty());
 }
@@ -2890,23 +2916,25 @@ TEST(Renderer_Level_Test, 关卡与手工构造画面一致)
 	//路径一：关卡装载
 	engine::Level_Data 关卡;
 	engine::Asset_Scene 场景甲;
-	ASSERT_TRUE(renderer.level_load(关卡, 场景甲, level_utf8("等价.level")));
+	ASSERT_TRUE(level_bridge_load(renderer, 关卡, 场景甲, level_utf8("等价.level")));
 	ASSERT_EQ(场景甲.objects.size(), 1u);
-	EXPECT_EQ(renderer.scene_draw(场景甲), 1u);
+	EXPECT_EQ(level_bridge_draw(renderer, 场景甲), 1u);
 	std::vector<uint8_t> 关卡帧(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(关卡帧.data(), static_cast<uint32_t>(关卡帧.size())));
-	renderer.level_unload(场景甲);
+	level_bridge_unload(renderer, 场景甲);
 
 	//路径二：手工三组 ＋ 场景清单
-	renderer.scene_apply(关卡.camera, 关卡.light, 关卡.fog);
+	engine::Light_Data 关卡灯光;
+	engine::level_light_map(关卡.light, 关卡灯光);
+	apply_level_scene(renderer, 关卡, 关卡灯光);
 	engine::Asset_Scene 场景乙;
-	ASSERT_TRUE(renderer.scene_load(场景乙, level_utf8("等价清单.txt")));
+	ASSERT_TRUE(scene_bundle_load(renderer, 场景乙, level_utf8("等价清单.txt")));
 	ASSERT_EQ(场景乙.objects.size(), 1u);
 	ASSERT_TRUE(renderer.mesh_draw_sections(场景乙.objects[0].mesh, nullptr,
 		场景乙.objects[0].materials.data(), static_cast<uint32_t>(场景乙.objects[0].materials.size())));
 	std::vector<uint8_t> 手工帧(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(手工帧.data(), static_cast<uint32_t>(手工帧.size())));
-	renderer.scene_unload(场景乙);
+	level_bridge_unload(renderer, 场景乙);
 
 	//逐字节比较
 	ASSERT_EQ(关卡帧.size(), 手工帧.size());
@@ -2942,13 +2970,13 @@ TEST(Renderer_Level_Test, 关卡装载失败回退)
 
 	engine::Level_Data 关卡;
 	engine::Asset_Scene 场景;
-	EXPECT_FALSE(renderer.level_load(关卡, 场景, level_utf8("缺失资产.level")));
+	EXPECT_FALSE(level_bridge_load(renderer, 关卡, 场景, level_utf8("缺失资产.level")));
 	EXPECT_TRUE(关卡.name.empty());
 	EXPECT_TRUE(场景.meshes.empty());
 	EXPECT_TRUE(场景.materials.empty());
 	EXPECT_TRUE(场景.objects.empty());
 
-	EXPECT_FALSE(renderer.level_load(关卡, 场景, level_utf8("非法相机.level")));
+	EXPECT_FALSE(level_bridge_load(renderer, 关卡, 场景, level_utf8("非法相机.level")));
 	EXPECT_TRUE(关卡.name.empty());
 	EXPECT_TRUE(场景.objects.empty());
 }
@@ -3029,17 +3057,17 @@ TEST(Renderer_Level_Test, 摆放旋转)
 	//零旋转：对象字段为 0；用构造矩阵绘制与 nullptr 画面一致
 	engine::Level_Data 零关卡;
 	engine::Asset_Scene 零场景;
-	ASSERT_TRUE(renderer.level_load(零关卡, 零场景, level_utf8("旋转零.level")));
+	ASSERT_TRUE(level_bridge_load(renderer, 零关卡, 零场景, level_utf8("旋转零.level")));
 	ASSERT_EQ(零场景.objects.size(), 1u);
 	EXPECT_EQ(零场景.objects[0].rotation_deg[1], 0.0f);
 	std::vector<uint8_t> 旧画面(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.mesh_draw_sections(零场景.objects[0].mesh, nullptr,
 		零场景.objects[0].materials.data(), static_cast<uint32_t>(零场景.objects[0].materials.size())));
 	ASSERT_TRUE(renderer.frame_render(旧画面.data(), static_cast<uint32_t>(旧画面.size())));
-	renderer.level_unload(零场景);
+	level_bridge_unload(renderer, 零场景);
 
 	//重新装载（对象已释放）并改用构造矩阵
-	ASSERT_TRUE(renderer.level_load(零关卡, 零场景, level_utf8("旋转零.level")));
+	ASSERT_TRUE(level_bridge_load(renderer, 零关卡, 零场景, level_utf8("旋转零.level")));
 	ASSERT_EQ(零场景.objects.size(), 1u);
 	float 矩阵[16] = {};
 	engine::level_transform_build(零场景.objects[0].position, 零场景.objects[0].rotation_deg,
@@ -3049,12 +3077,12 @@ TEST(Renderer_Level_Test, 摆放旋转)
 	std::vector<uint8_t> 矩阵画面(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(矩阵画面.data(), static_cast<uint32_t>(矩阵画面.size())));
 	EXPECT_EQ(changed_pixels(旧画面, 矩阵画面), 0u) << "零旋转构造矩阵应与 nullptr 画面一致";
-	renderer.level_unload(零场景);
+	level_bridge_unload(renderer, 零场景);
 
 	//绕 Y 45°：对象字段 45；画面应变化
 	engine::Level_Data 旋转关卡;
 	engine::Asset_Scene 旋转场景;
-	ASSERT_TRUE(renderer.level_load(旋转关卡, 旋转场景, level_utf8("旋转四十五.level")));
+	ASSERT_TRUE(level_bridge_load(renderer, 旋转关卡, 旋转场景, level_utf8("旋转四十五.level")));
 	ASSERT_EQ(旋转场景.objects.size(), 1u);
 	EXPECT_FLOAT_EQ(旋转场景.objects[0].rotation_deg[1], 45.0f);
 	float 旋转矩阵[16] = {};
@@ -3067,7 +3095,7 @@ TEST(Renderer_Level_Test, 摆放旋转)
 	const uint32_t 差异 = changed_pixels(旧画面, 旋转画面);
 	std::cout << "[关卡] 旋转 45° 画面差异 " << 差异 << " 像素" << std::endl;
 	EXPECT_GT(差异, 50u) << "旋转未生效";
-	renderer.level_unload(旋转场景);
+	level_bridge_unload(renderer, 旋转场景);
 }
 
 /*
@@ -3154,21 +3182,21 @@ TEST(Renderer_Level_Test, 关卡装载开销)
 	//预热一次（首轮包含管线 / 采样器等惰性创建）
 	engine::Level_Data 关卡;
 	engine::Asset_Scene 场景;
-	ASSERT_TRUE(renderer.level_load(关卡, 场景, level_utf8("开销.level")));
+	ASSERT_TRUE(level_bridge_load(renderer, 关卡, 场景, level_utf8("开销.level")));
 	EXPECT_EQ(场景.objects.size(), 4u);
-	renderer.level_unload(场景);
+	level_bridge_unload(renderer, 场景);
 
 	double 最短毫秒 = 1e9;
 	for (uint32_t 次数 = 0; 次数 < 3; ++次数)
 	{
 		engine::Asset_Scene 测场景;
 		const std::chrono::steady_clock::time_point 开始 = std::chrono::steady_clock::now();
-		ASSERT_TRUE(renderer.level_load(关卡, 测场景, level_utf8("开销.level")));
+		ASSERT_TRUE(level_bridge_load(renderer, 关卡, 测场景, level_utf8("开销.level")));
 		const std::chrono::steady_clock::time_point 结束 = std::chrono::steady_clock::now();
 		const double 毫秒 = std::chrono::duration<double, std::milli>(结束 - 开始).count();
 		if (毫秒 < 最短毫秒)
 			最短毫秒 = 毫秒;
-		renderer.level_unload(测场景);
+		level_bridge_unload(renderer, 测场景);
 	}
 	std::cout << "[关卡] 装载开销（1 网格 + 1 材质 + 4 对象）最短 " << 最短毫秒 << " ms" << std::endl;
 	EXPECT_LT(最短毫秒, 300.0) << "关卡装载耗时异常";
@@ -3200,10 +3228,10 @@ TEST(Renderer_Level_Test, 关卡反复装载释放)
 	{
 		engine::Level_Data 关卡;
 		engine::Asset_Scene 场景;
-		ASSERT_TRUE(renderer.level_load(关卡, 场景, level_utf8("反复.level"))) << "第 " << 轮次 << " 次装载失败";
+		ASSERT_TRUE(level_bridge_load(renderer, 关卡, 场景, level_utf8("反复.level"))) << "第 " << 轮次 << " 次装载失败";
 		ASSERT_EQ(场景.objects.size(), 2u);
-		renderer.level_unload(场景);
-		EXPECT_EQ(renderer.asset_cache_count(), 0u) << "第 " << 轮次 << " 次释放后仍有缓存条目";
+		level_bridge_unload(renderer, 场景);
+		EXPECT_EQ(asset_cache_count(renderer), 0u) << "第 " << 轮次 << " 次释放后仍有缓存条目";
 	}
 	std::cout << "[关卡] 反复装载释放 200 次完成" << std::endl;
 }
@@ -3427,21 +3455,21 @@ TEST(Renderer_Level_Test, 关卡规模装载开销)
 		//预热一次
 		engine::Level_Data 关卡;
 		engine::Asset_Scene 场景;
-		ASSERT_TRUE(renderer.level_load(关卡, 场景, level_utf8("规模.level")));
+		ASSERT_TRUE(level_bridge_load(renderer, 关卡, 场景, level_utf8("规模.level")));
 		ASSERT_EQ(场景.objects.size(), 数量);
-		renderer.level_unload(场景);
+		level_bridge_unload(renderer, 场景);
 
 		double 最短毫秒 = 1e9;
 		for (uint32_t 次数 = 0; 次数 < 2; ++次数)
 		{
 			engine::Asset_Scene 测场景;
 			const std::chrono::steady_clock::time_point 开始 = std::chrono::steady_clock::now();
-			ASSERT_TRUE(renderer.level_load(关卡, 测场景, level_utf8("规模.level")));
+			ASSERT_TRUE(level_bridge_load(renderer, 关卡, 测场景, level_utf8("规模.level")));
 			const std::chrono::steady_clock::time_point 结束 = std::chrono::steady_clock::now();
 			const double 毫秒 = std::chrono::duration<double, std::milli>(结束 - 开始).count();
 			if (毫秒 < 最短毫秒)
 				最短毫秒 = 毫秒;
-			renderer.level_unload(测场景);
+			level_bridge_unload(renderer, 测场景);
 		}
 		std::cout << "[关卡] " << 数量 << " 摆放装载最短 " << 最短毫秒 << " ms" << std::endl;
 		EXPECT_LT(最短毫秒, 1000.0);
@@ -3474,7 +3502,7 @@ TEST(Renderer_Level_Test, 关卡大量摆放)
 
 	engine::Level_Data 关卡;
 	engine::Asset_Scene 场景;
-	ASSERT_TRUE(renderer.level_load(关卡, 场景, level_utf8("大量摆放.level")));
+	ASSERT_TRUE(level_bridge_load(renderer, 关卡, 场景, level_utf8("大量摆放.level")));
 	EXPECT_EQ(场景.meshes.size(), 1u);
 	EXPECT_EQ(场景.materials.size(), 1u);
 	ASSERT_EQ(场景.objects.size(), 20u);
@@ -3483,7 +3511,7 @@ TEST(Renderer_Level_Test, 关卡大量摆放)
 		EXPECT_EQ(对象.mesh, 场景.meshes[0]);
 
 	//逐对象登记绘制（同一网格 20 份；门面 scene_draw）
-	EXPECT_EQ(renderer.scene_draw(场景), 20u);
+	EXPECT_EQ(level_bridge_draw(renderer, 场景), 20u);
 	//出帧一次结算帧统计
 	std::vector<uint8_t> 像素(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(像素.data(), static_cast<uint32_t>(像素.size())));
@@ -3491,6 +3519,6 @@ TEST(Renderer_Level_Test, 关卡大量摆放)
 	std::cout << "[关卡] 大量摆放绘制项 " << 统计.drawn_items << std::endl;
 	EXPECT_GE(统计.drawn_items, 1u);
 
-	renderer.level_unload(场景);
+	level_bridge_unload(renderer, 场景);
 	EXPECT_TRUE(场景.objects.empty());
 }

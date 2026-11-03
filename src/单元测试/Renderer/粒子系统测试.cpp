@@ -1,4 +1,4 @@
-﻿/*
+/*
 粒子池测试（第三百零八轮；深研方向二 阶段 A）
 覆盖：默认容量、满载拒绝、回收复用（LIFO）、重复 / 越界回收、清空复位、容量钳制。
 */
@@ -7,7 +7,7 @@
 #include <cmath>
 #include <cstdint>
 
-#include "Application/Renderer/src/render/Particle/粒子系统.h"
+#include "Engine/EngineCore/src/core/effect/粒子系统.h"
 
 //默认容量与初始状态
 TEST(Particle_System_Test, 默认状态)

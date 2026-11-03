@@ -1,4 +1,4 @@
-﻿/*
+/*
 粒子数据测试（第三百零七轮；深研方向二 阶段 A）
 覆盖：粒子状态尺寸 / 偏移（GPU 布局）、发射器与模拟参数校验边界、容量常量；
 不依赖 Vulkan 与渲染器实例。
@@ -10,7 +10,7 @@
 #include <cstdint>
 #include <limits>
 
-#include "Application/Renderer/src/render/Particle/粒子数据.h"
+#include "Engine/EngineCore/src/core/effect/粒子数据.h"
 
 namespace
 {

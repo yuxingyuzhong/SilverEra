@@ -3,9 +3,13 @@
 
 //渲染器门面（Vulkan-free 公共面）
 #include "Application/Renderer/src/render/Renderer/渲染器.h"
+//应用层粒子模拟宿主（模拟状态归应用层）
+#include "src/主调/能力展示/粒子模拟.h"
 
 #include <cmath>
 #include <cstdint>
+#include <memory>
+#include <new>
 #include <vector>
 
 namespace engine
@@ -321,6 +325,29 @@ namespace engine
 			渲染器.material_tint_clear();
 		}
 
+		/*
+		应用层粒子模拟宿主（按当前渲染器实例复用）
+		渲染器实例更换（展示 / 用例重建）时重建宿主；同一实例每帧重新绑定，
+		避免渲染器持有过期的状态指针（宿主析构不解绑，故重建时不触碰旧渲染器）。
+		*/
+		engine::Particle_Host& 粒子宿主获取(engine::Renderer& 渲染器)
+		{
+			static std::unique_ptr<engine::Particle_Host> 宿主;
+			static engine::Renderer* 宿主渲染器 = nullptr;
+			//实例更换（或首次使用）
+			if (!宿主 || 宿主渲染器 != &渲染器)
+			{
+				宿主渲染器 = &渲染器;
+				宿主.reset(new(std::nothrow) engine::Particle_Host(渲染器));
+				if (宿主)
+					宿主->capacity_sync(渲染器.particle_capacity_get());
+			}
+			//每帧重新绑定（指针随池容量变化保持有效）
+			if (宿主)
+				宿主->bind();
+			return *宿主;
+		}
+
 		//粒子喷泉 billboard（常驻可用时按容量选 GPU 路径）
 		void 绘制粒子喷泉(展示资源& 资源, 展示状态& 状态, Renderer& 渲染器)
 		{
@@ -486,6 +513,8 @@ namespace engine
 					if (进入粒子区)
 					{
 						渲染器.particle_enable_set(true);
+						//池容量与 GPU 缓冲同步并绑定（模拟状态归应用层）
+						粒子宿主获取(渲染器).capacity_sync(渲染器.particle_capacity_get());
 						状态.粒子常驻 = 渲染器.particle_resident_set(true);
 					}
 					//离开：先关常驻，再关粒子
@@ -506,11 +535,12 @@ namespace engine
 					(void)渲染器.particle_gpu_emit(256);
 					(void)渲染器.particle_gpu_step_resident(0.08f);
 				}
-				//回落路径：CPU 参考模拟
+				//回落路径：CPU 参考模拟（应用层持有状态，渲染层只绘制）
 				else
 				{
-					(void)渲染器.particle_emit(256);
-					(void)渲染器.particle_step(0.08f);
+					engine::Particle_Host& 宿主 = 粒子宿主获取(渲染器);
+					(void)宿主.emit(256);
+					(void)宿主.step(0.08f);
 				}
 			}
 
