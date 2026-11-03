@@ -1113,6 +1113,50 @@ TEST(Renderer_Level_Test, 关卡材质实例PBR生效)
 }
 
 /*
+实例 PBR 状态复位（第五百七十二轮）
+口径：实例覆盖只在本次绘制生效；`scene_draw` 结束后 `material_pbr_active` 必须回到绘制前的状态，
+避免后续对象被上一次实例的 PBR 状态污染。
+*/
+TEST(Renderer_Level_Test, 实例PBR状态复位)
+{
+	write_cube_assets();
+	write_text(level_dir() / L"PBR复位.level",
+		"level PBR复位\n"
+		"camera position 1 0 3\n"
+		"light pbr 1 1 0\n"
+		"material 金属甲 甲 tint 1 1 1 1 pbr 0.2 0.9\n"
+		"mesh 方盒 cube.obj\n"
+		"mtl 方盒材质 cube.mtl\n"
+		"place 方盒 金属甲 0 0 0 1 1 1\n");
+
+	engine::Renderer_Config config;
+	config.width = LEVEL_WIDTH;
+	config.height = LEVEL_HEIGHT;
+	config.hidden = true;
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(config));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+
+	engine::Level_Data 关卡;
+	engine::Asset_Scene 场景;
+	ASSERT_TRUE(renderer.level_load(关卡, 场景, level_utf8("PBR复位.level")));
+	//绘制前状态（关卡装配不改变全局材质状态）
+	const bool 前激活 = renderer.material_pbr_active();
+	const float 前粗糙 = renderer.material_pbr_roughness();
+	const float 前金属 = renderer.material_pbr_metallic();
+
+	//绘制：实例覆盖生效后应复位
+	EXPECT_EQ(renderer.scene_draw(场景), 1u);
+	std::vector<uint8_t> 帧(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
+	ASSERT_TRUE(renderer.frame_render(帧.data(), static_cast<uint32_t>(帧.size())));
+	EXPECT_EQ(renderer.material_pbr_active(), 前激活) << "实例 PBR 状态在绘制后泄漏";
+	EXPECT_TRUE(bit_equal(renderer.material_pbr_roughness(), 前粗糙)) << "粗糙度状态泄漏";
+	EXPECT_TRUE(bit_equal(renderer.material_pbr_metallic(), 前金属)) << "金属度状态泄漏";
+	renderer.level_unload(场景);
+}
+
+/*
 关卡材质实例查找（第五百六十三轮）
 口径：`level_material_find` 按实例名取首个匹配，字段（底色 / 自发光 / 卡通）与关卡文本逐位一致；
 空实例名与未登记名返回假，且不改写出参。
