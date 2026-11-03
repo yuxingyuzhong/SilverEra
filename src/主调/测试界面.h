@@ -40,6 +40,8 @@ namespace engine
         uint32_t last_shadow_items = 0;
         //最近一帧是否重绘阴影图（1 / 0）
         uint32_t shadow_last_redrawn = 0;
+        //本帧参与投影的聚光灯阴影瓦片数（0..8；第五百二十轮）
+        uint32_t spot_shadow_tiles = 0;
         //渲染工作线程数（第一百九十八轮；0 = 单线程）
         uint32_t render_threads = 0;
         //累计并行派发次数（第一百九十八轮）

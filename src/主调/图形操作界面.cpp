@@ -281,8 +281,8 @@ namespace engine
                 上下文.运行状态.last_shadow_items,
                 上下文.运行状态.shadow_last_redrawn != 0 ? "重绘" : "复用");
             //聚光灯阴影模式（第五百一十一轮；K 键切换，用于对比单盏 / 四盏的画面与开销）
-            ImGui::TextWrapped("聚光灯阴影：%s（K 切换）",
-                场景.聚光多盏() ? "四盏各自投影" : "单盏投影");
+            ImGui::TextWrapped("聚光灯阴影：%s（K 切换）　瓦片 %u",
+                场景.聚光多盏() ? "四盏各自投影" : "单盏投影", 上下文.运行状态.spot_shadow_tiles);
             ImGui::TextWrapped("渲染线程 %u   并行派发 %llu   最近一帧并行段 %u   阴影段 %u",
                 上下文.运行状态.render_threads,
                 static_cast<unsigned long long>(上下文.运行状态.parallel_dispatches),
@@ -630,6 +630,7 @@ namespace engine
             上下文.运行状态.msaa_samples = 统计.msaa_samples;
             上下文.运行状态.last_shadow_items = 统计.last_shadow_items;
             上下文.运行状态.shadow_last_redrawn = 统计.shadow_last_redrawn;
+            上下文.运行状态.spot_shadow_tiles = 统计.spot_shadow_tiles;
             上下文.运行状态.render_threads = 统计.render_threads;
             上下文.运行状态.parallel_dispatches = 统计.parallel_dispatches;
             上下文.运行状态.parallel_segments = 统计.parallel_segments;

@@ -1873,6 +1873,8 @@ TEST(Renderer_Level_Test, 关卡八盏聚光阴影)
 	EXPECT_EQ(renderer.scene_draw(场景), 9u);
 	std::vector<uint8_t> 单盏(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(单盏.data(), static_cast<uint32_t>(单盏.size())));
+	//本帧参与投影的瓦片数（第五百二十轮）
+	EXPECT_EQ(renderer.frame_stats_get().spot_shadow_tiles, 1u);
 
 	//多盏：八盏各自投影（瓦片 4..7 按需创建）
 	灯光.spot_shadow_all = 1;
@@ -1880,6 +1882,7 @@ TEST(Renderer_Level_Test, 关卡八盏聚光阴影)
 	EXPECT_EQ(renderer.scene_draw(场景), 9u);
 	std::vector<uint8_t> 八盏(LEVEL_WIDTH * LEVEL_HEIGHT * 4);
 	ASSERT_TRUE(renderer.frame_render(八盏.data(), static_cast<uint32_t>(八盏.size())));
+	EXPECT_EQ(renderer.frame_stats_get().spot_shadow_tiles, 8u);
 
 	const uint32_t 差异 = changed_pixels(单盏, 八盏);
 	std::cout << "[关卡] 八盏聚光阴影差异 " << 差异 << std::endl;
