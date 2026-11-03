@@ -4,6 +4,9 @@
 */
 #include "渲染后处理链测试辅助.h"
 
+//UI 通道（后处理链「UI 后置」用例需要向帧链路挂接绘制回调）
+#include "Application/Renderer/src/render/Renderer/渲染器_UI通道.h"
+
 TEST_F(Renderer_Post_Chain_Test, 未初始化设置无副作用)
 {
 	engine::Renderer renderer;
@@ -558,4 +561,81 @@ TEST_F(Renderer_Post_Chain_Test, 逐级额外四参不改变画面)
 	EXPECT_EQ(max_channel_diff(非法后, 越界后), 0);
 	renderer.pipeline_unload(invert);
 	renderer.mesh_unload(quad);
+}
+
+/*
+后处理链 · UI 后置（第六百三十九轮）
+口径：链上挂一级「灰度」。若 UI 仍被后处理，UI 画出的彩色会被去色（三通道相等）；
+现在 UI 在末级之后绘制，故 UI 覆盖处保留明显通道差，而场景本身仍按灰度处理。
+*/
+namespace
+{
+	//UI 回调用固定色铺满整帧（验证「UI 不被后处理」只需一处可判读的彩色区域）
+	struct Ui_Clear_Data
+	{
+		//清屏色（线性 RGBA）
+		float color[4];
+	};
+
+	//UI 绘制回调：在帧链路的 UI 通道内以清屏色覆盖整帧
+	void ui_clear_frame(VkCommandBuffer command_buffer, void* user_data)
+	{
+		Ui_Clear_Data* data = static_cast<Ui_Clear_Data*>(user_data);
+		//颜色附件清除（aspect = 颜色、附件序号 0）
+		VkClearAttachment attachment{};
+		attachment.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		attachment.colorAttachment = 0;
+		for (std::size_t index = 0; index < 4; ++index)
+			attachment.clearValue.color.float32[index] = data->color[index];
+		//整帧清除区域
+		VkClearRect rect{};
+		rect.rect.offset = { 0, 0 };
+		rect.rect.extent = { WINDOW_WIDTH, WINDOW_HEIGHT };
+		rect.baseArrayLayer = 0;
+		rect.layerCount = 1;
+		vkCmdClearAttachments(command_buffer, 1, &attachment, 1, &rect);
+	}
+}
+
+TEST_F(Renderer_Post_Chain_Test, 后处理链上UI不被处理)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	//场景目标与单级灰度链
+	uint64_t scene_target = 0;
+	ASSERT_TRUE(renderer.render_target_create(scene_target, renderer.extent_width(), renderer.extent_height()));
+	uint64_t gray = post_pipeline_register(renderer, "灰度.frag.spv");
+	ASSERT_NE(gray, 0u);
+	ASSERT_TRUE(renderer.post_chain_set(&gray, 1));
+	engine::Mesh_Handle handle = 0;
+	scene_register(renderer, handle);
+	renderer.render_target_present_set(scene_target);
+
+	//参考帧（无 UI）：灰度使白四边形与清屏色都变灰（三通道相等）
+	std::vector<uint8_t> without_ui(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(without_ui.data(), static_cast<uint32_t>(without_ui.size())));
+	std::array<uint8_t, 4> gray_center = pixel_get(without_ui, WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2);
+	int gray_span = static_cast<int>(*std::max_element(gray_center.begin(), gray_center.begin() + 3))
+		- static_cast<int>(*std::min_element(gray_center.begin(), gray_center.begin() + 3));
+	EXPECT_LE(gray_span, CHAIN_TOLERANCE) << "灰度级未生效：" << pixel_text(gray_center);
+
+	//挂接 UI 回调并再出一帧：UI 色绘在末级之后，通道差应被完整保留
+	engine::Ui_Channel_Context* channel = renderer.ui_channel();
+	ASSERT_NE(channel, nullptr);
+	Ui_Clear_Data ui_data{ { 0.55f, 0.30f, 0.12f, 1.0f } };
+	channel->draw_callback_set(ui_clear_frame, &ui_data);
+	std::vector<uint8_t> with_ui(pixel_bytes());
+	ASSERT_TRUE(renderer.frame_render(with_ui.data(), static_cast<uint32_t>(with_ui.size())));
+	std::array<uint8_t, 4> ui_center = pixel_get(with_ui, WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2);
+	int ui_span = static_cast<int>(*std::max_element(ui_center.begin(), ui_center.begin() + 3))
+		- static_cast<int>(*std::min_element(ui_center.begin(), ui_center.begin() + 3));
+	EXPECT_GE(ui_span, 40) << "UI 被后处理去色（三通道差仅 " << ui_span << "）：" << pixel_text(ui_center);
+
+	//收尾：清回调并释放
+	channel->draw_callback_clear();
+	renderer.mesh_unload(handle);
+	renderer.pipeline_unload(gray);
+	renderer.render_target_destroy(scene_target);
 }
