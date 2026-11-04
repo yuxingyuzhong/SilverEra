@@ -95,13 +95,57 @@ byjy_jieru_xiaceng(
 #   EngineCore → Renderer（GPU 执行） → EngineSystem（场景 / 装配 / 特效） → 应用层
 # 构建顺序因此为 EngineCore → Renderer → EngineSystem → Test。
 set(BYJY_RENDERER_LIB_PATH "" CACHE STRING
-    "迁入的渲染层静态库路径（分号列表，单库 RendererCore）；留空则自动探测（src/core/Renderer/out/build/x64-Debug/lib 优先）")
+    "迁入的渲染层静态库路径（分号列表，单库 RendererCore）；留空则按构建配置选取 out/build/x64-<Debug|Release>/lib/RendererCore.lib")
+
+# 渲染层 Debug / Release 两棵构建树并存：留空时按当前构建配置取同型库，
+# 避免把 Debug(/MDd) 的 RendererCore 链进 Release(/MD) 目标（LNK4098 / 堆不一致）。
+set(BYJY_RENDERER_LIB_DEBUG
+    "${PROJECT_ROOT_DIR}/src/core/Renderer/out/build/x64-Debug/lib/RendererCore.lib")
+set(BYJY_RENDERER_LIB_RELEASE
+    "${PROJECT_ROOT_DIR}/src/core/Renderer/out/build/x64-Release/lib/RendererCore.lib")
+set(BYJY_RENDERER_AUTO TRUE)
+
+if("${BYJY_RENDERER_LIB_PATH}" STREQUAL "")
+    # 单配置（Ninja）按 CMAKE_BUILD_TYPE 挑；多配置（VS）配置期该变量为空，
+    # 此处挑默认项供 IMPORTED_LOCATION 使用，真正生效的库由下面的分配置属性决定。
+    if("${CMAKE_BUILD_TYPE}" STREQUAL "Debug")
+        set(_byjy_renderer_active "${BYJY_RENDERER_LIB_DEBUG}")
+    else()
+        set(_byjy_renderer_active "${BYJY_RENDERER_LIB_RELEASE}")
+    endif()
+
+    if(EXISTS "${_byjy_renderer_active}")
+        set(BYJY_RENDERER_LIB_PATH "${_byjy_renderer_active}")
+    else()
+        message(WARNING
+            "EngineSystem：未找到 ${_byjy_renderer_active}，回退自动探测（固定优先 x64-Debug）。\n"
+            "          请先构建渲染层对应配置树。")
+    endif()
+else()
+    set(BYJY_RENDERER_AUTO FALSE)
+endif()
 
 byjy_jieru_xiaceng(
     "${PROJECT_ROOT_DIR}/src/core/Renderer/cmake/对外接口.cmake"
     "BYJY_RENDERER"
     "BYJY_RENDERER_LIB_PATH"
 )
+
+# 多配置生成器按 $<CONFIG> 取库：Debug → x64-Debug，Release 族 → x64-Release
+if(BYJY_RENDERER_AUTO)
+    foreach(_byjy_cfg IN ITEMS DEBUG RELEASE)
+        if(EXISTS "${BYJY_RENDERER_LIB_${_byjy_cfg}}")
+            set_target_properties(RendererCore PROPERTIES
+                IMPORTED_LOCATION_${_byjy_cfg} "${BYJY_RENDERER_LIB_${_byjy_cfg}}")
+        endif()
+    endforeach()
+
+    if(EXISTS "${BYJY_RENDERER_LIB_RELEASE}")
+        set_target_properties(RendererCore PROPERTIES
+            IMPORTED_LOCATION_RELWITHDEBINFO "${BYJY_RENDERER_LIB_RELEASE}"
+            IMPORTED_LOCATION_MINSIZEREL "${BYJY_RENDERER_LIB_RELEASE}")
+    endif()
+endif()
 
 # =============================================================================
 # 2. 源文件收集
@@ -213,7 +257,38 @@ include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/对外接口.cmake")
 #       目标自身的 -I 恒在导入目标传递来的 /external:I 之前，快照因此必然先命中。
 # =============================================================================
 byjy_tou_kuaizhao_gen(BYJY_ENGINE_CORE_SNAPSHOT EngineCore)
-byjy_tou_kuaizhao_gen(BYJY_RENDERER_SNAPSHOT RendererCore)
+
+# 渲染层头快照按配置取，与其库同树（Debug → x64-Debug，Release 族 → x64-Release）。
+# 某配置的快照目录缺失时回退到另一份并告警；两份都不存在才硬失败。
+set(BYJY_RENDERER_SNAPSHOT_DEBUG
+    "${PROJECT_ROOT_DIR}/src/core/Renderer/out/build/x64-Debug/include")
+set(BYJY_RENDERER_SNAPSHOT_RELEASE
+    "${PROJECT_ROOT_DIR}/src/core/Renderer/out/build/x64-Release/include")
+
+foreach(_byjy_snap IN ITEMS "${BYJY_RENDERER_SNAPSHOT_DEBUG}" "${BYJY_RENDERER_SNAPSHOT_RELEASE}")
+    if(NOT IS_DIRECTORY "${_byjy_snap}")
+        message(WARNING
+            "EngineSystem：渲染层头快照目录不存在：${_byjy_snap}\n"
+            "          将回退到另一配置的快照；如需同配置，请先构建渲染层对应构建树。")
+    endif()
+endforeach()
+
+if(NOT IS_DIRECTORY "${BYJY_RENDERER_SNAPSHOT_DEBUG}" AND
+        NOT IS_DIRECTORY "${BYJY_RENDERER_SNAPSHOT_RELEASE}")
+    message(FATAL_ERROR
+        "EngineSystem：Debug / Release 两份渲染层头快照均不存在，请先构建渲染层。")
+endif()
+
+# 缺一份时用另一份补齐，保证 $<CONFIG> 表达式两条分支都指向有效目录
+if(NOT IS_DIRECTORY "${BYJY_RENDERER_SNAPSHOT_DEBUG}")
+    set(BYJY_RENDERER_SNAPSHOT_DEBUG "${BYJY_RENDERER_SNAPSHOT_RELEASE}")
+endif()
+if(NOT IS_DIRECTORY "${BYJY_RENDERER_SNAPSHOT_RELEASE}")
+    set(BYJY_RENDERER_SNAPSHOT_RELEASE "${BYJY_RENDERER_SNAPSHOT_DEBUG}")
+endif()
+
+set(BYJY_RENDERER_SNAPSHOT
+    "$<IF:$<CONFIG:Debug>,${BYJY_RENDERER_SNAPSHOT_DEBUG},${BYJY_RENDERER_SNAPSHOT_RELEASE}>")
 
 # 本层包含根：EngineCore / Renderer 头快照在前、项目根在后
 #（渲染层已迁入本层，未来本层模块可直接引用其公共头，无需再经应用层桥接）
