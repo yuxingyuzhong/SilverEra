@@ -2,6 +2,7 @@
 #include <gtest/gtest.h>
 #include <filesystem>
 #include <fstream>
+#include <cstring>
 
 //获取网格加载器
 #include "Engine/EngineCore/src/tools/Mesh_Loader/网格加载器.h"
@@ -53,12 +54,12 @@ TEST_F(Mesh_Loader_Test, 三角形网格解析)
 	//加载网格
 	ASSERT_TRUE(engine::Mesh_Loader::load_obj(mesh_path, mesh_data));
 
-	//三个顶点共九个分量
-	ASSERT_EQ(mesh_data.vertices.size(), 9u);
-	//逐个核对顶点分量
-	EXPECT_FLOAT_EQ(mesh_data.vertices[0], 0.0f);
-	EXPECT_FLOAT_EQ(mesh_data.vertices[3], 1.0f);
-	EXPECT_FLOAT_EQ(mesh_data.vertices[7], 1.0f);
+	//三个顶点
+	ASSERT_EQ(mesh_data.vertices.size(), 3u);
+	//逐个核对顶点位置分量
+	EXPECT_FLOAT_EQ(mesh_data.vertices[0].position[0], 0.0f);
+	EXPECT_FLOAT_EQ(mesh_data.vertices[1].position[0], 1.0f);
+	EXPECT_FLOAT_EQ(mesh_data.vertices[2].position[1], 1.0f);
 	//一个三角面共三个索引
 	ASSERT_EQ(mesh_data.indices.size(), 3u);
 	//面索引应换算为自零起算
@@ -83,7 +84,7 @@ TEST_F(Mesh_Loader_Test, 四边形面被三角化)
 	ASSERT_TRUE(engine::Mesh_Loader::load_obj(mesh_path, mesh_data));
 
 	//四个顶点
-	ASSERT_EQ(mesh_data.vertices.size(), 12u);
+	ASSERT_EQ(mesh_data.vertices.size(), 4u);
 	//两个三角面
 	ASSERT_EQ(mesh_data.indices.size(), 6u);
 	//第一个三角面
@@ -114,12 +115,12 @@ TEST_F(Mesh_Loader_Test, 面顶点斜杠写法可解析)
 	//加载网格
 	ASSERT_TRUE(engine::Mesh_Loader::load_obj(mesh_path, mesh_data));
 
-	//三个顶点
+	//九个顶点（三种面写法各生成一组顶点组合，共三组）
 	ASSERT_EQ(mesh_data.vertices.size(), 9u);
 	//三个三角面
 	ASSERT_EQ(mesh_data.indices.size(), 9u);
-	//第三个面的首个索引
-	EXPECT_EQ(mesh_data.indices[6], 0u);
+	//第三个面的首个索引（按 (v, vt, vn) 组合去重，第三组顶点自 6 起）
+	EXPECT_EQ(mesh_data.indices[6], 6u);
 
 	//清理临时网格文件
 	mesh_remove(mesh_path);
@@ -167,7 +168,9 @@ TEST_F(Mesh_Loader_Test, 无有效三角面时加载失败)
 
 	//网格数据（先写入脏数据，验证失败时被清空）
 	engine::Mesh_Data mesh_data;
-	mesh_data.vertices.push_back(1.0f);
+	engine::Vertex dirty = {};
+	dirty.position[0] = 1.0f;
+	mesh_data.vertices.push_back(dirty);
 	mesh_data.indices.push_back(0u);
 
 	//加载网格
@@ -302,8 +305,8 @@ TEST_F(Mesh_Loader_Test, 立方体顶点与面计数正确)
 	//加载网格
 	ASSERT_TRUE(engine::Mesh_Loader::load_obj(mesh_path, mesh_data));
 
-	//八个顶点共二十四个分量
-	EXPECT_EQ(mesh_data.vertices.size(), 24u);
+	//八个顶点（按 (v, vt, vn) 组合去重后仍为八个）
+	EXPECT_EQ(mesh_data.vertices.size(), 8u);
 	//六个四边形面各三角化为两个三角面，共三十六个索引
 	EXPECT_EQ(mesh_data.indices.size(), 36u);
 
@@ -326,8 +329,12 @@ TEST_F(Mesh_Loader_Test, 重复加载同一文件结果一致)
 	ASSERT_TRUE(engine::Mesh_Loader::load_obj(mesh_path, first_data));
 	ASSERT_TRUE(engine::Mesh_Loader::load_obj(mesh_path, second_data));
 
-	//两次顶点数据应完全一致
-	EXPECT_EQ(first_data.vertices, second_data.vertices);
+	//两次顶点数量应一致
+	ASSERT_EQ(first_data.vertices.size(), second_data.vertices.size());
+	//逐个顶点比对（顶点结构未定义相等算子，按字节比较）
+	for (size_t i = 0; i < first_data.vertices.size(); ++i)
+		EXPECT_EQ(std::memcmp(&first_data.vertices[i], &second_data.vertices[i],
+			sizeof(engine::Vertex)), 0);
 	//两次索引数据应完全一致
 	EXPECT_EQ(first_data.indices, second_data.indices);
 
