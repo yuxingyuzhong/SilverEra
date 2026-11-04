@@ -111,18 +111,18 @@ namespace engine
 		if (!memory_malloc<Triangle_Mesh>(mesh_receiver, true, true))
 			return false;
 
-		//预留顶点与索引容量
-		mesh_receiver->preallocateVertices(static_cast<int>(mesh_data.vertices.size() / 3));
+		//预留顶点与索引容量（顶点已按 (v, vt, vn) 组合去重）
+		mesh_receiver->preallocateVertices(static_cast<int>(mesh_data.vertices.size()));
 		mesh_receiver->preallocateIndices(static_cast<int>(mesh_data.indices.size()));
 
 		/*
 		写入顶点坐标
 		findOrAddVertex 在关闭查重时按调用顺序追加顶点并返回其顺序下标，
-		故按索引顺序写入后，顶点数组下标与网格数据下标一一对应。
+		故按顶点数组顺序写入后，顶点数组下标与网格数据下标一一对应。
 		*/
-		for (size_t i = 0; i + 2 < mesh_data.vertices.size(); i += 3)
-			mesh_receiver->findOrAddVertex(Vector3(mesh_data.vertices[i], mesh_data.vertices[i + 1],
-				mesh_data.vertices[i + 2]), false);
+		for (const Vertex& vertex : mesh_data.vertices)
+			mesh_receiver->findOrAddVertex(Vector3(vertex.position[0], vertex.position[1],
+				vertex.position[2]), false);
 		//写入三角面索引（顶点须先行写入）
 		for (size_t i = 0; i + 2 < mesh_data.indices.size(); i += 3)
 			mesh_receiver->addTriangleIndices(mesh_data.indices[i], mesh_data.indices[i + 1],
