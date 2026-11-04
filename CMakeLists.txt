@@ -57,13 +57,80 @@ get_filename_component(BYJY_PROJECT_ROOT "${PROJECT_ROOT_DIR}/../.." ABSOLUTE)
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/接入下层.cmake")
 
 set(BYJY_ENGINE_LIB_PATH "" CACHE STRING
-    "Engine 聚合层静态库路径（分号列表，顺序同 EngineSystem;EngineCore）；留空则自动探测（各库优先 out/build/x64-Debug/lib，其次 out/build/*/lib 取最新）")
+    "Engine 聚合层静态库路径（分号列表，顺序同 EngineSystem;EngineCore）；留空则按构建配置选取 out/build/x64-<Debug|Release>")
+
+# Debug / Release 两棵构建树并存：留空时按当前构建配置取同型库，
+# 避免把 Debug(/MDd) 库链进 Release(/MD) 目标（LNK4098 / 堆不一致）。
+# 列表顺序必须与 Engine 对外面的 OUT_LIB 一致：EngineSystem;EngineCore。
+set(BYJY_ENGINE_LIB_DEBUG
+    "${BYJY_PROJECT_ROOT}/Engine/EngineSystem/out/build/x64-Debug/lib/EngineSystem.lib;${BYJY_PROJECT_ROOT}/Engine/EngineCore/out/build/x64-Debug/lib/EngineCore.lib")
+set(BYJY_ENGINE_LIB_RELEASE
+    "${BYJY_PROJECT_ROOT}/Engine/EngineSystem/out/build/x64-Release/lib/EngineSystem.lib;${BYJY_PROJECT_ROOT}/Engine/EngineCore/out/build/x64-Release/lib/EngineCore.lib")
+set(BYJY_ENGINE_AUTO TRUE)
+
+if("${BYJY_ENGINE_LIB_PATH}" STREQUAL "")
+    # 单配置（Ninja）按 CMAKE_BUILD_TYPE 挑；多配置（VS）配置期该变量为空，挑默认项
+    if("${CMAKE_BUILD_TYPE}" STREQUAL "Debug")
+        set(_byjy_engine_active "${BYJY_ENGINE_LIB_DEBUG}")
+    else()
+        set(_byjy_engine_active "${BYJY_ENGINE_LIB_RELEASE}")
+    endif()
+
+    # 列表内每个文件都必须存在才采用
+    set(_byjy_engine_ready TRUE)
+    foreach(_byjy_lib IN LISTS _byjy_engine_active)
+        if(NOT EXISTS "${_byjy_lib}")
+            set(_byjy_engine_ready FALSE)
+        endif()
+    endforeach()
+
+    if(_byjy_engine_ready)
+        set(BYJY_ENGINE_LIB_PATH "${_byjy_engine_active}")
+    else()
+        message(WARNING
+            "Test：未找到完整的 ${CMAKE_BUILD_TYPE} 版下层库，回退自动探测（固定优先 x64-Debug）。\n"
+            "          请先构建 EngineCore / EngineSystem 对应配置树。")
+    endif()
+else()
+    set(BYJY_ENGINE_AUTO FALSE)
+endif()
 
 byjy_jieru_xiaceng(
     "${PROJECT_ROOT_DIR}/../../Engine/cmake/对外接口.cmake"
     "BYJY_ENGINE"
     "BYJY_ENGINE_LIB_PATH"
 )
+
+# 多配置生成器按 $<CONFIG> 取库（EngineSystem / EngineCore 两个目标各配一次）
+if(BYJY_ENGINE_AUTO)
+    foreach(_byjy_cfg IN ITEMS DEBUG RELEASE)
+        list(GET BYJY_ENGINE_LIB_${_byjy_cfg} 0 _byjy_sys_lib)
+        list(GET BYJY_ENGINE_LIB_${_byjy_cfg} 1 _byjy_core_lib)
+
+        if(EXISTS "${_byjy_sys_lib}")
+            set_target_properties(EngineSystem PROPERTIES
+                IMPORTED_LOCATION_${_byjy_cfg} "${_byjy_sys_lib}")
+        endif()
+        if(EXISTS "${_byjy_core_lib}")
+            set_target_properties(EngineCore PROPERTIES
+                IMPORTED_LOCATION_${_byjy_cfg} "${_byjy_core_lib}")
+        endif()
+    endforeach()
+
+    # RelWithDebInfo / MinSizeRel 并入 Release
+    list(GET BYJY_ENGINE_LIB_RELEASE 0 _byjy_sys_rel)
+    list(GET BYJY_ENGINE_LIB_RELEASE 1 _byjy_core_rel)
+    if(EXISTS "${_byjy_sys_rel}")
+        set_target_properties(EngineSystem PROPERTIES
+            IMPORTED_LOCATION_RELWITHDEBINFO "${_byjy_sys_rel}"
+            IMPORTED_LOCATION_MINSIZEREL "${_byjy_sys_rel}")
+    endif()
+    if(EXISTS "${_byjy_core_rel}")
+        set_target_properties(EngineCore PROPERTIES
+            IMPORTED_LOCATION_RELWITHDEBINFO "${_byjy_core_rel}"
+            IMPORTED_LOCATION_MINSIZEREL "${_byjy_core_rel}")
+    endif()
+endif()
 
 # =============================================================================
 # 1.2 接入渲染层 —— 链接已构建好的 RendererCore.lib
@@ -73,13 +140,53 @@ byjy_jieru_xiaceng(
 # 渲染层公共头不暴露 SDL / Vulkan / VMA 类型，本层按公共面（渲染器.h、网格数据.h）
 # 编写用例即可，无需、也不应引入 Vulkan 头。
 set(BYJY_RENDERER_LIB_PATH "" CACHE STRING
-    "渲染层静态库路径（分号列表，单库 RendererCore）；留空则自动探测（Application/Renderer/out/build/x64-Debug/lib 优先）")
+    "渲染层静态库路径（分号列表，单库 RendererCore）；留空则按构建配置选取 out/build/x64-<Debug|Release>/lib/RendererCore.lib")
+
+set(BYJY_RENDERER_LIB_DEBUG
+    "${BYJY_PROJECT_ROOT}/Engine/EngineSystem/src/core/Renderer/out/build/x64-Debug/lib/RendererCore.lib")
+set(BYJY_RENDERER_LIB_RELEASE
+    "${BYJY_PROJECT_ROOT}/Engine/EngineSystem/src/core/Renderer/out/build/x64-Release/lib/RendererCore.lib")
+set(BYJY_RENDERER_AUTO TRUE)
+
+if("${BYJY_RENDERER_LIB_PATH}" STREQUAL "")
+    if("${CMAKE_BUILD_TYPE}" STREQUAL "Debug")
+        set(_byjy_renderer_active "${BYJY_RENDERER_LIB_DEBUG}")
+    else()
+        set(_byjy_renderer_active "${BYJY_RENDERER_LIB_RELEASE}")
+    endif()
+
+    if(EXISTS "${_byjy_renderer_active}")
+        set(BYJY_RENDERER_LIB_PATH "${_byjy_renderer_active}")
+    else()
+        message(WARNING
+            "Test：未找到 ${_byjy_renderer_active}，回退自动探测（固定优先 x64-Debug）。\n"
+            "          请先构建渲染层对应配置树。")
+    endif()
+else()
+    set(BYJY_RENDERER_AUTO FALSE)
+endif()
 
 byjy_jieru_xiaceng(
     "${PROJECT_ROOT_DIR}/../../Engine/EngineSystem/src/core/Renderer/cmake/对外接口.cmake"
     "BYJY_RENDERER"
     "BYJY_RENDERER_LIB_PATH"
 )
+
+# 多配置生成器按 $<CONFIG> 取库：Debug → x64-Debug，Release 族 → x64-Release
+if(BYJY_RENDERER_AUTO)
+    foreach(_byjy_cfg IN ITEMS DEBUG RELEASE)
+        if(EXISTS "${BYJY_RENDERER_LIB_${_byjy_cfg}}")
+            set_target_properties(RendererCore PROPERTIES
+                IMPORTED_LOCATION_${_byjy_cfg} "${BYJY_RENDERER_LIB_${_byjy_cfg}}")
+        endif()
+    endforeach()
+
+    if(EXISTS "${BYJY_RENDERER_LIB_RELEASE}")
+        set_target_properties(RendererCore PROPERTIES
+            IMPORTED_LOCATION_RELWITHDEBINFO "${BYJY_RENDERER_LIB_RELEASE}"
+            IMPORTED_LOCATION_MINSIZEREL "${BYJY_RENDERER_LIB_RELEASE}")
+    endif()
+endif()
 
 # =============================================================================
 # 1.5 下层头快照接入（本层专用）
@@ -89,9 +196,41 @@ byjy_jieru_xiaceng(
 # 之前，因此 Engine/... 必然先命中快照，不会落到源码树上的同名头。
 # 快照根由各库的 IMPORTED_LOCATION 反推，缺失即硬失败（不静默退回源码树）。
 # =============================================================================
-byjy_tou_kuaizhao_gen(BYJY_CORE_SNAPSHOT     EngineCore)
-byjy_tou_kuaizhao_gen(BYJY_SYSTEM_SNAPSHOT   EngineSystem)
-byjy_tou_kuaizhao_gen(BYJY_RENDERER_SNAPSHOT RendererCore)
+# 三个库的头快照都按配置取，与其静态库同树；某配置缺失时回退另一配置并告警，
+# 两配置都缺失才硬失败（此前一律取 IMPORTED_LOCATION 反推，多配置下会钉死在默认项）。
+set(BYJY_CORE_SNAPSHOT_DEBUG      "${BYJY_PROJECT_ROOT}/Engine/EngineCore/out/build/x64-Debug/include")
+set(BYJY_CORE_SNAPSHOT_RELEASE    "${BYJY_PROJECT_ROOT}/Engine/EngineCore/out/build/x64-Release/include")
+set(BYJY_SYSTEM_SNAPSHOT_DEBUG    "${BYJY_PROJECT_ROOT}/Engine/EngineSystem/out/build/x64-Debug/include")
+set(BYJY_SYSTEM_SNAPSHOT_RELEASE  "${BYJY_PROJECT_ROOT}/Engine/EngineSystem/out/build/x64-Release/include")
+set(BYJY_RENDERER_SNAPSHOT_DEBUG  "${BYJY_PROJECT_ROOT}/Engine/EngineSystem/src/core/Renderer/out/build/x64-Debug/include")
+set(BYJY_RENDERER_SNAPSHOT_RELEASE "${BYJY_PROJECT_ROOT}/Engine/EngineSystem/src/core/Renderer/out/build/x64-Release/include")
+
+foreach(_byjy_pair IN ITEMS "CORE" "SYSTEM" "RENDERER")
+    foreach(_byjy_cfg IN ITEMS DEBUG RELEASE)
+        set(_byjy_snapshot_var "BYJY_${_byjy_pair}_SNAPSHOT_${_byjy_cfg}")
+        if(NOT IS_DIRECTORY "${${_byjy_snapshot_var}}")
+            message(WARNING
+                "Test：${_byjy_snapshot_var} 目录不存在：${${_byjy_snapshot_var}}\n"
+                "          将回退到另一配置的快照；如需同配置，请先构建对应下层。")
+        endif()
+    endforeach()
+
+    # 缺一份时用另一份补齐，保证 $<CONFIG> 两条分支都指向有效目录
+    if(NOT IS_DIRECTORY "${BYJY_${_byjy_pair}_SNAPSHOT_DEBUG}" AND
+            NOT IS_DIRECTORY "${BYJY_${_byjy_pair}_SNAPSHOT_RELEASE}")
+        message(FATAL_ERROR
+            "Test：${_byjy_pair} 的头快照不存在（Debug / Release 均缺失），请先构建对应下层。")
+    endif()
+    if(NOT IS_DIRECTORY "${BYJY_${_byjy_pair}_SNAPSHOT_DEBUG}")
+        set(BYJY_${_byjy_pair}_SNAPSHOT_DEBUG "${BYJY_${_byjy_pair}_SNAPSHOT_RELEASE}")
+    endif()
+    if(NOT IS_DIRECTORY "${BYJY_${_byjy_pair}_SNAPSHOT_RELEASE}")
+        set(BYJY_${_byjy_pair}_SNAPSHOT_RELEASE "${BYJY_${_byjy_pair}_SNAPSHOT_DEBUG}")
+    endif()
+
+    set(BYJY_${_byjy_pair}_SNAPSHOT
+        "$<IF:$<CONFIG:Debug>,${BYJY_${_byjy_pair}_SNAPSHOT_DEBUG},${BYJY_${_byjy_pair}_SNAPSHOT_RELEASE}>")
+endforeach()
 
 # 本层各目标的包含根：下层快照在前、项目根在后（供「头文件」写 Application/Test/... 全路径）。
 # 渲染层快照排在项目根之前，使 Application/Renderer/... 先命中快照、不落到源码树。
@@ -422,8 +561,12 @@ else()
         EngineTestObjects EngineCore EngineSystem RendererCore
         GTest::gtest TestLauncher TestGui
     )
+    # 多配置生成器（VS）默认在输出目录后追加配置子目录（Debug/、Release/）；
+    # 而用例按「可执行文件目录」解析 assets/ 与 shaders/，落到子目录会导致大量用例失败。
+    # 用空生成器表达式（含 genex 即不追加）让 Debug / Release 都落在本层根目录；
+    # 两配置顺序构建时覆盖同名产物（同一时刻只跑一份）。
     set_target_properties(EngineTests PROPERTIES
-        RUNTIME_OUTPUT_DIRECTORY "${PROJECT_ROOT_DIR}"
+        RUNTIME_OUTPUT_DIRECTORY "${PROJECT_ROOT_DIR}/$<0:>"
     )
 
     if(MSVC)
