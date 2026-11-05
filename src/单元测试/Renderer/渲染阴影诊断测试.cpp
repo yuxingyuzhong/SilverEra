@@ -421,3 +421,101 @@ TEST_F(Renderer_Scene_Test, 聚光阴影图集两态画面一致)
 	//画面逐字节一致
 	EXPECT_TRUE(atlas.pixels == tiled.pixels) << "图集改变了画面";
 }
+
+/*
+聚光阴影图集开销对比（第六百七十六轮；E1 性能基线）
+口径：2 盏聚光 ＋ 单级方向光，同一场景各建一个渲染器；图集关 / 开各取首帧阴影统计。
+断言：两种模式阴影段数一致；GPU 阴影耗时为非负（设备不支持时间戳时为 0，仅记录）。
+*/
+TEST_F(Renderer_Scene_Test, 聚光图集阴影耗时对比)
+{
+	struct Outcome
+	{
+		engine::Frame_Stats stats{};
+		engine::Mesh_Handle receiver = 0;
+		engine::Mesh_Handle occluder = 0;
+		uint64_t texture = 0;
+		bool ok = false;
+	};
+	auto run = [](bool atlas)
+	{
+		Outcome outcome;
+		engine::Renderer renderer;
+		if (!renderer.init(hidden_config()) || !renderer.readback_supported())
+			return outcome;
+		std::vector<uint8_t> texels = solid_white();
+		if (!renderer.texture_load(outcome.texture, texels.data(), 2, 2))
+			return outcome;
+		if (!renderer.mesh_load(outcome.receiver, quad_data_with_normal(0.0f, 0.0f, -1.0f))
+			|| !renderer.mesh_load(outcome.occluder, quad_data_with_normal(0.0f, 0.0f, -1.0f)))
+			return outcome;
+		renderer.texture_bind_set(outcome.texture);
+
+		//单级方向光 ＋ 2 盏聚光（两盏都参与阴影）
+		engine::Light_Data light{};
+		light.direction[2] = 1.0f;
+		light.intensity = 1.0f;
+		light.ambient = 0.0f;
+		light.shadow_enabled = 1;
+		light.shadow_cascade_count = 1;
+		light.spot_count = 2;
+		for (int index = 0; index < 2; ++index)
+		{
+			light.spot_position[index][0] = index == 0 ? -1.0f : 1.0f;
+			light.spot_position[index][1] = 2.0f;
+			light.spot_position[index][2] = 3.0f;
+			light.spot_direction[index][1] = -1.0f;
+			light.spot_direction[index][2] = 0.0f;
+			light.spot_radius[index] = 10.0f;
+			light.spot_intensity[index] = 1.0f;
+			light.spot_inner_deg[index] = 15.0f;
+			light.spot_outer_deg[index] = 30.0f;
+		}
+		light.spot_shadow_enabled = 1;
+		light.spot_shadow_all = 1;
+		light.spot_shadow_atlas = atlas ? 1 : 0;
+		engine::Camera_Data camera{};
+		engine::Fog_Data fog{};
+		renderer.scene_apply(camera, light, fog);
+		renderer.shadow_enable_set(true);
+
+		EXPECT_TRUE(renderer.mesh_draw(outcome.occluder, occluder_model(0.0f, 0.0f, -1.0f).data()));
+		EXPECT_TRUE(renderer.mesh_draw(outcome.receiver, translate_model(0.0f, 0.0f, 0.0f).data()));
+		std::vector<uint8_t> pixels(pixel_bytes());
+		EXPECT_TRUE(renderer.frame_render(pixels.data(),
+			static_cast<std::uint32_t>(pixels.size())));
+		outcome.stats = renderer.frame_stats_get();
+		/*
+		第二帧（第六百七十六轮）：轻移聚光触发重绘，避开首帧「图集创建 / 绑定」一次性开销，
+		取稳定态阴影耗时。
+		*/
+		light.spot_position[0][0] += 0.01f;
+		renderer.scene_apply(camera, light, fog);
+		renderer.shadow_enable_set(true);
+		EXPECT_TRUE(renderer.mesh_draw(outcome.occluder, occluder_model(0.0f, 0.0f, -1.0f).data()));
+		EXPECT_TRUE(renderer.mesh_draw(outcome.receiver, translate_model(0.0f, 0.0f, 0.0f).data()));
+		EXPECT_TRUE(renderer.frame_render(pixels.data(),
+			static_cast<std::uint32_t>(pixels.size())));
+		outcome.stats = renderer.frame_stats_get();
+		renderer.mesh_unload(outcome.occluder);
+		renderer.mesh_unload(outcome.receiver);
+		renderer.texture_unload(outcome.texture);
+		outcome.ok = true;
+		return outcome;
+	};
+
+	const Outcome tiled = run(false);
+	const Outcome atlas = run(true);
+	ASSERT_TRUE(tiled.ok) << "独立瓦片配置初始化失败";
+	ASSERT_TRUE(atlas.ok) << "图集配置初始化失败";
+	RecordProperty("shadow_gpu_ms_tiled", tiled.stats.gpu_shadow_ms);
+	RecordProperty("shadow_gpu_ms_atlas", atlas.stats.gpu_shadow_ms);
+	RecordProperty("shadow_passes_tiled", tiled.stats.shadow_passes);
+	RecordProperty("shadow_passes_atlas", atlas.stats.shadow_passes);
+	//段数与聚光 pass 数不因图集改变
+	EXPECT_EQ(atlas.stats.shadow_passes, tiled.stats.shadow_passes) << "图集改变了阴影段数";
+	EXPECT_EQ(atlas.stats.spot_shadow_passes, tiled.stats.spot_shadow_passes) << "图集改变了聚光段数";
+	//耗时为非负（无时间戳能力时为 0）
+	EXPECT_GE(tiled.stats.gpu_shadow_ms, 0.0);
+	EXPECT_GE(atlas.stats.gpu_shadow_ms, 0.0);
+}
