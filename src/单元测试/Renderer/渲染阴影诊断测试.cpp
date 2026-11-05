@@ -336,3 +336,88 @@ TEST_F(Renderer_Scene_Test, 阴影批量提交单次且画面不变)
 	if (!per_pass.shadow.empty() || !batched.shadow.empty())
 		EXPECT_TRUE(batched.shadow == per_pass.shadow) << "批量提交改变了方向光阴影图";
 }
+
+/*
+聚光阴影图集（第六百七十轮；C1）
+口径：2 盏聚光（瓦片 0 / 1）。关闭图集 → 开启图集：
+画面逐字节一致、阴影 pass 数不变、图集实际生效；关闭态查询返回假。
+*/
+TEST_F(Renderer_Scene_Test, 聚光阴影图集两态画面一致)
+{
+	//单次运行的产物（画面 ＋ 统计 ＋ 图集状态）
+	struct Outcome
+	{
+		std::vector<uint8_t> pixels;
+		engine::Frame_Stats stats{};
+		bool atlas_active = false;
+		bool ok = false;
+	};
+	auto run = [](bool atlas)
+	{
+		Outcome outcome;
+		engine::Renderer renderer;
+		if (!renderer.init(hidden_config()) || !renderer.readback_supported())
+			return outcome;
+		uint64_t texture = 0;
+		std::vector<uint8_t> texels = solid_white();
+		if (!renderer.texture_load(texture, texels.data(), 2, 2))
+			return outcome;
+		engine::Mesh_Handle receiver = 0;
+		engine::Mesh_Handle occluder = 0;
+		if (!renderer.mesh_load(receiver, quad_data_with_normal(0.0f, 0.0f, -1.0f))
+			|| !renderer.mesh_load(occluder, quad_data_with_normal(0.0f, 0.0f, -1.0f)))
+			return outcome;
+		renderer.texture_bind_set(texture);
+
+		//2 盏聚光各自投影（瓦片 0 / 1）
+		engine::Light_Data light{};
+		light.direction[2] = 1.0f;
+		light.intensity = 1.0f;
+		light.ambient = 0.0f;
+		light.spot_count = 2;
+		for (int index = 0; index < 2; ++index)
+		{
+			light.spot_position[index][0] = index == 0 ? -1.0f : 1.0f;
+			light.spot_position[index][1] = 2.0f;
+			light.spot_position[index][2] = 3.0f;
+			light.spot_direction[index][1] = -1.0f;
+			light.spot_direction[index][2] = 0.0f;
+			light.spot_radius[index] = 10.0f;
+			light.spot_intensity[index] = 1.0f;
+			light.spot_inner_deg[index] = 15.0f;
+			light.spot_outer_deg[index] = 30.0f;
+		}
+		light.spot_shadow_enabled = 1;
+		light.spot_shadow_all = 1;
+		light.spot_shadow_atlas = atlas ? 1 : 0;
+		engine::Camera_Data camera{};
+		engine::Fog_Data fog{};
+		renderer.scene_apply(camera, light, fog);
+		renderer.shadow_enable_set(true);
+
+		//接收面在原点、遮挡面在其前方
+		EXPECT_TRUE(renderer.mesh_draw(occluder, occluder_model(0.0f, 0.0f, -1.0f).data()));
+		EXPECT_TRUE(renderer.mesh_draw(receiver, translate_model(0.0f, 0.0f, 0.0f).data()));
+		outcome.pixels.resize(pixel_bytes());
+		EXPECT_TRUE(renderer.frame_render(outcome.pixels.data(),
+			static_cast<std::uint32_t>(outcome.pixels.size())));
+		outcome.stats = renderer.frame_stats_get();
+		outcome.atlas_active = renderer.spot_shadow_atlas();
+		outcome.ok = true;
+		return outcome;
+	};
+
+	const Outcome tiled = run(false);
+	const Outcome atlas = run(true);
+	ASSERT_TRUE(tiled.ok) << "独立瓦片配置初始化失败";
+	ASSERT_TRUE(atlas.ok) << "图集配置初始化失败";
+	//图集实际生效（未生效时用例失去意义）
+	EXPECT_FALSE(tiled.atlas_active) << "关闭态不应启用图集";
+	EXPECT_TRUE(atlas.atlas_active) << "图集未生效";
+	RecordProperty("tiled_passes", tiled.stats.shadow_passes);
+	RecordProperty("atlas_passes", atlas.stats.shadow_passes);
+	//阴影段数不变（图集只改目标布局）
+	EXPECT_EQ(atlas.stats.shadow_passes, tiled.stats.shadow_passes) << "图集改变了阴影段数";
+	//画面逐字节一致
+	EXPECT_TRUE(atlas.pixels == tiled.pixels) << "图集改变了画面";
+}
