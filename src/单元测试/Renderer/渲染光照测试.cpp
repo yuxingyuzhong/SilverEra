@@ -70,6 +70,80 @@ TEST_F(Renderer_Scene_Test, 无法线网格保持满照)
 }
 
 /*
+PBR 掠射高光能量修正（第六百七十二轮；D1 第一步）
+口径：PBR 开启 ＋ 斜射主光。能量修正关 → 开：镜面乘入射余弦，画面出现差异；
+关闭态为默认路径（逐字节不变），门面查询与实际开关一致。
+*/
+TEST_F(Renderer_Scene_Test, PBR掠射高光能量修正生效)
+{
+	//单次运行的产物（画面 ＋ 开关状态）
+	struct Outcome
+	{
+		std::vector<uint8_t> pixels;
+		bool energy = false;
+		bool ok = false;
+	};
+	auto run = [](bool energy)
+	{
+		Outcome outcome;
+		engine::Renderer renderer;
+		if (!renderer.init(hidden_config()) || !renderer.readback_supported())
+			return outcome;
+		uint64_t texture = 0;
+		std::vector<uint8_t> texels = solid_white();
+		if (!renderer.texture_load(texture, texels.data(), 2, 2))
+			return outcome;
+		engine::Mesh_Handle mesh = 0;
+		if (!renderer.mesh_load(mesh, quad_data_with_normal(0.0f, 0.0f, 1.0f)))
+			return outcome;
+		renderer.texture_bind_set(texture);
+
+		//PBR 开启、主光斜射（入射余弦约 0.6）、纯金属放大镜面，便于观察能量修正
+		engine::Light_Data light{};
+		light.direction[0] = -0.8f;
+		light.direction[2] = -0.6f;
+		light.intensity = 1.0f;
+		light.ambient = 0.0f;
+		light.pbr_enabled = 1;
+		light.pbr_energy = energy ? 1 : 0;
+		light.pbr_metallic = 1.0f;
+		//提升镜面强度（默认 0 时整段镜面为 0，无法体现能量修正）
+		light.specular_intensity = 2.0f;
+		engine::Camera_Data camera{};
+		engine::Fog_Data fog{};
+		renderer.scene_apply(camera, light, fog);
+
+		EXPECT_TRUE(renderer.mesh_draw(mesh, full_screen_matrix().data()));
+		outcome.pixels.resize(pixel_bytes());
+		EXPECT_TRUE(renderer.frame_render(outcome.pixels.data(),
+			static_cast<std::uint32_t>(outcome.pixels.size())));
+		outcome.energy = renderer.pbr_energy();
+		outcome.ok = true;
+		return outcome;
+	};
+
+	const Outcome plain = run(false);
+	const Outcome energy = run(true);
+	ASSERT_TRUE(plain.ok) << "默认 PBR 配置初始化失败";
+	ASSERT_TRUE(energy.ok) << "能量修正配置初始化失败";
+	//门面状态与实际开关一致
+	EXPECT_FALSE(plain.energy) << "默认态不应开启能量修正";
+	EXPECT_TRUE(energy.energy) << "能量修正未生效";
+	//统计画面差异像素
+	uint32_t difference = 0;
+	for (uint32_t y = 0; y < WINDOW_HEIGHT; ++y)
+		for (uint32_t x = 0; x < WINDOW_WIDTH; ++x)
+		{
+			std::array<uint8_t, 4> first = pixel_get(plain.pixels, x, y);
+			std::array<uint8_t, 4> second = pixel_get(energy.pixels, x, y);
+			if (first != second)
+				++difference;
+		}
+	RecordProperty("energy_difference_pixels", difference);
+	EXPECT_GT(difference, 100u) << "能量修正未改变掠射镜面（差异像素 " << difference << "）";
+}
+
+/*
 非法光照参数整次忽略（第二十九轮）：零向量方向 / 非数 / 越界颜色均不改变画面
 */
 TEST_F(Renderer_Scene_Test, 非法光照参数整次忽略)
