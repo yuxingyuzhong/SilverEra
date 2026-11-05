@@ -21,7 +21,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $sourceRoot = Join-Path $ProjectRoot "Engine/EngineCore/out/build"
-$targetRoot = Join-Path $ProjectRoot "Application/Renderer/下层依赖/EngineCore"
+$targetRoot = Join-Path $ProjectRoot "Engine/EngineSystem/src/core/Renderer/下层依赖/EngineCore"
 
 foreach ($config in $Configs) {
     $sourceTree = Join-Path $sourceRoot "x64-$config"
