@@ -1,11 +1,10 @@
 #pragma once
-//测试运行器 —— 在工作线程内执行一轮 RUN_ALL_TESTS，界面线程只读快照（不冻结）
+//测试运行器 —— 在调用线程（界面主线程）执行一轮 RUN_ALL_TESTS，界面冻结至本轮结束
 //声明见 测试运行记录.h / gtest输出镜像.h；实现见 测试运行器.cpp
 
 #include <atomic>
 #include <mutex>
 #include <string>
-#include <thread>
 #include <vector>
 
 #include "Application/Test/src/主调/gtest输出镜像.h"
@@ -17,9 +16,10 @@ namespace engine
     测试运行器
     界面模式（ui_install 后）：
     - 由本类把 Gtest_Output_Mirror 接入 gtest 监听器并释放默认打印器（控制台不再重复输出）；
-    - 「运行」请求以过滤串入队，工作线程串行执行一轮 RUN_ALL_TESTS；
-    - 界面线程仅经进度/快照接口读取，不触碰 gtest 状态。
-    无头模式：不安装镜像、不启动线程，行为与 gtest 原生一致。
+    - 「运行」请求以过滤串入队；由界面主循环每帧调用 poll_on_caller，在**主线程**执行一轮；
+    - 为什么必须在主线程：渲染用例会创建 SDL 窗口并逐帧抽事件，SDL3 要求事件泵在主线程
+      （非主线程会触发 SDL_IsMainThread_REAL() 断言弹窗）。
+    无头模式：不安装镜像、不轮询，行为与 gtest 原生一致。
     停止语义：不再排队下一轮；当前轮跑完即结束（gtest 无中途取消能力）。
     */
     class Test_Runner
@@ -34,7 +34,7 @@ namespace engine
 
         //构造
         Test_Runner(void) = default;
-        //析构（停止并等待线程结束）
+        //析构（摘除监听器）
         ~Test_Runner(void);
         //不可拷贝、不可移动
         Test_Runner(const Test_Runner&) = delete;
@@ -48,8 +48,13 @@ namespace engine
         void request_stop(void);
         //清空全部结果与输出
         void clear_results(void);
-        //关闭：停止并等待工作线程结束（若正在跑一轮，将等待其完成）
+        //关闭：请求停止并摘除监听器
         void shutdown(void);
+        /*
+        主线程轮询：有排队任务时在**调用线程**执行一轮 RUN_ALL_TESTS 并返回
+        必须由界面主循环逐帧调用；无排队任务时立即返回（不阻塞）
+        */
+        void poll_on_caller(void);
 
         //是否处于运行状态
         bool is_running(void) const;
@@ -67,13 +72,8 @@ namespace engine
         void output_tail(std::vector<Output_Line>& lines_out, int max_count) const;
 
     private:
-        //工作线程入口（串行执行排队的一轮或多轮）
-        void worker_main(void);
-
         //输出镜像（界面模式下接入 gtest 监听器）
         Gtest_Output_Mirror mirror{};
-        //工作线程
-        std::thread worker{};
         //互斥锁（保护排队过滤串与状态）
         std::mutex mtx{};
         //待运行的过滤串

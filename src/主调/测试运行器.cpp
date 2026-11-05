@@ -34,21 +34,11 @@ namespace engine
     //请求运行一轮
     void Test_Runner::request_run(const std::string& filter)
     {
-        {
-            //登记排队任务（覆盖前一个未执行的请求）
-            std::lock_guard<std::mutex> lock(mtx);
-            pending_filter = filter;
-            queued = true;
-        }
-        //若当前空闲则启动工作线程
-        if (state.load() == static_cast<int>(State::Idle))
-        {
-            //上一轮线程可能已结束但仍 joinable：赋新 thread 前必须先 join，否则 std::terminate
-            if (worker.joinable())
-                worker.join();
-            state.store(static_cast<int>(State::Running));
-            worker = std::thread([this] { worker_main(); });
-        }
+        //登记排队任务（覆盖前一个未执行的请求）；实际执行由界面主循环 poll_on_caller 完成
+        std::lock_guard<std::mutex> lock(mtx);
+        pending_filter = filter;
+        queued = true;
+        state.store(static_cast<int>(State::Running));
     }
 
     //请求停止
@@ -66,14 +56,11 @@ namespace engine
         mirror.results_clear();
     }
 
-    //关闭：停止并等待工作线程结束
+    //关闭：请求停止并摘除监听器
     void Test_Runner::shutdown(void)
     {
-        //请求停止
+        //请求停止（清空排队）
         request_stop();
-        //等待工作线程结束（若正在跑一轮，将等待其完成）
-        if (worker.joinable())
-            worker.join();
         //从 gtest 监听器列表摘除镜像：Release 只摘除、不析构（镜像为本类成员）
         //不摘除会使监听器列表在本对象销毁后仍持有悬垂指针
         if (installed)
@@ -119,37 +106,34 @@ namespace engine
         mirror.output_tail(lines_out, max_count);
     }
 
-    //工作线程入口
-    void Test_Runner::worker_main(void)
+    //主线程轮询：有排队任务时在调用线程执行一轮
+    void Test_Runner::poll_on_caller(void)
     {
-        //串行执行排队任务，直到无排队任务或收到停止请求
-        for (;;)
+        //取排队过滤串（无任务则立即返回）
+        std::string filter;
         {
-            //取排队过滤串
-            std::string filter;
+            std::lock_guard<std::mutex> lock(mtx);
+            if (!queued)
             {
-                std::lock_guard<std::mutex> lock(mtx);
-                if (!queued)
-                {
-                    //无排队任务：退出线程
-                    state.store(static_cast<int>(State::Idle));
-                    return;
-                }
-                filter = pending_filter;
-                pending_filter.clear();
-                queued = false;
+                state.store(static_cast<int>(State::Idle));
+                return;
             }
-
-            //设置本轮 gtest 参数（仅工作线程改动这些 flag）
-            ::testing::GTEST_FLAG(filter) = filter;
-            ::testing::GTEST_FLAG(repeat) = 1;
-            ::testing::GTEST_FLAG(break_on_failure) = false;
-
-            //清空本轮用例记录并执行一轮测试
-            mirror.round_begin();
-            exit_code = RUN_ALL_TESTS();
-            //汇总本轮入轮次历史
-            mirror.round_end();
+            filter = pending_filter;
+            pending_filter.clear();
+            queued = false;
         }
+
+        //设置本轮 gtest 参数（在主线程改动这些 flag）
+        ::testing::GTEST_FLAG(filter) = filter;
+        ::testing::GTEST_FLAG(repeat) = 1;
+        ::testing::GTEST_FLAG(break_on_failure) = false;
+
+        //清空本轮用例记录并执行一轮测试
+        mirror.round_begin();
+        exit_code = RUN_ALL_TESTS();
+        //汇总本轮入轮次历史
+        mirror.round_end();
+        //队列已取空：标记空闲（后续若又有排队，request_run 会重新置为运行中）
+        state.store(static_cast<int>(State::Idle));
     }
 }

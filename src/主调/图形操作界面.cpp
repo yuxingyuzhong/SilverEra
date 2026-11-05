@@ -303,7 +303,7 @@ namespace engine
         通道->draw_callback_set(ui_绘制回调, &上下文);
         通道->event_callback_set(ui_事件回调, &上下文);
 
-        //—— 主循环：测试界面推进渲染层帧链路 ——
+        //—— 主循环：主线程轮询测试运行器并推进渲染层帧链路 ——
         //测试界面清屏色取渐变背景的深蓝基色，使窗口未覆盖处与界面背景衔接
         auto 恢复测试界面场景 = [&渲染器]()
         {
@@ -318,6 +318,13 @@ namespace engine
 
         while (true)
         {
+            /*
+            主线程执行测试（第六百五十六轮）
+            渲染用例会创建 SDL 窗口并逐帧抽事件，SDL3 要求事件泵在主线程；
+            故由主循环在**本线程**执行排队的一轮（执行期间界面冻结，跑完再绘制结果）。
+            */
+            运行器.poll_on_caller();
+
             //取上一帧统计供本帧界面显示（界面回调在 frame_render 内部执行）
             const Frame_Stats 统计 = 渲染器.frame_stats_get();
             上下文.运行状态.frame_ms = 统计.frame_ms;
