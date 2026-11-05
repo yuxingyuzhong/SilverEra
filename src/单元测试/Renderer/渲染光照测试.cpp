@@ -144,6 +144,75 @@ TEST_F(Renderer_Scene_Test, PBR掠射高光能量修正生效)
 }
 
 /*
+PBR 漫反射菲涅尔能量分摊（第六百七十四轮；D1 第二步）
+口径：介电材质（金属度 0）＋ 正面视角。能量模式关 → 开：漫反射按 (1 − 0.04) 略降，
+整面亮度小幅下降（差异像素覆盖整个受光面）。
+*/
+TEST_F(Renderer_Scene_Test, PBR漫反射能量分摊生效)
+{
+	struct Outcome
+	{
+		std::vector<uint8_t> pixels;
+		uint32_t brightness = 0;
+		bool ok = false;
+	};
+	auto run = [](bool energy)
+	{
+		Outcome outcome;
+		engine::Renderer renderer;
+		if (!renderer.init(hidden_config()) || !renderer.readback_supported())
+			return outcome;
+		uint64_t texture = 0;
+		std::vector<uint8_t> texels = solid_white();
+		if (!renderer.texture_load(texture, texels.data(), 2, 2))
+			return outcome;
+		engine::Mesh_Handle mesh = 0;
+		if (!renderer.mesh_load(mesh, quad_data_with_normal(0.0f, 0.0f, 1.0f)))
+			return outcome;
+		renderer.texture_bind_set(texture);
+
+		//PBR 介电材质，仅漫反射参与（镜面强度 0）
+		engine::Light_Data light{};
+		light.direction[0] = -0.4f;
+		light.direction[2] = -0.9f;
+		light.intensity = 1.0f;
+		light.ambient = 0.0f;
+		light.pbr_enabled = 1;
+		light.pbr_energy = energy ? 1 : 0;
+		light.pbr_metallic = 0.0f;
+		light.specular_intensity = 0.0f;
+		engine::Camera_Data camera{};
+		engine::Fog_Data fog{};
+		renderer.scene_apply(camera, light, fog);
+
+		EXPECT_TRUE(renderer.mesh_draw(mesh, full_screen_matrix().data()));
+		outcome.pixels.resize(pixel_bytes());
+		EXPECT_TRUE(renderer.frame_render(outcome.pixels.data(),
+			static_cast<std::uint32_t>(outcome.pixels.size())));
+		outcome.brightness = center_brightness(outcome.pixels);
+		outcome.ok = true;
+		return outcome;
+	};
+
+	const Outcome plain = run(false);
+	const Outcome energy = run(true);
+	ASSERT_TRUE(plain.ok) << "默认 PBR 配置初始化失败";
+	ASSERT_TRUE(energy.ok) << "能量分摊配置初始化失败";
+	RecordProperty("diffuse_energy_plain", plain.brightness);
+	RecordProperty("diffuse_energy_on", energy.brightness);
+	//统计差异像素（逐通道差 ≥ 1）
+	uint32_t difference = 0;
+	for (uint32_t y = 0; y < WINDOW_HEIGHT; ++y)
+		for (uint32_t x = 0; x < WINDOW_WIDTH; ++x)
+			if (pixel_get(plain.pixels, x, y) != pixel_get(energy.pixels, x, y))
+				++difference;
+	RecordProperty("diffuse_energy_difference_pixels", difference);
+	//正面视角：漫反射略降（中心亮度不升）
+	EXPECT_LE(energy.brightness, plain.brightness) << "能量分摊反而提亮了漫反射";
+	EXPECT_GT(difference, 1000u) << "能量分摊未覆盖受光面（差异像素 " << difference << "）";
+}
+
+/*
 非法光照参数整次忽略（第二十九轮）：零向量方向 / 非数 / 越界颜色均不改变画面
 */
 TEST_F(Renderer_Scene_Test, 非法光照参数整次忽略)
