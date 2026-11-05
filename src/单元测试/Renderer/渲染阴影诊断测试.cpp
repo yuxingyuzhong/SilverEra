@@ -519,3 +519,92 @@ TEST_F(Renderer_Scene_Test, 聚光图集阴影耗时对比)
 	EXPECT_GE(tiled.stats.gpu_shadow_ms, 0.0);
 	EXPECT_GE(atlas.stats.gpu_shadow_ms, 0.0);
 }
+
+/*
+8 瓦片图集映射与 MSAA 组合（第六百七十七轮；C1 收尾）
+口径：8 盏聚光（瓦片 0..7，覆盖图集两行）＋ 单级方向光；图集关 / 开对比，MSAA 1× / 4× 各一组。
+断言：图集实际生效、开 / 关画面逐字节一致、阴影段数不变。
+*/
+TEST_F(Renderer_Scene_Test, 图集八瓦片映射与MSAA一致)
+{
+	struct Outcome
+	{
+		std::vector<uint8_t> pixels;
+		engine::Frame_Stats stats{};
+		bool atlas_active = false;
+		bool ok = false;
+	};
+	auto run = [](bool atlas, uint32_t samples)
+	{
+		Outcome outcome;
+		engine::Renderer renderer;
+		engine::Renderer_Config config = hidden_config();
+		config.msaa_samples = samples;
+		if (!renderer.init(config) || !renderer.readback_supported())
+			return outcome;
+		uint64_t texture = 0;
+		std::vector<uint8_t> texels = solid_white();
+		if (!renderer.texture_load(texture, texels.data(), 2, 2))
+			return outcome;
+		engine::Mesh_Handle receiver = 0;
+		engine::Mesh_Handle occluder = 0;
+		if (!renderer.mesh_load(receiver, quad_data_with_normal(0.0f, 0.0f, -1.0f))
+			|| !renderer.mesh_load(occluder, quad_data_with_normal(0.0f, 0.0f, -1.0f)))
+			return outcome;
+		renderer.texture_bind_set(texture);
+
+		//8 盏聚光沿 X 均匀分布（覆盖图集 4 列 × 2 行）
+		engine::Light_Data light{};
+		light.direction[2] = 1.0f;
+		light.intensity = 1.0f;
+		light.ambient = 0.0f;
+		light.shadow_enabled = 1;
+		light.shadow_cascade_count = 1;
+		light.spot_count = 8;
+		for (int index = 0; index < 8; ++index)
+		{
+			light.spot_position[index][0] = -3.5f + static_cast<float>(index);
+			light.spot_position[index][1] = 2.0f;
+			light.spot_position[index][2] = 3.0f;
+			light.spot_direction[index][1] = -1.0f;
+			light.spot_direction[index][2] = 0.0f;
+			light.spot_radius[index] = 10.0f;
+			light.spot_intensity[index] = 1.0f;
+			light.spot_inner_deg[index] = 15.0f;
+			light.spot_outer_deg[index] = 30.0f;
+		}
+		light.spot_shadow_enabled = 1;
+		light.spot_shadow_all = 1;
+		light.spot_shadow_atlas = atlas ? 1 : 0;
+		engine::Camera_Data camera{};
+		engine::Fog_Data fog{};
+		renderer.scene_apply(camera, light, fog);
+		renderer.shadow_enable_set(true);
+
+		EXPECT_TRUE(renderer.mesh_draw(occluder, occluder_model(0.0f, 0.0f, -1.0f).data()));
+		EXPECT_TRUE(renderer.mesh_draw(receiver, translate_model(0.0f, 0.0f, 0.0f).data()));
+		outcome.pixels.resize(pixel_bytes());
+		EXPECT_TRUE(renderer.frame_render(outcome.pixels.data(),
+			static_cast<std::uint32_t>(outcome.pixels.size())));
+		outcome.stats = renderer.frame_stats_get();
+		outcome.atlas_active = renderer.spot_shadow_atlas();
+		renderer.mesh_unload(occluder);
+		renderer.mesh_unload(receiver);
+		renderer.texture_unload(texture);
+		outcome.ok = true;
+		return outcome;
+	};
+
+	//MSAA 1× 与 4× 两组：图集关 / 开各一次
+	for (uint32_t samples : { 1u, 4u })
+	{
+		const Outcome tiled = run(false, samples);
+		const Outcome atlas = run(true, samples);
+		ASSERT_TRUE(tiled.ok) << "独立瓦片初始化失败（MSAA " << samples << "）";
+		ASSERT_TRUE(atlas.ok) << "图集初始化失败（MSAA " << samples << "）";
+		EXPECT_FALSE(tiled.atlas_active);
+		EXPECT_TRUE(atlas.atlas_active) << "图集未生效（MSAA " << samples << "）";
+		EXPECT_EQ(atlas.stats.shadow_passes, tiled.stats.shadow_passes) << "段数变化（MSAA " << samples << "）";
+		EXPECT_TRUE(atlas.pixels == tiled.pixels) << "画面不一致（MSAA " << samples << "）";
+	}
+}
