@@ -518,6 +518,9 @@ TEST_F(Renderer_Scene_Test, 聚光图集阴影耗时对比)
 	//耗时为非负（无时间戳能力时为 0）
 	EXPECT_GE(tiled.stats.gpu_shadow_ms, 0.0);
 	EXPECT_GE(atlas.stats.gpu_shadow_ms, 0.0);
+	//图集诊断字段与实际开关一致（第六百八十轮）
+	EXPECT_EQ(tiled.stats.shadow_atlas, 0u) << "关闭态诊断字段应为 0";
+	EXPECT_EQ(atlas.stats.shadow_atlas, 1u) << "开启态诊断字段应为 1";
 }
 
 /*
