@@ -409,3 +409,70 @@ TEST_F(Renderer_Scene_Test, 级联参数非法忽略)
 	EXPECT_FLOAT_EQ(far_scale, 2.5f);
 	EXPECT_FLOAT_EQ(split_distance, 8.0f);
 }
+
+/*
+级联阴影纹素对齐（第六百四十四轮）
+口径：双级级联、相机沿 X 做亚纹素位移（0.004，约为单级纹素 24 / 512 ≈ 0.047 的 1/12）；
+     对齐后阴影视锥的平移吸附到纹素网格，阴影图内容与位移前逐字节一致（不再随相机微动重采样）。
+*/
+TEST_F(Renderer_Scene_Test, 级联阴影纹素对齐)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	uint64_t texture = 0;
+	std::vector<uint8_t> texels = solid_white();
+	ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 2, 2));
+	engine::Mesh_Handle receiver = 0;
+	engine::Mesh_Handle occluder = 0;
+	ASSERT_TRUE(renderer.mesh_load(receiver, quad_data_with_normal(0.0f, 0.0f, -1.0f)));
+	ASSERT_TRUE(renderer.mesh_load(occluder, quad_data_with_normal(0.0f, 0.0f, -1.0f)));
+	renderer.texture_bind_set(texture);
+
+	//双级级联 + 方向光阴影（scene_apply 会按 Light_Data 的开关重置阴影，故每次应用后显式开启）
+	engine::Camera_Data camera{};
+	lights_apply(renderer, camera, positive_z_light());
+	renderer.shadow_enable_set(true);
+	renderer.shadow_cascade_set(2, 3.0f, 12.0f);
+
+	//按 2048 上限分配回读缓冲（默认 1024，兼容更高档位）
+	const uint32_t capacity = 2048u * 2048u * 4u;
+	uint32_t map_width = 0;
+	uint32_t map_height = 0;
+	//读取整张阴影图（按实际尺寸裁剪）
+	auto read_shadow = [&]()
+	{
+		std::vector<uint8_t> map(capacity);
+		EXPECT_TRUE(renderer.shadow_readback(map.data(), capacity, &map_width, &map_height));
+		map.resize(static_cast<std::size_t>(map_width) * map_height * 4);
+		return map;
+	};
+	//绘制固定场景并推进一帧（不使用回读，仅让阴影 pass 执行）
+	auto draw_scene = [&]()
+	{
+		EXPECT_TRUE(renderer.mesh_draw(occluder, occluder_matrix(0.0f, 0.0f, -10.0f).data()));
+		EXPECT_TRUE(renderer.mesh_draw(receiver, translate_matrix(0.0f, 0.0f, -9.5f).data()));
+		EXPECT_TRUE(renderer.frame_render());
+	};
+
+	//位移前阴影图
+	draw_scene();
+	std::vector<uint8_t> before = read_shadow();
+
+	//相机亚纹素位移后阴影图（主 pass 视角变化不影响阴影图比对）
+	camera.position[0] += 0.004f;
+	lights_apply(renderer, camera, positive_z_light());
+	renderer.shadow_enable_set(true);
+	draw_scene();
+	std::vector<uint8_t> after = read_shadow();
+
+	RecordProperty("cascade_aligned_width", map_width);
+	RecordProperty("cascade_aligned_height", map_height);
+	EXPECT_FALSE(before.empty()) << "阴影图回读为空";
+	EXPECT_TRUE(before == after) << "级联阴影图随亚纹素相机位移重采样（纹素对齐失效）";
+
+	renderer.mesh_unload(occluder);
+	renderer.mesh_unload(receiver);
+	renderer.texture_unload(texture);
+}
