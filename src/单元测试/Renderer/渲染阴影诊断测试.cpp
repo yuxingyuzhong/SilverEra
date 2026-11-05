@@ -184,3 +184,54 @@ TEST_F(Renderer_Scene_Test, 聚光瓦片pass计数)
 	renderer.mesh_unload(occluder);
 	renderer.texture_unload(texture);
 }
+
+/*
+阴影提交次数等于 pass 数（第六百六十五轮；C2 基线）
+口径：当前「一片一次提交」，单级 1 次、双级 2 次，且与 shadow_passes 相等；
+     C2 单次提交合并落地后本用例改为「提交恒 1、pass 数不变」。
+*/
+TEST_F(Renderer_Scene_Test, 阴影提交数等于pass数)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	uint64_t texture = 0;
+	std::vector<uint8_t> texels = solid_white();
+	ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 2, 2));
+	engine::Mesh_Handle occluder = 0;
+	ASSERT_TRUE(renderer.mesh_load(occluder, quad_data_with_normal(0.0f, 0.0f, -1.0f)));
+	renderer.texture_bind_set(texture);
+
+	//方向光沿 +Z、阴影开启（单级）
+	engine::Camera_Data camera{};
+	engine::Light_Data light{};
+	light.direction[2] = 1.0f;
+	light.intensity = 1.0f;
+	light.ambient = 0.0f;
+	light.shadow_enabled = 1;
+	light.shadow_cascade_count = 1;
+	engine::Fog_Data fog{};
+	renderer.scene_apply(camera, light, fog);
+	renderer.shadow_enable_set(true);
+	EXPECT_TRUE(renderer.mesh_draw(occluder, occluder_model(0.0f, 0.0f, -1.0f).data()));
+	EXPECT_TRUE(renderer.frame_render());
+	const engine::Frame_Stats single = renderer.frame_stats_get();
+	RecordProperty("single_submits", single.shadow_submits);
+	RecordProperty("single_passes", single.shadow_passes);
+	EXPECT_EQ(single.shadow_submits, 1u) << "单级阴影提交次数不为 1";
+	EXPECT_EQ(single.shadow_submits, single.shadow_passes) << "提交次数与 pass 数不一致";
+
+	//双级级联
+	light.shadow_cascade_count = 2;
+	renderer.scene_apply(camera, light, fog);
+	renderer.shadow_enable_set(true);
+	EXPECT_TRUE(renderer.mesh_draw(occluder, occluder_model(0.0f, 0.0f, -1.0f).data()));
+	EXPECT_TRUE(renderer.frame_render());
+	const engine::Frame_Stats dual = renderer.frame_stats_get();
+	RecordProperty("dual_submits", dual.shadow_submits);
+	RecordProperty("dual_passes", dual.shadow_passes);
+	EXPECT_EQ(dual.shadow_submits, 2u) << "双级阴影提交次数不为 2";
+	EXPECT_EQ(dual.shadow_submits, dual.shadow_passes) << "双级提交次数与 pass 数不一致";
+
+	renderer.mesh_unload(occluder);
+	renderer.texture_unload(texture);
+}
