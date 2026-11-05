@@ -521,6 +521,10 @@ TEST_F(Renderer_Scene_Test, 聚光图集阴影耗时对比)
 	//图集诊断字段与实际开关一致（第六百八十轮）
 	EXPECT_EQ(tiled.stats.shadow_atlas, 0u) << "关闭态诊断字段应为 0";
 	EXPECT_EQ(atlas.stats.shadow_atlas, 1u) << "开启态诊断字段应为 1";
+	//图集颜色附件字节数（第六百八十四轮；1024 边长 → 4S×2S×4 = 32 MiB）
+	EXPECT_EQ(tiled.stats.shadow_atlas_bytes, 0u) << "关闭态字节数应为 0";
+	EXPECT_EQ(atlas.stats.shadow_atlas_bytes, static_cast<uint64_t>(1024) * 8u * 1024u * 4u)
+		<< "开启态字节数与 4S×2S×4 不符";
 }
 
 /*
