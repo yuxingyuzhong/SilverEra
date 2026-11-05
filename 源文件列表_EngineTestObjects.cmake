@@ -127,6 +127,7 @@ target_sources(EngineTestObjects PRIVATE
     "src/单元测试/Renderer/渲染逐物体卡通测试.cpp"
     "src/单元测试/Renderer/渲染逐绘制项纹理测试.cpp"
     "src/单元测试/Renderer/渲染采样器各向异性测试.cpp"
+    "src/单元测试/Renderer/渲染阴影口径一致性测试.cpp"
     "src/单元测试/Renderer/渲染阴影测试.cpp"
     "src/单元测试/Renderer/渲染阴影稳定性测试.cpp"
     "src/单元测试/Renderer/渲染阴影纹素钳制测试.cpp"
