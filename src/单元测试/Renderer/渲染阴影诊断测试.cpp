@@ -235,3 +235,104 @@ TEST_F(Renderer_Scene_Test, 阴影提交数等于pass数)
 	renderer.mesh_unload(occluder);
 	renderer.texture_unload(texture);
 }
+
+/*
+阴影批量提交（第六百六十九轮；C2）
+口径：双级级联 ＋ 2 盏聚光瓦片（共 4 段）。关闭：提交数 = 段数；开启：提交数 = 1；
+     开关两态画面逐字节一致、方向光阴影图逐字节一致。
+*/
+TEST_F(Renderer_Scene_Test, 阴影批量提交单次且画面不变)
+{
+	//单次运行的产物（画面 ＋ 方向光阴影图 ＋ 统计）
+	struct Outcome
+	{
+		std::vector<uint8_t> pixels;
+		std::vector<uint8_t> shadow;
+		uint32_t shadow_width = 0;
+		uint32_t shadow_height = 0;
+		engine::Frame_Stats stats{};
+		bool ok = false;
+	};
+	auto run = [](bool batch)
+	{
+		Outcome outcome;
+		engine::Renderer renderer;
+		if (!renderer.init(hidden_config()) || !renderer.readback_supported())
+			return outcome;
+		uint64_t texture = 0;
+		std::vector<uint8_t> texels = solid_white();
+		if (!renderer.texture_load(texture, texels.data(), 2, 2))
+			return outcome;
+		engine::Mesh_Handle receiver = 0;
+		engine::Mesh_Handle occluder = 0;
+		if (!renderer.mesh_load(receiver, quad_data_with_normal(0.0f, 0.0f, -1.0f))
+			|| !renderer.mesh_load(occluder, quad_data_with_normal(0.0f, 0.0f, -1.0f)))
+			return outcome;
+		renderer.texture_bind_set(texture);
+
+		//双级级联 ＋ 2 盏聚光（两盏都参与阴影，形成 2 个瓦片段）
+		engine::Light_Data light{};
+		light.direction[2] = 1.0f;
+		light.intensity = 1.0f;
+		light.ambient = 0.0f;
+		light.shadow_enabled = 1;
+		light.shadow_cascade_count = 2;
+		light.shadow_batch_submit = batch ? 1 : 0;
+		light.spot_count = 2;
+		for (int index = 0; index < 2; ++index)
+		{
+			light.spot_position[index][0] = index == 0 ? -1.0f : 1.0f;
+			light.spot_position[index][1] = 2.0f;
+			light.spot_position[index][2] = 3.0f;
+			light.spot_direction[index][1] = -1.0f;
+			light.spot_direction[index][2] = 0.0f;
+			light.spot_radius[index] = 10.0f;
+			light.spot_intensity[index] = 1.0f;
+			light.spot_inner_deg[index] = 15.0f;
+			light.spot_outer_deg[index] = 30.0f;
+		}
+		light.spot_shadow_enabled = 1;
+		light.spot_shadow_all = 1;
+		engine::Camera_Data camera{};
+		engine::Fog_Data fog{};
+		renderer.scene_apply(camera, light, fog);
+		renderer.shadow_enable_set(true);
+
+		//接收面在原点、遮挡面在其前方
+		EXPECT_TRUE(renderer.mesh_draw(occluder, occluder_model(0.0f, 0.0f, -1.0f).data()));
+		EXPECT_TRUE(renderer.mesh_draw(receiver, translate_model(0.0f, 0.0f, 0.0f).data()));
+		outcome.pixels.resize(pixel_bytes());
+		EXPECT_TRUE(renderer.frame_render(outcome.pixels.data(),
+			static_cast<std::uint32_t>(outcome.pixels.size())));
+		outcome.stats = renderer.frame_stats_get();
+
+		//方向光阴影图整图回读（批量 / 逐段应逐字节一致）
+		std::vector<uint8_t> shadow_map(2048u * 2048u * 4u);
+		if (renderer.shadow_readback(shadow_map.data(), static_cast<uint32_t>(shadow_map.size()),
+			&outcome.shadow_width, &outcome.shadow_height))
+		{
+			shadow_map.resize(static_cast<std::size_t>(outcome.shadow_width) * outcome.shadow_height * 4u);
+			outcome.shadow = std::move(shadow_map);
+		}
+		outcome.ok = true;
+		return outcome;
+	};
+
+	const Outcome per_pass = run(false);
+	const Outcome batched = run(true);
+	ASSERT_TRUE(per_pass.ok) << "逐段配置初始化失败";
+	ASSERT_TRUE(batched.ok) << "批量配置初始化失败";
+	RecordProperty("per_pass_submits", per_pass.stats.shadow_submits);
+	RecordProperty("batched_submits", batched.stats.shadow_submits);
+	RecordProperty("shadow_passes", per_pass.stats.shadow_passes);
+	//逐段：提交数等于段数（2 级联 ＋ 2 瓦片）
+	EXPECT_EQ(per_pass.stats.shadow_submits, per_pass.stats.shadow_passes) << "逐段口径提交数应等于段数";
+	EXPECT_GE(per_pass.stats.shadow_passes, 4u) << "阴影段数不足（应含 2 级联 ＋ 2 瓦片）";
+	//批量：一次提交、段数不变
+	EXPECT_EQ(batched.stats.shadow_submits, 1u) << "批量提交次数不为 1";
+	EXPECT_EQ(batched.stats.shadow_passes, per_pass.stats.shadow_passes) << "批量改变了阴影段数";
+	//画面与阴影图一致
+	EXPECT_TRUE(batched.pixels == per_pass.pixels) << "批量提交改变了画面";
+	if (!per_pass.shadow.empty() || !batched.shadow.empty())
+		EXPECT_TRUE(batched.shadow == per_pass.shadow) << "批量提交改变了方向光阴影图";
+}
