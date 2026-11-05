@@ -109,6 +109,7 @@ target_sources(EngineTestObjects PRIVATE
     "src/单元测试/Renderer/渲染窗口属性测试.cpp"
     "src/单元测试/Renderer/渲染粒子测试.cpp"
     "src/单元测试/Renderer/渲染级联淡化数据测试.cpp"
+    "src/单元测试/Renderer/渲染级联配置数据测试.cpp"
     "src/单元测试/Renderer/渲染级联阴影测试.cpp"
     "src/单元测试/Renderer/渲染纹理分级测试.cpp"
     "src/单元测试/Renderer/渲染缓存与阴影范围测试.cpp"

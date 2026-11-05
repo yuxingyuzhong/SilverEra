@@ -122,10 +122,12 @@ TEST_F(Renderer_Scene_Test, 级联阴影默认单级不变)
 }
 
 /*
-双级远端覆盖（第一百二十一轮）
-口径：相机移到 (20, 0, 3) 注视 (20, 0, 0)，接收面与遮挡面均位于 x = 20；
-     单级（原点为中心、半宽 12）覆盖不到该区域 → 中心受光；
-     切双级（以相机为中心，半径 12 / 36）后该区域落入近区 → 中心被遮蔽。
+双级远端覆盖（第一百二十一轮；第六百五十五轮起单级跟随相机）
+口径：三组对照（方向光沿 +Z、接收面为 -Z 法线四边形）：
+     ① 相机默认、物体 z = -5：单级半径 12 覆盖 → 中心被遮蔽；
+     ② 相机移到 (40, 0, 3)、物体同移到 x = 40、z = -5：单级仍遮蔽（证明跟随相机，旧实现原点固定会变亮）；
+     ③ 相机回默认、物体 z = -20（距相机约 23，超出单级半径 12）：单级受光；
+        切双级（远区半径 36）后覆盖 → 中心被遮蔽。
 */
 TEST_F(Renderer_Scene_Test, 级联阴影远端覆盖)
 {
@@ -142,35 +144,56 @@ TEST_F(Renderer_Scene_Test, 级联阴影远端覆盖)
 	ASSERT_TRUE(renderer.mesh_load(occluder, quad_data_with_normal(0.0f, 0.0f, -1.0f)));
 	renderer.texture_bind_set(texture);
 
-	//相机移到 x = 20 处，观察同一位置上的接收面与遮挡面
+	//① 相机默认、物体 z = -5：单级覆盖 → 遮蔽
 	engine::Camera_Data camera{};
-	camera.position[0] = 20.0f;
-	camera.position[2] = 3.0f;
-	camera.target[0] = 20.0f;
+	std::array<float, 16> receiver_transform = translate_matrix(0.0f, 0.0f, -5.0f);
+	std::array<float, 16> occluder_transform = occluder_matrix(0.0f, 0.0f, -5.5f);
 	lights_apply(renderer, camera, positive_z_light());
 	renderer.shadow_enable_set(true);
+	ASSERT_TRUE(renderer.mesh_draw(occluder, occluder_transform.data()));
+	ASSERT_TRUE(renderer.mesh_draw(receiver, receiver_transform.data()));
+	std::vector<uint8_t> origin_pixels = render_once(renderer);
 
-	//接收面（x = 20）与遮挡面（x = 20、z = -0.5）
-	std::array<float, 16> receiver_transform = translate_matrix(20.0f, 0.0f, 0.0f);
-	std::array<float, 16> occluder_transform = occluder_matrix(20.0f, 0.0f, -0.5f);
+	//② 相机与物体同移到 x = 40：单级仍遮蔽（跟随相机）
+	camera.position[0] = 40.0f;
+	camera.target[0] = 40.0f;
+	receiver_transform = translate_matrix(40.0f, 0.0f, -5.0f);
+	occluder_transform = occluder_matrix(40.0f, 0.0f, -5.5f);
+	lights_apply(renderer, camera, positive_z_light());
+	renderer.shadow_enable_set(true);
+	ASSERT_TRUE(renderer.mesh_draw(occluder, occluder_transform.data()));
+	ASSERT_TRUE(renderer.mesh_draw(receiver, receiver_transform.data()));
+	std::vector<uint8_t> moved_pixels = render_once(renderer);
 
-	//单级：视锥以原点为中心，x = 20 落在范围外 → 受光
+	//③ 相机回默认、物体 z = -20（距相机约 23，超出单级半径 12）：单级受光
+	camera = engine::Camera_Data{};
+	camera.far_plane = 200.0f;
+	receiver_transform = translate_matrix(0.0f, 0.0f, -20.0f);
+	occluder_transform = occluder_matrix(0.0f, 0.0f, -20.5f);
+	lights_apply(renderer, camera, positive_z_light());
+	renderer.shadow_enable_set(true);
 	ASSERT_TRUE(renderer.mesh_draw(occluder, occluder_transform.data()));
 	ASSERT_TRUE(renderer.mesh_draw(receiver, receiver_transform.data()));
 	std::vector<uint8_t> single_pixels = render_once(renderer);
 
-	//双级：两片以相机为中心 → x = 20 落入近区 → 遮蔽
+	//④ 双级：远区半径 36 覆盖 z = -20 → 中心被遮蔽
 	renderer.shadow_cascade_set(2, 3.0f, 12.0f);
 	ASSERT_TRUE(renderer.mesh_draw(occluder, occluder_transform.data()));
 	ASSERT_TRUE(renderer.mesh_draw(receiver, receiver_transform.data()));
 	std::vector<uint8_t> dual_pixels = render_once(renderer);
 
+	const uint32_t origin_brightness = center_brightness(origin_pixels);
+	const uint32_t moved_brightness = center_brightness(moved_pixels);
 	const uint32_t single_brightness = center_brightness(single_pixels);
 	const uint32_t dual_brightness = center_brightness(dual_pixels);
+	RecordProperty("cascade_follow_origin", origin_brightness);
+	RecordProperty("cascade_follow_moved", moved_brightness);
 	RecordProperty("cascade_far_single", single_brightness);
 	RecordProperty("cascade_far_dual", dual_brightness);
 
-	EXPECT_GE(single_brightness, 150u) << "单级视锥外的接收面被意外遮蔽（" << single_brightness << "）";
+	EXPECT_LT(origin_brightness, 60u) << "单级在默认机位未遮蔽中心";
+	EXPECT_LT(moved_brightness, 60u) << "单级未跟随相机（相机正前方未被遮蔽）";
+	EXPECT_GE(single_brightness, 150u) << "单级覆盖半径外的接收面被意外遮蔽（" << single_brightness << "）";
 	EXPECT_LT(dual_brightness, 60u) << "双级未覆盖相机周边区域（" << dual_brightness << "）";
 
 	renderer.mesh_unload(receiver);
@@ -430,11 +453,12 @@ TEST_F(Renderer_Scene_Test, 级联阴影纹素对齐)
 	ASSERT_TRUE(renderer.mesh_load(occluder, quad_data_with_normal(0.0f, 0.0f, -1.0f)));
 	renderer.texture_bind_set(texture);
 
-	//双级级联 + 方向光阴影（scene_apply 会按 Light_Data 的开关重置阴影，故每次应用后显式开启）
+	//双级级联 + 方向光阴影（级联配置由 Light_Data 驱动；scene_apply 会按数据重置阴影，故每次应用后显式开启）
 	engine::Camera_Data camera{};
-	lights_apply(renderer, camera, positive_z_light());
+	engine::Light_Data light = positive_z_light();
+	light.shadow_cascade_count = 2;
+	lights_apply(renderer, camera, light);
 	renderer.shadow_enable_set(true);
-	renderer.shadow_cascade_set(2, 3.0f, 12.0f);
 
 	//按 2048 上限分配回读缓冲（默认 1024，兼容更高档位）
 	const uint32_t capacity = 2048u * 2048u * 4u;
@@ -462,7 +486,7 @@ TEST_F(Renderer_Scene_Test, 级联阴影纹素对齐)
 
 	//相机亚纹素位移后阴影图（主 pass 视角变化不影响阴影图比对）
 	camera.position[0] += 0.004f;
-	lights_apply(renderer, camera, positive_z_light());
+	lights_apply(renderer, camera, light);
 	renderer.shadow_enable_set(true);
 	draw_scene();
 	std::vector<uint8_t> after = read_shadow();

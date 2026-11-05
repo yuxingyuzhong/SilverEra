@@ -43,10 +43,13 @@ namespace
 	}
 
 	//应用相机与光照（雾保持默认；scene_apply 会按 Light_Data 重置阴影，故调用方随后补开）
-	void scene_apply(engine::Renderer& renderer, const engine::Camera_Data& camera)
+	//第六百五十四轮起级联配置由 Light_Data 驱动，故此处按需传入级联数
+	void scene_apply(engine::Renderer& renderer, const engine::Camera_Data& camera, int cascade_count = 1)
 	{
+		engine::Light_Data light = positive_z_light();
+		light.shadow_cascade_count = cascade_count;
 		engine::Fog_Data fog{};
-		renderer.scene_apply(camera, positive_z_light(), fog);
+		renderer.scene_apply(camera, light, fog);
 		renderer.shadow_enable_set(true);
 	}
 
@@ -89,12 +92,9 @@ TEST_F(Renderer_Scene_Test, 亚纹素平移轨迹阴影图不变)
 	ASSERT_TRUE(renderer.mesh_load(occluder, quad_data_with_normal(0.0f, 0.0f, -1.0f)));
 	renderer.texture_bind_set(texture);
 
-	//双级级联
+	//双级级联（数据侧配置）
 	engine::Camera_Data camera{};
-	scene_apply(renderer, camera);
-	renderer.shadow_cascade_set(2, 3.0f, 12.0f);
-
-	//首帧阴影图
+	scene_apply(renderer, camera, 2);
 	uint32_t width = 0;
 	uint32_t height = 0;
 	draw_scene(renderer, occluder, receiver);
@@ -107,7 +107,7 @@ TEST_F(Renderer_Scene_Test, 亚纹素平移轨迹阴影图不变)
 	for (float offset : offsets)
 	{
 		camera.position[0] = offset;
-		scene_apply(renderer, camera);
+		scene_apply(renderer, camera, 2);
 		draw_scene(renderer, occluder, receiver);
 		std::vector<uint8_t> current = shadow_map_read(renderer, width, height);
 		if (current == reference)
@@ -142,10 +142,9 @@ TEST_F(Renderer_Scene_Test, 静止相机阴影复用)
 	ASSERT_TRUE(renderer.mesh_load(occluder, quad_data_with_normal(0.0f, 0.0f, -1.0f)));
 	renderer.texture_bind_set(texture);
 
-	//双级级联
+	//双级级联（数据侧配置）
 	engine::Camera_Data camera{};
-	scene_apply(renderer, camera);
-	renderer.shadow_cascade_set(2, 3.0f, 12.0f);
+	scene_apply(renderer, camera, 2);
 
 	//首帧：必然重绘
 	draw_scene(renderer, occluder, receiver);
@@ -193,17 +192,23 @@ TEST_F(Renderer_Scene_Test, 同一相机重复应用幂等)
 	ASSERT_TRUE(renderer.mesh_load(occluder, quad_data_with_normal(0.0f, 0.0f, -1.0f)));
 	renderer.texture_bind_set(texture);
 
+	//同一相机 ＋ 同一份数据（含 2 级级联配置，第六百五十四轮起级联配置由 Light_Data 驱动）
 	engine::Camera_Data camera{};
-	scene_apply(renderer, camera);
-	renderer.shadow_cascade_set(2, 3.0f, 12.0f);
+	engine::Light_Data light{};
+	light.direction[2] = 1.0f;
+	light.shadow_cascade_count = 2;
+	engine::Fog_Data fog{};
+	renderer.scene_apply(camera, light, fog);
+	renderer.shadow_enable_set(true);
 	draw_scene(renderer, occluder, receiver);
 	uint32_t width = 0;
 	uint32_t height = 0;
 	std::vector<uint8_t> first = shadow_map_read(renderer, width, height);
 	ASSERT_FALSE(first.empty()) << "阴影图回读为空";
 
-	//同一相机再应用一次后重绘
-	scene_apply(renderer, camera);
+	//同一相机与同一份数据再应用一次后重绘
+	renderer.scene_apply(camera, light, fog);
+	renderer.shadow_enable_set(true);
 	draw_scene(renderer, occluder, receiver);
 	std::vector<uint8_t> second = shadow_map_read(renderer, width, height);
 	EXPECT_TRUE(first == second) << "同一相机重复应用后阴影图不一致（存在残留副作用）";
