@@ -61,6 +61,7 @@ target_sources(EngineTestObjects PRIVATE
     "src/单元测试/Renderer/渲染像素回读测试.cpp"
     "src/单元测试/Renderer/渲染光照查询测试.cpp"
     "src/单元测试/Renderer/渲染光照测试.cpp"
+    "src/单元测试/Renderer/渲染光照选择测试.cpp"
     "src/单元测试/Renderer/渲染关卡测试.cpp"
     "src/单元测试/Renderer/渲染初始化测试.cpp"
     "src/单元测试/Renderer/渲染动态网格测试.cpp"
