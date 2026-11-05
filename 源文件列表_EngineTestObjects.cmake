@@ -75,6 +75,7 @@ target_sources(EngineTestObjects PRIVATE
     "src/单元测试/Renderer/渲染后处理分级调色测试.cpp"
     "src/单元测试/Renderer/渲染后处理反射测试.cpp"
     "src/单元测试/Renderer/渲染后处理扩展预设测试.cpp"
+    "src/单元测试/Renderer/渲染后处理接触阴影测试.cpp"
     "src/单元测试/Renderer/渲染后处理景深测试.cpp"
     "src/单元测试/Renderer/渲染后处理查找表测试.cpp"
     "src/单元测试/Renderer/渲染后处理模糊测试.cpp"
