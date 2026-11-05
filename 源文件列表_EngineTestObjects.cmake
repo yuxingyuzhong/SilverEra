@@ -124,6 +124,7 @@ target_sources(EngineTestObjects PRIVATE
     "src/单元测试/Renderer/渲染采样器各向异性测试.cpp"
     "src/单元测试/Renderer/渲染阴影测试.cpp"
     "src/单元测试/Renderer/渲染阴影稳定性测试.cpp"
+    "src/单元测试/Renderer/渲染阴影诊断测试.cpp"
     "src/单元测试/Renderer/渲染雾测试.cpp"
     "src/单元测试/Renderer/渲染风格化测试.cpp"
     "src/单元测试/Renderer/粒子数据测试.cpp"
