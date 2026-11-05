@@ -56,6 +56,7 @@ target_sources(EngineTestObjects PRIVATE
     "src/单元测试/Renderer/渲染HiZ测试.cpp"
     "src/单元测试/Renderer/渲染HiZ遮挡测试.cpp"
     "src/单元测试/Renderer/渲染MSAA测试.cpp"
+    "src/单元测试/Renderer/渲染PCSS软阴影测试.cpp"
     "src/单元测试/Renderer/渲染中文字形测试.cpp"
     "src/单元测试/Renderer/渲染交换链重建测试.cpp"
     "src/单元测试/Renderer/渲染像素回读测试.cpp"
