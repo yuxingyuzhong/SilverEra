@@ -43,10 +43,11 @@ namespace
 
 	/*
 	渲染一帧接触阴影
-	frag = 后处理片元名；strength = 接触阴影强度（0 = 关闭）；
-	参数（强度 / 最大距离 4 / 步数缩放 2 / 深度偏置 0.01）走通用四参入口，阴影色调取黑。
+	frag = 后处理片元名；strength = 接触阴影强度（0 = 关闭）；seed = 抖动种子（0 = 关闭抖动）；
+	参数（强度 / 最大距离 4 / 步数缩放 2 / 深度偏置 0.01）走通用四参入口；
+	阴影色调取黑，第四分量携带抖动种子（0 = 固定中点采样，与 673 逐字节一致）。
 	*/
-	std::vector<uint8_t> render_contact(const std::string& frag, float strength)
+	std::vector<uint8_t> render_contact(const std::string& frag, float strength, float seed = 0.0f)
 	{
 		engine::Renderer renderer;
 		EXPECT_TRUE(renderer.init(hidden_config()));
@@ -57,8 +58,8 @@ namespace
 		EXPECT_TRUE(renderer.post_chain_set(&pass, 1));
 		//强度 / 最大距离 / 步数缩放 / 深度偏置
 		renderer.post_stage_vec4_set(0, strength, 4.0f, 2.0f, 0.01f);
-		//阴影色调（黑：直接压暗）
-		renderer.post_stage_color4_set(0, 0.0f, 0.0f, 0.0f, 0.0f);
+		//阴影色调（黑：直接压暗）＋ 抖动种子（第四分量）
+		renderer.post_stage_color4_set(0, 0.0f, 0.0f, 0.0f, seed);
 		renderer.render_target_present_set(scene_target);
 
 		//方向光自相机一侧斜射（光线朝左后方，便于接收面射线扫过侧后方的遮挡板）
@@ -154,4 +155,27 @@ TEST_F(Renderer_Post_Chain_Test, 接触阴影开启压暗接收面)
 	RecordProperty("contact_darkened_pixels", darkened);
 	EXPECT_GT(difference, 10u) << "接触阴影未改变画面（差异像素 " << difference << "）";
 	EXPECT_GT(darkened, 10u) << "接触阴影未压暗任何像素（压暗像素 " << darkened << "）";
+}
+
+/*
+步进抖动与互补相位平均（第六百七十五轮）
+口径：强度 1、遮挡场景；种子 0（固定中点）→ 种子 0.37：抖动相位改变半影采样，画面出现差异像素。
+*/
+TEST_F(Renderer_Post_Chain_Test, 接触阴影抖动相位生效)
+{
+	engine::Renderer probe;
+	ASSERT_TRUE(probe.init(hidden_config()));
+	if (!probe.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+
+	std::vector<uint8_t> fixed = render_contact("接触阴影.frag.spv", 1.0f, 0.0f);
+	std::vector<uint8_t> jittered = render_contact("接触阴影.frag.spv", 1.0f, 0.37f);
+	//差异像素（逐通道差 ≥ 1）
+	uint32_t difference = 0;
+	for (uint32_t y = 0; y < WINDOW_HEIGHT; ++y)
+		for (uint32_t x = 0; x < WINDOW_WIDTH; ++x)
+			if (pixel_get(fixed, x, y) != pixel_get(jittered, x, y))
+				++difference;
+	RecordProperty("contact_jitter_difference_pixels", difference);
+	EXPECT_GT(difference, 0u) << "抖动种子未改变接触阴影采样";
 }
