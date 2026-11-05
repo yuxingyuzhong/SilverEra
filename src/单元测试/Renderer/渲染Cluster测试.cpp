@@ -11,8 +11,6 @@
 #include <vector>
 
 #include "Engine/EngineSystem/src/core/Renderer/src/render/Renderer/渲染器.h"
-//能力展示场景（第三百零二轮：展廊灯墙接入）
-#include "src/主调/能力展示/能力展示场景.h"
 
 namespace
 {
@@ -1341,56 +1339,4 @@ TEST(Renderer_Cluster_Test, 片元簇采样_线性衰减提前退出)
 	const bool same = std::mismatch(results[0].begin(), results[0].end(), results[1].begin()).first
 		== results[0].end();
 	EXPECT_TRUE(same) << "线性衰减提前退出改变了画面（应逐字节一致）";
-}
-
-/*
-展廊灯墙接入（第三百零二轮）
-口径：隐藏窗口搭建能力展示场景，验证灯墙 128 盏已登记、出帧正常；
-手动开启 Cluster 后簇条目与上传量非零（真实展廊场景下的簇光照可用性）。
-*/
-TEST(Renderer_Cluster_Test, 能力展示灯墙_簇灯光登记)
-{
-	engine::Renderer_Config config = hidden_config();
-	//灯墙一次实例化 128 个灯泡，连同其余展区留足实例容量
-	config.instance_capacity = 512;
-	engine::Renderer renderer;
-	ASSERT_TRUE(renderer.init(config));
-	engine::能力展示场景 场景;
-	ASSERT_TRUE(场景.init(renderer));
-	const bool cluster_supported = renderer.cluster_supported();
-	if (cluster_supported)
-	{
-		/*
-		基础 3 点光 ＋ 5 聚光（第五百三十轮起展区③ 声明 8 盏，前向上限 8 只登记前 5 盏）＋ 灯墙 128 ＝ 136；
-		方向光与补光记录 2 条 → 记录 138。
-		（进区③ 时由进区开关重放场景，簇开启后 8 盏全部登记，但本用例相机停在展廊起点，故仍为前向态）
-		*/
-		EXPECT_EQ(renderer.point_light_count(), 136u);
-		EXPECT_EQ(renderer.light_record_count(), 138u);
-	}
-	else
-	{
-		//不支持计算路径时只保留基础 8 盏（3 点光 ＋ 前 5 聚光）
-		EXPECT_EQ(renderer.point_light_count(), 8u);
-		EXPECT_EQ(renderer.light_record_count(), 10u);
-	}
-	const uint32_t pixel_count = WINDOW_WIDTH * WINDOW_HEIGHT * 4u;
-	std::vector<uint8_t> pixels(pixel_count, 0u);
-	//首帧：展廊默认相机（未进入灯墙区）
-	engine::展示输入 输入;
-	场景.update(renderer, 输入, 0.016f);
-	场景.frame_draw(renderer);
-	ASSERT_TRUE(renderer.frame_render(pixels.data(), pixel_count, nullptr, nullptr));
-	EXPECT_GT(renderer.frame_stats_get().drawn_items, 0u);
-	if (cluster_supported)
-	{
-		//手动开启簇光照后再出一帧：条目与上传量应非零
-		ASSERT_TRUE(renderer.cluster_enable_set(true));
-		场景.frame_draw(renderer);
-		ASSERT_TRUE(renderer.frame_render(pixels.data(), pixel_count, nullptr, nullptr));
-		const engine::Frame_Stats stats = renderer.frame_stats_get();
-		EXPECT_GT(stats.cluster_entries, 0u);
-		EXPECT_GT(stats.cluster_gpu_bytes, 0u);
-	}
-	场景.shutdown(renderer);
 }

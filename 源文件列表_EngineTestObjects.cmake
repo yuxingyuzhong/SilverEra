@@ -117,7 +117,6 @@ target_sources(EngineTestObjects PRIVATE
     "src/单元测试/Renderer/渲染聚光灯测试.cpp"
     "src/单元测试/Renderer/渲染聚光逐盏阴影测试.cpp"
     "src/单元测试/Renderer/渲染聚光阴影测试.cpp"
-    "src/单元测试/Renderer/渲染能力展示排查测试.cpp"
     "src/单元测试/Renderer/渲染计算测试.cpp"
     "src/单元测试/Renderer/渲染资产加载测试.cpp"
     "src/单元测试/Renderer/渲染资源与链查询测试.cpp"

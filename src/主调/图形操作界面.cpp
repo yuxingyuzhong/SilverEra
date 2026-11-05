@@ -8,8 +8,6 @@
 //测试运行器与测试界面
 #include "src/主调/测试运行器.h"
 #include "src/主调/测试界面.h"
-//能力展示场景（测试层入口：单场景集中呈现渲染层能力，相机可漫游）
-#include "src/主调/能力展示/能力展示场景.h"
 
 //Dear ImGui 与两条后端（平台后端用 SDL3、渲染后端用 Vulkan）
 #include "imgui.h"
@@ -180,143 +178,7 @@ namespace engine
             bool 退出请求 = false;
             //渲染器帧统计（主循环每帧刷新，界面只读）
             Ui_Runtime_Stats 运行状态{};
-            //是否处于能力展示模式（本帧界面只画展示叠加层）
-            bool 展示模式 = false;
-            //界面请求进入 / 退出展示模式（主循环执行资源搭建与释放）
-            bool 请求进入展示 = false;
-            bool 请求退出展示 = false;
-            //从展示模式返回测试界面那一帧抑制 Esc 退出（同一按键沿不得二次生效）
-            bool 抑制退出键 = false;
-            //展示模式的相机输入（界面采集，主循环消费）
-            展示输入 输入{};
-			//能力展示场景（非空即表示已搭建）
-			能力展示场景* 展示场景 = nullptr;
-			//展示叠加层是否展开（默认收起：23 个展区的长列表会挡住画面，需要时按 M 或点「?」打开）
-			bool 展示面板可见 = false;
-			//展示模式的原生输入状态（SDL 事件直采；不依赖 ImGui 焦点与面板可见性）
-			bool 键前 = false;
-			bool 键后 = false;
-			bool 键左 = false;
-			bool 键右 = false;
-			bool 键升 = false;
-			bool 键降 = false;
-			bool 右键按下 = false;
-			//本帧累计的鼠标相对位移与滚轮（消费后归零）
-			float 鼠标差x = 0.0f;
-			float 鼠标差y = 0.0f;
-			float 滚轮差 = 0.0f;
         };
-
-        //展示模式的叠加层（能力清单 ＋ 相机与帧统计 ＋ 操作提示 ＋ 返回按钮）
-        void 绘制展示叠加层(Ui_会话上下文& 上下文, const 能力展示场景& 场景)
-        {
-            //左上角信息面板（宽度按最长说明行折行；第二百一十八轮修正文字被裁剪问题）
-            const ImGuiViewport* 视口 = ImGui::GetMainViewport();
-            /*
-            面板已关闭：只在左上角留一个小按钮重开
-            后处理类展区（⑫–⑰）会把整幅画面（含叠加层）一并处理，故需要「关闭面板」的逃生口。
-            */
-            if (!上下文.展示面板可见)
-            {
-                ImGui::SetNextWindowPos(ImVec2(视口->WorkPos.x + 16.0f, 视口->WorkPos.y + 16.0f));
-                ImGui::SetNextWindowSize(ImVec2(44.0f, 0.0f));
-                ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.04f, 0.07f, 0.14f, 0.92f));
-                ImGui::Begin("##能力展示折叠", nullptr,
-                    ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings
-                    | ImGuiWindowFlags_NoFocusOnAppearing);
-                //重开按钮（悬停提示快捷键）
-                if (ImGui::Button("?", ImVec2(30.0f, 30.0f)))
-                    上下文.展示面板可见 = true;
-                if (ImGui::IsItemHovered())
-                    ImGui::SetTooltip("展开能力展示说明（M 键切换）");
-                ImGui::End();
-                ImGui::PopStyleColor();
-                return;
-            }
-            ImGui::SetNextWindowPos(ImVec2(视口->WorkPos.x + 16.0f, 视口->WorkPos.y + 16.0f));
-            ImGui::SetNextWindowSize(ImVec2(430.0f, 0.0f));
-            //展示模式下没有蓝色渐变背景，本面板必须自带不透明底色，否则整个面板不可见
-            ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.04f, 0.07f, 0.14f, 0.92f));
-            ImGui::Begin("##能力展示信息", nullptr,
-                ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings
-                | ImGuiWindowFlags_NoFocusOnAppearing);
-            ImGui::TextUnformatted("渲染能力展示 · 可漫游场景");
-            //关闭按钮（右上角小叉；再点左上角「?」可重开）
-            ImGui::SameLine(398.0f);
-            if (ImGui::SmallButton("×"))
-                上下文.展示面板可见 = false;
-            if (ImGui::IsItemHovered())
-                ImGui::SetTooltip("收起说明面板（M 键切换；后处理展区画面更清晰）");
-            ImGui::Separator();
-            //展区图例（由展区注册表自动生成，新增展区无需改界面）
-            uint32_t 展区数 = 场景.展区数量();
-            ImGui::TextUnformatted(std::to_string(展区数).c_str());
-            ImGui::SameLine(0.0f, 0.0f);
-            ImGui::TextUnformatted("个展区（场景内有同名标签）：");
-            //展区列表限高可滚动（避免 23 条长文把面板撑满整屏、遮住场景）
-            ImGui::BeginChild("##展区列表", ImVec2(0.0f, 视口->WorkSize.y * 0.42f), false,
-                ImGuiWindowFlags_NoSavedSettings);
-            for (uint32_t 序号 = 0; 序号 < 展区数; ++序号)
-            {
-                ImGui::Bullet();
-                ImGui::TextWrapped("%s", 场景.展区标题(序号));
-            }
-            ImGui::EndChild();
-            ImGui::Bullet(); ImGui::TextWrapped("多线程：4 工作线程（并行剔除 / 差异扫描；场景 pass 与阴影 pass 均按段并行录制）");
-            ImGui::Separator();
-            float 位置[3] = { 0.0f, 0.0f, 0.0f };
-            场景.相机位置(位置);
-            ImGui::TextWrapped("相机：%.1f, %.1f, %.1f   偏航 %.2f / 俯仰 %.2f", 位置[0], 位置[1], 位置[2],
-                场景.偏航(), 场景.俯仰());
-            ImGui::TextWrapped("帧数 %llu   绘制 %llu   合并 %llu   剔除 %llu   %.2f ms",
-                static_cast<unsigned long long>(上下文.运行状态.frames),
-                static_cast<unsigned long long>(上下文.运行状态.drawn_items),
-                static_cast<unsigned long long>(上下文.运行状态.last_merged_items),
-                static_cast<unsigned long long>(上下文.运行状态.last_culled_items),
-                上下文.运行状态.frame_ms);
-            ImGui::TextWrapped("最近一帧交给录制 %llu 项（若为 0 说明绘制项被跳过）",
-                static_cast<unsigned long long>(上下文.运行状态.last_draw_items));
-            ImGui::TextWrapped("MSAA %u×   阴影 %u 项（最近一帧%s）",
-                上下文.运行状态.msaa_samples,
-                上下文.运行状态.last_shadow_items,
-                上下文.运行状态.shadow_last_redrawn != 0 ? "重绘" : "复用");
-            //聚光灯阴影模式（第五百一十一轮；第五百三十轮扩为八盏；K 键切换，用于对比单盏 / 八盏的画面与开销）
-            ImGui::TextWrapped("聚光灯阴影：%s（K 切换）　瓦片 %u",
-                场景.聚光多盏() ? "八盏各自投影" : "单盏投影", 上下文.运行状态.spot_shadow_tiles);
-            ImGui::TextWrapped("渲染线程 %u   并行派发 %llu   最近一帧并行段 %u   阴影段 %u",
-                上下文.运行状态.render_threads,
-                static_cast<unsigned long long>(上下文.运行状态.parallel_dispatches),
-                上下文.运行状态.parallel_segments,
-                上下文.运行状态.shadow_parallel_segments);
-            //粒子观测（第三百四十八轮；路径 0 未登记 / 1 CPU / 2 GPU 直接 / 3 GPU 间接）
-            const char* 粒子路径 = "未登记";
-            if (上下文.运行状态.particle_draw_path == 1)
-                粒子路径 = "CPU 参考";
-            else if (上下文.运行状态.particle_draw_path == 2)
-                粒子路径 = "GPU 直接";
-            else if (上下文.运行状态.particle_draw_path == 3)
-                粒子路径 = "GPU 间接";
-            ImGui::TextWrapped("粒子 活跃 %llu   绘制路径 %s   紧凑 %.2f ms   软粒子 %.3f",
-                static_cast<unsigned long long>(上下文.运行状态.particle_active),
-                粒子路径, 上下文.运行状态.particle_compact_ms, 上下文.运行状态.particle_soft_depth);
-            //实例剔除并行阈值（第二百二十二轮；0 表示未初始化）
-            ImGui::TextWrapped("剔除并行阈值 %u（实例数达到该值才走并行剔除）",
-                上下文.运行状态.cull_parallel_min_instances);
-            //按用途拆分的派发计数（第二百二十四轮；录制段派发不计入这三项）
-            ImGui::TextWrapped("派发拆分（剔除 / 扫描 / 回写，录制段不计）：%llu / %llu / %llu",
-                static_cast<unsigned long long>(上下文.运行状态.cull_parallel_dispatches),
-                static_cast<unsigned long long>(上下文.运行状态.scan_parallel_dispatches),
-                static_cast<unsigned long long>(上下文.运行状态.cache_parallel_dispatches));
-            ImGui::Separator();
-            ImGui::TextWrapped("操作：WASD 移动 · E / 空格 上升 · Q / Shift 下降 · 右键拖拽看向 · 滚轮调速 · M 收起说明 · K 切换聚光阴影 · ESC 返回");
-            if (ImGui::Button("返回测试界面", ImVec2(150.0f, 30.0f)))
-                上下文.请求退出展示 = true;
-            ImGui::SameLine();
-            if (ImGui::Button("退出程序", ImVec2(110.0f, 30.0f)))
-                上下文.退出请求 = true;
-            ImGui::End();
-            ImGui::PopStyleColor();
-        }
 
         //每帧 UI 绘制回调（渲染层帧链路在场景通道内、呈现转换前调用）
         void ui_绘制回调(VkCommandBuffer 命令缓冲, void* 用户数据)
@@ -329,137 +191,39 @@ namespace engine
             ImGui_ImplVulkan_NewFrame();
             ImGui::NewFrame();
 
-            //先铺蓝色渐变，再画操作界面
-            if (上下文.展示模式)
-            {
-                //展示模式：场景由渲染层绘制，本层只画叠加层并采集相机输入
-                绘制展示叠加层(上下文, *上下文.展示场景);
-                //相机输入取自 SDL 事件直采状态（ImGui 仅负责叠加层绘制）
-                展示输入& 输入 = 上下文.输入;
-                输入.前后 = (上下文.键前 ? 1.0f : 0.0f) - (上下文.键后 ? 1.0f : 0.0f);
-                输入.左右 = (上下文.键右 ? 1.0f : 0.0f) - (上下文.键左 ? 1.0f : 0.0f);
-                输入.上下 = (上下文.键升 ? 1.0f : 0.0f) - (上下文.键降 ? 1.0f : 0.0f);
-                //右键按住拖拽 → 偏航 / 俯仰增量（消费后清零）
-                if (上下文.右键按下)
-                {
-                    输入.偏航增量 += 上下文.鼠标差x * 0.0025f;
-                    输入.俯仰增量 -= 上下文.鼠标差y * 0.0025f;
-                }
-                上下文.鼠标差x = 0.0f;
-                上下文.鼠标差y = 0.0f;
-                //滚轮调节速度倍率（0.25..4）
-                if (上下文.滚轮差 != 0.0f)
-                {
-                    输入.速度倍率 *= std::pow(1.15f, 上下文.滚轮差);
-                    上下文.滚轮差 = 0.0f;
-                }
-                if (输入.速度倍率 < 0.25f)
-                    输入.速度倍率 = 0.25f;
-                if (输入.速度倍率 > 4.0f)
-                    输入.速度倍率 = 4.0f;
-            }
-            else
-            {
-                绘制蓝色渐变背景();
+            //铺蓝色渐变，再画操作界面
+            绘制蓝色渐变背景();
 
-                /*
-                刚由展示模式返回时清空本帧按键状态（第二百一十八轮）
-                返回请求与 Esc 按下可能落在相邻帧：ImGui 在返回帧仍持有该按键状态，
-                若不清空会把「返回」误判成「退出界面」。清空后本帧不再有 ESC 按下沿。
-                */
-                if (上下文.抑制退出键)
-                    ImGui::GetIO().ClearInputKeys();
+            //铺满整个窗口的无标题面板
+            const ImGuiViewport* 视口 = ImGui::GetMainViewport();
+            ImGui::SetNextWindowPos(视口->WorkPos);
+            ImGui::SetNextWindowSize(视口->WorkSize);
+            ImGui::Begin("##测试操作界面", nullptr,
+                ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
 
-                //铺满整个窗口的无标题面板
-                const ImGuiViewport* 视口 = ImGui::GetMainViewport();
-                ImGui::SetNextWindowPos(视口->WorkPos);
-                ImGui::SetNextWindowSize(视口->WorkSize);
-                ImGui::Begin("##测试操作界面", nullptr,
-                    ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
+            //绘制测试操作界面（树 / 控制 / 结果 / 输出镜像 / 轮次 / 日志）
+            //注意：必须在面板窗口内绘制，控件才有有效窗口可放置与命中
+            测试界面_绘制(*上下文.运行器, *上下文.模型, 上下文.退出请求, &上下文.运行状态);
 
-                //绘制测试操作界面（树 / 控制 / 结果 / 输出镜像 / 轮次 / 日志）
-                //注意：必须在面板窗口内绘制，控件才有有效窗口可放置与命中
-                //展示入口按钮由本界面在控制条行末绘制（避免右上角悬浮窗遮挡运行进度条）
-                测试界面_绘制(*上下文.运行器, *上下文.模型, 上下文.退出请求, &上下文.运行状态,
-                    &上下文.请求进入展示, &上下文.抑制退出键);
-
-                ImGui::End();
-            }
+            ImGui::End();
 
             //提交绘制：交给渲染层帧链路命令缓冲（后端画在已开启的动态渲染通道内）
             ImGui::Render();
             ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), 命令缓冲);
         }
 
-        //SDL 事件转发回调（渲染层事件泵逐个事件转发）
-        //职责：① 交给 ImGui 平台后端（叠加层输入）；② 直采展示模式的键鼠状态
+        //SDL 事件转发回调（渲染层事件泵逐个事件转发；仅交给 ImGui 平台后端）
         void ui_事件回调(const SDL_Event* 事件, void* 用户数据)
         {
-            Ui_会话上下文& 上下文 = *static_cast<Ui_会话上下文*>(用户数据);
+            (void)用户数据;
             ImGui_ImplSDL3_ProcessEvent(事件);
-            //按键按下 / 抬起（按物理键位，避免输入法 / 布局差异）
-            if (事件->type == SDL_EVENT_KEY_DOWN || 事件->type == SDL_EVENT_KEY_UP)
-            {
-                const bool 按下 = 事件->type == SDL_EVENT_KEY_DOWN;
-                switch (事件->key.scancode)
-                {
-                case SDL_SCANCODE_W: 上下文.键前 = 按下; break;
-                case SDL_SCANCODE_S: 上下文.键后 = 按下; break;
-                case SDL_SCANCODE_A: 上下文.键左 = 按下; break;
-                case SDL_SCANCODE_D: 上下文.键右 = 按下; break;
-                case SDL_SCANCODE_Q: 上下文.键降 = 按下; break;
-                case SDL_SCANCODE_E: 上下文.键升 = 按下; break;
-                //备用升降键：空格上升、Shift 下降（与 Q/E 并存）
-                case SDL_SCANCODE_SPACE: 上下文.键升 = 按下; break;
-                case SDL_SCANCODE_LSHIFT:
-                case SDL_SCANCODE_RSHIFT: 上下文.键降 = 按下; break;
-                case SDL_SCANCODE_ESCAPE:
-                    //ESC：展示模式下返回测试界面
-                    if (按下 && 上下文.展示模式)
-                        上下文.请求退出展示 = true;
-                    break;
-                case SDL_SCANCODE_M:
-                    //M：展示模式下折叠 / 展开说明面板（后处理类展区观察更清晰）
-                    if (按下 && 上下文.展示模式)
-                        上下文.展示面板可见 = !上下文.展示面板可见;
-                    break;
-                case SDL_SCANCODE_K:
-                    //K：展示模式下切换聚光灯阴影（四盏各自投影 / 单盏）
-                    if (按下 && 上下文.展示模式 && 上下文.展示场景 != nullptr)
-                        上下文.展示场景->聚光多盏切换();
-                    break;
-                default:
-                    break;
-                }
-                return;
-            }
-            //右键按下 / 抬起（拖拽看向用）
-            if (事件->type == SDL_EVENT_MOUSE_BUTTON_DOWN || 事件->type == SDL_EVENT_MOUSE_BUTTON_UP)
-            {
-                if (事件->button.button == SDL_BUTTON_RIGHT)
-                    上下文.右键按下 = 事件->type == SDL_EVENT_MOUSE_BUTTON_DOWN;
-                return;
-            }
-            //鼠标相对位移（仅右键按住时累计）
-            if (事件->type == SDL_EVENT_MOUSE_MOTION)
-            {
-                if (上下文.右键按下)
-                {
-                    上下文.鼠标差x += 事件->motion.xrel;
-                    上下文.鼠标差y += 事件->motion.yrel;
-                }
-                return;
-            }
-            //滚轮
-            if (事件->type == SDL_EVENT_MOUSE_WHEEL)
-                上下文.滚轮差 += 事件->wheel.y;
         }
     }
 
     //========================================================================
     // 图形操作界面
     //========================================================================
-    bool 图形操作界面_运行(Test_Selection_Model& 模型, bool 直接进入展示)
+    bool 图形操作界面_运行(Test_Selection_Model& 模型)
     {
         //—— 渲染器初始化（可见窗口；Vulkan 不可用则返回 false） ——
         Renderer_Config 配置{};
@@ -467,7 +231,7 @@ namespace engine
         配置.height = 窗口高度;
         配置.title = 窗口标题;
         配置.frame_overlap = 2;
-        //实例容量（第三百零二轮：灯墙一次实例化 128 个灯泡，连同其余展区留足余量）
+        //实例容量（留足余量：粒子 / 文字 / 实例化用例共用）
         配置.instance_capacity = 512;
         配置.vsync = true;
         配置.hidden = false;
@@ -539,7 +303,7 @@ namespace engine
         通道->draw_callback_set(ui_绘制回调, &上下文);
         通道->event_callback_set(ui_事件回调, &上下文);
 
-        //—— 主循环：测试界面推进渲染层帧链路；展示模式改为推进可漫游场景 ——
+        //—— 主循环：测试界面推进渲染层帧链路 ——
         //测试界面清屏色取渐变背景的深蓝基色，使窗口未覆盖处与界面背景衔接
         auto 恢复测试界面场景 = [&渲染器]()
         {
@@ -552,69 +316,8 @@ namespace engine
         };
         恢复测试界面场景();
 
-        //能力展示场景（进入时搭建、返回时释放）
-        能力展示场景 展示;
-        bool 展示已搭建 = false;
-        //命令行直达展示模式
-        if (直接进入展示)
-            上下文.请求进入展示 = true;
-
-        std::chrono::steady_clock::time_point 上帧时刻 = std::chrono::steady_clock::now();
         while (true)
         {
-            //处理「进入展示」请求
-            if (上下文.请求进入展示 && !上下文.展示模式)
-            {
-                上下文.请求进入展示 = false;
-                if (展示.init(渲染器))
-                {
-                    展示已搭建 = true;
-                    上下文.展示场景 = &展示;
-                    上下文.展示模式 = true;
-                }
-                else
-                {
-                    //搭建失败：回收已建资源与展示期开关（shutdown 对未建资源为空操作）
-                    渲染器.frame_wait_idle();
-                    展示.shutdown(渲染器);
-                    恢复测试界面场景();
-                }
-            }
-            //处理「退出展示」请求（返回测试界面）
-            if (上下文.请求退出展示)
-            {
-                上下文.请求退出展示 = false;
-                if (展示已搭建)
-                {
-                    //先等尽在途帧再卸载展示资源（否则资源仍可能被在途命令缓冲引用）
-                    渲染器.frame_wait_idle();
-                    展示.shutdown(渲染器);
-                    展示已搭建 = false;
-                }
-                上下文.展示场景 = nullptr;
-                上下文.展示模式 = false;
-                恢复测试界面场景();
-                //返回那一帧抑制 Esc（展示模式里的同一次按下不得再次触发「退出界面」）
-                上下文.抑制退出键 = true;
-            }
-
-            //帧间隔（限制上限，避免卡顿后瞬移）
-            const std::chrono::steady_clock::time_point 现时刻 = std::chrono::steady_clock::now();
-            float 秒 = std::chrono::duration<float>(现时刻 - 上帧时刻).count();
-            上帧时刻 = 现时刻;
-            if (秒 > 0.1f)
-                秒 = 0.1f;
-
-            //展示模式：推进相机并登记本帧绘制项
-            if (上下文.展示模式 && 展示已搭建)
-            {
-                展示.update(渲染器, 上下文.输入, 秒);
-                展示.frame_draw(渲染器);
-                //本帧鼠标增量已消费
-                上下文.输入.偏航增量 = 0.0f;
-                上下文.输入.俯仰增量 = 0.0f;
-            }
-
             //取上一帧统计供本帧界面显示（界面回调在 frame_render 内部执行）
             const Frame_Stats 统计 = 渲染器.frame_stats_get();
             上下文.运行状态.frame_ms = 统计.frame_ms;
@@ -656,14 +359,6 @@ namespace engine
             //窗口被直接关闭或界面请求退出
             if (渲染器.close_requested() || 上下文.退出请求)
                 break;
-        }
-
-        //退出前释放展示资源（先等尽在途帧，避免资源被在途命令缓冲引用）
-        if (展示已搭建)
-        {
-            渲染器.frame_wait_idle();
-            展示.shutdown(渲染器);
-            展示已搭建 = false;
         }
 
         //—— 清理：先解接线，再停运行器，然后等尽在途帧 → 销毁 UI 后端 → 销毁渲染器 ——

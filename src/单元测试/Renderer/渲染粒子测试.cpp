@@ -19,7 +19,6 @@
 #include <vector>
 
 #include "Engine/EngineSystem/src/core/Renderer/src/render/Renderer/渲染器.h"
-#include "src/主调/能力展示/能力展示场景.h"
 #include "Engine/EngineSystem/src/effect/Particle/粒子模拟.h"
 
 namespace
@@ -1368,38 +1367,6 @@ TEST(Renderer_Particle_Test, 粒子降级矩阵)
 	EXPECT_GT(changed, 20u);
 }
 
-/*
-展廊第九区接入（第三百二十四轮）
-隐藏窗口初始化能力展示场景：粒子容量预置 65 536（第三百四十六轮由 4096 上调）、默认关闭；
-第三百五十六轮预配置接入配色（冷青 → 暖橙）与柔边 0.35（参数经同一 `particle_params_set` 校验）；
-第三百六十七轮接入软粒子档位 0.01 并请求 Hi-Z（支持时开启，不支持时档位自动失效）；
-手动开启后发射 64 个并逐帧绘制出帧，出生累计与绘制项均增长。
-*/
-TEST(Renderer_Particle_Test, 展廊粒子喷泉接入)
-{
-	engine::Renderer renderer;
-	ASSERT_TRUE(renderer.init(hidden_config()));
-	engine::Particle_Host 粒子(renderer);
-	engine::能力展示场景 场景;
-	ASSERT_TRUE(场景.init(renderer));
-	//预配置：容量 65 536、默认关闭
-	EXPECT_EQ(renderer.particle_capacity_get(), 65536u);
-	EXPECT_FALSE(renderer.particle_enable_get());
-	//软粒子前置：场景 init 请求 Hi-Z（不支持时保持关闭）
-	if (renderer.hiz_supported())
-		EXPECT_TRUE(renderer.hiz_enable_get());
-	//手动开启并模拟区内一帧
-	ASSERT_TRUE(renderer.particle_enable_set(true));
-	ASSERT_EQ(粒子.emit(64), 64u);
-	(void)粒子.step(0.08f);
-	场景.frame_draw(renderer);
-	engine::Frame_Stats stats = renderer.frame_stats_get();
-	EXPECT_EQ(stats.particle_born_total, 64u);
-	EXPECT_EQ(stats.particle_active, 64u);
-	//出帧并确认有绘制项
-	ASSERT_TRUE(renderer.frame_render());
-	EXPECT_GT(renderer.frame_stats_get().drawn_items, 0u);
-}
 
 /*
 粒子性能基线（第三百二十五轮）
@@ -2119,83 +2086,7 @@ TEST(Renderer_Particle_Test, 常驻紧凑索引)
 	EXPECT_EQ(renderer.particle_compact_count_get(), 0u);
 }
 
-/*
-展廊粒子常驻接入（第三百三十一轮）
-场景预配置的发射器 / 参数下走常驻路径：三轮「GPU 发射 64 ＋ 常驻推进」后活跃与出生守恒，
-出帧有绘制项；关闭常驻后回到 CPU 参考路径（活跃数取 CPU 镜像）。
-*/
-TEST(Renderer_Particle_Test, 展廊粒子常驻接入)
-{
-	engine::Renderer renderer;
-	ASSERT_TRUE(renderer.init(hidden_config()));
-	engine::Particle_Host 粒子(renderer);
-	engine::能力展示场景 场景;
-	ASSERT_TRUE(场景.init(renderer));
-	//预配置沿用：容量 65 536、默认关闭
-	EXPECT_EQ(renderer.particle_capacity_get(), 65536u);
-	EXPECT_FALSE(renderer.particle_enable_get());
-	//按场景进入区内的顺序：先开粒子再切常驻
-	ASSERT_TRUE(renderer.particle_enable_set(true));
-	ASSERT_TRUE(renderer.particle_resident_set(true));
-	EXPECT_TRUE(renderer.particle_resident_get());
-	//三轮区内发射 ＋ 推进（寿命 1.4 s 起，三步 0.08 s 不死亡）
-	for (uint32_t frame = 0; frame < 3; ++frame)
-	{
-		ASSERT_EQ(engine::particle_gpu::emit(renderer, 64), 64u);
-		ASSERT_TRUE(engine::particle_gpu::step_resident(renderer, 0.08f));
-	}
-	const engine::Frame_Stats stats = renderer.frame_stats_get();
-	EXPECT_EQ(stats.particle_born_total, 192u);
-	EXPECT_EQ(粒子.active_count(), 192u);
-	//出帧并有绘制项（常驻绘制按位图展开）
-	场景.frame_draw(renderer);
-	ASSERT_TRUE(renderer.frame_render());
-	EXPECT_GT(renderer.frame_stats_get().drawn_items, 0u);
-	//关闭常驻：回到 CPU 参考路径（CPU 镜像未发射 → 0）
-	ASSERT_TRUE(renderer.particle_resident_set(false));
-	EXPECT_FALSE(renderer.particle_resident_get());
-	EXPECT_EQ(粒子.active_count(), 0u);
-	ASSERT_TRUE(粒子.emit(8));
-	EXPECT_EQ(粒子.active_count(), 8u);
-}
 
-/*
-展廊第九区 GPU 绘制接入（第三百四十三轮；阶段 D 收尾；第三百四十六轮起大容量走间接路径）
-场景 frame_draw 在常驻可用时改走 GPU 绘制：三轮常驻发射 ＋ 推进后一帧，
-紧凑计数 = 活跃数（仅 GPU 绘制路径会产生紧凑）、绘制项非零；容量 ≥ 16384 时间接命令实例数 = 活跃数；
-关闭常驻后口径回到 CPU。
-*/
-TEST(Renderer_Particle_Test, 展廊粒子GPU绘制接入)
-{
-	engine::Renderer renderer;
-	ASSERT_TRUE(renderer.init(hidden_config()));
-	engine::Particle_Host 粒子(renderer);
-	engine::能力展示场景 场景;
-	ASSERT_TRUE(场景.init(renderer));
-	//预配置沿用：容量 65 536；按场景进入区内的顺序开粒子再切常驻
-	ASSERT_TRUE(renderer.particle_enable_set(true));
-	ASSERT_TRUE(renderer.particle_resident_set(true));
-	for (uint32_t frame = 0; frame < 3; ++frame)
-	{
-		ASSERT_EQ(engine::particle_gpu::emit(renderer, 64), 64u);
-		ASSERT_TRUE(engine::particle_gpu::step_resident(renderer, 0.08f));
-	}
-	EXPECT_EQ(粒子.active_count(), 192u);
-	//场景登记绘制：常驻可用 → GPU 绘制路径（紧凑索引由该路径产生）
-	场景.frame_draw(renderer);
-	EXPECT_EQ(renderer.particle_compact_count_get(), 192u);
-	//容量 ≥ 16384 → 走 GPU 间接绘制（第三百四十六轮；命令实例数 = 活跃数）
-	uint32_t command[5] = {};
-	ASSERT_TRUE(renderer.particle_indirect_command_get(command));
-	EXPECT_EQ(command[1], 192u);
-	//绘制路径观测（第三百四十八轮）：3 = GPU 间接
-	EXPECT_EQ(renderer.frame_stats_get().particle_draw_path, 3u);
-	ASSERT_TRUE(renderer.frame_render());
-	EXPECT_GT(renderer.frame_stats_get().drawn_items, 0u);
-	//关闭常驻：回到 CPU 参考路径，紧凑口径不再生效
-	ASSERT_TRUE(renderer.particle_resident_set(false));
-	EXPECT_EQ(renderer.particle_compact_count_get(), 0u);
-}
 
 /*
 粒子绘制路径观测（第三百五十轮）
@@ -2665,11 +2556,6 @@ TEST(Renderer_Particle_Test, 软粒子档位开销)
 	EXPECT_LT(on_gpu, off_gpu * 4.0 + 0.5);
 }
 
-/*
-粒子参数快照读取（第三百七十轮）
-门面 particle_params_get 返回最近一次被接受的参数；未初始化返回全零默认；
-非法档位整次拒绝后快照保持既有值（与绘制侧读到的参数一致，供展廊面板显示）。
-*/
 TEST(Renderer_Particle_Test, 粒子参数快照读取)
 {
 	//未初始化：全零默认

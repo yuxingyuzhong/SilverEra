@@ -262,7 +262,7 @@ namespace engine
 
     //测试操作界面绘制
     void 测试界面_绘制(Test_Runner& runner, Test_Selection_Model& model, bool& exit_requested,
-        const Ui_Runtime_Stats* 运行状态, bool* 进入展示请求, bool* 抑制退出键)
+        const Ui_Runtime_Stats* 运行状态)
     {
         //—— 界面持有状态（跨帧保持） ——
         //搜索结果缓冲
@@ -382,25 +382,6 @@ namespace engine
             exit_requested = true;
         ImGui::SameLine();
         ImGui::TextColored(次要色, "Enter 运行 / Esc 退出");
-        /*
-        展示入口（第二百一十八轮从右上角悬浮窗移入控制条行末）
-        原悬浮窗固定在右上角，会盖住顶部运行进度条的右半段；
-        改为与运行按钮同一行的右对齐按钮，既不遮挡进度条也不额外占用纵向空间。
-        */
-        if (进入展示请求 != nullptr)
-        {
-            //入口按钮宽度
-            const float 入口宽 = 176.0f;
-            //右对齐目标位置（相对内容区左边缘；SameLine 的偏移是绝对位置而非增量）
-            const float 目标x = ImGui::GetWindowContentRegionMax().x - 入口宽;
-            //若当前光标之后仍放得下则靠右对齐，否则紧跟文字（窄窗口不与文字重叠）
-            if (目标x > ImGui::GetCursorPosX() + 12.0f)
-                ImGui::SameLine(目标x);
-            else
-                ImGui::SameLine();
-            if (ImGui::Button("进入渲染能力展示", ImVec2(入口宽, 0.0f)))
-                *进入展示请求 = true;
-        }
 
         //—— 主体：左选择树 / 中结果 / 右详情 ——
         const float 底部控制台高 = 178.0f;
@@ -684,15 +665,8 @@ namespace engine
         ImGuiIO& io = ImGui::GetIO();
         if (!io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_Enter))
             runner.request_run(model.filter_string_build());
-        /*
-        退出键抑制（第二百一十八轮）
-        从展示模式按 Esc 返回时，同一按键沿会延续到本帧的测试界面：若直接判 Esc 会立刻退出程序。
-        故调用方在返回那一帧置抑制标志，本帧消费掉该标志且不执行退出判定。
-        */
-        if (抑制退出键 != nullptr && *抑制退出键)
-            *抑制退出键 = false;
         //退出键只在按下沿生效（repeat=false），按住 Esc 不会逐帧退出
-        else if (ImGui::IsKeyPressed(ImGuiKey_Escape, false))
+        if (ImGui::IsKeyPressed(ImGuiKey_Escape, false))
             exit_requested = true;
     }
 }
