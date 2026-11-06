@@ -271,6 +271,11 @@ namespace engine
 					return false;
 			}
 
+			//逐盏聚光灯阴影优先级（第七百零九轮；须有限，0 = 默认）
+			for (uint32_t index = 0; index < 32; ++index)
+				if (!finite_one(light.spot_shadow_priority[index]))
+					return false;
+
 			//有效点光槽位
 			for (uint32_t index = 0; index < light.point_count && index < MAX_POINT_LIGHTS; ++index)
 			{
@@ -787,6 +792,24 @@ namespace engine
 					}
 					out.light.spot_shadow_softness_scale[slot] = values[0];
 					out.light.spot_shadow_strength_scale[slot] = values[1];
+				}
+				/*
+				逐盏聚光灯阴影优先级（第七百零九轮）
+				语法：`light spot_shadow_priority <槽位 0..31> <优先级>`，可重复多行；优先级须有限。
+				*/
+				else if (key == "spot_shadow_priority")
+				{
+					uint32_t slot = 0;
+					float values[1] = {};
+					string token;
+					//顺序：槽位 优先级
+					if (!(stream >> token) || !uint_parse(token, slot) || slot > 31
+						|| !floats_read(stream, values, 1))
+					{
+						logger.warn("关卡:: light spot_shadow_priority 字段非法");
+						return false;
+					}
+					out.light.spot_shadow_priority[slot] = values[0];
 				}
 				else if (key == "pbr")
 				{
@@ -1319,6 +1342,18 @@ namespace engine
 			file << "light spot_shadow_quality " << index
 				<< ' ' << number_text(level.light.spot_shadow_softness_scale[index])
 				<< ' ' << number_text(level.light.spot_shadow_strength_scale[index]) << '\n';
+		}
+		/*
+		逐盏聚光灯阴影优先级（第七百零九轮）
+		只写非 0 的槽位（默认 0 = 全部同分），保持旧关卡文本内容不变。
+		*/
+		for (uint32_t index = 0; index < 32; ++index)
+		{
+			//默认槽位跳过
+			if (level.light.spot_shadow_priority[index] == 0.0f)
+				continue;
+			file << "light spot_shadow_priority " << index
+				<< ' ' << number_text(level.light.spot_shadow_priority[index]) << '\n';
 		}
 		{
 			//PBR-lite 三项

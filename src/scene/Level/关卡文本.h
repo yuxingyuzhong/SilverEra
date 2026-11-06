@@ -26,6 +26,7 @@ namespace engine
 	         spot_shadow_all 为 <0|1>，非 0 时前 8 盏聚光灯各自投影
 	         spot_shadow_bias_auto 为 <0|1>，非 0 时逐瓦片偏置按跨度归一化
 	         spot_shadow_quality 形如 <槽位 0..7> <软度缩放 0.25..4> <强度缩放 0..1>，可重复多行（第七百零八轮）
+	         spot_shadow_priority 形如 <槽位 0..31> <优先级>，可重复多行（第七百零九轮；默认 0）
 	  fog    color|density|range|mode|height_falloff <值…>
 	  mesh / mtl / place <清单原文>（语法同场景清单，装载阶段解析）
 	  material <实例名> <模板材质名> [tint r g b a] [emissive v] [toon steps rim specular] [pbr roughness metallic] [clearcoat strength roughness]
