@@ -255,6 +255,21 @@ namespace engine
 			//聚光灯阴影偏置自校准开关（0 / 1）
 			if (light.spot_shadow_bias_auto < 0 || light.spot_shadow_bias_auto > 1)
 				return false;
+			/*
+			逐盏聚光灯阴影质量缩放（第七百零八轮）
+			软度缩放 0.25..4、强度缩放 0..1；越界 / 非数拒绝写出（读取侧同口径）。
+			*/
+			for (uint32_t index = 0; index < 8; ++index)
+			{
+				if (!finite_one(light.spot_shadow_softness_scale[index])
+					|| light.spot_shadow_softness_scale[index] < 0.25f
+					|| light.spot_shadow_softness_scale[index] > 4.0f)
+					return false;
+				if (!finite_one(light.spot_shadow_strength_scale[index])
+					|| light.spot_shadow_strength_scale[index] < 0.0f
+					|| light.spot_shadow_strength_scale[index] > 1.0f)
+					return false;
+			}
 
 			//有效点光槽位
 			for (uint32_t index = 0; index < light.point_count && index < MAX_POINT_LIGHTS; ++index)
@@ -746,6 +761,32 @@ namespace engine
 						return false;
 					}
 					out.light.spot_shadow_bias_auto = static_cast<int>(enabled);
+				}
+				/*
+				逐盏聚光灯阴影质量缩放（第七百零八轮）
+				语法：`light spot_shadow_quality <槽位 0..7> <软度缩放 0.25..4> <强度缩放 0..1>`，可重复多行。
+				*/
+				else if (key == "spot_shadow_quality")
+				{
+					uint32_t slot = 0;
+					float values[2] = {};
+					string token;
+					//顺序：槽位 软度缩放 强度缩放
+					if (!(stream >> token) || !uint_parse(token, slot) || slot > 7
+						|| !floats_read(stream, values, 2))
+					{
+						logger.warn("关卡:: light spot_shadow_quality 字段非法");
+						return false;
+					}
+					//范围：软度缩放 0.25..4、强度缩放 0..1
+					if (!(values[0] >= 0.25f && values[0] <= 4.0f)
+						|| !(values[1] >= 0.0f && values[1] <= 1.0f))
+					{
+						logger.warn("关卡:: light spot_shadow_quality 参数越界");
+						return false;
+					}
+					out.light.spot_shadow_softness_scale[slot] = values[0];
+					out.light.spot_shadow_strength_scale[slot] = values[1];
 				}
 				else if (key == "pbr")
 				{
@@ -1265,6 +1306,20 @@ namespace engine
 		integer_write(file, "light spot_shadow_all", static_cast<long long>(level.light.spot_shadow_all));
 		//聚光灯阴影偏置自校准开关
 		integer_write(file, "light spot_shadow_bias_auto", static_cast<long long>(level.light.spot_shadow_bias_auto));
+		/*
+		逐盏聚光灯阴影质量缩放（第七百零八轮）
+		只写非默认（软度 ≠ 1 或强度 ≠ 1）的槽位，默认槽位不产生行，保持旧关卡文本体积与内容不变。
+		*/
+		for (uint32_t index = 0; index < 8; ++index)
+		{
+			//默认槽位跳过
+			if (level.light.spot_shadow_softness_scale[index] == 1.0f
+				&& level.light.spot_shadow_strength_scale[index] == 1.0f)
+				continue;
+			file << "light spot_shadow_quality " << index
+				<< ' ' << number_text(level.light.spot_shadow_softness_scale[index])
+				<< ' ' << number_text(level.light.spot_shadow_strength_scale[index]) << '\n';
+		}
 		{
 			//PBR-lite 三项
 			file << "light pbr " << (level.light.pbr_enabled != 0 ? 1 : 0)

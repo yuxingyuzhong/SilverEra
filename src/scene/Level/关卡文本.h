@@ -19,12 +19,13 @@ namespace engine
 	  camera position|target|up|clear|fov|near|far|ortho|ortho_height|aspect <值…>
 	  light  direction|color|intensity|ambient|specular|attenuation_mode|ambient_color|
 	         ambient_ground|ambient_hemisphere|fill_direction|fill_color|fill_intensity|
-	         specular_scale|shadow|spot_shadow|spot_shadow_index|spot_shadow_all|spot_shadow_bias_auto|pbr|toon|outline <值…>；
+	         specular_scale|shadow|spot_shadow|spot_shadow_index|spot_shadow_all|spot_shadow_bias_auto|spot_shadow_quality|pbr|toon|outline <值…>；
 	         point / spot 逐盏一行
 	         spot_shadow 形如 <0|1> [<bias 0..0.05> <softness 0..1> <strength 0..1>]
 	         spot_shadow_index 为 0..7 的已登记光源槽位
 	         spot_shadow_all 为 <0|1>，非 0 时前 8 盏聚光灯各自投影
 	         spot_shadow_bias_auto 为 <0|1>，非 0 时逐瓦片偏置按跨度归一化
+	         spot_shadow_quality 形如 <槽位 0..7> <软度缩放 0.25..4> <强度缩放 0..1>，可重复多行（第七百零八轮）
 	  fog    color|density|range|mode|height_falloff <值…>
 	  mesh / mtl / place <清单原文>（语法同场景清单，装载阶段解析）
 	  material <实例名> <模板材质名> [tint r g b a] [emissive v] [toon steps rim specular] [pbr roughness metallic] [clearcoat strength roughness]
