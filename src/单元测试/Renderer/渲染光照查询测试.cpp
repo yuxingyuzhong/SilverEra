@@ -107,9 +107,10 @@ TEST(Renderer_Light_Query_Test, 光源记录快照)
 	EXPECT_EQ(renderer.light_records_get(records, 3), 3u);
 	//空指针返回 0
 	EXPECT_EQ(renderer.light_records_get(nullptr, 3), 0u);
-	//有效数截断（Cluster 关闭 → 16；开启 → 全量；第六百九十九轮上限 8 → 16）
+	//有效数截断（Cluster 关闭 → 32；开启 → 全量；第七百零一轮上限 16 → 32）
 	EXPECT_EQ(engine::light_effective_count(12u, false), 12u);
-	EXPECT_EQ(engine::light_effective_count(20u, false), 16u);
+	EXPECT_EQ(engine::light_effective_count(20u, false), 20u);
+	EXPECT_EQ(engine::light_effective_count(40u, false), 32u);
 	EXPECT_EQ(engine::light_effective_count(12u, true), 12u);
 	EXPECT_EQ(engine::light_effective_count(3u, false), 3u);
 }

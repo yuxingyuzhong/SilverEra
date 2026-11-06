@@ -536,8 +536,8 @@ TEST_F(Renderer_Scene_Test, 多个点光源累加更亮)
 }
 
 /*
-点光源数量上限与清空（第三十二轮；第六十二轮上限 4 → 8；第六百九十九轮 8 → 16）
-口径：上限 16 个；第 17 个返回假且画面不变；`lights_clear` 后回到默认方向光。
+点光源数量上限与清空（第三十二轮；第六十二轮 4 → 8；第六百九十九轮 8 → 16；第七百零一轮 16 → 32）
+口径：上限 32 个；第 33 个返回假且画面不变；`lights_clear` 后回到默认方向光。
 */
 TEST_F(Renderer_Scene_Test, 点光源上限与清空)
 {
@@ -562,17 +562,21 @@ TEST_F(Renderer_Scene_Test, 点光源上限与清空)
 		return center_brightness(pixels);
 	};
 
-	//登记 16 个点光源（高度避开中心像素，避免完全饱和而无法比较）
-	const float positions[16][3] = {
+	//登记 32 个点光源（高度避开中心像素，避免完全饱和而无法比较）
+	const float positions[32][3] = {
 		{ -1.5f, 0.0f, 1.0f }, { -0.5f, 0.0f, 1.0f }, { 0.5f, 0.0f, 1.0f }, { 1.5f, 0.0f, 1.0f },
 		{ -1.5f, 0.5f, 1.0f }, { -0.5f, 0.5f, 1.0f }, { 0.5f, 0.5f, 1.0f }, { 1.5f, 0.5f, 1.0f },
 		{ -1.5f, -0.5f, 1.0f }, { -0.5f, -0.5f, 1.0f }, { 0.5f, -0.5f, 1.0f }, { 1.5f, -0.5f, 1.0f },
 		{ -1.5f, 1.0f, 1.0f }, { -0.5f, 1.0f, 1.0f }, { 0.5f, 1.0f, 1.0f }, { 1.5f, 1.0f, 1.0f },
+		{ -1.5f, 0.0f, -1.0f }, { -0.5f, 0.0f, -1.0f }, { 0.5f, 0.0f, -1.0f }, { 1.5f, 0.0f, -1.0f },
+		{ -1.5f, 0.5f, -1.0f }, { -0.5f, 0.5f, -1.0f }, { 0.5f, 0.5f, -1.0f }, { 1.5f, 0.5f, -1.0f },
+		{ -1.5f, -0.5f, -1.0f }, { -0.5f, -0.5f, -1.0f }, { 0.5f, -0.5f, -1.0f }, { 1.5f, -0.5f, -1.0f },
+		{ -1.5f, 1.0f, -1.0f }, { -0.5f, 1.0f, -1.0f }, { 0.5f, 1.0f, -1.0f }, { 1.5f, 1.0f, -1.0f },
 	};
-	for (uint32_t index = 0; index < 16; ++index)
+	for (uint32_t index = 0; index < 32; ++index)
 		ASSERT_TRUE(renderer.light_add_point(positions[index], white_light, 6.0f, 0.4f, 0.0f));
 	uint32_t full = render_brightness();
-	//第 17 个被拒（上限 16），画面不变
+	//第 33 个被拒（上限 32），画面不变
 	ASSERT_FALSE(renderer.light_add_point(positions[0], white_light, 6.0f, 0.4f, 0.0f));
 	EXPECT_EQ(render_brightness(), full) << "超上限的追加改变了画面";
 	//清空后回到默认方向光（满照，纯白中心）
@@ -749,11 +753,11 @@ static uint32_t pixel_difference(const std::vector<uint8_t>& left, const std::ve
 }
 
 /*
-前向高 8 槽参与着色（第六百九十九轮；A1 剩余项 8 → 16）
-口径：方向光强度 0、环境光 0；先登记 15 盏强度 0 的占位光源 → 中心暗；
-     第 16 盏（中心正前方、强度 1）登记后中心被照亮，证明前向循环确为 16 槽。
+前向高 24 槽参与着色（第六百九十九轮 16 槽；第七百零一轮 32 槽）
+口径：方向光强度 0、环境光 0；先登记 31 盏强度 0 的占位光源 → 中心暗；
+     第 32 盏（中心正前方、强度 1）登记后中心被照亮，证明前向循环确为 32 槽。
 */
-TEST_F(Renderer_Scene_Test, 第十六盏点光源参与着色)
+TEST_F(Renderer_Scene_Test, 第三十二盏点光源参与着色)
 {
 	engine::Renderer renderer;
 	ASSERT_TRUE(renderer.init(hidden_config()));
@@ -780,18 +784,18 @@ TEST_F(Renderer_Scene_Test, 第十六盏点光源参与着色)
 		return center_brightness(pixels);
 	};
 
-	//前 15 盏强度 0（占位）
+	//前 31 盏强度 0（占位）
 	const float center_light[3] = { 0.0f, 0.0f, 1.0f };
-	for (uint32_t index = 0; index < 15; ++index)
+	for (uint32_t index = 0; index < 31; ++index)
 		ASSERT_TRUE(renderer.light_add_point(center_light, white_light, 6.0f, 0.0f, 0.0f));
 	uint32_t before = render_brightness();
-	//第 16 盏强度 1 → 中心被照亮
+	//第 32 盏强度 1 → 中心被照亮
 	ASSERT_TRUE(renderer.light_add_point(center_light, white_light, 6.0f, 1.0f, 0.0f));
 	uint32_t after = render_brightness();
-	RecordProperty("light16_before", before);
-	RecordProperty("light16_after", after);
+	RecordProperty("light32_before", before);
+	RecordProperty("light32_after", after);
 	EXPECT_LE(before, 40u) << "占位光源意外照亮了中心（" << before << "）";
-	EXPECT_GE(after, 150u) << "第 16 盏点光源未参与着色（" << after << "）";
+	EXPECT_GE(after, 150u) << "第 32 盏点光源未参与着色（" << after << "）";
 
 	renderer.mesh_unload(mesh);
 	renderer.texture_unload(texture);
