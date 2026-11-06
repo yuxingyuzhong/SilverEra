@@ -536,8 +536,8 @@ TEST_F(Renderer_Scene_Test, 多个点光源累加更亮)
 }
 
 /*
-点光源数量上限与清空（第三十二轮；第六十二轮上限 4 → 8）
-口径：上限 8 个；第 9 个返回假且画面不变；`lights_clear` 后回到默认方向光。
+点光源数量上限与清空（第三十二轮；第六十二轮上限 4 → 8；第六百九十九轮 8 → 16）
+口径：上限 16 个；第 17 个返回假且画面不变；`lights_clear` 后回到默认方向光。
 */
 TEST_F(Renderer_Scene_Test, 点光源上限与清空)
 {
@@ -562,15 +562,17 @@ TEST_F(Renderer_Scene_Test, 点光源上限与清空)
 		return center_brightness(pixels);
 	};
 
-	//登记 8 个点光源（高度避开中心像素，避免完全饱和而无法比较）
-	const float positions[8][3] = {
+	//登记 16 个点光源（高度避开中心像素，避免完全饱和而无法比较）
+	const float positions[16][3] = {
 		{ -1.5f, 0.0f, 1.0f }, { -0.5f, 0.0f, 1.0f }, { 0.5f, 0.0f, 1.0f }, { 1.5f, 0.0f, 1.0f },
 		{ -1.5f, 0.5f, 1.0f }, { -0.5f, 0.5f, 1.0f }, { 0.5f, 0.5f, 1.0f }, { 1.5f, 0.5f, 1.0f },
+		{ -1.5f, -0.5f, 1.0f }, { -0.5f, -0.5f, 1.0f }, { 0.5f, -0.5f, 1.0f }, { 1.5f, -0.5f, 1.0f },
+		{ -1.5f, 1.0f, 1.0f }, { -0.5f, 1.0f, 1.0f }, { 0.5f, 1.0f, 1.0f }, { 1.5f, 1.0f, 1.0f },
 	};
-	for (uint32_t index = 0; index < 8; ++index)
+	for (uint32_t index = 0; index < 16; ++index)
 		ASSERT_TRUE(renderer.light_add_point(positions[index], white_light, 6.0f, 0.4f, 0.0f));
 	uint32_t full = render_brightness();
-	//第 9 个被拒（上限 8），画面不变
+	//第 17 个被拒（上限 16），画面不变
 	ASSERT_FALSE(renderer.light_add_point(positions[0], white_light, 6.0f, 0.4f, 0.0f));
 	EXPECT_EQ(render_brightness(), full) << "超上限的追加改变了画面";
 	//清空后回到默认方向光（满照，纯白中心）
@@ -728,4 +730,136 @@ TEST_F(Renderer_Scene_Test, 光照场景上的文字仍可见)
 
 	renderer.mesh_unload(mesh);
 	renderer.texture_unload(texture);
+}
+
+//逐像素差异计数（RGBA 任一通道不同即记一处；第六百九十九轮）
+static uint32_t pixel_difference(const std::vector<uint8_t>& left, const std::vector<uint8_t>& right)
+{
+	//尺寸不一致按最大差异
+	if (left.size() != right.size())
+		return 0xFFFFFFFFu;
+	uint32_t differences = 0;
+	for (std::size_t index = 0; index + 3 < left.size(); index += 4)
+	{
+		if (left[index] != right[index] || left[index + 1] != right[index + 1]
+			|| left[index + 2] != right[index + 2] || left[index + 3] != right[index + 3])
+			++differences;
+	}
+	return differences;
+}
+
+/*
+前向高 8 槽参与着色（第六百九十九轮；A1 剩余项 8 → 16）
+口径：方向光强度 0、环境光 0；先登记 15 盏强度 0 的占位光源 → 中心暗；
+     第 16 盏（中心正前方、强度 1）登记后中心被照亮，证明前向循环确为 16 槽。
+*/
+TEST_F(Renderer_Scene_Test, 第十六盏点光源参与着色)
+{
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	uint64_t texture = 0;
+	std::vector<uint8_t> texels = solid_white();
+	ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 2, 2));
+	engine::Mesh_Handle mesh = 0;
+	ASSERT_TRUE(renderer.mesh_load(mesh, quad_data_with_normal(0.0f, 0.0f, 1.0f)));
+	renderer.texture_bind_set(texture);
+
+	//方向光关闭、环境光 0
+	const float forward[3] = { 0.0f, 0.0f, -1.0f };
+	const float white_light[3] = { 1.0f, 1.0f, 1.0f };
+	renderer.light_set(forward, white_light, 0.0f, 0.0f);
+
+	//渲染一帧并返回中心亮度
+	auto render_brightness = [&]()
+	{
+		EXPECT_TRUE(renderer.mesh_draw(mesh, nullptr));
+		std::vector<uint8_t> pixels(pixel_bytes());
+		EXPECT_TRUE(renderer.frame_render(pixels.data(), static_cast<std::uint32_t>(pixels.size())));
+		return center_brightness(pixels);
+	};
+
+	//前 15 盏强度 0（占位）
+	const float center_light[3] = { 0.0f, 0.0f, 1.0f };
+	for (uint32_t index = 0; index < 15; ++index)
+		ASSERT_TRUE(renderer.light_add_point(center_light, white_light, 6.0f, 0.0f, 0.0f));
+	uint32_t before = render_brightness();
+	//第 16 盏强度 1 → 中心被照亮
+	ASSERT_TRUE(renderer.light_add_point(center_light, white_light, 6.0f, 1.0f, 0.0f));
+	uint32_t after = render_brightness();
+	RecordProperty("light16_before", before);
+	RecordProperty("light16_after", after);
+	EXPECT_LE(before, 40u) << "占位光源意外照亮了中心（" << before << "）";
+	EXPECT_GE(after, 150u) << "第 16 盏点光源未参与着色（" << after << "）";
+
+	renderer.mesh_unload(mesh);
+	renderer.texture_unload(texture);
+}
+
+/*
+高 8 槽零强度不改变画面（第六百九十九轮）
+口径：8 盏相机光 → 画面 A；追加 4 盏强度 0（落高 8 槽）→ 画面 B 与 A 逐字节一致；
+     该 4 盏改为强度 0.8 → 画面 C 与 A 出现差异（证明高槽数据确实进入着色器）。
+*/
+TEST_F(Renderer_Scene_Test, 高八槽零强度逐字节一致)
+{
+	//指定高 8 槽额外光源数量与强度的一次运行
+	auto run = [](uint32_t extra_count, float extra_intensity)
+	{
+		std::vector<uint8_t> pixels;
+		engine::Renderer renderer;
+		if (!renderer.init(hidden_config()) || !renderer.readback_supported())
+			return pixels;
+		uint64_t texture = 0;
+		std::vector<uint8_t> texels = solid_white();
+		if (!renderer.texture_load(texture, texels.data(), 2, 2))
+			return pixels;
+		engine::Mesh_Handle mesh = 0;
+		if (!renderer.mesh_load(mesh, quad_data_with_normal(0.0f, 0.0f, 1.0f)))
+			return pixels;
+		renderer.texture_bind_set(texture);
+		//方向光关闭、环境光 0，仅点光贡献
+		const float forward[3] = { 0.0f, 0.0f, -1.0f };
+		const float white_light[3] = { 1.0f, 1.0f, 1.0f };
+		renderer.light_set(forward, white_light, 0.0f, 0.0f);
+		//低 8 槽：四角偏上位置，强度 0.1（保持不饱和，便于观察高槽增量）
+		const float low_positions[8][3] = {
+			{ -1.5f, 0.0f, 1.0f }, { -0.5f, 0.0f, 1.0f }, { 0.5f, 0.0f, 1.0f }, { 1.5f, 0.0f, 1.0f },
+			{ -1.5f, 0.5f, 1.0f }, { -0.5f, 0.5f, 1.0f }, { 0.5f, 0.5f, 1.0f }, { 1.5f, 0.5f, 1.0f },
+		};
+		for (uint32_t index = 0; index < 8; ++index)
+			if (!renderer.light_add_point(low_positions[index], white_light, 6.0f, 0.1f, 0.0f))
+				return pixels;
+		//高 8 槽前 extra_count 盏：底部位置，强度由参数控制
+		const float high_positions[4][3] = {
+			{ -1.5f, -0.5f, 1.0f }, { -0.5f, -0.5f, 1.0f }, { 0.5f, -0.5f, 1.0f }, { 1.5f, -0.5f, 1.0f },
+		};
+		for (uint32_t index = 0; index < extra_count; ++index)
+			if (!renderer.light_add_point(high_positions[index], white_light, 6.0f, extra_intensity, 0.0f))
+				return pixels;
+
+		if (!renderer.mesh_draw(mesh, nullptr))
+			return pixels;
+		pixels.resize(pixel_bytes());
+		if (!renderer.frame_render(pixels.data(), static_cast<std::uint32_t>(pixels.size())))
+			pixels.clear();
+		renderer.mesh_unload(mesh);
+		renderer.texture_unload(texture);
+		return pixels;
+	};
+
+	//画面 A：仅低 8 槽；画面 B：低 8 槽 ＋ 高 8 槽 4 盏零强度；画面 C：高槽 4 盏强度 0.8
+	std::vector<uint8_t> baseline = run(0u, 0.0f);
+	std::vector<uint8_t> high_zero = run(4u, 0.0f);
+	std::vector<uint8_t> high_lit = run(4u, 0.8f);
+	ASSERT_FALSE(baseline.empty()) << "基线画面为空";
+	ASSERT_FALSE(high_zero.empty()) << "零强度画面为空";
+	ASSERT_FALSE(high_lit.empty()) << "高槽点亮画面为空";
+	//高槽零强度的 4 盏不改变画面
+	EXPECT_EQ(pixel_difference(baseline, high_zero), 0u) << "高 8 槽零强度改变了画面";
+	//高槽点亮后出现差异
+	uint32_t differences = pixel_difference(baseline, high_lit);
+	RecordProperty("high_slot_difference", differences);
+	EXPECT_GT(differences, 0u) << "高 8 槽强度未进入着色器";
 }

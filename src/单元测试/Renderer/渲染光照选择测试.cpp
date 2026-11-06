@@ -64,7 +64,9 @@ TEST(Renderer_Light_Select_Test, 声明顺序口径与诊断)
 	engine::Renderer renderer;
 	ASSERT_TRUE(renderer.init(hidden_config()));
 	engine::Light_Data light{};
-	//8 盏点光 ＋ 4 盏聚光（候选 12 条 > 前向上限 8）
+	//显式预算 8（默认已随前向上限扩为 16），仍用「8 盏点光 ＋ 4 盏聚光」验证预算淘汰
+	light.light_budget = 8;
+	//8 盏点光 ＋ 4 盏聚光（候选 12 条 > 预算 8）
 	light.point_count = 8;
 	light.spot_count = 4;
 	for (uint32_t index = 0; index < 8; ++index)
@@ -95,6 +97,7 @@ TEST(Renderer_Light_Select_Test, 声明顺序口径与诊断)
 	//预算内的声明（6 盏）不产生淘汰、不置截断标志
 	light.spot_count = 0;
 	light.point_count = 6;
+	light.light_budget = 0;
 	renderer.scene_apply(default_camera(), light, empty_fog());
 	EXPECT_EQ(renderer.point_light_count(), 6u);
 	stats = renderer.frame_stats_get();
@@ -109,6 +112,8 @@ TEST(Renderer_Light_Select_Test, 重要性选择与稳定性)
 	ASSERT_TRUE(renderer.init(hidden_config()));
 	engine::Light_Data light{};
 	light.light_select_mode = 1;
+	//显式预算 8（与旧 8 槽口径一致，验证重要性选择集合）
+	light.light_budget = 8;
 	light.point_count = 8;
 	light.spot_count = 8;
 	//点光：远且弱（评分 = 0.1 × 5 /(5 ＋ 55) ≈ 0.0083）

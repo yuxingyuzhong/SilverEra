@@ -614,15 +614,15 @@ TEST(Renderer_Cluster_Test, 组合矩阵_阴影与MSAA)
 		}
 }
 
-//光源登记上限与截断（第二百八十轮）
+//光源登记上限与截断（第二百八十轮；第六百九十九轮上限 8 → 16）
 TEST(Renderer_Cluster_Test, 光源登记上限与截断)
 {
-	//关闭 Cluster：登记上限 8 盏，第 9 盏被拒并置截断标志
+	//关闭 Cluster：登记上限 16 盏，第 17 盏被拒并置截断标志
 	engine::Renderer off;
 	ASSERT_TRUE(off.init(hidden_config()));
-	for (uint32_t index = 0; index < 8; ++index)
+	for (uint32_t index = 0; index < 16; ++index)
 	{
-		const float position[3] = { static_cast<float>(index) * 0.4f - 1.4f, 0.0f, 0.0f };
+		const float position[3] = { static_cast<float>(index) * 0.2f - 1.5f, 0.0f, 0.0f };
 		const float color[3] = { 1.0f, 1.0f, 1.0f };
 		ASSERT_TRUE(off.light_add_point(position, color, 6.0f, 0.4f, 0.1f));
 	}
@@ -631,7 +631,7 @@ TEST(Renderer_Cluster_Test, 光源登记上限与截断)
 	EXPECT_FALSE(off.light_add_point(extra_position, extra_color, 6.0f, 0.4f, 0.1f));
 	ASSERT_TRUE(off.frame_render());
 	EXPECT_EQ(off.frame_stats_get().light_truncated, 1u);
-	EXPECT_EQ(off.point_light_count(), 8u);
+	EXPECT_EQ(off.point_light_count(), 16u);
 	off.lights_clear();
 	EXPECT_EQ(off.point_light_count(), 0u);
 
@@ -819,11 +819,11 @@ TEST(Renderer_Cluster_Test, 片元簇采样_八盏等价)
 }
 
 /*
-片元簇采样：九盏光源扩展（第二百八十九轮）
-口径：Cluster 关闭时第 9 盏被拒并置 `light_truncated`；开启时第 9 盏参与照明，
+片元簇采样：十七盏光源扩展（第二百八十九轮；第六百九十九轮前向上限 8 → 16）
+口径：Cluster 关闭时第 17 盏被拒并置 `light_truncated`；开启时第 17 盏参与照明，
 故两态画面必然不同（证明片元确实读取了簇列表与光源记录）。
 */
-TEST(Renderer_Cluster_Test, 片元簇采样_九盏扩展)
+TEST(Renderer_Cluster_Test, 片元簇采样_十七盏扩展)
 {
 	const uint32_t pixel_count = WINDOW_WIDTH * WINDOW_HEIGHT * 4u;
 	std::vector<std::vector<uint8_t>> results;
@@ -850,14 +850,14 @@ TEST(Renderer_Cluster_Test, 片元簇采样_九盏扩展)
 		renderer.light_set(no_direction, no_color, 0.0f, 0.0f);
 		engine::Mesh_Handle mesh = 0;
 		ASSERT_TRUE(renderer.mesh_load(mesh, quad_data_lit()));
-		//前 8 盏（半径 20 覆盖全部簇；强度压低避免画面饱和后第 9 盏不可见）
+		//前 16 盏（半径 20 覆盖全部簇；强度压低避免画面饱和后第 17 盏不可见）
 		const float color[3] = { 0.4f, 0.5f, 0.6f };
-		for (uint32_t index = 0; index < 8; ++index)
+		for (uint32_t index = 0; index < 16; ++index)
 		{
-			const float position[3] = { static_cast<float>(index) - 3.5f, 0.0f, 1.5f };
+			const float position[3] = { static_cast<float>(index) - 7.5f, 0.0f, 1.5f };
 			ASSERT_TRUE(renderer.light_add_point(position, color, 20.0f, 0.02f, 0.0f));
 		}
-		//第 9 盏：关闭时被拒，开启时接受（正前方高亮，确保产生可见照度差）
+		//第 17 盏：关闭时被拒，开启时接受（正前方高亮，确保产生可见照度差）
 		const float ninth_position[3] = { 0.0f, 0.0f, 3.0f };
 		const bool ninth_added = renderer.light_add_point(ninth_position, color, 20.0f, 0.5f, 0.0f);
 		if (cluster_index == 0)
@@ -878,10 +878,10 @@ TEST(Renderer_Cluster_Test, 片元簇采样_九盏扩展)
 		renderer.mesh_unload(mesh);
 		renderer.texture_unload(texture);
 	}
-	//两态画面不同（第 9 盏在开启态参与照明）
+	//两态画面不同（第 17 盏在开启态参与照明）
 	const bool same = std::mismatch(results[0].begin(), results[0].end(), results[1].begin()).first
 		== results[0].end();
-	EXPECT_FALSE(same) << "第 9 盏在簇采样开启态未产生可见差异";
+	EXPECT_FALSE(same) << "第 17 盏在簇采样开启态未产生可见差异";
 }
 
 /*
@@ -1228,14 +1228,14 @@ TEST(Renderer_Cluster_Test, 大光源整帧耗时对照)
 	on_many.light_set(no_direction, no_color, 0.0f, 0.0f);
 	//三态光源：32 × 16 网格、半径 1.5（覆盖屏幕局部，列表长度接近真实场景）
 	const float light_color[3] = { 0.6f, 0.7f, 0.8f };
-	for (uint32_t index = 0; index < 8; ++index)
+	for (uint32_t index = 0; index < 16; ++index)
 	{
 		const float position[3] = { static_cast<float>(index % 32) * 0.4f - 6.4f,
 			static_cast<float>(index / 32) * 0.3f - 2.4f, 1.5f };
 		ASSERT_TRUE(off.light_add_point(position, light_color, 1.5f, 0.05f, 0.0f));
 		ASSERT_TRUE(on_eight.light_add_point(position, light_color, 1.5f, 0.05f, 0.0f));
 	}
-	//关闭态第 9 盏被拒（上限 8）
+	//关闭态第 17 盏被拒（上限 16）
 	const float ninth_position[3] = { 0.0f, 0.0f, 1.5f };
 	EXPECT_FALSE(off.light_add_point(ninth_position, light_color, 1.5f, 0.05f, 0.0f));
 	for (uint32_t index = 0; index < LIGHT_COUNT; ++index)
@@ -1274,9 +1274,9 @@ TEST(Renderer_Cluster_Test, 大光源整帧耗时对照)
 	const double off_record_avg = off_record / frames;
 	const double eight_record_avg = eight_record / frames;
 	const double many_record_avg = many_record / frames;
-	std::cout << "[大光源整帧301] 1920x1080 MSAA1 | GPU 关8盏 " << off_gpu_avg
-		<< " ms / 开8盏 " << eight_gpu_avg << " ms / 开512盏 " << many_gpu_avg
-		<< " ms | 录制 关8盏 " << off_record_avg << " ms / 开8盏 " << eight_record_avg
+	std::cout << "[大光源整帧301] 1920x1080 MSAA1 | GPU 关16盏 " << off_gpu_avg
+		<< " ms / 开16盏 " << eight_gpu_avg << " ms / 开512盏 " << many_gpu_avg
+		<< " ms | 录制 关16盏 " << off_record_avg << " ms / 开16盏 " << eight_record_avg
 		<< " ms / 开512盏 " << many_record_avg << " ms" << std::endl;
 	//有效性：三态均产生 GPU 时间戳样本；关闭态记录截断
 	EXPECT_GT(off_gpu_avg, 0.0);
