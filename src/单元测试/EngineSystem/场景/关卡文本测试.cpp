@@ -132,6 +132,8 @@ namespace
 		//逐盏聚光阴影质量缩放（第七百零八轮）
 		expect_floats_equal(left.spot_shadow_softness_scale, right.spot_shadow_softness_scale, 8, "逐盏软度缩放");
 		expect_floats_equal(left.spot_shadow_strength_scale, right.spot_shadow_strength_scale, 8, "逐盏强度缩放");
+		//逐盏聚光阴影优先级（第七百零九轮）
+		expect_floats_equal(left.spot_shadow_priority, right.spot_shadow_priority, 32, "逐盏阴影优先级");
 		EXPECT_EQ(left.pbr_enabled, right.pbr_enabled);
 		EXPECT_EQ(left.toon_steps, right.toon_steps);
 		//点光源槽位
@@ -287,6 +289,8 @@ namespace
 		//逐盏质量缩放（第七百零八轮；仅槽位 2 非默认，其余保持 1）
 		level.light.spot_shadow_softness_scale[2] = 2.5f;
 		level.light.spot_shadow_strength_scale[2] = 0.6f;
+		//逐盏阴影优先级（第七百零九轮；仅高槽位非 0，验证 0..31 范围）
+		level.light.spot_shadow_priority[9] = 7.5f;
 		level.light.pbr_enabled = 1;
 		level.light.pbr_roughness = 0.35f;
 		level.light.pbr_metallic = 0.9f;

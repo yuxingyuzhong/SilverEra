@@ -285,3 +285,85 @@ TEST_F(Renderer_Scene_Test, 聚光逐盏质量缩放)
 	EXPECT_FALSE(probe.spot_shadow_quality_set(0, std::nanf(""), 1.0f));
 	EXPECT_TRUE(probe.spot_shadow_quality_set(0, 2.0f, 0.5f));
 }
+
+/*
+逐盏聚光阴影优先级（第七百零九轮；A2 收尾）
+口径：10 盏聚光灯（槽位 0..9，z = 3 朝向 −Z）＋ 遮挡板 ＋ 接收面；全局软度 0、强度 1。
+断言：默认优先级全 0 → 取槽位 0..7（8 瓦片）；把槽位 8 / 9 提到 10 → 仍 8 瓦片但选中集合改变，
+      画面出现差异（说明高槽位聚光灯确实参与投影，而不只是改变选择）。
+*/
+TEST_F(Renderer_Scene_Test, 聚光逐盏阴影优先级)
+{
+	engine::Renderer probe;
+	ASSERT_TRUE(probe.init(hidden_config()));
+	if (!probe.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+
+	//渲染一帧（boost = 真时把槽位 8 / 9 的优先级提到 10）
+	auto render = [](bool boost)
+	{
+		std::vector<uint8_t> pixels(pixel_bytes());
+		engine::Renderer renderer;
+		if (!renderer.init(hidden_config()))
+			return pixels;
+		uint64_t texture = 0;
+		std::vector<uint8_t> texels = solid_white();
+		if (!renderer.texture_load(texture, texels.data(), 2, 2))
+			return pixels;
+		engine::Mesh_Handle receiver = 0;
+		engine::Mesh_Handle occluder = 0;
+		if (!renderer.mesh_load(receiver, quad_data_with_normal(0.0f, 0.0f, 1.0f))
+			|| !renderer.mesh_load(occluder, quad_data_with_normal(0.0f, 0.0f, 1.0f)))
+			return pixels;
+		renderer.texture_bind_set(texture);
+
+		engine::Light_Data light{};
+		light.intensity = 0.0f;
+		light.ambient = 0.15f;
+		light.shadow_enabled = 1;
+		light.shadow_cascade_count = 1;
+		light.spot_count = 10;
+		for (uint32_t index = 0; index < 10; ++index)
+		{
+			//沿 X 排开，均朝 −Z 照射接收面
+			light.spot_position[index][0] = -1.1f + 0.22f * static_cast<float>(index);
+			light.spot_position[index][1] = 0.0f;
+			light.spot_position[index][2] = 3.0f;
+			light.spot_direction[index][2] = -1.0f;
+			light.spot_radius[index] = 10.0f;
+			light.spot_intensity[index] = 0.12f;
+			light.spot_inner_deg[index] = 10.0f;
+			light.spot_outer_deg[index] = 30.0f;
+		}
+		light.spot_shadow_enabled = 1;
+		light.spot_shadow_all = 1;
+		//高槽位优先级（其余保持默认 0）
+		if (boost)
+		{
+			light.spot_shadow_priority[8] = 10.0f;
+			light.spot_shadow_priority[9] = 10.0f;
+		}
+		engine::Camera_Data camera{};
+		engine::Fog_Data fog{};
+		renderer.scene_apply(camera, light, fog);
+		renderer.shadow_enable_set(true);
+
+		EXPECT_TRUE(renderer.mesh_draw(receiver, scale_model(1.0f, 1.0f, 0.0f, 0.0f, 0.0f).data()));
+		EXPECT_TRUE(renderer.mesh_draw(occluder, scale_model(0.3f, 0.3f, 0.0f, 0.0f, 1.0f).data()));
+		EXPECT_TRUE(renderer.frame_render(pixels.data(), static_cast<std::uint32_t>(pixels.size())));
+		renderer.mesh_unload(receiver);
+		renderer.mesh_unload(occluder);
+		renderer.texture_unload(texture);
+		return pixels;
+	};
+
+	const std::vector<uint8_t> baseline = render(false);
+	const std::vector<uint8_t> boosted = render(true);
+	const uint32_t difference = changed_pixels(baseline, boosted);
+	RecordProperty("priority_changed_pixels", difference);
+	EXPECT_GT(difference, 0u) << "优先级未改变参与投影的聚光灯集合";
+	//门面入口：越界与非法值
+	EXPECT_FALSE(probe.spot_shadow_priority_set(32, 1.0f));
+	EXPECT_FALSE(probe.spot_shadow_priority_set(0, std::nanf("")));
+	EXPECT_TRUE(probe.spot_shadow_priority_set(9, 5.0f));
+}
