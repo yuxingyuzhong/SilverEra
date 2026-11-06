@@ -110,6 +110,61 @@ namespace
 			}
 		return maximum;
 	}
+
+	/*
+	渲染一帧聚光灯接触阴影（第七百零四轮）
+	strength = 接触阴影强度；slot = 传给 post_extra.z 的槽位（0..7）；
+	spot_direction = 聚光灯传播方向（朝向 / 背离接收面分别验证生效与不生效）；
+	方向光强度置 0（聚光灯模式不依赖方向光，接收面由聚光灯 ＋ 环境光照亮）。
+	*/
+	std::vector<uint8_t> render_contact_spot(float strength, uint32_t slot,
+		const float spot_direction[3])
+	{
+		engine::Renderer renderer;
+		EXPECT_TRUE(renderer.init(hidden_config()));
+		uint64_t scene_target = 0;
+		EXPECT_TRUE(renderer.render_target_create(scene_target, renderer.extent_width(), renderer.extent_height()));
+		uint64_t pass = post_pipeline_register(renderer, "接触阴影.frag.spv");
+		EXPECT_NE(pass, 0u);
+		EXPECT_TRUE(renderer.post_chain_set(&pass, 1));
+		//强度 / 最大距离 / 步数缩放 / 深度偏置
+		renderer.post_stage_vec4_set(0, strength, 4.0f, 2.0f, 0.01f);
+		//阴影色调（黑）＋ 抖动种子 0（固定中点）
+		renderer.post_stage_color4_set(0, 0.0f, 0.0f, 0.0f, 0.0f);
+		//厚度 0（自动）/ 光源模式 1（聚光灯）/ 槽位
+		renderer.post_stage_extra_set(0, 0.0f, 1.0f, static_cast<float>(slot), 0.0f);
+		renderer.render_target_present_set(scene_target);
+
+		//方向光关闭（强度 0），环境光 0.3
+		engine::Light_Data light{};
+		light.intensity = 0.0f;
+		light.ambient = 0.3f;
+		engine::Camera_Data camera{};
+		engine::Fog_Data fog{};
+		renderer.scene_apply(camera, light, fog);
+
+		//聚光灯：位于接收面右后方（照射方向与方向光口径接近，便于扫过遮挡板；半径 6，锥 30° / 45°）
+		const float spot_position[3] = { 0.8f, 0.0f, -2.5f };
+		const float spot_color[3] = { 1.0f, 1.0f, 1.0f };
+		EXPECT_TRUE(renderer.light_add_spot(spot_position, spot_direction, spot_color,
+			6.0f, 1.0f, 30.0f, 45.0f, 0.0f));
+
+		//左侧接收面（z = 0）与右侧偏后遮挡板（z = -0.4）
+		engine::Mesh_Handle receiver = 0;
+		engine::Mesh_Handle occluder = 0;
+		EXPECT_TRUE(renderer.mesh_load(receiver, offset_quad(0.5f, -0.45f, 0.0f)));
+		EXPECT_TRUE(renderer.mesh_load(occluder, offset_quad(0.5f, 0.45f, -0.4f)));
+		EXPECT_TRUE(renderer.mesh_draw(receiver, nullptr));
+		EXPECT_TRUE(renderer.mesh_draw(occluder, nullptr));
+		renderer.mesh_unload(receiver);
+		renderer.mesh_unload(occluder);
+
+		std::vector<uint8_t> pixels(pixel_bytes());
+		EXPECT_TRUE(renderer.frame_render(pixels.data(), static_cast<uint32_t>(pixels.size())));
+		renderer.pipeline_unload(pass);
+		renderer.render_target_destroy(scene_target);
+		return pixels;
+	}
 }
 
 //强度 0 时接触阴影阶段原样输出：与直通管线逐通道差不超过 4
@@ -210,4 +265,49 @@ TEST_F(Renderer_Post_Chain_Test, 接触阴影厚度上限参数化)
 	RecordProperty("contact_thickness_thick_darkened", thick_count);
 	EXPECT_GT(auto_count, thin_count) << "偏小厚度未抑制远处遮挡";
 	EXPECT_GE(thick_count, auto_count) << "偏大厚度未覆盖自动样本（破坏单调性）";
+}
+
+/*
+聚光灯接触阴影（第七百零四轮；D3 扩展）
+口径：方向光关闭、只开一盏聚光灯（槽位 0），post_extra.y = 1、z = 槽位；
+      朝向接收面时产生压暗；空槽位 / 锥外一律原样输出（逐字节一致）。
+*/
+TEST_F(Renderer_Post_Chain_Test, 接触阴影聚光灯生效)
+{
+	engine::Renderer probe;
+	ASSERT_TRUE(probe.init(hidden_config()));
+	if (!probe.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+
+	//聚光灯位于接收面右后方，传播方向指向接收面中心（-0.45, 0, 0）
+	const float toward_receiver[3] = { -1.25f, 0.0f, 2.5f };
+	std::vector<uint8_t> disabled = render_contact_spot(0.0f, 0, toward_receiver);
+	std::vector<uint8_t> enabled = render_contact_spot(1.0f, 0, toward_receiver);
+	//相对关闭态的压暗像素数（亮度下降至少 8）
+	uint32_t darkened = darkened_count(enabled, disabled, 8.0f);
+	RecordProperty("contact_spot_darkened_pixels", darkened);
+	EXPECT_GT(darkened, 10u) << "聚光灯接触阴影未压暗接收面（压暗像素 " << darkened << "）";
+}
+
+/*
+空槽位 / 锥外原样输出（第七百零四轮）
+口径：槽位 7 未登记光源；聚光灯方向背离接收面时锥遮罩为 0；两帧应与强度 0 逐字节一致。
+*/
+TEST_F(Renderer_Post_Chain_Test, 接触阴影聚光灯空槽位与锥外原样输出)
+{
+	engine::Renderer probe;
+	ASSERT_TRUE(probe.init(hidden_config()));
+	if (!probe.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+
+	//槽位 7 未登记光源
+	const float toward_receiver[3] = { -1.25f, 0.0f, 2.5f };
+	std::vector<uint8_t> empty_off = render_contact_spot(0.0f, 7, toward_receiver);
+	std::vector<uint8_t> empty_on = render_contact_spot(1.0f, 7, toward_receiver);
+	EXPECT_EQ(max_color_diff(empty_off, empty_on), 0) << "空槽位未原样输出";
+	//聚光灯方向背离接收面（锥外）
+	const float away_from_receiver[3] = { 1.25f, 0.0f, -2.5f };
+	std::vector<uint8_t> away_off = render_contact_spot(0.0f, 0, away_from_receiver);
+	std::vector<uint8_t> away_on = render_contact_spot(1.0f, 0, away_from_receiver);
+	EXPECT_EQ(max_color_diff(away_off, away_on), 0) << "锥外未原样输出";
 }
