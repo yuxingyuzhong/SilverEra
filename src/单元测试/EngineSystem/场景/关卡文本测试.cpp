@@ -129,6 +129,9 @@ namespace
 		EXPECT_EQ(left.spot_shadow_index, right.spot_shadow_index);
 		EXPECT_EQ(left.spot_shadow_all, right.spot_shadow_all);
 		EXPECT_EQ(left.spot_shadow_bias_auto, right.spot_shadow_bias_auto);
+		//逐盏聚光阴影质量缩放（第七百零八轮）
+		expect_floats_equal(left.spot_shadow_softness_scale, right.spot_shadow_softness_scale, 8, "逐盏软度缩放");
+		expect_floats_equal(left.spot_shadow_strength_scale, right.spot_shadow_strength_scale, 8, "逐盏强度缩放");
 		EXPECT_EQ(left.pbr_enabled, right.pbr_enabled);
 		EXPECT_EQ(left.toon_steps, right.toon_steps);
 		//点光源槽位
@@ -281,6 +284,9 @@ namespace
 		level.light.spot_shadow_index = 1;
 		level.light.spot_shadow_all = 1;
 		level.light.spot_shadow_bias_auto = 1;
+		//逐盏质量缩放（第七百零八轮；仅槽位 2 非默认，其余保持 1）
+		level.light.spot_shadow_softness_scale[2] = 2.5f;
+		level.light.spot_shadow_strength_scale[2] = 0.6f;
 		level.light.pbr_enabled = 1;
 		level.light.pbr_roughness = 0.35f;
 		level.light.pbr_metallic = 0.9f;

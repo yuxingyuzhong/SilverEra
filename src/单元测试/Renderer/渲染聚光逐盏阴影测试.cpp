@@ -49,6 +49,44 @@ namespace
 		EXPECT_TRUE(renderer.frame_render());
 		return renderer.frame_stats_get().spot_shadow_tiles;
 	}
+
+	//两帧之间逐通道差 ≥ 6 的像素数
+	uint32_t changed_pixels(const std::vector<uint8_t>& left, const std::vector<uint8_t>& right)
+	{
+		uint32_t count = 0;
+		for (std::size_t index = 0; index + 3 < left.size(); index += 4)
+		{
+			int maximum = 0;
+			for (std::size_t channel = 0; channel < 3; ++channel)
+			{
+				int delta = static_cast<int>(left[index + channel]) - static_cast<int>(right[index + channel]);
+				maximum = (std::max)(maximum, delta < 0 ? -delta : delta);
+			}
+			if (maximum >= 6)
+				++count;
+		}
+		return count;
+	}
+
+	//整帧 RGB 亮度均值
+	double mean_luma(const std::vector<uint8_t>& pixels)
+	{
+		double total = 0.0;
+		for (std::size_t index = 0; index + 3 < pixels.size(); index += 4)
+			total += 0.2126 * pixels[index] + 0.7152 * pixels[index + 1] + 0.0722 * pixels[index + 2];
+		return pixels.empty() ? 0.0 : total / static_cast<double>(pixels.size() / 4);
+	}
+
+	//构造「XY 缩放 ＋ 平移」model 矩阵（列主序）
+	std::array<float, 16> scale_model(float sx, float sy, float x, float y, float z)
+	{
+		return {
+			sx, 0.0f, 0.0f, 0.0f,
+			0.0f, sy, 0.0f, 0.0f,
+			0.0f, 0.0f, 1.0f, 0.0f,
+			x, y, z, 1.0f,
+		};
+	}
 }
 
 /*
@@ -149,4 +187,101 @@ TEST_F(Renderer_Scene_Test, 聚光逐盏阴影门面开关)
 
 	renderer.mesh_unload(occluder);
 	renderer.texture_unload(texture);
+}
+
+/*
+逐盏聚光阴影质量缩放（第七百零八轮；A2 收尾）
+口径：1 盏聚光灯（z = 3、朝向 −Z）＋ 遮挡板（z = 1、0.4 缩放）＋ 接收面（z = 0）；全局软度 0.5、强度 1。
+断言：显式 1 / 1 与不设置逐字节一致；软度 ×4 改变半影；强度 ×0.5 使画面整体变亮。
+*/
+TEST_F(Renderer_Scene_Test, 聚光逐盏质量缩放)
+{
+	engine::Renderer probe;
+	ASSERT_TRUE(probe.init(hidden_config()));
+	if (!probe.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+
+	//渲染一帧（apply = 假时使用默认逐盏缩放 1 / 1）
+	auto render = [](bool apply, float softness_scale, float strength_scale)
+	{
+		std::vector<uint8_t> pixels(pixel_bytes());
+		engine::Renderer renderer;
+		if (!renderer.init(hidden_config()))
+			return pixels;
+		uint64_t texture = 0;
+		std::vector<uint8_t> texels = solid_white();
+		if (!renderer.texture_load(texture, texels.data(), 2, 2))
+			return pixels;
+		engine::Mesh_Handle receiver = 0;
+		engine::Mesh_Handle occluder = 0;
+		if (!renderer.mesh_load(receiver, quad_data_with_normal(0.0f, 0.0f, 1.0f))
+			|| !renderer.mesh_load(occluder, quad_data_with_normal(0.0f, 0.0f, 1.0f)))
+			return pixels;
+		renderer.texture_bind_set(texture);
+
+		engine::Light_Data light{};
+		//方向光关闭（只用聚光照明），环境光 0.2
+		light.intensity = 0.0f;
+		light.ambient = 0.2f;
+		light.shadow_enabled = 1;
+		light.shadow_cascade_count = 1;
+		light.spot_count = 1;
+		/*
+		聚光灯偏轴布置（第七百零八轮）
+		灯位 (2.5, 1.5, 3.0)、朝原点；遮挡板偏右上，使阴影落在遮挡板屏幕投影之外（否则被遮挡板自身盖住而不可见）。
+		*/
+		light.spot_position[0][0] = 2.5f;
+		light.spot_position[0][1] = 1.5f;
+		light.spot_position[0][2] = 3.0f;
+		light.spot_direction[0][0] = -2.5f;
+		light.spot_direction[0][1] = -1.5f;
+		light.spot_direction[0][2] = -3.0f;
+		light.spot_radius[0] = 10.0f;
+		light.spot_intensity[0] = 1.0f;
+		light.spot_inner_deg[0] = 5.0f;
+		light.spot_outer_deg[0] = 30.0f;
+		light.spot_shadow_enabled = 1;
+		light.spot_shadow_all = 1;
+		light.spot_shadow_softness = 0.5f;
+		//逐盏质量缩放（仅槽位 0）
+		if (apply)
+		{
+			light.spot_shadow_softness_scale[0] = softness_scale;
+			light.spot_shadow_strength_scale[0] = strength_scale;
+		}
+		engine::Camera_Data camera{};
+		engine::Fog_Data fog{};
+		renderer.scene_apply(camera, light, fog);
+		renderer.shadow_enable_set(true);
+
+		//接收面（z = 0）与遮挡板（z = 1、缩小到 0.4 并偏右上）
+		EXPECT_TRUE(renderer.mesh_draw(receiver, scale_model(1.0f, 1.0f, 0.0f, 0.0f, 0.0f).data()));
+		EXPECT_TRUE(renderer.mesh_draw(occluder, scale_model(0.4f, 0.4f, 0.6f, 0.4f, 1.0f).data()));
+		EXPECT_TRUE(renderer.frame_render(pixels.data(), static_cast<std::uint32_t>(pixels.size())));
+		renderer.mesh_unload(receiver);
+		renderer.mesh_unload(occluder);
+		renderer.texture_unload(texture);
+		return pixels;
+	};
+
+	const std::vector<uint8_t> baseline = render(false, 1.0f, 1.0f);
+	const std::vector<uint8_t> explicit_one = render(true, 1.0f, 1.0f);
+	const std::vector<uint8_t> soft = render(true, 4.0f, 1.0f);
+	const std::vector<uint8_t> weak = render(true, 1.0f, 0.5f);
+	//默认与显式 1 / 1 逐字节一致
+	EXPECT_TRUE(baseline == explicit_one) << "显式 1 / 1 改变了默认画面";
+	//软度缩放改变半影
+	const uint32_t soft_changed = changed_pixels(baseline, soft);
+	RecordProperty("quality_softness_changed", soft_changed);
+	EXPECT_GT(soft_changed, 0u) << "软度缩放未改变半影";
+	//强度缩放使阴影变浅（整体变亮）
+	const double base_luma = mean_luma(baseline);
+	const double weak_luma = mean_luma(weak);
+	RecordProperty("quality_baseline_luma", base_luma);
+	RecordProperty("quality_weak_luma", weak_luma);
+	EXPECT_GT(weak_luma, base_luma) << "强度缩放未使阴影变浅";
+	//门面入口：越界槽位与非法值拒绝
+	EXPECT_FALSE(probe.spot_shadow_quality_set(9, 2.0f, 1.0f));
+	EXPECT_FALSE(probe.spot_shadow_quality_set(0, std::nanf(""), 1.0f));
+	EXPECT_TRUE(probe.spot_shadow_quality_set(0, 2.0f, 0.5f));
 }
