@@ -44,10 +44,12 @@ namespace
 	/*
 	渲染一帧接触阴影
 	frag = 后处理片元名；strength = 接触阴影强度（0 = 关闭）；seed = 抖动种子（0 = 关闭抖动）；
+	thickness = 厚度上限（NDC；0 = 自动，第七百零三轮）；
 	参数（强度 / 最大距离 4 / 步数缩放 2 / 深度偏置 0.01）走通用四参入口；
 	阴影色调取黑，第四分量携带抖动种子（0 = 固定中点采样，与 673 逐字节一致）。
 	*/
-	std::vector<uint8_t> render_contact(const std::string& frag, float strength, float seed = 0.0f)
+	std::vector<uint8_t> render_contact(const std::string& frag, float strength, float seed = 0.0f,
+		float thickness = 0.0f)
 	{
 		engine::Renderer renderer;
 		EXPECT_TRUE(renderer.init(hidden_config()));
@@ -60,6 +62,8 @@ namespace
 		renderer.post_stage_vec4_set(0, strength, 4.0f, 2.0f, 0.01f);
 		//阴影色调（黑：直接压暗）＋ 抖动种子（第四分量）
 		renderer.post_stage_color4_set(0, 0.0f, 0.0f, 0.0f, seed);
+		//厚度上限（0 = 自动；经 offset 128 的逐级 extra 下发）
+		renderer.post_stage_extra_set(0, thickness, 0.0f, 0.0f, 0.0f);
 		renderer.render_target_present_set(scene_target);
 
 		//方向光自相机一侧斜射（光线朝左后方，便于接收面射线扫过侧后方的遮挡板）
@@ -178,4 +182,32 @@ TEST_F(Renderer_Post_Chain_Test, 接触阴影抖动相位生效)
 				++difference;
 	RecordProperty("contact_jitter_difference_pixels", difference);
 	EXPECT_GT(difference, 0u) << "抖动种子未改变接触阴影采样";
+}
+
+/*
+厚度上限参数化（第七百零三轮；Q-B）
+口径：强度 1、遮挡场景；post_extra.x = 0（自动，≈ max_distance / 近远跨度 ≈ 0.04）为基准；
+      0.002（仅近距接触）应显著减少压暗像素；0.2（大于自动）应覆盖自动的全部样本（逐像素单调不减）。
+*/
+TEST_F(Renderer_Post_Chain_Test, 接触阴影厚度上限参数化)
+{
+	engine::Renderer probe;
+	ASSERT_TRUE(probe.init(hidden_config()));
+	if (!probe.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+
+	//关闭态参考（强度 0）
+	std::vector<uint8_t> disabled = render_contact("接触阴影.frag.spv", 0.0f);
+	std::vector<uint8_t> automatic = render_contact("接触阴影.frag.spv", 1.0f, 0.0f, 0.0f);
+	std::vector<uint8_t> thin = render_contact("接触阴影.frag.spv", 1.0f, 0.0f, 0.002f);
+	std::vector<uint8_t> thick = render_contact("接触阴影.frag.spv", 1.0f, 0.0f, 0.2f);
+	//相对关闭态的三帧压暗像素数（亮度下降至少 8）
+	int auto_count = static_cast<int>(darkened_count(automatic, disabled, 8.0f));
+	int thin_count = static_cast<int>(darkened_count(thin, disabled, 8.0f));
+	int thick_count = static_cast<int>(darkened_count(thick, disabled, 8.0f));
+	RecordProperty("contact_thickness_auto_darkened", auto_count);
+	RecordProperty("contact_thickness_thin_darkened", thin_count);
+	RecordProperty("contact_thickness_thick_darkened", thick_count);
+	EXPECT_GT(auto_count, thin_count) << "偏小厚度未抑制远处遮挡";
+	EXPECT_GE(thick_count, auto_count) << "偏大厚度未覆盖自动样本（破坏单调性）";
 }
