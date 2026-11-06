@@ -165,6 +165,66 @@ namespace
 		renderer.render_target_destroy(scene_target);
 		return pixels;
 	}
+
+	/*
+	渲染一帧点光源接触阴影（第七百零五轮）
+	strength = 强度；slot = 传给 post_extra.z 的槽位（0..7）；spot_slot = 真则槽位登记为聚光灯（用于类型不符用例）。
+	方向光强度置 0，接收面由点光源 ＋ 环境光照亮。
+	*/
+	std::vector<uint8_t> render_contact_point(float strength, uint32_t slot, bool spot_slot)
+	{
+		engine::Renderer renderer;
+		EXPECT_TRUE(renderer.init(hidden_config()));
+		uint64_t scene_target = 0;
+		EXPECT_TRUE(renderer.render_target_create(scene_target, renderer.extent_width(), renderer.extent_height()));
+		uint64_t pass = post_pipeline_register(renderer, "接触阴影.frag.spv");
+		EXPECT_NE(pass, 0u);
+		EXPECT_TRUE(renderer.post_chain_set(&pass, 1));
+		//强度 / 最大距离 / 步数缩放 / 深度偏置
+		renderer.post_stage_vec4_set(0, strength, 4.0f, 2.0f, 0.01f);
+		//阴影色调（黑）＋ 抖动种子 0（固定中点）
+		renderer.post_stage_color4_set(0, 0.0f, 0.0f, 0.0f, 0.0f);
+		//厚度 0（自动）/ 光源模式 2（点光源）/ 槽位
+		renderer.post_stage_extra_set(0, 0.0f, 2.0f, static_cast<float>(slot), 0.0f);
+		renderer.render_target_present_set(scene_target);
+
+		//方向光关闭（强度 0），环境光 0.3
+		engine::Light_Data light{};
+		light.intensity = 0.0f;
+		light.ambient = 0.3f;
+		engine::Camera_Data camera{};
+		engine::Fog_Data fog{};
+		renderer.scene_apply(camera, light, fog);
+
+		//点光源：与聚光灯用例同灯位（右后方、半径 6）
+		const float point_position[3] = { 0.8f, 0.0f, -2.5f };
+		const float point_color[3] = { 1.0f, 1.0f, 1.0f };
+		if (spot_slot)
+		{
+			//登记为聚光灯（传播方向指向接收面），用于「模式与槽位类型不符」用例
+			const float spot_direction[3] = { -1.25f, 0.0f, 2.5f };
+			EXPECT_TRUE(renderer.light_add_spot(point_position, spot_direction, point_color,
+				6.0f, 1.0f, 30.0f, 45.0f, 0.0f));
+		}
+		else
+			EXPECT_TRUE(renderer.light_add_point(point_position, point_color, 6.0f, 1.0f, 0.0f));
+
+		//左侧接收面（z = 0）与右侧偏后遮挡板（z = -0.4）
+		engine::Mesh_Handle receiver = 0;
+		engine::Mesh_Handle occluder = 0;
+		EXPECT_TRUE(renderer.mesh_load(receiver, offset_quad(0.5f, -0.45f, 0.0f)));
+		EXPECT_TRUE(renderer.mesh_load(occluder, offset_quad(0.5f, 0.45f, -0.4f)));
+		EXPECT_TRUE(renderer.mesh_draw(receiver, nullptr));
+		EXPECT_TRUE(renderer.mesh_draw(occluder, nullptr));
+		renderer.mesh_unload(receiver);
+		renderer.mesh_unload(occluder);
+
+		std::vector<uint8_t> pixels(pixel_bytes());
+		EXPECT_TRUE(renderer.frame_render(pixels.data(), static_cast<uint32_t>(pixels.size())));
+		renderer.pipeline_unload(pass);
+		renderer.render_target_destroy(scene_target);
+		return pixels;
+	}
 }
 
 //强度 0 时接触阴影阶段原样输出：与直通管线逐通道差不超过 4
@@ -310,4 +370,40 @@ TEST_F(Renderer_Post_Chain_Test, 接触阴影聚光灯空槽位与锥外原样�
 	std::vector<uint8_t> away_off = render_contact_spot(0.0f, 0, away_from_receiver);
 	std::vector<uint8_t> away_on = render_contact_spot(1.0f, 0, away_from_receiver);
 	EXPECT_EQ(max_color_diff(away_off, away_on), 0) << "锥外未原样输出";
+}
+
+/*
+点光源接触阴影（第七百零五轮；D3 扩展）
+口径：方向光关闭、只开一盏点光源（槽位 0），post_extra.y = 2、z = 槽位；
+      点光源产生压暗；点光模式下槽位实为聚光灯时原样输出（类型不符）。
+*/
+TEST_F(Renderer_Post_Chain_Test, 接触阴影点光源生效)
+{
+	engine::Renderer probe;
+	ASSERT_TRUE(probe.init(hidden_config()));
+	if (!probe.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+
+	std::vector<uint8_t> disabled = render_contact_point(0.0f, 0, false);
+	std::vector<uint8_t> enabled = render_contact_point(1.0f, 0, false);
+	//相对关闭态的压暗像素数（亮度下降至少 8）
+	uint32_t darkened = darkened_count(enabled, disabled, 8.0f);
+	RecordProperty("contact_point_darkened_pixels", darkened);
+	EXPECT_GT(darkened, 10u) << "点光源接触阴影未压暗接收面（压暗像素 " << darkened << "）";
+}
+
+/*
+点光模式与槽位类型不符（第七百零五轮）
+口径：槽位 0 登记为聚光灯、模式 2（点光源）→ 类型不符，应与强度 0 逐字节一致。
+*/
+TEST_F(Renderer_Post_Chain_Test, 接触阴影点光模式聚光槽位原样输出)
+{
+	engine::Renderer probe;
+	ASSERT_TRUE(probe.init(hidden_config()));
+	if (!probe.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+
+	std::vector<uint8_t> disabled = render_contact_point(0.0f, 0, true);
+	std::vector<uint8_t> enabled = render_contact_point(1.0f, 0, true);
+	EXPECT_EQ(max_color_diff(disabled, enabled), 0) << "类型不符未原样输出";
 }
