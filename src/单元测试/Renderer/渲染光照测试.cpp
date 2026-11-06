@@ -863,3 +863,75 @@ TEST_F(Renderer_Scene_Test, 高八槽零强度逐字节一致)
 	RecordProperty("high_slot_difference", differences);
 	EXPECT_GT(differences, 0u) << "高 8 槽强度未进入着色器";
 }
+
+/*
+PBR 粗糙度绝对口径（第七百轮；D1 收尾）
+口径：PBR 开启、金属度 0.8、全局粗糙度 0.2；镜面光泽度 16 与 512 各渲染一次：
+      旧口径下粗糙度由光泽度换算 → 两画面不同；绝对口径下粗糙度直接取 0.2 → 两画面逐字节一致。
+*/
+TEST_F(Renderer_Scene_Test, PBR粗糙度绝对口径解耦光泽度)
+{
+	//一次运行的产物（画面 ＋ 开关回读）
+	struct Outcome
+	{
+		std::vector<uint8_t> pixels;
+		bool absolute = false;
+	};
+
+	//指定绝对口径与光泽度的一次运行
+	auto run = [](bool absolute, float shininess)
+	{
+		Outcome outcome;
+		engine::Renderer renderer;
+		if (!renderer.init(hidden_config()) || !renderer.readback_supported())
+			return outcome;
+		uint64_t texture = 0;
+		std::vector<uint8_t> texels = solid_white();
+		if (!renderer.texture_load(texture, texels.data(), 2, 2))
+			return outcome;
+		engine::Mesh_Handle mesh = 0;
+		if (!renderer.mesh_load(mesh, quad_data_with_normal(0.0f, 0.0f, 1.0f)))
+			return outcome;
+		renderer.texture_bind_set(texture);
+		//PBR 开启：斜射主光、金属度 0.8、全局粗糙度 0.2、镜面强度 1，光泽度由参数控制
+		const float direction[3] = { -0.8f, 0.0f, -0.6f };
+		const float white[3] = { 1.0f, 1.0f, 1.0f };
+		renderer.light_set(direction, white, 1.0f, 0.0f);
+		renderer.pbr_enable_set(true);
+		renderer.pbr_roughness_set(0.2f);
+		renderer.pbr_metallic_set(0.8f);
+		renderer.specular_set(1.0f, shininess);
+		//绝对口径开关（门面）
+		renderer.pbr_roughness_absolute_set(absolute);
+		outcome.absolute = renderer.pbr_roughness_absolute();
+		//渲染并回读
+		if (!renderer.mesh_draw(mesh, full_screen_matrix().data()))
+			return outcome;
+		outcome.pixels.resize(pixel_bytes());
+		if (!renderer.frame_render(outcome.pixels.data(),
+			static_cast<std::uint32_t>(outcome.pixels.size())))
+			outcome.pixels.clear();
+		renderer.mesh_unload(mesh);
+		renderer.texture_unload(texture);
+		return outcome;
+	};
+
+	//旧口径：粗糙度随光泽度变化 → 两个光泽度画面不同
+	Outcome legacy_low = run(false, 16.0f);
+	Outcome legacy_high = run(false, 512.0f);
+	ASSERT_FALSE(legacy_low.pixels.empty()) << "旧口径低光泽画面为空";
+	ASSERT_FALSE(legacy_high.pixels.empty()) << "旧口径高光泽画面为空";
+	EXPECT_FALSE(legacy_low.absolute) << "默认绝对口径开关未保持关闭";
+	uint32_t legacy_difference = pixel_difference(legacy_low.pixels, legacy_high.pixels);
+	RecordProperty("legacy_shininess_difference", legacy_difference);
+	EXPECT_GT(legacy_difference, 0u) << "旧口径下光泽度未参与粗糙度换算";
+
+	//绝对口径：粗糙度固定 0.2 → 两个光泽度画面逐字节一致
+	Outcome absolute_low = run(true, 16.0f);
+	Outcome absolute_high = run(true, 512.0f);
+	ASSERT_FALSE(absolute_low.pixels.empty()) << "绝对口径低光泽画面为空";
+	ASSERT_FALSE(absolute_high.pixels.empty()) << "绝对口径高光泽画面为空";
+	EXPECT_TRUE(absolute_low.absolute) << "绝对口径开关回读不一致";
+	EXPECT_EQ(pixel_difference(absolute_low.pixels, absolute_high.pixels), 0u)
+		<< "绝对口径下光泽度仍影响粗糙度";
+}
