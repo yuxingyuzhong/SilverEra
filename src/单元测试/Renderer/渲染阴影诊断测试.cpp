@@ -615,3 +615,101 @@ TEST_F(Renderer_Scene_Test, 图集八瓦片映射与MSAA一致)
 		EXPECT_TRUE(atlas.pixels == tiled.pixels) << "画面不一致（MSAA " << samples << "）";
 	}
 }
+
+/*
+图集启用即回收独立瓦片（第七百零七轮；Q-A 图集首帧预创建）
+口径：1 盏聚光 ＋ 单级方向光；先在独立瓦片模式渲染一帧（瓦片建立），再切图集渲染一帧（瓦片回收），最后切回。
+断言：独立模式瓦片目标 ≥ 1；图集模式为 0 且图集字节数 4S×2S×4；切回后瓦片目标恢复 ≥ 1；三帧均渲染成功。
+*/
+TEST_F(Renderer_Scene_Test, 图集启用回收独立瓦片)
+{
+	struct Outcome
+	{
+		engine::Frame_Stats stats{};
+		bool ok = false;
+	};
+	//渲染一帧并取统计（场景请求随 light 一起下发）
+	auto run_frame = [](engine::Renderer& renderer, const engine::Light_Data& light,
+		const engine::Camera_Data& camera, const engine::Fog_Data& fog,
+		const engine::Mesh_Handle occluder, const engine::Mesh_Handle receiver)
+	{
+		Outcome outcome;
+		renderer.scene_apply(camera, light, fog);
+		renderer.shadow_enable_set(true);
+		if (!renderer.mesh_draw(occluder, occluder_model(0.0f, 0.0f, -1.0f).data()))
+			return outcome;
+		if (!renderer.mesh_draw(receiver, translate_model(0.0f, 0.0f, 0.0f).data()))
+			return outcome;
+		std::vector<uint8_t> pixels(pixel_bytes());
+		if (!renderer.frame_render(pixels.data(), static_cast<std::uint32_t>(pixels.size())))
+			return outcome;
+		outcome.stats = renderer.frame_stats_get();
+		outcome.ok = true;
+		return outcome;
+	};
+
+	engine::Renderer renderer;
+	ASSERT_TRUE(renderer.init(hidden_config()));
+	if (!renderer.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+	uint64_t texture = 0;
+	std::vector<uint8_t> texels = solid_white();
+	ASSERT_TRUE(renderer.texture_load(texture, texels.data(), 2, 2));
+	engine::Mesh_Handle receiver = 0;
+	engine::Mesh_Handle occluder = 0;
+	ASSERT_TRUE(renderer.mesh_load(receiver, quad_data_with_normal(0.0f, 0.0f, -1.0f)));
+	ASSERT_TRUE(renderer.mesh_load(occluder, quad_data_with_normal(0.0f, 0.0f, -1.0f)));
+	renderer.texture_bind_set(texture);
+
+	//单级方向光 ＋ 1 盏聚光（参与阴影）
+	engine::Light_Data light{};
+	light.direction[2] = 1.0f;
+	light.intensity = 1.0f;
+	light.ambient = 0.0f;
+	light.shadow_enabled = 1;
+	light.shadow_cascade_count = 1;
+	light.spot_count = 1;
+	light.spot_position[0][1] = 2.0f;
+	light.spot_position[0][2] = 3.0f;
+	light.spot_direction[0][1] = -1.0f;
+	light.spot_radius[0] = 10.0f;
+	light.spot_intensity[0] = 1.0f;
+	light.spot_inner_deg[0] = 15.0f;
+	light.spot_outer_deg[0] = 30.0f;
+	light.spot_shadow_enabled = 1;
+	light.spot_shadow_all = 1;
+	light.spot_shadow_atlas = 0;
+	engine::Camera_Data camera{};
+	engine::Fog_Data fog{};
+
+	//独立瓦片帧（瓦片按需建立）
+	const Outcome tiled = run_frame(renderer, light, camera, fog, occluder, receiver);
+	ASSERT_TRUE(tiled.ok) << "独立瓦片帧渲染失败";
+	RecordProperty("tiled_tile_targets", tiled.stats.spot_shadow_tile_targets);
+	EXPECT_GE(tiled.stats.spot_shadow_tile_targets, 1u) << "独立模式未建立瓦片目标";
+	EXPECT_EQ(tiled.stats.shadow_atlas_bytes, 0u) << "独立模式图集字节应为 0";
+
+	//切图集：立即回收独立瓦片
+	ASSERT_TRUE(renderer.spot_shadow_atlas_set(true));
+	light.spot_shadow_atlas = 1;
+	const Outcome atlas = run_frame(renderer, light, camera, fog, occluder, receiver);
+	ASSERT_TRUE(atlas.ok) << "图集帧渲染失败";
+	RecordProperty("atlas_tile_targets", atlas.stats.spot_shadow_tile_targets);
+	EXPECT_EQ(atlas.stats.spot_shadow_tile_targets, 0u) << "图集生效后仍保留独立瓦片目标";
+	EXPECT_EQ(atlas.stats.shadow_atlas, 1u) << "图集未生效";
+	EXPECT_EQ(atlas.stats.shadow_atlas_bytes, static_cast<uint64_t>(1024) * 8u * 1024u * 4u)
+		<< "图集字节数与 4S×2S×4 不符";
+
+	//切回独立瓦片：按需重建
+	ASSERT_FALSE(renderer.spot_shadow_atlas_set(false));
+	light.spot_shadow_atlas = 0;
+	const Outcome back = run_frame(renderer, light, camera, fog, occluder, receiver);
+	ASSERT_TRUE(back.ok) << "切回独立瓦片后渲染失败";
+	RecordProperty("back_tile_targets", back.stats.spot_shadow_tile_targets);
+	EXPECT_GE(back.stats.spot_shadow_tile_targets, 1u) << "切回后未重建瓦片目标";
+	EXPECT_EQ(back.stats.shadow_atlas_bytes, 0u) << "切回后图集字节应为 0";
+
+	renderer.mesh_unload(receiver);
+	renderer.mesh_unload(occluder);
+	renderer.texture_unload(texture);
+}
