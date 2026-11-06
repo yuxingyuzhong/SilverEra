@@ -168,10 +168,12 @@ namespace
 
 	/*
 	渲染一帧点光源接触阴影（第七百零五轮）
-	strength = 强度；slot = 传给 post_extra.z 的槽位（0..7）；spot_slot = 真则槽位登记为聚光灯（用于类型不符用例）。
+	strength = 强度；slot = 传给 post_extra.z 的槽位（0..31）；spot_slot = 真则槽位登记为聚光灯（用于类型不符用例）；
+	filler_count = 先登记多少个零强度占位点光源（第七百零六轮用于把有效灯推到高段槽位）。
 	方向光强度置 0，接收面由点光源 ＋ 环境光照亮。
 	*/
-	std::vector<uint8_t> render_contact_point(float strength, uint32_t slot, bool spot_slot)
+	std::vector<uint8_t> render_contact_point(float strength, uint32_t slot, bool spot_slot,
+		uint32_t filler_count = 0)
 	{
 		engine::Renderer renderer;
 		EXPECT_TRUE(renderer.init(hidden_config()));
@@ -199,6 +201,10 @@ namespace
 		//点光源：与聚光灯用例同灯位（右后方、半径 6）
 		const float point_position[3] = { 0.8f, 0.0f, -2.5f };
 		const float point_color[3] = { 1.0f, 1.0f, 1.0f };
+		const float filler_position[3] = { 1000.0f, 0.0f, 0.0f };
+		//零强度占位（把有效灯推到高段槽位 8..）
+		for (uint32_t index = 0; index < filler_count; ++index)
+			EXPECT_TRUE(renderer.light_add_point(filler_position, point_color, 1.0f, 0.0f, 0.0f));
 		if (spot_slot)
 		{
 			//登记为聚光灯（传播方向指向接收面），用于「模式与槽位类型不符」用例
@@ -406,4 +412,28 @@ TEST_F(Renderer_Post_Chain_Test, 接触阴影点光模式聚光槽位原样输�
 	std::vector<uint8_t> disabled = render_contact_point(0.0f, 0, true);
 	std::vector<uint8_t> enabled = render_contact_point(1.0f, 0, true);
 	EXPECT_EQ(max_color_diff(disabled, enabled), 0) << "类型不符未原样输出";
+}
+
+/*
+高段槽位点光源（第七百零六轮）
+口径：8 盏零强度占位 ＋ 第 9 盏有效点光源（槽位 8，属 UBO 高段）；模式 2 槽位 8 → 应压暗接收面；
+      槽位 31（未登记）→ 与强度 0 逐字节一致。
+*/
+TEST_F(Renderer_Post_Chain_Test, 接触阴影高段槽位点光源)
+{
+	engine::Renderer probe;
+	ASSERT_TRUE(probe.init(hidden_config()));
+	if (!probe.readback_supported())
+		GTEST_SKIP() << "本机交换链图像不具备传输源用法";
+
+	//槽位 8（高段第一槽）
+	std::vector<uint8_t> high_off = render_contact_point(0.0f, 8, false, 8);
+	std::vector<uint8_t> high_on = render_contact_point(1.0f, 8, false, 8);
+	uint32_t darkened = darkened_count(high_on, high_off, 8.0f);
+	RecordProperty("contact_high_slot_darkened_pixels", darkened);
+	EXPECT_GT(darkened, 10u) << "高段槽位未参与接触阴影（压暗像素 " << darkened << "）";
+	//槽位 31 未登记
+	std::vector<uint8_t> empty_off = render_contact_point(0.0f, 31, false, 8);
+	std::vector<uint8_t> empty_on = render_contact_point(1.0f, 31, false, 8);
+	EXPECT_EQ(max_color_diff(empty_off, empty_on), 0) << "空高段槽位未原样输出";
 }
