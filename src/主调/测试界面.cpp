@@ -587,9 +587,19 @@ namespace engine
 
         ImGui::BeginChild("##主体", ImVec2(0.0f, 主体高), ImGuiChildFlags_None);
         {
+            /*
+            三栏宽度按占比分配：选择树（左）占大头，详情与日志（右）收窄，结果表（中）取剩余。
+            上限 / 下限避免超宽屏把左栏拉成一条街、窄屏把中间挤没。
+            */
+            const float 栏间距 = 10.0f;
+            const float 主体宽度 = ImGui::GetContentRegionAvail().x;
+            const float 左栏宽 = (std::clamp)(主体宽度 * 0.40f, 430.0f, 760.0f);
+            const float 右栏宽 = (std::clamp)(主体宽度 * 0.23f, 280.0f, 420.0f);
+            const float 中栏宽 = (std::max)(主体宽度 - 左栏宽 - 右栏宽 - 栏间距 * 2.0f, 240.0f);
+
             //左栏：测试范围
             卡片样式压入();
-            ImGui::BeginChild("##左栏", ImVec2(336.0f, 0.0f), ImGuiChildFlags_Borders);
+            ImGui::BeginChild("##左栏", ImVec2(左栏宽, 0.0f), ImGuiChildFlags_Borders);
             {
                 卡片标题("测试范围", "勾选要运行的模块");
 
@@ -666,11 +676,11 @@ namespace engine
             ImGui::EndChild();
             卡片样式弹出();
 
-            ImGui::SameLine(0.0f, 10.0f);
+            ImGui::SameLine(0.0f, 栏间距);
 
             //中栏：运行总览 + 结果表
             卡片样式压入();
-            ImGui::BeginChild("##中栏", ImVec2(-380.0f, 0.0f), ImGuiChildFlags_Borders);
+            ImGui::BeginChild("##中栏", ImVec2(中栏宽, 0.0f), ImGuiChildFlags_Borders);
             {
                 卡片标题("运行总览", "当前轮结果");
                 ImGui::Checkbox("只看失败", &只看失败);
@@ -709,7 +719,7 @@ namespace engine
             ImGui::EndChild();
             卡片样式弹出();
 
-            ImGui::SameLine(0.0f, 10.0f);
+            ImGui::SameLine(0.0f, 栏间距);
 
             //右栏：详情 / 轮次 / 日志
             卡片样式压入();
