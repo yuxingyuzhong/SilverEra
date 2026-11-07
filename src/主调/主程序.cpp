@@ -28,6 +28,12 @@
 
 #include <windows.h>
 
+//分层测试库的注册锚（各子工程提供）：静态库里未被引用的 .obj 会被链接器丢弃，
+//TEST 宏的静态注册随之消失；这里强制引用一次，漏链测试库时链接期直接失败。
+extern "C" void byjy_test_anchor_foundation();
+extern "C" void byjy_test_anchor_system();
+extern "C" void byjy_test_anchor_renderer();
+
 //文件内部工具
 namespace
 {
@@ -111,6 +117,11 @@ int main(int argc, char** argv)
 
     //—— 第二步：交给 googletest 解析（必须在取反射前完成） ——
     ::testing::InitGoogleTest(&参数个数, 参数指针.data());
+
+    //强制引用三个分层测试库的注册锚：测试库未被整体收编时在此链接失败
+    byjy_test_anchor_foundation();
+    byjy_test_anchor_system();
+    byjy_test_anchor_renderer();
 
     //—— 第三步：透传 / 关闭分支：不开窗直接全跑 ——
     //未显式指定选择器时，出现 gtest 参数即视为自动化调用，原样透传

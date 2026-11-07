@@ -5,13 +5,17 @@
 # 依赖：Engine 聚合层（对外转发 EngineSystem.lib + EngineFoundation.lib）—— 一律链接「已经构建好的」静态库
 #       渲染层 EngineRenderer.lib（图形操作界面经其 UI 通道绘制；本层不引入 Vulkan/SDL 类型到用例）
 # 产物：TestCore 静态库（src/ 下的功能测试器集合，当前为空）
-#       TestLauncher 静态库（src/主调/ 下的测试选择模型、控制台菜单与引擎日志屏蔽）
+#       TestLauncher 静态库（src/主调/ 下的测试选择模型、控制台菜单）
 #       TestGui 静态库（external/Dear_ImGui 核心 + SDL3/Vulkan 后端，供图形操作界面使用）
 #       EngineTests.exe（本层唯一可执行文件，main 由 src/主调/主程序.cpp 提供）
+# 测试用例：按被测层拆到独立子工程（tests/Foundation、tests/System、tests/Renderer），
+#           各自产出 Test<Layer>.lib（用例 + 注册锚）与 Test<Layer>.exe（薄入口）；
+#           本层只整体收编三个静态库（WHOLE_ARCHIVE），不再直接编译用例。
 # 用法（本层独立配置与构建）：
 #     cmake -S <本目录> -B <本目录>/out/build/x64-Debug -G Ninja
 #     cmake --build <本目录>/out/build/x64-Debug
-# 前置条件：先按依赖顺序构建 Engine/EngineFoundation → Engine/EngineSystem → Engine/EngineRenderer。
+# 前置条件：先按依赖顺序构建 Engine/EngineFoundation → Engine/EngineSystem → Engine/EngineRenderer，
+#           再构建三个测试子工程（各层测试库缺失时本层配置期即报错并给出构建命令）。
 #           本层不拉入任何下层源码，也没有源码回退路径（层级契约统一：层与层之间一律链接静态库）。
 # 包含路径：项目内部一律写「项目根相对全路径」——
 #           引擎头   Engine/EngineFoundation/...、Engine/EngineSystem/...、Engine/EngineRenderer/...
@@ -22,10 +26,12 @@
 # 说明：
 #     - 本层不再产出分层宿主（引擎宿主 / 系统宿主 / 全栈宿主）。宿主机制取消后，
 #       可执行文件只在测试层产生：EngineTests.exe 既是单元测试入口，也是启动项。
-#     - 用例统一放在 src/单元测试/ 下，用 OBJECT 库收集而非静态库：静态库里未被
-#       引用的 .obj 会被链接器丢弃，TEST 宏的静态注册会随之丢失，用例便静默不跑。
+#     - 本层自有的用例（main 调逻辑自测）留在 src/单元测试/Test/ 下，用 OBJECT 库收集：
+#       静态库里未被引用的 .obj 会被链接器丢弃，TEST 宏的静态注册会随之消失。
+#     - 分层用例（EngineFoundation / EngineSystem / Renderer）由独立子工程产出静态库，
+#       本层用 WHOLE_ARCHIVE 整体收编 —— 原因同上，跨构建树也无法用 OBJECT 库。
 # =============================================================================
-cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 3.24)
 
 if(MSVC)
     add_compile_options(/WX-)
@@ -303,6 +309,68 @@ else()
 endif()
 
 # =============================================================================
+# 1.7 接入分层测试子工程（tests/Foundation、tests/System、tests/Renderer）
+# =============================================================================
+# 每个子工程都是独立的 CMake 工程（各自的 out/build/x64-<配置>），只读同一份
+# Engine/版本锁.cmake。本层不编它们的源码，只按对外接口契约定位已构建好的静态库：
+#     <子工程>/out/build/x64-<配置>/lib/Test<层>.lib
+# 链接时用 WHOLE_ARCHIVE 整体收编：静态库里未被引用的 .obj 会被链接器丢弃，
+# TEST 宏的静态注册随之消失（与 EngineTestObjects 用 OBJECT 库是同一个原因）。
+foreach(_byjy_pair IN ITEMS
+        "Foundation|BYJY_TEST_FOUNDATION"
+        "System|BYJY_TEST_SYSTEM"
+        "Renderer|BYJY_TEST_RENDERER")
+    string(REPLACE "|" ";" _byjy_parts "${_byjy_pair}")
+    list(GET _byjy_parts 0 _byjy_sub)
+    list(GET _byjy_parts 1 _byjy_prefix)
+
+    # 先在本作用域读入对外接口：byjy_jieru_xiaceng() 内部的 include 只作用于函数作用域，
+    # 函数返回后 OUT_LIB / OUT_LIBDIR 就取不到了，故此处显式再 include 一次（纯数据赋值）。
+    include("${PROJECT_ROOT_DIR}/tests/${_byjy_sub}/cmake/对外接口.cmake")
+
+    byjy_jieru_xiaceng(
+        "${PROJECT_ROOT_DIR}/tests/${_byjy_sub}/cmake/对外接口.cmake"
+        "${_byjy_prefix}"
+        "${_byjy_prefix}_LIB_PATH")
+
+    # 逐配置覆盖导入库位置（多配置生成器需要 Debug / Release 两份都齐）
+    set(_byjy_lib_name "${${_byjy_prefix}_OUT_LIB}")
+    set(_byjy_lib_dir "${${_byjy_prefix}_OUT_LIBDIR}")
+    if("${_byjy_lib_name}" STREQUAL "")
+        message(FATAL_ERROR
+            "Test：测试子工程 ${_byjy_sub} 的对外接口未声明 OUT_LIB（${_byjy_prefix}_OUT_LIB）")
+    endif()
+    set(_byjy_found_configs "")
+    foreach(_byjy_cfg IN ITEMS DEBUG RELEASE)
+        set(_byjy_lib "${_byjy_lib_dir}/out/build/x64-${_byjy_cfg}/lib/${_byjy_lib_name}.lib")
+        if(EXISTS "${_byjy_lib}")
+            set_target_properties(${_byjy_lib_name} PROPERTIES
+                IMPORTED_LOCATION_${_byjy_cfg} "${_byjy_lib}")
+            list(APPEND _byjy_found_configs "${_byjy_cfg}")
+        elseif(CMAKE_CONFIGURATION_TYPES)
+            message(FATAL_ERROR
+                "Test：找不到测试子工程 ${_byjy_sub} 的 ${_byjy_cfg} 静态库：${_byjy_lib}\n"
+                "  多配置生成器要求两套测试库齐备。请先构建：\n"
+                "      cmake -S \"${_byjy_lib_dir}\" -B \"${_byjy_lib_dir}/out/build/x64-${_byjy_cfg}\" -G Ninja\n"
+                "      cmake --build \"${_byjy_lib_dir}/out/build/x64-${_byjy_cfg}\"")
+        endif()
+    endforeach()
+    # 声明导入目标实际提供的配置，多配置生成器才会按 $<CONFIG> 选中对应库
+    if(_byjy_found_configs)
+        set_target_properties(${_byjy_lib_name} PROPERTIES
+            IMPORTED_CONFIGURATIONS "${_byjy_found_configs}")
+    endif()
+    if(EXISTS "${_byjy_lib_dir}/out/build/x64-Release/lib/${_byjy_lib_name}.lib")
+        set_target_properties(${_byjy_lib_name} PROPERTIES
+            IMPORTED_LOCATION_RELWITHDEBINFO "${_byjy_lib_dir}/out/build/x64-Release/lib/${_byjy_lib_name}.lib"
+            IMPORTED_LOCATION_MINSIZEREL "${_byjy_lib_dir}/out/build/x64-Release/lib/${_byjy_lib_name}.lib")
+    endif()
+
+    # 三个测试库名收进列表，供 EngineTests 链接（顺序保持 Foundation → System → Renderer）
+    list(APPEND BYJY_TEST_LIBS "${_byjy_lib_name}")
+endforeach()
+
+# =============================================================================
 # 2. 源文件收集
 # =============================================================================
 # 收录 src/ 下的功能测试代码
@@ -501,6 +569,9 @@ else()
     # 主调头文件（MAIN_HEADERS）经 源文件列表_TestLauncher.cmake 的 target_sources
     # 提供，使 VS 文件视图对其改名 / 迁移时可改写引用并触发重配；两个 .cpp 是固定条目，
     # 仍写字面量（本就不属 GLOB 产物）。
+    # 注意：引擎日志屏蔽.cpp 已随日志系统用例移入 tests/Foundation 子工程（该用例要
+    #       临时关/开屏蔽）。主程序从 TestFoundation.lib 取得同名符号，此处不再重复编译，
+    #       否则同一个符号会在链接期出现两份。
     byjy_source_list_sync(
         "${PROJECT_ROOT_DIR}/源文件列表_TestLauncher.cmake"
         "${PROJECT_ROOT_DIR}"
@@ -512,7 +583,6 @@ else()
     add_library(TestLauncher STATIC
         "${PROJECT_ROOT_DIR}/src/主调/测试选择模型.cpp"
         "${PROJECT_ROOT_DIR}/src/主调/控制台选择菜单.cpp"
-        "${PROJECT_ROOT_DIR}/src/主调/引擎日志屏蔽.cpp"
     )
     include("${PROJECT_ROOT_DIR}/源文件列表_TestLauncher.cmake")
     # 主调实现文件以本层根相对（src/主调/...）包含本层头；主调与用例共用的日志屏蔽
@@ -588,6 +658,11 @@ else()
         EngineTestObjects EngineFoundation EngineSystem EngineRenderer
         GTest::gtest TestLauncher TestGui
     )
+    # 分层用例库：整体收编（见第 1.7 节），漏链时注册锚会令链接失败
+    foreach(_byjy_test_lib IN LISTS BYJY_TEST_LIBS)
+        target_link_libraries(EngineTests PRIVATE
+            "$<LINK_LIBRARY:WHOLE_ARCHIVE,${_byjy_test_lib}>")
+    endforeach()
     # 多配置生成器（VS）默认在输出目录后追加配置子目录（Debug/、Release/）；
     # 而用例按「可执行文件目录」解析 assets/ 与 shaders/，落到子目录会导致大量用例失败。
     # 用空生成器表达式（含 genex 即不追加）让 Debug / Release 都落在本层根目录；

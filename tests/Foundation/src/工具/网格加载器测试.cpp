@@ -12,7 +12,7 @@
 #include "Engine/EngineFoundation/src/tools/Detail/路径字符串转换.h"
 
 //临时网格文件所在目录（相对可执行文件目录）
-static const std::string temp_dir = "src/单元测试/EngineFoundation/工具/";
+static const std::string temp_dir = "tests/Foundation/src/工具/";
 
 //写入临时网格文件，返回可读取的相对路径
 static std::string mesh_write(const std::string& file_name, const std::string& content)
@@ -154,7 +154,7 @@ TEST_F(Mesh_Loader_Test, 路径非法时加载失败)
 	//网格数据
 	engine::Mesh_Data mesh_data;
 	//不存在的文件
-	EXPECT_FALSE(engine::Mesh_Loader::load_obj("src/单元测试/EngineFoundation/工具/不存在的网格.obj", mesh_data));
+	EXPECT_FALSE(engine::Mesh_Loader::load_obj("tests/Foundation/src/工具/不存在的网格.obj", mesh_data));
 	//空路径
 	EXPECT_FALSE(engine::Mesh_Loader::load_obj("", mesh_data));
 }
