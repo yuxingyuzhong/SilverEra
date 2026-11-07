@@ -238,6 +238,9 @@ foreach(_byjy_cfg IN ITEMS Debug Release)
     byjy_banben_hedui("Test" EngineRenderer "${_byjy_cfg}")
 endforeach()
 
+# 记录本层构建时使用的下层版本（供图形界面判断「本层自测」层级的下层库是否已更新）
+byjy_banben_jilu("${CMAKE_BINARY_DIR}")
+
 # =============================================================================
 # 1.5 下层头快照接入（本层专用）
 # =============================================================================
@@ -582,6 +585,7 @@ else()
     )
     add_library(TestLauncher STATIC
         "${PROJECT_ROOT_DIR}/src/主调/测试选择模型.cpp"
+        "${PROJECT_ROOT_DIR}/src/主调/测试层级状态.cpp"
         "${PROJECT_ROOT_DIR}/src/主调/控制台选择菜单.cpp"
     )
     include("${PROJECT_ROOT_DIR}/源文件列表_TestLauncher.cmake")

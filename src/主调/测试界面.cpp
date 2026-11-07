@@ -5,6 +5,8 @@
 #include "src/主调/测试运行器.h"
 //获取引擎日志屏蔽（取日志文件路径）
 #include "src/主调/引擎日志屏蔽.h"
+//获取测试层级状态（按子 CMake 层级判断下层库是否已更新）
+#include "src/主调/测试层级状态.h"
 //获取路径字符串转换（中文日志路径 → filesystem::path）
 #include "Engine/EngineFoundation/src/tools/Detail/路径字符串转换.h"
 
@@ -229,6 +231,149 @@ namespace engine
             }
         }
 
+        //单个套件行绘制（按层级分组时复用）：状态点 + 套件复选框 + 展开树 + 右键菜单
+        void 套件行绘制(Test_Selection_Model& 模型, std::size_t 套件序号, const std::string& 关键词,
+            std::unordered_map<std::string, 套件统计>& 套件结果, std::string& 运行提示)
+        {
+            const std::vector<Suite_Entry>& 套件表 = 模型.suite_table_get();
+            const Suite_Entry& 套件 = 套件表[套件序号];
+
+            ImGui::PushID(static_cast<int>(套件序号));
+            //套件状态点：有失败显示红色，有通过显示绿色，未运行显示灰色（未运行的套件按默认值插入）
+            const 套件统计& 套件聚合 = 套件结果[套件.name];
+            const ImVec4 点色 = 套件聚合.失败 > 0 ? 失败色
+                : (套件聚合.通过 > 0 ? 成功色 : 次要色);
+            const ImVec2 点起点 = ImGui::GetCursorScreenPos();
+            const float 行高 = ImGui::GetTextLineHeight();
+            ImGui::Dummy(ImVec2(11.0f, 行高));
+            ImGui::GetWindowDrawList()->AddCircleFilled(
+                ImVec2(点起点.x + 4.5f, 点起点.y + 行高 * 0.5f), 3.5f,
+                ImGui::GetColorU32(点色), 16);
+            ImGui::SameLine(0.0f, 4.0f);
+            //套件级复选框
+            bool 套件勾选 = 模型.suite_all_checked(套件序号);
+            if (ImGui::Checkbox("##套件勾选", &套件勾选))
+                模型.suite_check_set(套件序号, 套件勾选);
+            ImGui::SameLine(0.0f, 6.0f);
+
+            //已选计数标签
+            std::size_t 套件已选 = 0;
+            for (const Case_Entry& 用例 : 套件.case_list)
+            {
+                if (用例.checked)
+                    ++套件已选;
+            }
+            const std::string 节点标签 = 套件.name + "（" + std::to_string(套件已选)
+                + "/" + std::to_string(套件.case_list.size()) + "）";
+            //展开态由模型持有
+            ImGui::SetNextItemOpen(模型.suite_expanded(套件序号), ImGuiCond_Always);
+            const bool 展开 = ImGui::TreeNodeEx("##节点",
+                ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_SpanAvailWidth,
+                "%s", 节点标签.c_str());
+            //右键菜单：默认全部勾选时「点复选框」是取消，故提供显式的只选 / 全选 / 清空
+            if (ImGui::BeginPopupContextItem("##套件菜单"))
+            {
+                if (ImGui::MenuItem("只选此项"))
+                {
+                    模型.all_clear();
+                    模型.suite_check_set(套件序号, true);
+                    运行提示.clear();
+                }
+                if (ImGui::MenuItem("全选此项"))
+                {
+                    模型.suite_check_set(套件序号, true);
+                    运行提示.clear();
+                }
+                if (ImGui::MenuItem("清空此项"))
+                    模型.suite_check_set(套件序号, false);
+                ImGui::EndPopup();
+            }
+            if (展开 != 模型.suite_expanded(套件序号))
+                模型.suite_expand_set(套件序号, 展开);
+            if (展开)
+            {
+                for (std::size_t 用例序号 = 0; 用例序号 < 套件.case_list.size(); ++用例序号)
+                {
+                    const Case_Entry& 用例 = 套件.case_list[用例序号];
+                    if (!含关键词(套件.name, 关键词) && !含关键词(用例.name, 关键词))
+                        continue;
+                    ImGui::PushID(static_cast<int>(用例序号));
+                    bool 用例勾选 = 用例.checked;
+                    if (ImGui::Checkbox(用例.name.c_str(), &用例勾选))
+                        模型.case_check_set(套件序号, 用例序号, 用例勾选);
+                    ImGui::PopID();
+                }
+                ImGui::TreePop();
+            }
+            ImGui::PopID();
+        }
+
+        //层级分组绘制：标题行（层级复选框 + 只选此层 + 状态）+ 该层全部套件
+        void 层级分组绘制(Test_Selection_Model& 模型, std::size_t 层级, const std::string& 关键词,
+            std::unordered_map<std::string, 套件统计>& 套件结果,
+            const Layer_Version_State* 状态, bool 隔离, std::string& 运行提示)
+        {
+            //空层级不显示（未识别层级的兜底分组同理）
+            if (模型.layer_case_count(层级) == 0)
+                return;
+
+            ImGui::PushID(static_cast<int>(1000 + 层级));
+            bool 层勾选 = 模型.layer_all_checked(层级);
+            //三态观感：半选时用黄色文字提示，复选框本身仍为二态
+            if (ImGui::Checkbox("##层勾选", &层勾选))
+                模型.layer_check_set(层级, 层勾选);
+            ImGui::SameLine(0.0f, 6.0f);
+            const ImVec4 层色 = 隔离 ? 失败色
+                : (模型.layer_half_checked(层级) ? 跳过色 : 正文色);
+            字号压入(17.0f);
+            ImGui::TextColored(层色, "%s（%zu/%zu）",
+                test_layer_name(static_cast<Test_Layer>(层级)),
+                模型.layer_checked_count(层级), 模型.layer_case_count(层级));
+            ImGui::PopFont();
+            ImGui::SameLine(0.0f, 10.0f);
+            if (ImGui::SmallButton("只选此层"))
+            {
+                模型.layer_check_only(层级);
+                运行提示.clear();
+            }
+            //待更新徽标与原因（仅隔离区显示）
+            if (隔离 && 状态 != nullptr)
+            {
+                ImGui::SameLine(0.0f, 8.0f);
+                状态胶囊("待更新", 失败色);
+                for (const std::string& 原因 : 状态->reasons)
+                    ImGui::TextColored(次要色, "    %s", 原因.c_str());
+            }
+
+            //该层全部套件
+            const std::vector<Suite_Entry>& 套件表 = 模型.suite_table_get();
+            for (std::size_t 套件序号 = 0; 套件序号 < 套件表.size(); ++套件序号)
+            {
+                const Suite_Entry& 套件 = 套件表[套件序号];
+                //仅绘制属于本层的套件
+                if (static_cast<std::size_t>(套件.layer) != 层级)
+                    continue;
+                //套件与用例都未命中关键词时隐藏
+                bool 命中 = 含关键词(套件.name, 关键词);
+                if (!命中)
+                {
+                    for (const Case_Entry& 用例 : 套件.case_list)
+                    {
+                        if (含关键词(用例.name, 关键词))
+                        {
+                            命中 = true;
+                            break;
+                        }
+                    }
+                }
+                if (!命中)
+                    continue;
+                套件行绘制(模型, 套件序号, 关键词, 套件结果, 运行提示);
+            }
+            ImGui::PopID();
+            ImGui::Spacing();
+        }
+
         //绘制四角渐变背景 + 两个随时间缓慢漂移的光晕
         void 绘制渐变背景(void)
         {
@@ -272,6 +417,12 @@ namespace engine
         static bool 自动滚动 = true;
         //引擎日志缓存
         static std::vector<std::string> 日志行;
+        //层级版本状态（首次进入界面时读取；「重新检测」按钮可刷新）
+        static std::vector<Layer_Version_State> 层级状态;
+        //层级状态是否已读取
+        static bool 层级状态已读 = false;
+        //是否已按待更新层级做过默认隔离（整层取消勾选）
+        static bool 待更新已隔离 = false;
 
         //背景：四角渐变 + 漂移光晕（每帧重绘）
         绘制渐变背景();
@@ -286,6 +437,30 @@ namespace engine
         int 已完成 = 0;
         int 总数 = 0;
         runner.progress_get(已完成, 总数);
+
+        //层级版本状态：首次进入（或点「重新检测」后）读取；首次读到待更新层级时默认整层取消勾选
+        if (!层级状态已读)
+        {
+            层级状态 = layer_version_states_get();
+            层级状态已读 = true;
+            if (!待更新已隔离)
+            {
+                for (const Layer_Version_State& 状态 : 层级状态)
+                {
+                    if (!状态.outdated)
+                        continue;
+                    model.layer_check_set(static_cast<std::size_t>(状态.layer), false);
+                }
+                待更新已隔离 = true;
+            }
+        }
+        //待更新层级数（顶部提示与左栏隔离区共用）
+        int 待更新层数 = 0;
+        for (const Layer_Version_State& 状态 : 层级状态)
+        {
+            if (状态.outdated)
+                ++待更新层数;
+        }
 
         //统计当前快照中的状态计数
         int 通过数 = 0;
@@ -399,6 +574,12 @@ namespace engine
         else if (!运行提示.empty())
             ImGui::TextColored(失败色, "%s", 运行提示.c_str());
 
+        //层级版本提示：下层库已更新但该层测试库未重建时，常驻提醒
+        if (待更新层数 > 0)
+            ImGui::TextColored(跳过色,
+                "提示：%d 个测试层级的下层库已更新，已在左栏隔离；重建对应子工程后点「重新检测」",
+                待更新层数);
+
         //—— 主体：左选择树 / 中结果 / 右详情 ——
         const float 底部控制台高 = 178.0f;
         const float 页脚高 = 26.0f;
@@ -420,6 +601,13 @@ namespace engine
                 ImGui::SameLine();
                 if (ImGui::Button("反选"))
                     model.check_invert();
+                ImGui::SameLine();
+                if (ImGui::Button("重新检测"))
+                {
+                    //重读各层级构建记录，并允许再次按待更新层级做默认隔离
+                    层级状态已读 = false;
+                    待更新已隔离 = false;
+                }
                 ImGui::SetNextItemWidth(-1.0f);
                 ImGui::InputTextWithHint("##搜索", "搜索模块或用例名…", 搜索缓冲, sizeof(搜索缓冲));
                 ImGui::TextColored(次要色, "已选 %zu / %zu",
@@ -427,99 +615,51 @@ namespace engine
                 ImGui::TextColored(次要色, "右键套件：只选此项 / 全选 / 清空");
                 ImGui::Separator();
 
-                //可滚动的套件树
+                //可滚动的层级分组树
                 ImGui::BeginChild("##选择树", ImVec2(0.0f, 0.0f), ImGuiChildFlags_None);
                 {
                     const std::string 关键词 = 搜索缓冲;
-                    const std::vector<Suite_Entry>& 套件表 = model.suite_table_get();
-                    for (std::size_t 套件序号 = 0; 套件序号 < 套件表.size(); ++套件序号)
+
+                    //待更新层级：单独置顶隔离（下层库已更新，但该层测试库尚未重建）
+                    if (待更新层数 > 0)
                     {
-                        const Suite_Entry& 套件 = 套件表[套件序号];
-                        //套件名是否命中关键词
-                        const bool 套件命中 = 含关键词(套件.name, 关键词);
-                        //是否有用例命中关键词
-                        bool 有用例命中 = false;
-                        for (const Case_Entry& 用例 : 套件.case_list)
+                        ImGui::TextColored(失败色, "待更新层级（已默认隔离，重建后再跑）");
+                        ImGui::TextColored(次要色, "重建步骤：cmake --build <子工程>/out/build/x64-%s",
+                            current_config_name());
+                        for (const Layer_Version_State& 状态 : 层级状态)
                         {
-                            if (含关键词(用例.name, 关键词))
+                            if (!状态.outdated)
+                                continue;
+                            层级分组绘制(model, static_cast<std::size_t>(状态.layer), 关键词, 套件结果,
+                                &状态, true, 运行提示);
+                        }
+                        ImGui::Separator();
+                        ImGui::TextColored(成功色, "已同步层级");
+                    }
+
+                    //已同步层级：按枚举顺序分组
+                    for (int 层级 = 0; 层级 < test_layer_count; ++层级)
+                    {
+                        //已在上方隔离区绘制过的层级跳过
+                        bool 已隔离 = false;
+                        for (const Layer_Version_State& 状态 : 层级状态)
+                        {
+                            if (状态.outdated && static_cast<int>(状态.layer) == 层级)
                             {
-                                有用例命中 = true;
+                                已隔离 = true;
                                 break;
                             }
                         }
-                        //都未命中则整组隐藏
-                        if (!套件命中 && !有用例命中)
+                        if (已隔离)
                             continue;
-
-                        ImGui::PushID(static_cast<int>(套件序号));
-                        //套件状态点：有失败显示红色，有通过显示绿色，未运行显示灰色
-                        const 套件统计& 套件聚合 = 套件结果[套件.name];
-                        const ImVec4 点色 = 套件聚合.失败 > 0 ? 失败色
-                            : (套件聚合.通过 > 0 ? 成功色 : 次要色);
-                        const ImVec2 点起点 = ImGui::GetCursorScreenPos();
-                        const float 行高 = ImGui::GetTextLineHeight();
-                        ImGui::Dummy(ImVec2(11.0f, 行高));
-                        ImGui::GetWindowDrawList()->AddCircleFilled(
-                            ImVec2(点起点.x + 4.5f, 点起点.y + 行高 * 0.5f), 3.5f,
-                            ImGui::GetColorU32(点色), 16);
-                        ImGui::SameLine(0.0f, 4.0f);
-                        //套件级复选框
-                        bool 套件勾选 = model.suite_all_checked(套件序号);
-                        if (ImGui::Checkbox("##套件勾选", &套件勾选))
-                            model.suite_check_set(套件序号, 套件勾选);
-                        ImGui::SameLine(0.0f, 6.0f);
-
-                        //已选计数标签
-                        std::size_t 套件已选 = 0;
-                        for (const Case_Entry& 用例 : 套件.case_list)
-                        {
-                            if (用例.checked)
-                                ++套件已选;
-                        }
-                        const std::string 节点标签 = 套件.name + "（" + std::to_string(套件已选)
-                            + "/" + std::to_string(套件.case_list.size()) + "）";
-                        //展开态由模型持有
-                        ImGui::SetNextItemOpen(model.suite_expanded(套件序号), ImGuiCond_Always);
-                        const bool 展开 = ImGui::TreeNodeEx("##节点",
-                            ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_SpanAvailWidth,
-                            "%s", 节点标签.c_str());
-                        //右键菜单：默认全部勾选时「点复选框」是取消，故提供显式的只选 / 全选 / 清空
-                        if (ImGui::BeginPopupContextItem("##套件菜单"))
-                        {
-                            if (ImGui::MenuItem("只选此项"))
-                            {
-                                model.all_clear();
-                                model.suite_check_set(套件序号, true);
-                                运行提示.clear();
-                            }
-                            if (ImGui::MenuItem("全选此项"))
-                            {
-                                model.suite_check_set(套件序号, true);
-                                运行提示.clear();
-                            }
-                            if (ImGui::MenuItem("清空此项"))
-                                model.suite_check_set(套件序号, false);
-                            ImGui::EndPopup();
-                        }
-                        if (展开 != model.suite_expanded(套件序号))
-                            model.suite_expand_set(套件序号, 展开);
-                        if (展开)
-                        {
-                            for (std::size_t 用例序号 = 0; 用例序号 < 套件.case_list.size(); ++用例序号)
-                            {
-                                const Case_Entry& 用例 = 套件.case_list[用例序号];
-                                if (!套件命中 && !含关键词(用例.name, 关键词))
-                                    continue;
-                                ImGui::PushID(static_cast<int>(用例序号));
-                                bool 用例勾选 = 用例.checked;
-                                if (ImGui::Checkbox(用例.name.c_str(), &用例勾选))
-                                    model.case_check_set(套件序号, 用例序号, 用例勾选);
-                                ImGui::PopID();
-                            }
-                            ImGui::TreePop();
-                        }
-                        ImGui::PopID();
+                        层级分组绘制(model, static_cast<std::size_t>(层级), 关键词, 套件结果, nullptr,
+                            false, 运行提示);
                     }
+
+                    //兜底：来源未识别的用例（正常不应出现，出现时仍允许运行）
+                    if (model.layer_case_count(static_cast<std::size_t>(Test_Layer::Unknown)) > 0)
+                        层级分组绘制(model, static_cast<std::size_t>(Test_Layer::Unknown), 关键词,
+                            套件结果, nullptr, false, 运行提示);
                 }
                 ImGui::EndChild();
             }

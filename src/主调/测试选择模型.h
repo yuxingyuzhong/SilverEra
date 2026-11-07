@@ -14,6 +14,9 @@
 #include <string>
 #include <vector>
 
+//获取测试层级定义（与本模块同属 Test 层主调）
+#include "Application/Test/src/主调/测试层级状态.h"
+
 //引擎命名空间
 namespace engine
 {
@@ -22,6 +25,7 @@ namespace engine
     {
         std::string name;    //用例名（不含套件前缀）
         bool checked = true;  //用例是否被勾选
+        Test_Layer layer = Test_Layer::Unknown;  //用例来源的子 CMake 层级
     };
 
     //单个套件的选择条目
@@ -30,6 +34,7 @@ namespace engine
         std::string name;              //套件名
         std::vector<Case_Entry> case_list;  //套件下的用例
         bool expanded = false;           //界面上是否已展开用例列表
+        Test_Layer layer = Test_Layer::Unknown;  //套件所属层级（取首个用例的来源）
     };
 
     //测试选择模型
@@ -70,6 +75,21 @@ namespace engine
         void all_clear();
         //反向勾选
         void check_invert();
+
+        // —— 按层级 ——
+
+        //层级用例总数（层级编号取 Test_Layer 枚举值，仅 0..test_layer_count-1 有效）
+        std::size_t layer_case_count(std::size_t 层级) const;
+        //层级已勾选用例数
+        std::size_t layer_checked_count(std::size_t 层级) const;
+        //层级是否全选
+        bool layer_all_checked(std::size_t 层级) const;
+        //层级是否半选（部分勾选）
+        bool layer_half_checked(std::size_t 层级) const;
+        //设置层级勾选（整层全选或全不选）
+        void layer_check_set(std::size_t 层级, bool 勾选);
+        //只勾选该层级（其余层级全部清空）
+        void layer_check_only(std::size_t 层级);
 
         // —— 输出 ——
 

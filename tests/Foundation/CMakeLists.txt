@@ -40,6 +40,8 @@ byjy_ceshi_yilai("TestFoundation" EngineFoundation "BYJY_ENGINE_FOUNDATION" engi
 
 # 本子工程源码引用的 Foundation 头必须都在快照里（下层新增头未重建即报错）
 byjy_ceshi_tou_jiaoyan("TestFoundation" "${BYJY_SUB_ROOT}/src")
+# 记录本子工程构建时使用的下层版本（供图形界面判断该层级的下层库是否已更新）
+byjy_ceshi_jilu()
 
 # 包含根次序：下层头快照 → 项目根 → Test 层根（后者供 src/主调/... 形式引用）
 set(BYJY_APP_INC

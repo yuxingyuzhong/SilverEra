@@ -31,6 +31,7 @@ target_sources(TestLauncher PRIVATE
     "src/主调/图形操作界面.h"
     "src/主调/引擎日志屏蔽.h"
     "src/主调/控制台选择菜单.h"
+    "src/主调/测试层级状态.h"
     "src/主调/测试界面.h"
     "src/主调/测试运行器.h"
     "src/主调/测试运行记录.h"

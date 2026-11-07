@@ -292,6 +292,92 @@ TEST_F(测试选择模型测试, 过滤串多套件拼接)
     EXPECT_EQ(模型.filter_string_build(), 期望);
 }
 
+//层级归类：已知套件按源文件落到对应子 CMake 层级
+TEST_F(测试选择模型测试, 层级归类按源文件)
+{
+    //建立模型
+    engine::Test_Selection_Model 模型;
+    模型.suite_tree_build();
+
+    //四个层级各取一个代表套件核对来源
+    std::size_t 序号 = 0;
+    ASSERT_TRUE(查找套件(模型, "Object_Pool_Test", 序号));
+    EXPECT_EQ(模型.suite_table_get()[序号].layer, engine::Test_Layer::Foundation);
+    ASSERT_TRUE(查找套件(模型, "Collision_Region_Test", 序号));
+    EXPECT_EQ(模型.suite_table_get()[序号].layer, engine::Test_Layer::System);
+    ASSERT_TRUE(查找套件(模型, "Renderer_Scene_Test", 序号));
+    EXPECT_EQ(模型.suite_table_get()[序号].layer, engine::Test_Layer::Renderer);
+    ASSERT_TRUE(查找套件(模型, "测试选择模型测试", 序号));
+    EXPECT_EQ(模型.suite_table_get()[序号].layer, engine::Test_Layer::Self);
+}
+
+//层级归类：套件层级与其用例层级一致
+TEST_F(测试选择模型测试, 层级归类套件与用例一致)
+{
+    //建立模型
+    engine::Test_Selection_Model 模型;
+    模型.suite_tree_build();
+
+    //逐套件核对
+    for (const engine::Suite_Entry& 套件 : 模型.suite_table_get())
+    {
+        for (const engine::Case_Entry& 用例 : 套件.case_list)
+            EXPECT_EQ(用例.layer, 套件.layer) << 套件.name;
+    }
+}
+
+//层级计数：各层级用例数之和等于用例总数
+TEST_F(测试选择模型测试, 层级计数合计一致)
+{
+    //建立模型
+    engine::Test_Selection_Model 模型;
+    模型.suite_tree_build();
+
+    //含未识别层级的兜底编号一起统计
+    std::size_t 合计 = 0;
+    for (int 层级 = 0; 层级 <= static_cast<int>(engine::Test_Layer::Unknown); ++层级)
+        合计 += 模型.layer_case_count(static_cast<std::size_t>(层级));
+    EXPECT_EQ(合计, 模型.case_count());
+}
+
+//层级勾选：整层取消与只选该层
+TEST_F(测试选择模型测试, 层级整层勾选)
+{
+    //建立模型
+    engine::Test_Selection_Model 模型;
+    模型.suite_tree_build();
+    //选一个非空层级
+    std::size_t 层级 = 0;
+    ASSERT_TRUE(模型.layer_case_count(0) > 0);
+
+    //整层取消后该层无勾选
+    模型.layer_check_set(层级, false);
+    EXPECT_EQ(模型.layer_checked_count(层级), 0u);
+    EXPECT_FALSE(模型.layer_all_checked(层级));
+
+    //只选该层后其余层级全部落空
+    模型.layer_check_only(层级);
+    EXPECT_TRUE(模型.layer_all_checked(层级));
+    EXPECT_EQ(模型.checked_case_count(), 模型.layer_case_count(层级));
+}
+
+//层级越界：查询为零、设置为空操作
+TEST_F(测试选择模型测试, 层级越界被忽略)
+{
+    //建立模型
+    engine::Test_Selection_Model 模型;
+    模型.suite_tree_build();
+    const std::size_t 越界 = static_cast<std::size_t>(engine::Test_Layer::Unknown) + 1;
+    //越界查询为零
+    EXPECT_EQ(模型.layer_case_count(越界), 0u);
+    EXPECT_EQ(模型.layer_checked_count(越界), 0u);
+    //越界设置不改动已选总数
+    const std::size_t 原勾选数 = 模型.checked_case_count();
+    EXPECT_NO_THROW(模型.layer_check_set(越界, false));
+    EXPECT_NO_THROW(模型.layer_check_only(越界));
+    EXPECT_EQ(模型.checked_case_count(), 原勾选数);
+}
+
 //控制台解析：all 全选
 TEST_F(测试选择模型测试, 控制台解析全选)
 {

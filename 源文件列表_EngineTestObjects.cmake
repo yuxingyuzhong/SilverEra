@@ -22,6 +22,7 @@
 # =============================================================================
 #
 target_sources(EngineTestObjects PRIVATE
+    "src/单元测试/Test/测试层级状态测试.cpp"
     "src/单元测试/Test/测试选择模型测试.cpp"
     "src/单元测试/Test/退出暂停判定测试.cpp"
 )

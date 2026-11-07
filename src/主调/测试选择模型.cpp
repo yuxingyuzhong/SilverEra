@@ -5,6 +5,7 @@
 
 #include <string>
 #include <vector>
+#include <cctype>
 
 //文件内部工具
 namespace
@@ -29,6 +30,39 @@ namespace
         }
         结果 = 值;
         return true;
+    }
+
+    //按用例源文件路径判定所属子 CMake 层级
+    //googletest 注册时记录了 __FILE__，CMake 以绝对路径传给编译器，故按路径片段归类
+    engine::Test_Layer 层级判定(const char* 文件)
+    {
+        //空路径视为未识别
+        if (文件 == nullptr)
+            return engine::Test_Layer::Unknown;
+
+        //统一分隔符并转小写，便于大小写无关匹配
+        std::string 路径 = 文件;
+        for (char& 字符 : 路径)
+        {
+            if (字符 == '\\')
+                字符 = '/';
+            else
+                字符 = static_cast<char>(std::tolower(static_cast<unsigned char>(字符)));
+        }
+
+        //三个独立测试子工程
+        if (路径.find("/tests/foundation/") != std::string::npos)
+            return engine::Test_Layer::Foundation;
+        if (路径.find("/tests/system/") != std::string::npos)
+            return engine::Test_Layer::System;
+        if (路径.find("/tests/renderer/") != std::string::npos)
+            return engine::Test_Layer::Renderer;
+
+        //本层自测（src/单元测试/ 下，路径含中文，按 UTF-8 子串匹配）
+        if (路径.find("src/单元测试/") != std::string::npos)
+            return engine::Test_Layer::Self;
+
+        return engine::Test_Layer::Unknown;
     }
 }
 
@@ -67,8 +101,14 @@ namespace engine
                 Case_Entry 用例记录;
                 用例记录.name = 用例->name();
                 用例记录.checked = true;
+                //按用例源文件归类到子 CMake 层级
+                用例记录.layer = 层级判定(用例->file());
                 条目.case_list.push_back(用例记录);
             }
+
+            //套件层级取首个用例的来源（同一套件只可能出自同一编译单元）
+            if (!条目.case_list.empty())
+                条目.layer = 条目.case_list.front().layer;
 
             suite_table_.push_back(条目);
         }
@@ -274,6 +314,97 @@ namespace engine
             }
         }
         return 清单;
+    }
+
+    //========================================================================
+    // 按层级查询与设置
+    //========================================================================
+    std::size_t Test_Selection_Model::layer_case_count(std::size_t 层级) const
+    {
+        //越界层级（含未识别层级的兜底编号）以外一律无内容
+        if (层级 > static_cast<std::size_t>(Test_Layer::Unknown))
+            return 0;
+
+        //累计属于该层级的用例数
+        std::size_t 总数 = 0;
+        for (const Suite_Entry& 套件 : suite_table_)
+        {
+            //整组不属该层级时跳过
+            if (static_cast<std::size_t>(套件.layer) != 层级)
+                continue;
+            总数 += 套件.case_list.size();
+        }
+        return 总数;
+    }
+
+    std::size_t Test_Selection_Model::layer_checked_count(std::size_t 层级) const
+    {
+        //越界层级（含未识别层级的兜底编号）以外一律无内容
+        if (层级 > static_cast<std::size_t>(Test_Layer::Unknown))
+            return 0;
+
+        //累计该层级已勾选用例数
+        std::size_t 总数 = 0;
+        for (const Suite_Entry& 套件 : suite_table_)
+        {
+            if (static_cast<std::size_t>(套件.layer) != 层级)
+                continue;
+            for (const Case_Entry& 用例 : 套件.case_list)
+            {
+                if (用例.checked)
+                    ++总数;
+            }
+        }
+        return 总数;
+    }
+
+    bool Test_Selection_Model::layer_all_checked(std::size_t 层级) const
+    {
+        const std::size_t 总数 = layer_case_count(层级);
+        //空层级不视为全选
+        if (总数 == 0)
+            return false;
+        return layer_checked_count(层级) == 总数;
+    }
+
+    bool Test_Selection_Model::layer_half_checked(std::size_t 层级) const
+    {
+        const std::size_t 总数 = layer_case_count(层级);
+        //空层级不存在半选
+        if (总数 == 0)
+            return false;
+        const std::size_t 已选 = layer_checked_count(层级);
+        return 已选 > 0 && 已选 < 总数;
+    }
+
+    void Test_Selection_Model::layer_check_set(std::size_t 层级, bool 勾选)
+    {
+        //越界层级忽略
+        if (层级 > static_cast<std::size_t>(Test_Layer::Unknown))
+            return;
+
+        //整层套件的用例一并设置
+        for (Suite_Entry& 套件 : suite_table_)
+        {
+            if (static_cast<std::size_t>(套件.layer) != 层级)
+                continue;
+            for (Case_Entry& 用例 : 套件.case_list)
+                用例.checked = 勾选;
+        }
+    }
+
+    void Test_Selection_Model::layer_check_only(std::size_t 层级)
+    {
+        //越界层级忽略
+        if (层级 > static_cast<std::size_t>(Test_Layer::Unknown))
+            return;
+
+        for (Suite_Entry& 套件 : suite_table_)
+        {
+            const bool 属于本层 = static_cast<std::size_t>(套件.layer) == 层级;
+            for (Case_Entry& 用例 : 套件.case_list)
+                用例.checked = 属于本层;
+        }
     }
 
     //========================================================================

@@ -39,6 +39,8 @@ byjy_ceshi_yilai("TestRenderer" EngineSystem "BYJY_ENGINE_SYSTEM" engine_system)
 byjy_ceshi_yilai("TestRenderer" EngineRenderer "BYJY_RENDERER" renderer)
 
 byjy_ceshi_tou_jiaoyan("TestRenderer" "${BYJY_SUB_ROOT}/src")
+# 记录本子工程构建时使用的下层版本（供图形界面判断该层级的下层库是否已更新）
+byjy_ceshi_jilu()
 
 # 包含根次序：下层头快照 → 项目根 → Test 层根
 set(BYJY_APP_INC
