@@ -2,14 +2,14 @@
 #include <gtest/gtest.h>
 
 //获取数值分配器
-#include "Engine/EngineFoundation/src/tools/Number_Allocator/数值分配器.h"
+#include "Engine/EngineFoundation/src/detail/class/Number_Pool/数值分配器.h"
 
 //数值分配器测试夹具
 class Number_Allocator_Test : public ::testing::Test
 {
 protected:
 	//被测分配器
-	engine::Number_Allocator<uint64_t> allocator;
+	engine::Number_Pool<uint64_t> allocator;
 };
 
 //默认起点：从零开始逐个递增
@@ -366,7 +366,7 @@ TEST_F(Number_Allocator_Test, 回收最大数值后原样取回)
 TEST_F(Number_Allocator_Test, 八位无符号类型分配)
 {
 	//8 位分配器
-	engine::Number_Allocator<uint8_t> byte_allocator;
+	engine::Number_Pool<uint8_t> byte_allocator;
 	//连续取出三个数值
 	EXPECT_EQ(static_cast<int>(byte_allocator.get()), 0);
 	EXPECT_EQ(static_cast<int>(byte_allocator.get()), 1);
@@ -377,7 +377,7 @@ TEST_F(Number_Allocator_Test, 八位无符号类型分配)
 TEST_F(Number_Allocator_Test, 有符号类型负数起点)
 {
 	//32 位有符号分配器
-	engine::Number_Allocator<int32_t> signed_allocator;
+	engine::Number_Pool<int32_t> signed_allocator;
 	//把起点设为负数
 	signed_allocator.set(-5);
 	//从负起点开始递增
@@ -389,7 +389,7 @@ TEST_F(Number_Allocator_Test, 有符号类型负数起点)
 TEST_F(Number_Allocator_Test, 八位类型游标耗尽回绕)
 {
 	//8 位分配器
-	engine::Number_Allocator<uint8_t> byte_allocator;
+	engine::Number_Pool<uint8_t> byte_allocator;
 	//把游标设到最大值前一位
 	byte_allocator.set(static_cast<uint8_t>(254));
 	//先正常取出 254

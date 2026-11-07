@@ -2,11 +2,11 @@
 #include <gtest/gtest.h>
 
 //获取数据校验工具
-#include "Engine/EngineFoundation/src/tools/Detail/package/数据校验工具.h"
+#include "Engine/EngineFoundation/src/detail/methods/package/数据校验工具.h"
 //获取引擎环境（用于取得真实存在的文件路径）
-#include "Engine/EngineFoundation/src/tools/Engine_Env/引擎环境.h"
+#include "Engine/EngineFoundation/src/detail/methods/文件路径获取.h"
 //获取路径字符串转换工具
-#include "Engine/EngineFoundation/src/tools/Detail/路径字符串转换.h"
+#include "Engine/EngineFoundation/src/detail/methods/路径字符串转换.h"
 
 //数据校验器测试夹具
 class Data_Validator_Test : public ::testing::Test
@@ -160,14 +160,14 @@ TEST_F(Data_Validator_Test, 布尔字段拒绝整数)
 TEST_F(Data_Validator_Test, 路径检查放行真实文件)
 {
 	//以当前可执行文件为被测路径
-	EXPECT_TRUE(engine::detail::path_check(engine::Engine_Env::exe_path_get()));
+	EXPECT_TRUE(engine::detail::path_check(engine::detail::exe_path_get()));
 }
 
 //路径检查：目录不是可读取文件
 TEST_F(Data_Validator_Test, 路径检查拒绝目录)
 {
 	//以可执行文件所在目录为被测路径
-	EXPECT_FALSE(engine::detail::path_check(engine::Engine_Env::exe_dir_get()));
+	EXPECT_FALSE(engine::detail::path_check(engine::detail::exe_dir_get()));
 }
 
 //路径检查：不存在的路径被拒绝
@@ -190,7 +190,7 @@ TEST_F(Data_Validator_Test, 路径检查拒绝空路径)
 TEST_F(Data_Validator_Test, 字符串重载放行真实文件)
 {
 	//把可执行文件路径转为 UTF-8 文本
-	const std::string exe_path = engine::detail::path_to_string(engine::Engine_Env::exe_path_get());
+	const std::string exe_path = engine::detail::path_to_string(engine::detail::exe_path_get());
 	//字符串重载应同样放行
 	EXPECT_TRUE(engine::detail::path_check(exe_path));
 }

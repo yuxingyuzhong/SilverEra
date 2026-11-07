@@ -3,9 +3,9 @@
 #include <gtest/gtest.h>
 
 //获取路径操作工具（路径字符串转换 + 路径规范化 + 路径键规范化）
-#include "Engine/EngineFoundation/src/tools/Detail/package/路径操作工具.h"
+#include "Engine/EngineFoundation/src/detail/methods/package/路径操作工具.h"
 //获取引擎环境
-#include "Engine/EngineFoundation/src/tools/Engine_Env/引擎环境.h"
+#include "Engine/EngineFoundation/src/detail/methods/文件路径获取.h"
 
 //路径字符串转换测试夹具
 class Path_String_Test : public ::testing::Test
@@ -113,7 +113,7 @@ TEST_F(Path_String_Test, 中文路径拼接后双保留)
 TEST_F(Path_String_Test, 转换结果可用于文件系统查询)
 {
 	//取可执行文件目录并转为 UTF-8 文本
-	const std::string exe_dir = engine::detail::path_to_string(engine::Engine_Env::exe_dir_get());
+	const std::string exe_dir = engine::detail::path_to_string(engine::detail::exe_dir_get());
 	//该文本转回路径后应指向真实存在的目录
 	EXPECT_TRUE(std::filesystem::exists(engine::detail::string_to_path(exe_dir)));
 }

@@ -5,9 +5,9 @@
 #include <gtest/gtest.h>
 
 //获取日志系统
-#include "Engine/EngineFoundation/src/tools/Logging/日志系统运行包.h"
+#include "Engine/EngineFoundation/src/log/日志系统运行包.h"
 //获取路径字符串转换工具
-#include "Engine/EngineFoundation/src/tools/Detail/路径字符串转换.h"
+#include "Engine/EngineFoundation/src/detail/methods/路径字符串转换.h"
 //获取引擎日志屏蔽（用例期间需临时关闭）
 #include "src/主调/引擎日志屏蔽.h"
 

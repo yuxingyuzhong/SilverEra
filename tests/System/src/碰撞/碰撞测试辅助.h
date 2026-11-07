@@ -11,6 +11,8 @@ Collider_Test、Collision_Region_Test、Collision_Proxy_Test。
 
 //获取碰撞代理器（含碰撞空间、碰撞体与事件系统）
 #include "Engine/EngineSystem/src/collision/Collision_Proxy/碰撞代理器.h"
+//获取可执行文件目录（临时文件基址）
+#include "Engine/EngineFoundation/src/detail/methods/文件路径获取.h"
 
 //构造盒体几何配置
 static nlohmann::json box_config(const uint64_t collider_ID, const double position_X)
@@ -54,7 +56,7 @@ static std::string temp_mesh_write(void)
 {
 	//写入路径
 	std::filesystem::path mesh_path =
-		engine::Engine_Env::exe_dir_get() / engine::detail::string_to_path(temp_mesh_name);
+		engine::detail::exe_dir_get() / engine::detail::string_to_path(temp_mesh_name);
 
 	//打开临时网格文件
 	std::ofstream file(mesh_path);
@@ -93,7 +95,7 @@ static std::string temp_boundary_write(const std::string& region, const std::str
 {
 	//写入路径
 	std::filesystem::path config_path =
-		engine::Engine_Env::exe_dir_get() / engine::detail::string_to_path(temp_boundary_name);
+		engine::detail::exe_dir_get() / engine::detail::string_to_path(temp_boundary_name);
 
 	//打开临时边界配置文件
 	std::ofstream file(config_path);

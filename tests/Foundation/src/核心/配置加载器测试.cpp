@@ -2,11 +2,13 @@
 #include <gtest/gtest.h>
 
 //获取配置加载器
-#include "Engine/EngineFoundation/src/core/config/Config_Loader/配置加载器.h"
+#include "Engine/EngineFoundation/src/loader/config/Config_Loader/配置加载器.h"
 //获取事件中转器
-#include "Engine/EngineFoundation/src/core/event/Event_Broker/事件中转器.h"
+#include "Engine/EngineFoundation/src/event/Event_Broker/事件中转器.h"
 //获取路径字符串转换工具
-#include "Engine/EngineFoundation/src/tools/Detail/路径字符串转换.h"
+#include "Engine/EngineFoundation/src/detail/methods/路径字符串转换.h"
+//获取可执行文件目录（测试根目录基址）
+#include "Engine/EngineFoundation/src/detail/methods/文件路径获取.h"
 
 //配置加载器测试夹具
 class Config_Loader_Test : public ::testing::Test
@@ -51,7 +53,7 @@ protected:
 	{
 		//清除本次用例产生的测试根目录
 		if (!root_name.empty())
-			std::filesystem::remove_all(engine::Engine_Env::exe_dir_get() /
+			std::filesystem::remove_all(engine::detail::exe_dir_get() /
 				engine::detail::string_to_path(root_name));
 	}
 
@@ -59,7 +61,7 @@ protected:
 	static std::filesystem::path absolute_get(const std::string& text)
 	{
 		//以可执行文件目录为基准拼接
-		return engine::Engine_Env::exe_dir_get() / engine::detail::string_to_path(text);
+		return engine::detail::exe_dir_get() / engine::detail::string_to_path(text);
 	}
 
 	//可信根目录准备（nest 为真时把对象目录下探一层，用于区分可信根目录与对象自身目录）

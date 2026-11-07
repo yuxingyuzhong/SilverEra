@@ -2,7 +2,7 @@
 #include <gtest/gtest.h>
 
 //获取随机数生成器
-#include "Engine/EngineFoundation/src/tools/Random_Generator/随机数生成器.h"
+#include "Engine/EngineFoundation/src/detail/class/Random_Generator/随机数生成器.h"
 
 //随机数生成器测试夹具
 class Random_Generator_Test : public ::testing::Test

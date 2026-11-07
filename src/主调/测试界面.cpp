@@ -8,7 +8,7 @@
 //获取测试层级状态（按子 CMake 层级判断下层库是否已更新）
 #include "src/主调/测试层级状态.h"
 //获取路径字符串转换（中文日志路径 → filesystem::path）
-#include "Engine/EngineFoundation/src/tools/Detail/路径字符串转换.h"
+#include "Engine/EngineFoundation/src/detail/methods/路径字符串转换.h"
 
 //Dear ImGui
 #include "imgui.h"

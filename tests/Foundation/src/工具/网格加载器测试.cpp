@@ -5,11 +5,11 @@
 #include <cstring>
 
 //获取网格加载器
-#include "Engine/EngineFoundation/src/tools/Mesh_Loader/网格加载器.h"
+#include "Engine/EngineFoundation/src/loader/assets/Mesh_Loader/网格加载器.h"
 //获取引擎环境
-#include "Engine/EngineFoundation/src/tools/Engine_Env/引擎环境.h"
+#include "Engine/EngineFoundation/src/detail/methods/文件路径获取.h"
 //获取路径字符串转化方法
-#include "Engine/EngineFoundation/src/tools/Detail/路径字符串转换.h"
+#include "Engine/EngineFoundation/src/detail/methods/路径字符串转换.h"
 
 //临时网格文件所在目录（相对可执行文件目录）
 static const std::string temp_dir = "tests/Foundation/src/工具/";
@@ -20,7 +20,7 @@ static std::string mesh_write(const std::string& file_name, const std::string& c
 	//相对路径
 	const std::string relative_path = temp_dir + file_name;
 	//写入文件
-	std::ofstream file(engine::Engine_Env::exe_dir_get() /
+	std::ofstream file(engine::detail::exe_dir_get() /
 		engine::detail::string_to_path(relative_path));
 	file << content;
 	file.close();
@@ -33,7 +33,7 @@ static void mesh_remove(const std::string& relative_path)
 	//异常信息记录
 	std::error_code ec;
 	//删除文件
-	std::filesystem::remove(engine::Engine_Env::exe_dir_get() /
+	std::filesystem::remove(engine::detail::exe_dir_get() /
 		engine::detail::string_to_path(relative_path), ec);
 }
 

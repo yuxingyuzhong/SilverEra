@@ -4,11 +4,11 @@
 #include <fstream>
 
 //获取文件路径可用性校验工具
-#include "Engine/EngineFoundation/src/tools/Detail/文件路径可用性校验.h"
+#include "Engine/EngineFoundation/src/detail/methods/文件路径可用性校验.h"
 //获取引擎环境（取可执行文件目录作为临时文件基址）
-#include "Engine/EngineFoundation/src/tools/Engine_Env/引擎环境.h"
+#include "Engine/EngineFoundation/src/detail/methods/文件路径获取.h"
 //获取路径字符串转换工具
-#include "Engine/EngineFoundation/src/tools/Detail/路径字符串转换.h"
+#include "Engine/EngineFoundation/src/detail/methods/路径字符串转换.h"
 
 //路径校验测试夹具
 class Path_Check_Test : public ::testing::Test
@@ -38,7 +38,7 @@ public:
 	//取得临时文件的绝对路径
 	std::filesystem::path temp_absolute(void) const
 	{
-		return engine::Engine_Env::exe_dir_get() / engine::detail::string_to_path(temp_name);
+		return engine::detail::exe_dir_get() / engine::detail::string_to_path(temp_name);
 	}
 };
 
@@ -63,7 +63,7 @@ TEST_F(Path_Check_Test, 缺失路径对象被拒)
 {
 	//可执行文件目录下的不存在路径
 	const std::filesystem::path missing =
-		engine::Engine_Env::exe_dir_get() / engine::detail::string_to_path("不存在的目录/不存在的文件.txt");
+		engine::detail::exe_dir_get() / engine::detail::string_to_path("不存在的目录/不存在的文件.txt");
 	//缺失路径校验失败
 	EXPECT_FALSE(engine::detail::path_check(missing));
 }
@@ -93,7 +93,7 @@ TEST_F(Path_Check_Test, 常规文件字符串通过)
 TEST_F(Path_Check_Test, 目录路径对象被拒)
 {
 	//可执行文件目录本身
-	const std::filesystem::path directory = engine::Engine_Env::exe_dir_get();
+	const std::filesystem::path directory = engine::detail::exe_dir_get();
 	//目录校验失败
 	EXPECT_FALSE(engine::detail::path_check(directory));
 }
@@ -110,7 +110,7 @@ TEST_F(Path_Check_Test, 中文路径常规文件通过)
 {
 	//构造一个中文名临时文件
 	const std::filesystem::path chinese_path =
-		engine::Engine_Env::exe_dir_get() / engine::detail::string_to_path("tests/Foundation/src/工具/路径校验临时中文.txt");
+		engine::detail::exe_dir_get() / engine::detail::string_to_path("tests/Foundation/src/工具/路径校验临时中文.txt");
 
 	//写入文件
 	std::ofstream file(chinese_path);
@@ -130,7 +130,7 @@ TEST_F(Path_Check_Test, 多层缺失目录被拒)
 {
 	//多层均不存在的深层路径
 	const std::filesystem::path deep =
-		engine::Engine_Env::exe_dir_get() /
+		engine::detail::exe_dir_get() /
 		engine::detail::string_to_path("层一/层二/层三/文件.txt");
 	//深层缺失路径校验失败
 	EXPECT_FALSE(engine::detail::path_check(deep));

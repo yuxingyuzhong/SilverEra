@@ -1,9 +1,9 @@
 #include "src/主调/测试层级状态.h"
 
 //获取引擎环境（可执行文件目录）
-#include "Engine/EngineFoundation/src/tools/Engine_Env/引擎环境.h"
+#include "Engine/EngineFoundation/src/detail/methods/文件路径获取.h"
 //获取路径字符串转换（中文路径段 → filesystem::path）
-#include "Engine/EngineFoundation/src/tools/Detail/路径字符串转换.h"
+#include "Engine/EngineFoundation/src/detail/methods/路径字符串转换.h"
 
 #include <array>
 #include <cctype>
@@ -160,7 +160,7 @@ namespace engine
     {
         //可执行文件目录：<项目根>/Application/Test
         const std::filesystem::path root =
-            Engine_Env::exe_dir_get().parent_path().parent_path();
+            detail::exe_dir_get().parent_path().parent_path();
         return detail::path_to_string(root);
     }
 
@@ -195,7 +195,7 @@ namespace engine
     std::vector<Layer_Version_State> layer_version_states_get(void)
     {
         const std::filesystem::path root =
-            Engine_Env::exe_dir_get().parent_path().parent_path();
+            detail::exe_dir_get().parent_path().parent_path();
         const std::string config = current_config_name();
 
         //版本锁文本（锁空或文件缺失时不影响后续锚点判定）

@@ -7,9 +7,9 @@
 #include <vector>
 
 //获取对象基类
-#include "Engine/EngineFoundation/src/core/object/Object/对象.h"
+#include "Engine/EngineFoundation/src/object/Object/对象.h"
 //获取对象池（负责分配 ID 与有效标记）
-#include "Engine/EngineFoundation/src/core/object/Object_Pool/对象池.h"
+#include "Engine/EngineFoundation/src/object/Object_Pool/对象池.h"
 
 //派生测试对象
 class Test_Object : public engine::Object

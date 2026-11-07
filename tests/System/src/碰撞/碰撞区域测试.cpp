@@ -252,7 +252,7 @@ TEST_F(Collision_Region_Test, 空间边界构建与卸载)
 	//清理临时网格文件
 	std::error_code ec;
 	std::filesystem::remove(
-		engine::Engine_Env::exe_dir_get() / engine::detail::string_to_path(mesh_name), ec);
+		engine::detail::exe_dir_get() / engine::detail::string_to_path(mesh_name), ec);
 }
 
 //碰撞空间：跨越状态转移时收集通知，稳态不重复（接触判部分跨越，射线奇偶判内外）
@@ -320,7 +320,7 @@ TEST_F(Collision_Region_Test, 跨越状态转移与通知收集)
 	//清理临时网格文件
 	std::error_code ec;
 	std::filesystem::remove(
-		engine::Engine_Env::exe_dir_get() / engine::detail::string_to_path(mesh_name), ec);
+		engine::detail::exe_dir_get() / engine::detail::string_to_path(mesh_name), ec);
 }
 
 //碰撞代理器测试夹具

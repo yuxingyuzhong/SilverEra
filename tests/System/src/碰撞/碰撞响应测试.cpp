@@ -453,9 +453,9 @@ TEST_F(Collision_Proxy_Test, 跨越通知事件发布)
 	//清理临时网格与边界配置文件
 	std::error_code ec;
 	std::filesystem::remove(
-		engine::Engine_Env::exe_dir_get() / engine::detail::string_to_path(mesh_name), ec);
+		engine::detail::exe_dir_get() / engine::detail::string_to_path(mesh_name), ec);
 	std::filesystem::remove(
-		engine::Engine_Env::exe_dir_get() / engine::detail::string_to_path(boundary_name), ec);
+		engine::detail::exe_dir_get() / engine::detail::string_to_path(boundary_name), ec);
 }
 
 //碰撞代理器：空名称空间的构建与卸载全程不崩溃

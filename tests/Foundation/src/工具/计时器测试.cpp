@@ -2,7 +2,7 @@
 #include <gtest/gtest.h>
 
 //获取计时器
-#include "Engine/EngineFoundation/src/tools/Timer/计时器.h"
+#include "Engine/EngineFoundation/src/time/Timer/计时器.h"
 
 //计时器测试夹具
 class Timer_Test : public ::testing::Test
