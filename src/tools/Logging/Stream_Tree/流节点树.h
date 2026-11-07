@@ -1,12 +1,12 @@
 #pragma once
 //预编译头
-#include "Engine/EngineCore/common/前置头文件包含.h"
+#include "Engine/EngineFoundation/common/前置头文件包含.h"
 //获取日志输出目标
 #include "../Stream_Sink/输出目标.h"
 //获取节点缓存
 #include "../Node_Cache/节点缓存.h"
 //获取路径操作工具（路径键规范化）
-#include "Engine/EngineCore/src/tools/Detail/package/路径操作工具.h"
+#include "Engine/EngineFoundation/src/tools/Detail/package/路径操作工具.h"
 //获取日志规则（越界截断与选择性输出判定）
 #include "../Rule/日志规则.h"
 

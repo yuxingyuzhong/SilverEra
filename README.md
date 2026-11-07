@@ -1,6 +1,6 @@
-# 白银纪元 · EngineCore 层
+# 白银纪元 · EngineFoundation 层
 
-EngineCore 层是「白银纪元」四层仓库中**拓扑最底层的基础能力层**：向上提供事件、对象、空间分区、碰撞与通用工具集，自身**不包含任何具体游戏逻辑**，不感知任何上层存在。本层是独立 git 仓库，源码通过远端 `engine` 分支发布。
+EngineFoundation 层是「白银纪元」四层仓库中**拓扑最底层的基础能力层**：向上提供事件、对象、空间分区、碰撞与通用工具集，自身**不包含任何具体游戏逻辑**，不感知任何上层存在。本层是独立 git 仓库，源码通过远端 `engine` 分支发布。
 
 本层的历史名字是「游戏引擎」——那是一个「源码 / 资源 / 可执行文件 / 配置编辑器」一体的单体工程。分层改造后，本层只保留与具体游戏无关的基础能力，原先属于本层的实体体系、属性槽、效应、配置编辑器、资源与脚本目录均已迁出（详见[第十二节·历史沿革](#十二历史沿革旧名--现名现归属)）。
 
@@ -12,28 +12,28 @@ EngineCore 层是「白银纪元」四层仓库中**拓扑最底层的基础能�
 
 | 项目 | 内容 |
 | --- | --- |
-| 层名称 | EngineCore 层（源码命名空间为 `engine`） |
-| 本层根目录 | `Engine/EngineCore/`（相对工程根） |
+| 层名称 | EngineFoundation 层（源码命名空间为 `engine`） |
+| 本层根目录 | `Engine/EngineFoundation/`（相对工程根） |
 | 名义角色 | 基础能力层，拓扑最底层，**无下层依赖** |
 | 本地分支 | `main` |
 | 远端名 | `sliverera` |
 | 远端地址 | `https://github.com/yuxingyuzhong/SilverEra.git` |
 | 远端目标分支 | `engine`（推送命令形如 `git push sliverera main:engine`） |
-| 构建产物 | `out/build/x64-Debug/lib/EngineCore.lib`（静态库） |
-| 对外库名 | `EngineCore` |
+| 构建产物 | `out/build/x64-Debug/lib/EngineFoundation.lib`（静态库） |
+| 对外库名 | `EngineFoundation` |
 | 对外面自描述 | `cmake/对外接口.cmake` |
 | 接入函数 | **本层没有**（本层无下层可并入；`cmake/接入下层.cmake` 位于EngineSystem 层 / Test 层 / Game 层，三份逐字节相同） |
 
 ### 1.2 分层位置
 
 ```
-EngineCore 层  ←  EngineSystem 层  ←  Game 层          Test 层（横跨各层，唯一可执行文件产地）
+EngineFoundation 层  ←  EngineSystem 层  ←  Game 层          Test 层（横跨各层，唯一可执行文件产地）
 ```
 
-- 依赖方向**单向**：`EngineCore 层 ← EngineSystem 层 ← Game 层`。EngineSystem 层只消费EngineCore 层，Game 层只消费EngineSystem 层，反向依赖不存在。
-- **Test 层横跨各层**：Test 层同时接入EngineCore 层与EngineSystem 层，承载单元测试与全项目唯一的可执行入口。
+- 依赖方向**单向**：`EngineFoundation 层 ← EngineSystem 层 ← Game 层`。EngineSystem 层只消费EngineFoundation 层，Game 层只消费EngineSystem 层，反向依赖不存在。
+- **Test 层横跨各层**：Test 层同时接入EngineFoundation 层与EngineSystem 层，承载单元测试与全项目唯一的可执行入口。
 - 层与层之间**只链接下层已构建的静态库**，绝不通过 `add_subdirectory` 回退编译下层源码。
-- 本层**不感知任何上层**：`src/` 与 `common/` 下不存在对 `EngineSystem 层` / `Game 层` / `Test 层` 的任何引用；上层消费本层的方式是「源码 include 本层公共头 + 链接 `EngineCore.lib`」。
+- 本层**不感知任何上层**：`src/` 与 `common/` 下不存在对 `EngineSystem 层` / `Game 层` / `Test 层` 的任何引用；上层消费本层的方式是「源码 include 本层公共头 + 链接 `EngineFoundation.lib`」。
 
 ### 1.3 版次与提交历史
 
@@ -66,7 +66,7 @@ EngineCore 层  ←  EngineSystem 层  ←  Game 层          Test 层（横跨�
 - 具体游戏逻辑（实体、属性、效应、行为）——归EngineSystem 层；
 - 资源配置与脚本（`assets/config/`、`assets/scripts/`）——归Game 层；
 - 进程入口与帧循环——归Test 层（全项目唯一可执行文件由Test 层产出）；
-- 渲染管线与窗口主循环——本层只把 GLFW 作为第三方依赖随库传递，不建立渲染体系。
+- 渲染管线与窗口主循环——归渲染层（`Engine/EngineRenderer`）；本层不建立渲染体系，也不携带任何窗口依赖。
 
 ### 2.2 核心特性
 
@@ -95,18 +95,18 @@ C++20 特性在源码中的使用：`concepts`（`Object_Pool` 的 `requires std
 
 ### 3.2 第三方依赖
 
-本层第三方库以**源码副本**形式存放在 `external/` 下，由 `file(GLOB_RECURSE ...)` 一并纳入 `EngineCore`。
+本层第三方库以**源码副本**形式存放在 `external/` 下，由 `file(GLOB_RECURSE ...)` 一并纳入 `EngineFoundation`。
 
 | 库 | 目录 | 用途 | 引入方式 |
 | --- | --- | --- | --- |
 | nlohmann/json | `external/Json` | 事件载荷、配置数据的统一 JSON 容器（`nlohmann::json`） | 仅头文件，`PRIVATE` 包含；对外包含目录中同样声明 |
-| GLFW | `external/glfw` | 窗口 / 输入基础设施；本层预编译头直接 `#include <GLFW/glfw3.h>` | 头文件 + 预编译静态库 `external/glfw/glfw3.lib`，编译定义 `GLFW_STATIC` |
-| GLM | `external/glm` | 数学库；包含路径已在 `CMakeLists.txt` 与本层对外包含目录中声明 | 仅头文件（当前 `src/` 下未检索到对其头文件的直接引用） |
-| Bullet Physics | `external/bullet3` | 碰撞检测后端；其类型被收敛为 `engine` 命名空间别名 | 源码级引入，头文件路径 `external/bullet3/src`，随 `EngineCore` 一起编译 |
+| GLFW | `external/glfw` | **本层已不使用**：窗口 / 输入已整体迁往渲染层，本层源码与预编译头均无任何 GLFW 引用 | 副本已删除（`external/glfw` 已清理）；本层不声明包含根、不链接、不定义 `GLFW_STATIC` |
+| GLM | `external/glm` | **目录已不存在**（`external/` 下现仅 `Json`） | —— |
+| Bullet Physics | `external/bullet3` | **已整体迁出**：碰撞系统与 bullet3 一并迁至 `Engine/EngineSystem/external/bullet3` | 本层不再声明其头路径，也不再随本层编译 |
 
 补充说明：
 
-- `EngineCore` 的第三方包含路径在本层构建中是 `PRIVATE` 的；`cmake/对外接口.cmake` 是按「上层实际需要什么」重新声明的**对外面**，两者若出现差异以 `cmake/对外接口.cmake` 为准。
+- `EngineFoundation` 的第三方包含路径在本层构建中是 `PRIVATE` 的；`cmake/对外接口.cmake` 是按「上层实际需要什么」重新声明的**对外面**，两者若出现差异以 `cmake/对外接口.cmake` 为准。
 - googletest 不属于本层，它由Test 层持有。
 
 ### 3.3 构建工具链
@@ -126,19 +126,19 @@ C++20 特性在源码中的使用：`concepts`（`Object_Pool` 的 `requires std
 以本层根为基准（`out/` 为构建输出，不纳入版本控制）：
 
 ```
-Engine/EngineCore/
-├── CMakeLists.txt              # 构建 EngineCore 静态库（CMake ≥ 3.20，C++20）
+Engine/EngineFoundation/
+├── CMakeLists.txt              # 构建 EngineFoundation 静态库（CMake ≥ 3.20，C++20）
 ├── CMakeSettings.json          # Visual Studio CMake 配置（x64-Debug / Ninja）
 ├── LICENSE.txt                 # MIT 许可证
 ├── README.md                   # 本文档
 ├── .gitignore
 ├── cmake/
-│   ├── 对外接口.cmake          # 本层对外面自描述（BYJY_ENGINE_CORE_OUT_*）
+│   ├── 对外接口.cmake          # 本层对外面自描述（BYJY_ENGINE_FOUNDATION_OUT_*）
 │   └── ar_rsp_bom.ps1          # 归档响应文件 BOM 包装脚本（MSVC + Ninja 专用）
 ├── common/
 │   ├── 前置头文件包含.h        # 统一预编译头：集中引入标准库与第三方库
 │   └── 引擎.h                  # 引擎总入口：聚合事件系统运行包
-├── external/                   # 第三方库副本：Json / bullet3 / glfw / glm
+├── external/                   # 第三方库副本：Json
 ├── src/
 │   ├── core/                   # 核心能力
 │   │   ├── config/             #   配置加载
@@ -197,7 +197,7 @@ Engine/EngineCore/
 
 - **模块目录**通常由「公共头文件 + `局部命名空间使用.h` + `core/` 实现目录」三部分组成。`core/` 下可以是一个或多个 `.cpp`（编译单元），也可以是一个或多个 `.hpp`（模板实现分片）。
 - `局部命名空间使用.h` 不是业务头，它只做两件事：`#include` 本模块的公共头文件，并把本模块实现里频繁使用的 `std::` 名字（如 `string`、`vector`、`shared_ptr`、`nothrow`、`json`）提为文件级 `using` 声明。
-- **模板类**（`Object_Pool<T, Key>`、`Quadtree<T>`、`Quadtree_Manager<T>`）实现拆到 `.hpp` 分片中，并由一个形如 `xxx实例化.cpp` 的编译单元显式实例化，从而既保留模板灵活性，又把实现编译进 `EngineCore`。
+- **模板类**（`Object_Pool<T, Key>`、`Quadtree<T>`、`Quadtree_Manager<T>`）实现拆到 `.hpp` 分片中，并由一个形如 `xxx实例化.cpp` 的编译单元显式实例化，从而既保留模板灵活性，又把实现编译进 `EngineFoundation`。
 - **运行包头**（`事件系统运行包.h`、`对象系统运行包.h`、`碰撞系统运行包.h`）是纯粹的聚合头（facade），不含逻辑，用于「一行包含即引入某子系统全部公共定义」。
 
 ---
@@ -246,9 +246,9 @@ Engine/EngineCore/
                   ▼                            ▼
            ┌──────────────┐            ┌────────────────────┐
            │ 通用工具模块群 │            │ 第三方依赖（外部）    │
-           │ Logging       │            │ Json / GLFW / GLM   │
-           │ Number_Alloc. │            │ bullet3             │
-           │ Random / Timer│            └────────────────────┘
+           │ Logging       │            │ Json                │
+           │ Number_Alloc. │            └────────────────────┘
+           │ Random / Timer│
            │ Auxi_Algo ... │
            └──────────────┘
 ```
@@ -1092,36 +1092,78 @@ namespace engine
 
 ### 7.1 本层对外面：`cmake/对外接口.cmake`
 
-本层是拓扑最底层，没有下层可并入，故该文件只描述本层自身，按约定导出六个变量（前缀 `ENGINE_CORE`）：
+本层是拓扑最底层，没有下层可并入，故该文件只描述本层自身，按约定导出六个变量（前缀 `ENGINE_FOUNDATION`）：
 
 | 变量 | 值 | 含义 |
 | --- | --- | --- |
-| `BYJY_ENGINE_CORE_OUT_LIB` | `EngineCore` | 本层静态库名（`OUT_LIB` 自本版次起为**分号列表**形态，本层仍单元素） |
-| `BYJY_ENGINE_CORE_OUT_LIBDIR` | `Engine/EngineCore`（本层根） | 与 `OUT_LIB` 一一对应的「该库所在层目录」，供上层自动探测（**本版次新增**） |
-| `BYJY_ENGINE_CORE_OUT_INC` | **项目根**、`external/Json`、`external/glfw`、`external`、`external/bullet3/src` | 使用本层公共头所需的包含目录（共 5 条） |
-| `BYJY_ENGINE_CORE_OUT_DEF` | `GLFW_STATIC` | 使用本层公共头所需的编译定义 |
-| `BYJY_ENGINE_CORE_OUT_LINK` | `external/glfw/glfw3.lib` | 本层对外传递的第三方库 |
-| `BYJY_ENGINE_CORE_OUT_SYS` | `opengl32`、`user32`、`gdi32`、`shell32` | 本层对外传递的系统库 |
+| `BYJY_ENGINE_FOUNDATION_OUT_LIB` | `EngineFoundation` | 本层静态库名（`OUT_LIB` 自本版次起为**分号列表**形态，本层仍单元素） |
+| `BYJY_ENGINE_FOUNDATION_OUT_LIBDIR` | `Engine/EngineFoundation`（本层根） | 与 `OUT_LIB` 一一对应的「该库所在层目录」，供上层自动探测（**本版次新增**） |
+| `BYJY_ENGINE_FOUNDATION_OUT_INC` | **项目根**、`external/Json` | 使用本层公共头所需的包含目录（共 2 条） |
+| `BYJY_ENGINE_FOUNDATION_OUT_DEF` | 空 | 本层不再需要编译定义（原 `GLFW_STATIC` 已随 GLFW 撤下） |
+| `BYJY_ENGINE_FOUNDATION_OUT_LINK` | 空 | 本层不再对外传递第三方静态库（原 `glfw3.lib` 已撤下） |
+| `BYJY_ENGINE_FOUNDATION_OUT_SYS` | 空 | 本层不对外传递系统库（窗口 / 图形所需的 Win32 库由渲染层提供） |
 
-包含目录为什么这么多：**首项是「项目根」**（本版次起），使上层与本源码都能按项目根相对全路径 `Engine/EngineCore/...` 解析本层头，彻底消除直接 `src/...` 包含带来的路径归属不明与文件重名；本层的预编译头 `Engine/EngineCore/common/前置头文件包含.h` 内部 `#include` 了 `<nlohmann/json.hpp>` 与 `<GLFW/glfw3.h>`，故还需 `external/Json` 与 `external/glfw`；bullet3 的头文件由 `Engine/EngineCore/src/core/spatial/collision/` 下的公共头引用，故 `external/bullet3/src` 也一并声明。原 `external/glm` 条目已随目录删除而移除。
+包含目录为什么是这三条：**首项是「项目根」**，使上层与本层源码都能按项目根相对全路径 `Engine/EngineFoundation/...` 解析本层头，彻底消除直接 `src/...` 包含带来的路径归属不明与文件重名；`external/Json` 供 `<nlohmann/json.hpp>`；`external` 作为第三方顶层兜底。**GLFW / OpenGL 条目已全部撤除**——本层源码与预编译头（`common/前置头文件包含.h`）均无任何 GLFW / OpenGL 引用（窗口与输入已在渲染层），故 `external/glfw`、`GLFW_STATIC`、`glfw3.lib`、`opengl32` 一并下线；bullet3 已迁至 EngineSystem，`external/glm` 目录已不存在。
 
-`BYJY_ENGINE_CORE_ROOT` 与 `BYJY_ENGINE_CORE_PROJECT_ROOT` 由 `get_filename_component(... ABSOLUTE)` 在本文件内推导，**不是硬编码路径**。
+`BYJY_ENGINE_FOUNDATION_ROOT` 与 `BYJY_ENGINE_FOUNDATION_PROJECT_ROOT` 由 `get_filename_component(... ABSOLUTE)` 在本文件内推导，**不是硬编码路径**。
 
 ### 7.2 接入函数 `byjy_jieru_xiaceng()`
 
-`cmake/接入下层.cmake` **不属于本层**（本层无下层可接入），它位于 EngineSystem / **Engine 聚合层** / Test / Game，**四份逐字节相同**。上层通过其中的 `byjy_jieru_xiaceng(接口文件, 前缀, 覆盖变量)` 读取本层对外面，按**三级策略**定位已构建的 `EngineCore.lib`：
+`cmake/接入下层.cmake` **不属于本层**（本层无下层可接入），它位于 EngineSystem / **Engine 聚合层** / Test / Game，**四份逐字节相同**。上层通过其中的 `byjy_jieru_xiaceng(接口文件, 前缀, 覆盖变量)` 读取本层对外面，按**三级策略**定位已构建的 `EngineFoundation.lib`：
 
-1. **覆盖变量优先**：`BYJY_ENGINE_CORE_LIB_PATH`（EngineSystem 层）或聚合面转交的 `BYJY_ENGINE_LIB_PATH`（分号列表，须与库数等长）非空且文件存在 → 直接使用；非空但文件不存在 → **硬失败**，不静默降级。
+1. **覆盖变量优先**：`BYJY_ENGINE_FOUNDATION_LIB_PATH`（EngineSystem 层）或聚合面转交的 `BYJY_ENGINE_LIB_PATH`（分号列表，须与库数等长）非空且文件存在 → 直接使用；非空但文件不存在 → **硬失败**，不静默降级。
 2. **自动探测**：覆盖变量为空 → 按 `OUT_LIBDIR` **逐库**扫描 `<该库所在层目录>/out/build/*/lib/<库名>.lib`，多个候选取时间戳最新的一份。
 3. **硬失败**：仍找不到 → 报错并给出构建本层的命令。
 
-定位成功后建立 `IMPORTED STATIC GLOBAL` 目标 `EngineCore`，并把包含目录 / 编译定义 / 链接库与系统库挂到 `INTERFACE` 属性上，逐层向上传递。**任何情况下都不回退编译本层源码。** 同一文件内的 `byjy_tou_kuaizhao_gen(<结果变量> <导入目标>)` 负责由导入目标反推本层的**对外头快照根**（`<本层构建目录>/include`）。
+定位成功后建立 `IMPORTED STATIC GLOBAL` 目标 `EngineFoundation`，并把包含目录 / 编译定义 / 链接库与系统库挂到 `INTERFACE` 属性上，逐层向上传递。**任何情况下都不回退编译本层源码。** 同一文件内的 `byjy_tou_kuaizhao_gen(<结果变量> <导入目标>)` 负责由导入目标反推本层的**对外头快照根**（`<本层构建目录>/include`）。
 
 ### 7.3 归档响应文件 BOM 包装：`cmake/ar_rsp_bom.ps1`
 
-Ninja 写出的归档响应文件（`*.rsp`）是 UTF-8 无 BOM，而 MSVC 的 `lib.exe` 在没有 BOM 时按系统 ANSI 代码页解读文件内容，中文对象名会被解成乱码，归档阶段报 `LNK1181`。该脚本在调用真实归档器前为响应文件补上 UTF-8 BOM（已含 BOM 或全 ASCII 的文件不改动），使源文件名保持中文、bullet3 继续留在 `EngineCore` 内。
+Ninja 写出的归档响应文件（`*.rsp`）是 UTF-8 无 BOM，而 MSVC 的 `lib.exe` 在没有 BOM 时按系统 ANSI 代码页解读文件内容，中文对象名会被解成乱码，归档阶段报 `LNK1181`。该脚本在调用真实归档器前为响应文件补上 UTF-8 BOM（已含 BOM 或全 ASCII 的文件不改动），使源文件名保持中文（各层的中文源文件名都不必改成英文）。
 
 接线要点（源码注释中明确强调）：`set(CMAKE_CXX_CREATE_STATIC_LIBRARY ...)` **必须在 `project()` 之后设置**，否则会被 `Platform/Windows-MSVC.cmake` 的默认值覆盖回去；该改写**只对 Ninja 生成器生效**，避免影响 Visual Studio 生成器（其归档由 MSBuild 的 `Lib` 任务完成）。当包装脚本或 PowerShell 任一缺失时，配置阶段会给出 `WARNING` 而不是静默继续。
+
+### 7.4 版本锁、版本缓存与头完整性校验
+
+构建工具在 `Engine/EngineFoundation/cmake/` 下提供三份共享件，供各层在配置期 / 构建期调用：
+
+| 文件 | 角色 |
+| --- | --- |
+| `版本工具.cmake` | 读版本哈希、按版本锁解析某层、一致性校验、头完整性校验 |
+| `发布版本缓存.cmake` | 构建成功后把「头快照 + 库 + 依赖版本记录」按版本哈希发布到 `Engine/版本缓存/` |
+| `Engine/版本锁.cmake` | 全链唯一真源：留空 = 跟随最新，填哈希 = 锁定到该版本 |
+
+**版本是什么**：每层构建期生成的 `版本锚点.h` 里有符号 `byjy_stamp_<层标识>_<12 位哈希>`，该哈希 = 「对外头集合 + 构建类型 + 运行库口径」。Debug / Release 哈希不同，故缓存与锁都按配置分目录。
+
+**解析规则**（System / Renderer / Engine / Test 同口径）：
+
+1. 覆盖变量（如 `BYJY_ENGINE_FOUNDATION_LIB_PATH`）非空 → 用它；
+2. 否则读 `Engine/版本锁.cmake`：锁空 → 从下层构建树解析；锁非空 → `Engine/版本缓存/<层>/x64-<配置>/<哈希>/`；
+3. 锁指定但缓存缺失 → `FATAL_ERROR`，并给出「先构建该层 / 清空锁 / 换哈希」三种处理方式。
+
+**构建树布局与定位优先级**（锁空时）：
+
+| 生成器 | 库 | 头快照 |
+| --- | --- | --- |
+| Ninja 双预设 | `<树>/lib/<层>.lib` | `<树>/include/Engine/<层>/...` |
+| Visual Studio（单树双配置） | `<树>/lib/<配置>/<层>.lib` | `<树>/include/<配置>/Engine/<层>/...` |
+
+解析顺序是**先 Ninja 布局（`out/build/x64-<配置>`），缺失才扫 `out/build/*` 找 `lib/<配置>/<层>.lib`**
+（多棵 VS 树取库文件最新者）。也就是同一层两棵树并存时**优先 Ninja**；全 VS 工作流下每层只有一棵 VS 树，
+自然落到候选②。这个优先级保证既有双预设流程不会因为多出一棵 VS 树而改变行为。
+
+**双配置**：每层在配置期同时解析 Debug 与 Release 两份，并分别落到
+`IMPORTED_LOCATION_<CONFIG>`、`$<CONFIG>` 包含根与按配置注入的 `/FI` 锚点上。
+因此单配置生成器（Ninja 双预设）与多配置生成器（Visual Studio）都能正确工作：
+VS 下切到 Debug / Release 时，链接的是同配置的下层库，强制包含的也是同配置的锚点头。
+
+**为什么锁空走构建树**：构建树快照随下层构建自动滚动，天然与库同版次，不需要维护副本。版本缓存只服务「下层继续演进、上层停在旧版」这种并行开发场景。
+
+**全链一致性**：每层配置期把本次解析到的下层版本写进 `<构建目录>/依赖版本.cmake`（随版本缓存一起发布）。上层配置期读取被消费层的该记录，与本层解析结果逐项比对；不一致直接 `FATAL_ERROR`，把原本要到链接期才暴露的锚点失配提前到配置期。
+
+**头完整性校验（兜底）**：快照只在下层构建成功后才导出，因此下层新增 / 重命名的公共头不在快照里，上层的 `#include` 会继续搜到项目根的源码树（头一套、库一套）。`byjy_jiaoyan_xiacengtou()` 以快照为「合法头集合」，扫描本层源码里行首的 `#include "Engine/<下层>/..."`，缺一个就 `FATAL_ERROR`，提示先构建下层。它只拦「引用了快照里没有的头」，不会误伤「下层改了已有头但未重建」——后者正是快照机制要保留的行为。
+
+**缓存清理**：每个 `<层>/<配置>` 下保留最近 8 个版本（按库文件时间排序），被 `Engine/版本锁.cmake` 引用的版本永不清理。
 
 ---
 
@@ -1150,29 +1192,30 @@ cmake --build out/build/x64-Debug
 ```
 
 - **配置期须处于 UTF-8 代码页**（先进 VS 开发人员环境，再 `chcp 65001`），否则头文件依赖不会被记录；`TMP`/`TEMP` 须为**纯 ASCII** 路径，否则 cl 只要带调试信息就报 `D8050`（详见顶层 README 的构建说明）。
-- 本层构建时会向导出的**对外头快照**写入 `out/build/<配置>/include/`（`cmake/导出头快照.cmake` 由常驻目标 `EngineCoreIncludeSnapshot` 每轮调用，只复制内容有变化的头、并清理源侧已删除的头）。上层改为按该快照编译，从而保证「头与 `EngineCore.lib` 同版次」；**镜像范围自本版次起收窄为自有头**（`Engine/EngineCore/common` 与 `Engine/EngineCore/src`）——第三方头在对外面上是独立的绝对路径条目、不经快照解析，故不必逐头复制。
+- 本层构建时会向导出的**对外头快照**写入 `out/build/<配置>/include/`（`cmake/导出头快照.cmake` 由常驻目标 `EngineFoundationIncludeSnapshot` 每轮调用，只复制内容有变化的头、并清理源侧已删除的头）。上层改为按该快照编译；**镜像范围自本版次起收窄为自有头**（`Engine/EngineFoundation/common` 与 `Engine/EngineFoundation/src`）——第三方头在对外面上是独立的绝对路径条目、不经快照解析，故不必逐头复制。
+- **版次锚点**：快照另携带构建期生成的 `Engine/EngineFoundation/版本锚点.h`。它把「对外头集合 + 构建类型 + 运行库口径」的哈希编进符号名，由接入函数对每个消费 TU 强制前置包含（MSVC `/FI`）；头与 `EngineFoundation.lib` 不同版次时链接期直接 `LNK2019`。该目标已改为依赖 `EngineFoundation`：库构建失败时不会导出新快照，杜绝「新头 + 旧库」的中间状态。
 
 若使用 Visual Studio，直接以 `CMakeSettings.json` 中已配置好的 `x64-Debug`（Ninja + `msvc_x64_x64`）打开本层根目录即可。
 
 ### 8.3 产物与关键构建行为
 
-- **产物**：`out/build/x64-Debug/lib/EngineCore.lib`（静态库；输出目录由 `ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"` 指定）。该库的外部符号约 16342 条。
+- **产物**：`out/build/x64-Debug/lib/EngineFoundation.lib`（静态库；输出目录由 `ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"` 指定）。该库的外部符号约 16342 条。
 - **源文件收集**：先 `file(GLOB_RECURSE ENGINE_SOURCES CONFIGURE_DEPENDS src/*.cpp common/*.cpp external/*.cpp)` 扫描，构建目录内的文件会被正则过滤掉，防止误编译临时产物；若过滤后无源文件则 `FATAL_ERROR` 终止。扫描结果随后**同步进本层根目录的显式清单 `源文件列表.cmake`**（由共享脚本 `cmake/生成源文件列表.cmake` 的 `byjy_source_list_sync()` 在每轮配置时按路径集合差异写回），`add_library` 本身不再传任何源文件，全部由该清单的 `target_sources` 提供。清单机制的目的见第 8.5 节。
 - **增删文件自动重配（本版次）**：GLOB 之后另把 `src`、`common`、`external` 三个源根目录登记进 `set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ...)`；增删文件后**直接构建**即自动重跑配置并重扫 GLOB（ninja 会打印 `Re-checking globbed directories...`），不必手动「重新生成缓存」，VS 目录视图随之刷新。
-- **包含路径（本版次调整）**：`target_include_directories(EngineCore PRIVATE "${BYJY_PROJECT_ROOT}" "${PROJECT_ROOT_DIR}")` —— 两个私有包含根各司其职：
-  - **项目根**（`Engine/EngineCore/...` 前缀）：**头文件**里的跨目录包含一律写项目根相对全路径。对外头快照把本层头镜像到 `<快照根>/Engine/EngineCore/...`，上层以「快照根」替换「项目根」来解析，故头内包含必须以项目根为基准，否则上层消费快照时会解析到错误位置。
+- **包含路径（本版次调整）**：`target_include_directories(EngineFoundation PRIVATE "${BYJY_PROJECT_ROOT}" "${PROJECT_ROOT_DIR}")` —— 两个私有包含根各司其职：
+  - **项目根**（`Engine/EngineFoundation/...` 前缀）：**头文件**里的跨目录包含一律写项目根相对全路径。对外头快照把本层头镜像到 `<快照根>/Engine/EngineFoundation/...`，上层以「快照根」替换「项目根」来解析，故头内包含必须以项目根为基准，否则上层消费快照时会解析到错误位置。
   - **本层根**（`src/...` 前缀）：**实现文件（.cpp）**里的跨目录包含写层根相对。.cpp 不进对外头快照、不被别层消费，无需背项目根前缀；而层根相对又不像 `../` 那样「相对当前文件所在目录」、层级一错就断。
-  - 头与 .cpp 分属两种基准、互不干扰；第三方路径（Json / glfw / bullet3）同样为 `PRIVATE`。
-- **链接**：`find_package(OpenGL REQUIRED)`；链接 `external/glfw/glfw3.lib` 与 `OpenGL::GL`；`target_compile_definitions(EngineCore PUBLIC GLFW_STATIC)`；MSVC 追加 `opengl32.lib user32.lib gdi32.lib shell32.lib`。
+  - 头与 .cpp 分属两种基准、互不干扰；第三方路径（Json）同样为 `PRIVATE`。
+- **链接**：不链 GLFW / OpenGL / GDI 等任何系统库——本层只用 `kernel32` 的 `GetModuleFileNameW`（编译器默认链接）。窗口与图形所需的 Win32 系统库（`user32`、`gdi32`、`shell32`、SDL3 的一组依赖）由真正编译 SDL3 的渲染层对外提供。
 - **编译选项（MSVC）**：`/MP`（多核）、`/utf-8`（源文件 UTF-8）、`/WX-`（不将警告视为错误，全局设置）、`_CRT_SECURE_NO_WARNINGS`。
 - **编译选项（GCC / Clang）**：`-Wall -Wextra -pedantic`，并定义 `_GNU_SOURCE`。
 - **IDE 索引**：另递归收集 `.h/.hpp`（`src`、`common`）纳入目标，**仅供 IDE 与生成系统建索引、不参与编译**；并开启 `set(CMAKE_EXPORT_COMPILE_COMMANDS ON)`。
-- **安装规则**：头文件（`*.h` / `*.hpp`）安装到 `include/Engine/EngineCore/` 下（与源码内 `Engine/EngineCore/...` 的包含写法一致），静态库安装到 `lib` 下。
+- **安装规则**：头文件（`*.h` / `*.hpp`）安装到 `include/Engine/EngineFoundation/` 下（与源码内 `Engine/EngineFoundation/...` 的包含写法一致），静态库安装到 `lib` 下。
 - **本层不产出任何 `.exe`**：全项目唯一的可执行文件由 `Application/Test` 产出，本层只交出一份静态库。
 
 ### 8.4 与其他层的协作
 
-- 其他层要使用本层，只需在自己的 `CMakeLists.txt` 中 `include` 三份相同的 `cmake/接入下层.cmake`，调用 `byjy_jieru_xiaceng(...)` 指向本层的 `cmake/对外接口.cmake`，即可获得 `EngineCore` 目标（或通过 `BYJY_ENGINE_LIB_PATH` 显式指定库路径）。
+- 其他层要使用本层，只需在自己的 `CMakeLists.txt` 中 `include` 三份相同的 `cmake/接入下层.cmake`，调用 `byjy_jieru_xiaceng(...)` 指向本层的 `cmake/对外接口.cmake`，即可获得 `EngineFoundation` 目标（或通过 `BYJY_ENGINE_LIB_PATH` 显式指定库路径）。
 - 本层构建产物不在版本控制中，`out/` 目录应被忽略。
 
 ### 8.5 源文件清单机制与「在 VS 文件视图里改名 / 迁移」
@@ -1184,7 +1227,7 @@ cmake --build out/build/x64-Debug
 ```
 file(GLOB_RECURSE ...)  ──▶  byjy_source_list_sync()  ──▶  层根/源文件列表.cmake（target_sources 字面量）
                                                               │
-                                              CMakeLists：add_library(EngineCore STATIC) → include(源文件列表.cmake)
+                                              CMakeLists：add_library(EngineFoundation STATIC) → include(源文件列表.cmake)
 ```
 
 原因：Visual Studio 的**文件视图**改名 / 迁移操作，靠 CMake File API `codemodel` 的 backtrace 去找「可改写的引用」，而 backtrace **只落在把源文件直接加入 target 的那条命令上**。GLOB 工程的构建脚本里没有任何「具体文件名」，VS 便报「引用了文件……但无法修改引用」，既不重配也不刷新工程模型。把字面文件名交给 `target_sources`、且该调用位于一个被 `include` 的 `.cmake` 中后，backtrace 就落在该 `.cmake` 的对应行上——VS 改写它即触发重新配置。
@@ -1206,10 +1249,10 @@ file(GLOB_RECURSE ...)  ──▶  byjy_source_list_sync()  ──▶  层根/�
 
 | 层 / 工作区 | 情况 |
 | --- | --- |
-| `Engine/EngineCore`、`Engine/EngineSystem`、`Application/Test`、`Application/Game` | 均已有 `源文件列表*.cmake`（层根）＋ GLOB 兜底，视图改名可自动同步 |
+| `Engine/EngineFoundation`、`Engine/EngineSystem`、`Application/Test`、`Application/Game` | 均已有 `源文件列表*.cmake`（层根）＋ GLOB 兜底，视图改名可自动同步 |
 | `Engine/`（聚合层） | **无源码、无 GLOB**，只链预编译库。若在它的工作区视图里改子层文件，**100% 静默**（不改任何脚本、也不重配）；请在子层自己的工作区操作 |
 | `Engine/EngineSystem` 的 GLOB 基点 | 只覆盖 `src/entity`、`src/prop`、`src/effect`；`src` 父目录已在 `CMAKE_CONFIGURE_DEPENDS` 中登记，新建 `src/新模块/` 会触发重配，但**新增模块目录须同时补进 GLOB 模式与登记列表** |
-| `Application/Renderer` 的 `cmake/SDL3源文件列表.cmake` | 手写清单、经变量传入 `target_sources`，仍属「无字面引用的 target_sources」形态；在视图里改 SDL3 文件路径**无法被 VS 改写**（SDL3 换版次时重新生成该文件即可，实践中不依赖视图改名） |
+| `Engine/EngineRenderer` 的 `cmake/SDL3源文件列表.cmake` | 手写清单、经变量传入 `target_sources`，仍属「无字面引用的 target_sources」形态；在视图里改 SDL3 文件路径**无法被 VS 改写**（SDL3 换版次时重新生成该文件即可，实践中不依赖视图改名） |
 
 ---
 
@@ -1228,7 +1271,7 @@ file(GLOB_RECURSE ...)  ──▶  byjy_source_list_sync()  ──▶  层根/�
 
 ### 9.2 尚未完成
 
-- **渲染管线**：本层只把 GLFW / OpenGL 作为依赖随库传递，尚未建立任何渲染循环或绘制体系。
+- **渲染管线**：已整体迁往渲染层（`Engine/EngineRenderer`），本层不再持有任何窗口 / 图形依赖。
 - **空间系统与碰撞系统的联动**：碰撞模块当前不依赖 `Quadtree_Manager` 做候选筛选，区域检测仍是空间内全量两阶段检测；空间分区用于碰撞加速的接线尚未完成。
 - **`common/引擎.h` 的聚合范围**：目前只聚合了事件系统运行包；`引擎.h` 末尾留有占位注释，对象系统运行包等尚未登记。
 
@@ -1271,7 +1314,7 @@ file(GLOB_RECURSE ...)  ──▶  byjy_source_list_sync()  ──▶  层根/�
 
 - **`CMAKE_CXX_CREATE_STATIC_LIBRARY` 的赋值位置**：必须在 `project()` 之后、且仅在 Ninja 生成器下改写，否则会被平台模块默认值覆盖。
 - **`Collider` 的成员声明顺序**：`mesh` 必须先于 `shape`，破坏此顺序会导致形状先于网格释放的顺序错乱。
-- **模板实例化**：新增模板类型若要进入 `EngineCore`，需在对应 `xxx实例化.cpp` 中补 `template class ...;`。
+- **模板实例化**：新增模板类型若要进入 `EngineFoundation`，需在对应 `xxx实例化.cpp` 中补 `template class ...;`。
 - **事件 `receiver` 过滤**：定向事件（非空 `receiver`）必须由接收方自行过滤，中转器不会代劳。
 - **`Event_Broker` 的匹配粒度**：订阅匹配看 `category` + `tag`，`config` 不参与匹配；因此同一 `category` + `tag` 只能有一条投递规则。
 - **`Number_Allocator` 重复回收**：会打印告警而非崩溃，排查编号错乱时可据此定位。
@@ -1285,7 +1328,7 @@ file(GLOB_RECURSE ...)  ──▶  byjy_source_list_sync()  ──▶  层根/�
 - [ ] **对外检索尺寸层 64 位化**：把 `Quadtree_Manager::seek` 的对外接口由 `Point2i` / `Rect2i` 提升为 64 位（或将 32 位明确固化为对外契约并写清边界）。
 - [ ] **清理既有告警**：消除两处 `C4715`，梳理第三方头引入的宏重定义告警。
 - [ ] **`common/引擎.h` 补全**：在聚合事件系统运行包之外，登记对象系统运行包与其余常用入口。
-- [ ] **渲染管线**：基于现成的 GLFW / OpenGL 依赖建立最小渲染循环。
+- [ ] **渲染管线**：已迁至渲染层实现（`Engine/EngineRenderer`），本层不再承担。
 - [ ] **`Object_Pool` 使用面扩展**：为编号复用补充更明确的文档与防护，降低编号错配风险。
 - [ ] **插件化模块接口**：为可选模块预留可插拔的接入方式。
 
@@ -1293,12 +1336,12 @@ file(GLOB_RECURSE ...)  ──▶  byjy_source_list_sync()  ──▶  层根/�
 
 ## 十二、历史沿革（旧名 → 现名／现归属）
 
-本层的前身是单体工程「游戏引擎」。分层改造后，原工程中与具体游戏相关的内容已分配到其他层或取消。**下面这些旧内容在EngineCore 层已不存在**，列在此处只为追溯来源；它们的现归属请查阅对应层的 README。
+本层的前身是单体工程「游戏引擎」。分层改造后，原工程中与具体游戏相关的内容已分配到其他层或取消。**下面这些旧内容在EngineFoundation 层已不存在**，列在此处只为追溯来源；它们的现归属请查阅对应层的 README。
 
 | 旧（单体「游戏引擎」时期） | 现名 / 现归属 | 说明 |
 | --- | --- | --- |
-| 仓库 / 工程名「游戏引擎」 | 「白银纪元 · EngineCore 层」 | 一体工程拆分为四层，本层只是基础能力层 |
-| 根目录下嵌套 `游戏引擎/` 子目录 | 本层根即 `Engine/EngineCore/` | 源码不再嵌套一层 |
+| 仓库 / 工程名「游戏引擎」 | 「白银纪元 · EngineFoundation 层」 | 一体工程拆分为四层，本层只是基础能力层 |
+| 根目录下嵌套 `游戏引擎/` 子目录 | 本层根即 `Engine/EngineFoundation/` | 源码不再嵌套一层 |
 | `common/types/对象类型.h`（`Object` + `Prop`） | `Object` → `src/core/object/Object/对象.h`（本层）；`Prop` 属性槽 → EngineSystem 层 | 对象基类留在本层，属性槽随实体体系迁出 |
 | `common/types/事件类型.h` | `src/core/Event/Event/事件.h` | 事件类型定义位置调整 |
 | `common/types/坐标类型.h`、`几何体类型.h`、`计时器类型.h` | `src/core/spatial/common/core/坐标类型.h`（本层）；`几何体类型.h` 已不存在 | 计时器类型并入 `src/tools/Timer/计时器.h` 内部；几何体相关定义已不保留 |
@@ -1316,7 +1359,7 @@ file(GLOB_RECURSE ...)  ──▶  byjy_source_list_sync()  ──▶  层根/�
 | `游戏引擎/TestEngine.exe` | Test 层产出的可执行文件 | 测试入口改由Test 层承载 |
 | `assets/config/`、`assets/scripts/`、`assets/UI/` | Game 层 | 资源、JSON 配置、Lua 脚本、UI 资源整体迁出 |
 | `排除编译代码/effect/`（旧效应系统） | 效应系统 → EngineSystem 层 | 效应系统从本层移出 |
-| `external/` 下的 `Dear_ImGui`、`glad`、`Lua`、`Sol2`、`stb` | 已移出本层 | 本层现仅保留 `Json`、`glfw`、`glm`、`bullet3` |
+| `external/` 下的 `Dear_ImGui`、`glad`、`Lua`、`Sol2`、`stb` | 已移出本层 | 本层现仅保留 `Json` |
 | 旧坐标类型命名（如 `coord2D_int`） | `Point2i` / `Point2d` / `Point2l`、`Rect2i` / `Rect2d` / `Rect2l`（均在 `namespace engine`） | 统一收敛到模板 + 精度别名 |
 | `四叉树通信结构体.h` / `四叉树管理器通信结构体.h` | `Quadtree/数据结构.h` / `Quadtree_Manager/数据结构.h` | 通信结构体更名为数据结构，并统一为 `Tree_Chunk_Data` / `Tree_State` / `Tree_Record` / `Tree_Manager_Settings` |
 | `Object::ID_bind` | `Object::ID_set` | 方法更名 |

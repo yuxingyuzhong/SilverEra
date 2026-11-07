@@ -1,6 +1,6 @@
 #pragma once
 //预编译头
-#include "Engine/EngineCore/common/前置头文件包含.h"
+#include "Engine/EngineFoundation/common/前置头文件包含.h"
 
 namespace engine
 {

@@ -1,10 +1,10 @@
 #pragma once
 //预编译头
-#include "Engine/EngineCore/common/前置头文件包含.h"
+#include "Engine/EngineFoundation/common/前置头文件包含.h"
 //获取预定义事件类型
 #include "../Event/事件.h"
 //获取数据校验工具
-#include "Engine/EngineCore/src/tools/Detail/package/数据校验工具.h"
+#include "Engine/EngineFoundation/src/tools/Detail/package/数据校验工具.h"
 
 namespace engine
 {

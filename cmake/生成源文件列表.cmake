@@ -1,9 +1,10 @@
 # =============================================================================
 # 生成源文件列表.cmake —— GLOB 扫描结果 → 显式清单（target_sources 形式）
 # =============================================================================
-# 位置：白银纪元/Engine/EngineCore/cmake
-# 用途：由各层 CMakeLists 在每轮配置时 include（五层共享的构建工具，各层按相对路径
-#       引用本文件），把 file(GLOB_RECURSE) 的扫描结果同步进**各层根目录**下的显式清单
+# 位置：白银纪元/Engine/EngineFoundation/cmake
+# 用途：由各层 CMakeLists 在每轮配置时 include（四层共享的构建工具：
+#       EngineFoundation / EngineRenderer / EngineSystem / Test，各层按相对路径引用本文件），
+#       把 file(GLOB_RECURSE) 的扫描结果同步进**各层根目录**下的显式清单
 #       （源文件列表*.cmake，与调用它的 CMakeLists.txt 同级）。
 # 动机：用 GLOB 收集源文件时，构建脚本里没有任何「具体文件名」。Visual Studio 的
 #       文件视图改名 / 迁移操作，靠 File API codemodel 的 backtrace 找「可改写的
@@ -79,7 +80,7 @@ function(byjy_source_list_sync _list_file _root_dir _target _src_var _hdr_var _l
 # ${_layer_label} 源文件列表（生成物，勿手改）
 # -----------------------------------------------------------------------------
 # 生成方式
-#     由 Engine/EngineCore/cmake/生成源文件列表.cmake 在每轮配置时自动维护：把
+#     由 Engine/EngineFoundation/cmake/生成源文件列表.cmake 在每轮配置时自动维护：把
 #     file(GLOB_RECURSE) 的扫描结果与本文件比对（按路径集合），仅在集合有差异时
 #     整体写回。
 #

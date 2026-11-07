@@ -2,8 +2,8 @@
 # 引擎层对外头快照导出（以 cmake -P 脚本方式运行，由 CMakeLists 的常驻目标每轮调用）
 # -----------------------------------------------------------------------------
 # 目的
-#     上层（测试层）改为「按与本层静态库同版次的头文件」编译，不再实时读取本层源码树，
-#     避免出现「引擎头已改、EngineCore.lib 未重建」时新头配旧库地编译链接。
+#     上层（EngineSystem / EngineRenderer / Test）改为「按与本层静态库同版次的头文件」编译，
+#     不再实时读取本层源码树，避免出现「下层头已改、静态库未重建」时新头配旧库地编译链接。
 #
 # 做法
 #     把本层对外包含目录下的头文件镜像到 <构建目录>/include/：
@@ -15,6 +15,8 @@
 #     SRC_ROOT    本层源码根
 #     DST_ROOT    快照根（通常为 <构建目录>/include）
 #     MIRROR_DIRS 需镜像的相对目录列表（与本层对外包含目录一一对应的子路径）
+#     ANCHOR_SRC  可选：版次锚点头的源路径（构建期生成物）
+#     ANCHOR_REL  可选：锚点头在快照中的相对路径（如 Engine/EngineFoundation/版本锚点.h）
 # =============================================================================
 
 if(NOT SRC_ROOT OR NOT DST_ROOT OR NOT MIRROR_DIRS)
@@ -38,8 +40,29 @@ endforeach()
 list(REMOVE_DUPLICATES SRC_HEADERS)
 list(SORT SRC_HEADERS)
 
+# 版次锚点头：由构建期生成，不在源码树里，需单独搬进快照
+# 说明：把它登记进 SRC_HEADERS，后面的「失效清理」才不会把它当残留删掉。
+if(ANCHOR_SRC)
+    if(NOT ANCHOR_REL)
+        message(FATAL_ERROR "导出头快照：给出了 ANCHOR_SRC 却缺少 ANCHOR_REL")
+    endif()
+    if(NOT EXISTS "${ANCHOR_SRC}")
+        message(FATAL_ERROR "导出头快照：锚点头不存在 ${ANCHOR_SRC}")
+    endif()
+    set(_anchor_dst "${DST_ROOT}/${ANCHOR_REL}")
+    get_filename_component(_anchor_dir "${_anchor_dst}" DIRECTORY)
+    file(MAKE_DIRECTORY "${_anchor_dir}")
+    file(COPY_FILE "${ANCHOR_SRC}" "${_anchor_dst}" ONLY_IF_DIFFERENT)
+    list(APPEND SRC_HEADERS "${ANCHOR_REL}")
+    list(REMOVE_DUPLICATES SRC_HEADERS)
+endif()
+
 # 复制有变化的文件（仅内容不同才落盘，未变文件保持原时间戳）
 foreach(header_rel IN LISTS SRC_HEADERS)
+    # 锚点头已在上面从构建目录单独复制，源码树下没有同名文件，跳过
+    if(ANCHOR_REL AND "${header_rel}" STREQUAL "${ANCHOR_REL}")
+        continue()
+    endif()
     set(header_src "${SRC_ROOT}/${header_rel}")
     set(header_dst "${DST_ROOT}/${header_rel}")
     # 目标缺失或源更新时才进入复制分支

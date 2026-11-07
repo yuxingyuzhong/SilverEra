@@ -1,8 +1,8 @@
 #pragma once
 //预编译头
-#include "Engine/EngineCore/common/前置头文件包含.h"
+#include "Engine/EngineFoundation/common/前置头文件包含.h"
 //获取预定义坐标类型
-#include "../../common/core/坐标类型.h"
+#include "../../math/坐标类型.h"
 //获取预定义数据结构(用于函数返回值)
 #include "数据结构.h"
 

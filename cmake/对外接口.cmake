@@ -1,7 +1,7 @@
 # =============================================================================
-# EngineCore —— 对外接口（对外自描述）
+# EngineFoundation —— 对外接口（对外自描述）
 # -----------------------------------------------------------------------------
-# 位置：Engine/EngineCore/cmake/对外接口.cmake
+# 位置：Engine/EngineFoundation/cmake/对外接口.cmake
 #
 # 作用
 #     声明「本层向上层提供什么」。上层通过本文件读取本层对外面，据此建立
@@ -14,46 +14,40 @@
 #     BYJY_<P>_OUT_DEF    使用本层公共头文件所需的编译定义
 #     BYJY_<P>_OUT_LINK   本层对外传递的第三方库（文件路径）
 #     BYJY_<P>_OUT_SYS    本层对外传递的系统库
-#     本层前缀 <P> = ENGINE_CORE
+#     本层前缀 <P> = ENGINE_FOUNDATION
 #
 # 包含目录为什么首项是「项目根」而不是本层根
-#     项目内部一律写「项目根相对全路径」：引擎头以 Engine/EngineCore/... 形式引用。
+#     项目内部一律写「项目根相对全路径」：引擎头以 Engine/EngineFoundation/... 形式引用。
 #     本层自身编译同样按此写法（私有包含根也是项目根），从而彻底消除
 #     「直接 src/... 包含」带来的路径归属不明与文件重名。
 #
 # 其余条目
-#     external/Json、external/glfw、external/bullet3/src：本层预编译头
-#     common/前置头文件包含.h 内部 include 了 <nlohmann/json.hpp> 与 <GLFW/glfw3.h>，
-#     本层公共头（碰撞相关）引用了 bullet3 头，故这些路径必须随对外面传递。
-#     原 glm 条目已移除（external/glm 目录已不存在且无引用）。
+#     external/Json：本层公共头与源文件直接使用 <nlohmann/json.hpp>，故随对外面传递。
+#     注：不再导出 external/ 伞根 —— 本层与上层都只写 <nlohmann/json.hpp>，靠 external/Json
+#         即可解析；伞根只会把「Json/...」这种无人使用的包含形式也放进来，属残留条目。
+#     注：本层源码不使用 GLFW / OpenGL（窗口与输入已整体迁往渲染层），因此不再导出
+#         external/glfw 包含根、GLFW_STATIC 定义与 glfw3.lib；bullet3 已整体迁至
+#         EngineSystem（Engine/EngineSystem/external/bullet3），原 glm 条目亦随目录删除而移除。
 # =============================================================================
 
-get_filename_component(BYJY_ENGINE_CORE_ROOT "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
-# 项目根：Engine/EngineCore 上溯两级
-get_filename_component(BYJY_ENGINE_CORE_PROJECT_ROOT "${BYJY_ENGINE_CORE_ROOT}/../.." ABSOLUTE)
+get_filename_component(BYJY_ENGINE_FOUNDATION_ROOT "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
+# 项目根：Engine/EngineFoundation 上溯两级
+get_filename_component(BYJY_ENGINE_FOUNDATION_PROJECT_ROOT "${BYJY_ENGINE_FOUNDATION_ROOT}/../.." ABSOLUTE)
 
-set(BYJY_ENGINE_CORE_OUT_LIB "EngineCore")
-set(BYJY_ENGINE_CORE_OUT_LIBDIR "${BYJY_ENGINE_CORE_ROOT}")
+set(BYJY_ENGINE_FOUNDATION_OUT_LIB "EngineFoundation")
+set(BYJY_ENGINE_FOUNDATION_OUT_LIBDIR "${BYJY_ENGINE_FOUNDATION_ROOT}")
 
-set(BYJY_ENGINE_CORE_OUT_INC
-    "${BYJY_ENGINE_CORE_PROJECT_ROOT}"
-    "${BYJY_ENGINE_CORE_ROOT}/external/Json"
-    "${BYJY_ENGINE_CORE_ROOT}/external/glfw"
-    "${BYJY_ENGINE_CORE_ROOT}/external"
-    "${BYJY_ENGINE_CORE_ROOT}/external/bullet3/src"
+set(BYJY_ENGINE_FOUNDATION_OUT_INC
+    "${BYJY_ENGINE_FOUNDATION_PROJECT_ROOT}"
+    "${BYJY_ENGINE_FOUNDATION_ROOT}/external/Json"
 )
 
-set(BYJY_ENGINE_CORE_OUT_DEF
-    GLFW_STATIC
-)
+# 本层不再需要任何编译定义（原 GLFW_STATIC 已随 GLFW 一并撤下）
+set(BYJY_ENGINE_FOUNDATION_OUT_DEF "")
 
-set(BYJY_ENGINE_CORE_OUT_LINK
-    "${BYJY_ENGINE_CORE_ROOT}/external/glfw/glfw3.lib"
-)
+# 本层不再对外传递第三方静态库（原 glfw3.lib 已撤下）
+set(BYJY_ENGINE_FOUNDATION_OUT_LINK "")
 
-set(BYJY_ENGINE_CORE_OUT_SYS
-    opengl32
-    user32
-    gdi32
-    shell32
-)
+# 本层不直接调用 Win32 窗口 / 图形 API（仅 kernel32 默认链接），故不再对外传递系统库；
+# 窗口与图形所需的系统库由渲染层（编译 SDL3 的层）自行声明并对外提供。
+set(BYJY_ENGINE_FOUNDATION_OUT_SYS "")

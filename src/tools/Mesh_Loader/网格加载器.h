@@ -1,6 +1,6 @@
 #pragma once
 //预编译头
-#include "Engine/EngineCore/common/前置头文件包含.h"
+#include "Engine/EngineFoundation/common/前置头文件包含.h"
 
 /*
 网格数据类型与 OBJ 解析器（原渲染层 Mesh/Asset 类型，2026-11-04 整体下移本层）

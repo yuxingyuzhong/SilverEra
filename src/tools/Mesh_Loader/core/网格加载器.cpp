@@ -14,7 +14,7 @@ namespace engine
 {
 	namespace
 	{
-		//文件体量上限（64 MiB；与 EngineCore 的 OBJ 加载器同口径）
+		//文件体量上限（64 MiB；与 EngineFoundation 的 OBJ 加载器同口径）
 		constexpr uint64_t MAX_FILE_BYTES = 64ull * 1024 * 1024;
 		//属性数组（v / vt / vn 各一份）数量上限
 		constexpr uint32_t MAX_ATTRIBUTES = 4000000u;

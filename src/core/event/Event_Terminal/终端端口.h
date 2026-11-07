@@ -1,12 +1,12 @@
 #pragma once
 //预编译头
-#include "Engine/EngineCore/common/前置头文件包含.h"
+#include "Engine/EngineFoundation/common/前置头文件包含.h"
 //获取预定义事件类型
 #include "../Event/事件.h"
 //获取随机数生成器(用于权限密钥生成)
-#include "Engine/EngineCore/src/tools/Random_Generator/随机数生成器.h"
+#include "Engine/EngineFoundation/src/tools/Random_Generator/随机数生成器.h"
 //获取日志系统
-#include "Engine/EngineCore/src/tools/Logging/日志系统运行包.h"
+#include "Engine/EngineFoundation/src/tools/Logging/日志系统运行包.h"
 
 namespace engine
 {
