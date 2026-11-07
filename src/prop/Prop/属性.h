@@ -2,7 +2,7 @@
 //预编译头
 #include "Engine/EngineSystem/common/前置头文件包含.h"
 //获取预定义对象类型
-#include "Engine/EngineCore/src/core/object/Object/对象.h"
+#include "Engine/EngineFoundation/src/core/object/Object/对象.h"
 
 namespace engine
 {

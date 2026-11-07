@@ -2,18 +2,17 @@
 //预编译头
 #include "Engine/EngineSystem/common/前置头文件包含.h"
 /*
-相机 / 光照 / 雾三组：直接复用渲染层的纯数据类型
-渲染层已整体迁入本层（src/core/Renderer），故关卡数据不再维护中立副本，
-`Camera_Data / Light_Data / Fog_Data` 原样作为 `Level_Data` 的三组字段；
-应用层 / 系统层提交场景时同样直接使用这三组类型，无需任何字段映射。
+相机 / 光照 / 雾三组：使用本层自有的纯数据类型
+`Camera_Data / Light_Data / Fog_Data` 已随 `场景数据.h` 一并归入本层（2026-11-07），
+关卡数据直接持有这三组，不经任何渲染层头文件；渲染层消费这批类型而本层不反向依赖它。
 */
-#include "Engine/EngineSystem/src/core/Renderer/src/render/Scene/场景数据.h"
+#include "场景数据.h"
 
 /*
 关卡数据（第四百二十九轮迁入系统层；方向六阶段 A）
 本模块把「关卡文本 ↔ 关卡数据」的读写职责从渲染层下放到系统层：
-渲染层只保留 Camera_Data / Light_Data / Fog_Data ＋ scene_apply 这套纯数据消费接口，
-关卡数据本身在此聚合这三组 ＋ 资产声明 ＋ 材质实例声明。
+渲染层只保留 `scene_apply` 这套纯数据消费接口，关卡数据本身在此聚合
+相机 / 光照 / 雾三组 ＋ 资产声明 ＋ 材质实例声明。
 本模块全部结构为纯数据（图形 API-free），不持有任何 GPU 句柄。
 */
 namespace engine

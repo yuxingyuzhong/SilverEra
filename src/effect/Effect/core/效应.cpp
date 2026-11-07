@@ -1,5 +1,5 @@
 #include "src/effect/Effect/局部命名空间使用.h"
-#include "Engine/EngineCore/src/tools/Logging/日志系统运行包.h"
+#include "Engine/EngineFoundation/src/tools/Logging/日志系统运行包.h"
 
 namespace engine
 {

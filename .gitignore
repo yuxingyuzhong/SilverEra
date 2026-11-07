@@ -31,8 +31,5 @@ imgui.ini
 *.log
 *.tmp
 
-# ---- 迁入的渲染层（自带上游独立仓库，受其自身 git 管理）----
-/src/core/Renderer/
-
 # ---- Cyrene 工作间 ----
 .cyrene/

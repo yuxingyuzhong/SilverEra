@@ -1,8 +1,8 @@
 #include "src/scene/Manifest/局部命名空间使用.h"
 //日志系统
-#include "Engine/EngineCore/src/tools/Logging/日志系统运行包.h"
+#include "Engine/EngineFoundation/src/tools/Logging/日志系统运行包.h"
 //UTF-8 字符串 → 文件系统路径
-#include "Engine/EngineCore/src/tools/Detail/路径字符串转换.h"
+#include "Engine/EngineFoundation/src/tools/Detail/路径字符串转换.h"
 
 //文件读取与行解析
 #include <fstream>

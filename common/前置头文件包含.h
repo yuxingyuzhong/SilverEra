@@ -8,17 +8,17 @@
 //     EngineSystem 源码统一写 #include "Engine/EngineSystem/common/前置头文件包含.h"。
 //     项目内部一律用「项目根相对全路径」，路径归属明确、不会与其它层的同名头互撞。
 //
-//     EngineSystem 需要的不只是 EngineCore 那些东西，还要有 Sol2（sol::）——Sol2 位于
+//     EngineSystem 需要的不只是 EngineFoundation 那些东西，还要有 Sol2（sol::）——Sol2 位于
 //     EngineSystem/external/Sol2。本层 common/external/Sol2/ 下的类型别名与类型注册
 //     头文件只 include 了预编译头就直接使用 sol::table / sol::state，于是
 //     「谁提供 sol」这件事必须由本层这份预编译头兜住。
 //
-//     做法：先整体吃下 EngineCore 那份（保持单一真源，避免两份清单各自漂移），
+//     做法：先整体吃下 EngineFoundation 那份（保持单一真源，避免两份清单各自漂移），
 //     再补上本层额外需要的外部库。
 //============================================================================
 
 // 引擎层的通用前置包含（C/C++ 标准库、nlohmann json、GLFW、windows）
-#include "Engine/EngineCore/common/前置头文件包含.h"
+#include "Engine/EngineFoundation/common/前置头文件包含.h"
 
 //============================================================================
 // 本层额外需要的

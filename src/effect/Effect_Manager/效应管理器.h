@@ -2,21 +2,21 @@
 //预编译头
 #include "Engine/EngineSystem/common/前置头文件包含.h"
 //获取预定义事件类型
-#include "Engine/EngineCore/src/core/event/Event/事件.h"
+#include "Engine/EngineFoundation/src/core/event/Event/事件.h"
 //获取事件终端
-#include "Engine/EngineCore/src/core/event/Event_Terminal/事件终端.h"
+#include "Engine/EngineFoundation/src/core/event/Event_Terminal/事件终端.h"
 //获取效应槽
 #include "Engine/EngineSystem/src/effect/Effect/效应.h"
 //获取预定义sol2库类型别名
 #include "Engine/EngineSystem/common/external/Sol2/sol类型别名.h"
 //获取预定义对象类型
-#include "Engine/EngineCore/src/core/object/Object/对象.h"
+#include "Engine/EngineFoundation/src/core/object/Object/对象.h"
 //获取对象池
-#include "Engine/EngineCore/src/core/object/Object_Pool/对象池.h"
+#include "Engine/EngineFoundation/src/core/object/Object_Pool/对象池.h"
 //获取数据校验工具
-#include "Engine/EngineCore/src/tools/Detail/package/数据校验工具.h"
+#include "Engine/EngineFoundation/src/tools/Detail/package/数据校验工具.h"
 //获取辅助算法
-#include "Engine/EngineCore/src/tools/Detail/二分查找.h"
+#include "Engine/EngineFoundation/src/tools/Detail/二分查找.h"
 
 //脚本系统模块
 namespace engine
