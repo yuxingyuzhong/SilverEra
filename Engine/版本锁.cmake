@@ -1,4 +1,4 @@
-# =============================================================================
+﻿# =============================================================================
 # 版本锁（全链唯一真源；可选）
 # -----------------------------------------------------------------------------
 # 位置：Engine/版本锁.cmake
@@ -19,13 +19,19 @@
 #     （锚点符号对不上）。本文件被所有层共享读取，天然满足这一点；各层配置期还会做
 #     「被锁层的依赖版本记录 vs 本次解析结果」的比对，不一致直接 FATAL_ERROR。
 #
+# 只读与升级
+#     各层（含 Application/Test 下的三个测试子工程）只读本文件，不写。
+#     升级必须成套：三层 × Debug/Release 六条一起改，用工作站脚本
+#     D:\agent\working_station\silver_era\升级测试锁.ps1 一次性写入当前构建树版本；
+#     锁值落后于构建树时，配置期会打印「版本锁滞后」WARNING（不阻断）。
+#
 # 使用示例
 #     set(BYJY_LOCK_EngineFoundation_Debug "e046a4cd8ff3")
 #     set(BYJY_LOCK_EngineFoundation_Release "")
 # =============================================================================
 
 # ---------- EngineFoundation ----------
-set(BYJY_LOCK_EngineFoundation_Debug   "")
+set(BYJY_LOCK_EngineFoundation_Debug "")
 set(BYJY_LOCK_EngineFoundation_Release "")
 
 # ---------- EngineSystem ----------
