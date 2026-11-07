@@ -28,12 +28,14 @@ namespace engine
         //析构（默认）
         ~Gtest_Output_Mirror(void) override = default;
 
-        //开始一轮：清空本轮用例记录与进度（由运行器在每轮 RUN_ALL_TESTS 前调用）
-        void round_begin(void);
-        //结束一轮：汇总本轮结果入轮次历史（由运行器在 RUN_ALL_TESTS 后调用）
+        //开始一轮：清空本轮用例记录与进度，并按计划总数打印轮首横幅
+        void round_begin(int total_cases, int total_suites);
+        //结束一轮：汇总本轮结果入轮次历史并打印轮末统计
         void round_end(void);
         //清空全部结果与输出（界面「清空结果」按钮）
         void results_clear(void);
+        //追加一条提示输出行（供运行器报告未命中等异常）
+        void note_append(const std::string& text, int level);
 
         //取当前轮进度（完成数 / 总数）
         void progress_get(int& completed_out, int& total_out) const;
@@ -81,6 +83,12 @@ namespace engine
         Case_Result current_case{};
         //是否正处在一个用例内
         bool in_case = false;
+        //上一条已打印套件横幅的套件名（分片执行下每套件只打印一次）
+        std::string last_suite{};
+        //本轮起始时刻（毫秒，用于轮末总耗时）
+        long long round_start_ms = 0;
+        //本轮涉及套件数（轮末统计用）
+        int round_suites = 0;
         //输出行上限（超出丢弃最旧）
         static constexpr int output_cap = 2000;
         //用例结果上限（超出丢弃最旧；界面表格通常只看当前轮）

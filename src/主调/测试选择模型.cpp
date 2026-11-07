@@ -213,9 +213,9 @@ namespace engine
     //========================================================================
     std::string Test_Selection_Model::filter_string_build() const
     {
-        //全不选视为全跑（与 gtest 的 "*" 语义一致）
+        //全不选返回空串：不再隐式全跑，由调用方判定并提示
         if (checked_case_count() == 0)
-            return "*";
+            return std::string();
 
         std::vector<std::string> 片段;
         for (const Suite_Entry& 套件 : suite_table_)
@@ -256,6 +256,24 @@ namespace engine
             过滤串 += 片段[i];
         }
         return 过滤串;
+    }
+
+    //按勾选结果输出用例全名清单
+    std::vector<std::string> Test_Selection_Model::selected_cases() const
+    {
+        //用例全名清单
+        std::vector<std::string> 清单;
+        //逐个套件收集已勾选用例
+        for (const Suite_Entry& 套件 : suite_table_)
+        {
+            for (const Case_Entry& 用例 : 套件.case_list)
+            {
+                //仅收集已勾选项
+                if (用例.checked)
+                    清单.push_back(套件.name + "." + 用例.name);
+            }
+        }
+        return 清单;
     }
 
     //========================================================================

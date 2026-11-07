@@ -74,10 +74,14 @@ namespace engine
         // —— 输出 ——
 
         //生成 --gtest_filter 过滤串：
-        //  全不选视为「全部」，返回 "*"；
+        //  全不选返回空串（不再退化为全跑，调用方须自行判定）；
         //  整套件全选压缩为 "套件.*"，部分勾选逐条列为 "套件.用例"；
         //  多条之间用 ':' 连接。
         std::string filter_string_build() const;
+
+        //按勾选结果输出用例全名清单（"套件.用例"），供分片执行使用
+        //全不选时返回空清单（调用方据此拒绝启动，而不是隐式全跑）
+        std::vector<std::string> selected_cases() const;
 
     private:
         std::vector<Suite_Entry> suite_table_;   //套件树

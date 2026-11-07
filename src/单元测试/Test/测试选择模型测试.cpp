@@ -168,15 +168,63 @@ TEST_F(测试选择模型测试, 套件展开态读写一致)
     EXPECT_FALSE(模型.suite_expanded(0));
 }
 
-//过滤串：全不选视为全跑
-TEST_F(测试选择模型测试, 过滤串全不选视为全跑)
+//过滤串：全不选为空串（不再隐式全跑）
+TEST_F(测试选择模型测试, 过滤串全不选为空)
 {
     //建立模型并清空勾选
     engine::Test_Selection_Model 模型;
     模型.suite_tree_build();
     模型.all_clear();
-    //过滤串退化为通配
-    EXPECT_EQ(模型.filter_string_build(), "*");
+    //空选择不得退化为通配，避免「什么都没选却全跑」
+    EXPECT_TRUE(模型.filter_string_build().empty());
+}
+
+//用例清单：全选时条数与用例总数一致且每条带套件前缀
+TEST_F(测试选择模型测试, 用例清单全选)
+{
+    //建立模型
+    engine::Test_Selection_Model 模型;
+    模型.suite_tree_build();
+
+    //全选用例清单
+    const std::vector<std::string> 清单 = 模型.selected_cases();
+    //条数与用例总数一致
+    EXPECT_EQ(清单.size(), 模型.case_count());
+    //清单项均为「套件.用例」形式
+    ASSERT_FALSE(清单.empty());
+    EXPECT_NE(清单.front().find('.'), std::string::npos);
+}
+
+//用例清单：全不选时为空
+TEST_F(测试选择模型测试, 用例清单全不选为空)
+{
+    //建立模型并清空勾选
+    engine::Test_Selection_Model 模型;
+    模型.suite_tree_build();
+    模型.all_clear();
+    //空选择不产生任何用例
+    EXPECT_TRUE(模型.selected_cases().empty());
+}
+
+//用例清单：部分勾选只含被勾选项
+TEST_F(测试选择模型测试, 用例清单部分勾选)
+{
+    //建立模型并清空勾选
+    engine::Test_Selection_Model 模型;
+    模型.suite_tree_build();
+    模型.all_clear();
+
+    //取一个多用例套件只勾首条
+    std::size_t 序号 = 0;
+    ASSERT_TRUE(找多用例套件(模型, 序号));
+    const std::string 套件名 = 模型.suite_table_get()[序号].name;
+    const std::string 用例名 = 模型.suite_table_get()[序号].case_list[0].name;
+    模型.case_check_set(序号, 0, true);
+
+    //清单只含这一条
+    const std::vector<std::string> 清单 = 模型.selected_cases();
+    ASSERT_EQ(清单.size(), 1u);
+    EXPECT_EQ(清单[0], 套件名 + "." + 用例名);
 }
 
 //过滤串：整套件全选压缩为 套件.*

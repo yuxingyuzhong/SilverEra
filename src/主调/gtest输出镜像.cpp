@@ -6,22 +6,28 @@
 //引擎命名空间
 namespace engine
 {
-    //开始一轮：清空本轮用例记录与进度
-    void Gtest_Output_Mirror::round_begin(void)
+    //开始一轮：清空本轮用例记录与进度，并按计划总数打印轮首横幅
+    void Gtest_Output_Mirror::round_begin(int total_cases, int total_suites)
     {
-        //清空本轮用例与进度（轮次历史与输出缓冲保留，供界面多轮展示）
         std::lock_guard<std::mutex> lock(mtx);
         cases.clear();
         completed_cases.store(0);
-        total_cases.store(0);
+        this->total_cases.store(total_cases);
         current_case = Case_Result{};
         in_case = false;
+        last_suite.clear();
+        round_suites = total_suites;
+        round_start_ms = static_cast<long long>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count());
+        //轮首横幅：用例按单条迭代执行，故由本层显式给出计划规模
+        line_append("[==========] Running " + std::to_string(total_cases)
+            + " tests from " + std::to_string(total_suites) + " test suites.", 0);
     }
 
-    //结束一轮：汇总本轮结果入轮次历史
+    //结束一轮：汇总本轮结果入轮次历史并打印轮末统计
     void Gtest_Output_Mirror::round_end(void)
     {
-        //汇总本轮用例计数
         std::lock_guard<std::mutex> lock(mtx);
         Round_Summary summary{};
         summary.round = static_cast<int>(rounds.size()) + 1;
@@ -38,6 +44,34 @@ namespace engine
                 ++summary.skipped;
         }
         rounds.push_back(summary);
+
+        //轮末统计横幅（与控制台风格一致）
+        const long long 墙钟毫秒 = static_cast<long long>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count()) - round_start_ms;
+        line_append("[==========] " + std::to_string(summary.total)
+            + " tests from " + std::to_string(round_suites)
+            + " test suites ran. (" + std::to_string(墙钟毫秒) + " ms total)", 0);
+        line_append("[  PASSED  ] " + std::to_string(summary.passed) + " tests.", 2);
+        if (summary.skipped > 0)
+            line_append("[  SKIPPED ] " + std::to_string(summary.skipped) + " tests.", 4);
+        if (summary.failed > 0)
+        {
+            line_append("[  FAILED  ] " + std::to_string(summary.failed) + " tests.", 3);
+            //逐条列出失败用例全名
+            for (const Case_Result& item : cases)
+            {
+                if (item.status == Case_Status::Failed)
+                    line_append("[  FAILED  ] " + item.suite + "." + item.name, 3);
+            }
+        }
+    }
+
+    //追加一条提示输出行
+    void Gtest_Output_Mirror::note_append(const std::string& text, int level)
+    {
+        std::lock_guard<std::mutex> lock(mtx);
+        line_append(text, level);
     }
 
     //清空全部结果与输出
@@ -97,12 +131,12 @@ namespace engine
 
     void Gtest_Output_Mirror::OnTestIterationStart(const ::testing::UnitTest& unit_test, int iteration)
     {
-        //记录本轮总用例数
-        total_cases.store(static_cast<int>(unit_test.total_test_count()));
-        //镜像控制台风格的开场行
-        std::lock_guard<std::mutex> lock(mtx);
-        line_append("[==========] Running " + std::to_string(unit_test.total_test_count())
-            + " tests from " + std::to_string(unit_test.total_test_suite_count()) + " test suites.", 0);
+        /*
+        分片执行：每条用例都是一次独立的 gtest 迭代，故此处不打印迭代横幅，
+        本轮规模由 round_begin 显式给出（否则每跑一条都会刷一行 "Running 1 tests"）。
+        */
+        (void)unit_test;
+        (void)iteration;
     }
 
     void Gtest_Output_Mirror::OnEnvironmentsSetUpStart(const ::testing::UnitTest& unit_test)
@@ -117,15 +151,21 @@ namespace engine
 
     void Gtest_Output_Mirror::OnTestSuiteStart(const ::testing::TestSuite& test_suite)
     {
-        //镜像控制台风格的套件开场行
-        std::lock_guard<std::mutex> lock(mtx);
-        line_append("[----------] " + std::string(test_suite.name()), 0);
+        //套件横幅改在首个用例开始时打印（分片执行下每套件仅一次），此处不重复输出
+        (void)test_suite;
     }
 
     void Gtest_Output_Mirror::OnTestStart(const ::testing::TestInfo& test_info)
     {
         //开启新用例记录
         std::lock_guard<std::mutex> lock(mtx);
+        //套件切换时打印一次套件横幅（分片执行下同一套件的用例仍在同一行下连续展示）
+        const std::string 套件名 = test_info.test_suite_name();
+        if (套件名 != last_suite)
+        {
+            last_suite = 套件名;
+            line_append("[----------] " + 套件名, 0);
+        }
         current_case = Case_Result{};
         current_case.suite = test_info.test_suite_name();
         current_case.name = test_info.name();
@@ -191,9 +231,8 @@ namespace engine
 
     void Gtest_Output_Mirror::OnTestSuiteEnd(const ::testing::TestSuite& test_suite)
     {
-        //镜像控制台风格的套件收尾行
-        std::lock_guard<std::mutex> lock(mtx);
-        line_append("[----------] " + std::string(test_suite.name()), 0);
+        //分片执行下套件收尾行无法给出真实耗时合计，故不输出（套件横幅已在首个用例处打印）
+        (void)test_suite;
     }
 
     void Gtest_Output_Mirror::OnEnvironmentsTearDownStart(const ::testing::UnitTest& unit_test)
@@ -208,19 +247,9 @@ namespace engine
 
     void Gtest_Output_Mirror::OnTestIterationEnd(const ::testing::UnitTest& unit_test, int iteration)
     {
+        //分片执行下每次迭代只含一条用例，轮末统计统一由 round_end 给出，此处不输出
+        (void)unit_test;
         (void)iteration;
-        //镜像控制台风格的轮末统计行（通过数由总数扣失败与跳过推算）
-        std::lock_guard<std::mutex> lock(mtx);
-        const int failed_count = static_cast<int>(unit_test.failed_test_count());
-        const int skipped_count = static_cast<int>(unit_test.skipped_test_count());
-        const int passed_count = static_cast<int>(unit_test.total_test_count())
-            - failed_count - skipped_count;
-        line_append("[==========] " + std::to_string(unit_test.total_test_count())
-            + " tests from " + std::to_string(unit_test.total_test_suite_count())
-            + " test suites ran.", 0);
-        line_append("[  PASSED  ] " + std::to_string(passed_count) + " tests.", 2);
-        if (failed_count > 0)
-            line_append("[  FAILED  ] " + std::to_string(failed_count) + " tests.", 3);
     }
 
     void Gtest_Output_Mirror::OnTestProgramEnd(const ::testing::UnitTest& unit_test)

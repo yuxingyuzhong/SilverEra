@@ -49,7 +49,7 @@ static std::shared_ptr<engine::Event> make_event(const std::string& tag,
 //临时网格文件（相对可执行文件目录）
 static const std::string temp_mesh_name = "tests/System/src/碰撞/碰撞测试临时网格.obj";
 
-//写入手工立方体网格文件，返回可读取的相对路径
+//写入手工立方体网格文件，返回可直接读取的绝对路径（UTF-8）
 static std::string temp_mesh_write(void)
 {
 	//写入路径
@@ -77,13 +77,18 @@ static std::string temp_mesh_write(void)
 	//关闭文件
 	file.close();
 
-	return temp_mesh_name;
+	/*
+	返回绝对路径
+	网格加载器按传入字符串原样打开，相对路径会随当前工作目录变化；
+	统一返回绝对路径，保证从任意工作目录启动都能读到同一份文件。
+	*/
+	return engine::detail::path_to_string(mesh_path);
 }
 
 //临时边界配置文件（相对可执行文件目录）
 static const std::string temp_boundary_name = "tests/System/src/碰撞/碰撞测试临时边界.json";
 
-//写入边界配置文件（登记空间的边界网格路径），返回可读取的相对路径
+//写入边界配置文件（登记空间的边界网格路径），返回可直接读取的绝对路径（UTF-8）
 static std::string temp_boundary_write(const std::string& region, const std::string& mesh_name)
 {
 	//写入路径
@@ -93,11 +98,18 @@ static std::string temp_boundary_write(const std::string& region, const std::str
 	//打开临时边界配置文件
 	std::ofstream file(config_path);
 	//写入边界配置（空间数组：空间名称 + 边界网格路径）
-	file << "[{\"region\":\"" << region << "\",\"mesh_path\":\"" << mesh_name << "\"}]";
+	//经 json 序列化写出：绝对路径含反斜杠，手拼字符串会产生非法转义
+	nlohmann::json boundary_config = nlohmann::json::array();
+	nlohmann::json boundary_item = nlohmann::json::object();
+	boundary_item["region"] = region;
+	boundary_item["mesh_path"] = mesh_name;
+	boundary_config.push_back(boundary_item);
+	file << boundary_config.dump();
 	//关闭文件
 	file.close();
 
-	return temp_boundary_name;
+	//返回绝对路径（理由同临时网格）
+	return engine::detail::path_to_string(config_path);
 }
 
 //碰撞体测试夹具

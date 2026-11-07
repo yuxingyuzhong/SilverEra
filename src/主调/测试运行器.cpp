@@ -3,8 +3,18 @@
 
 #include <gtest/gtest.h>
 
+#include <chrono>
+#include <set>
+
 namespace engine
 {
+    //文件内部工具
+    namespace
+    {
+        //单个时间片的执行预算（毫秒）：预算内尽量多跑，跑满即返回渲染一帧
+        const int 时间片预算毫秒 = 8;
+    }
+
     //析构（停止并等待线程结束）
     Test_Runner::~Test_Runner(void)
     {
@@ -31,23 +41,29 @@ namespace engine
         }
     }
 
-    //请求运行一轮
-    void Test_Runner::request_run(const std::string& filter)
+    //请求运行一轮（用例全名清单）
+    bool Test_Runner::request_run(const std::vector<std::string>& cases)
     {
-        //登记排队任务（覆盖前一个未执行的请求）；实际执行由界面主循环 poll_on_caller 完成
+        //空清单视为无效请求：不启动，避免「什么都不选却全跑」
+        if (cases.empty())
+            return false;
+
+        //登记排队任务（覆盖前一个未执行的请求）
         std::lock_guard<std::mutex> lock(mtx);
-        pending_filter = filter;
+        pending_cases = cases;
         queued = true;
         state.store(static_cast<int>(State::Running));
+        return true;
     }
 
-    //请求停止
+    //请求停止（跑完当前用例后收尾本轮）
     void Test_Runner::request_stop(void)
     {
-        //清空排队：当前轮跑完后工作线程自行退出
+        //清空排队；本轮游标检查到停止标记后收尾
         std::lock_guard<std::mutex> lock(mtx);
         queued = false;
-        pending_filter.clear();
+        pending_cases.clear();
+        stop_requested = true;
     }
 
     //清空全部结果与输出
@@ -106,34 +122,136 @@ namespace engine
         mirror.output_tail(lines_out, max_count);
     }
 
-    //主线程轮询：有排队任务时在调用线程执行一轮
+    //执行一个用例：过滤串设为该用例全名，只跑一次迭代
+    bool Test_Runner::case_execute(const std::string& case_name)
+    {
+        //设置单用例过滤串（主线程改动 gtest 标志）
+        ::testing::GTEST_FLAG(filter) = case_name;
+        ::testing::GTEST_FLAG(repeat) = 1;
+        ::testing::GTEST_FLAG(break_on_failure) = false;
+
+        //记录执行前的完成数，用于识别「过滤串未命中任何用例」
+        int 完成前 = 0;
+        int 总数前 = 0;
+        mirror.progress_get(完成前, 总数前);
+
+        //执行该用例
+        const int 结果 = RUN_ALL_TESTS();
+
+        //过滤串未命中时给出提示，避免静默少跑
+        int 完成后 = 0;
+        int 总数后 = 0;
+        mirror.progress_get(完成后, 总数后);
+        if (完成后 == 完成前)
+            mirror.note_append("[  WARN  ] 未匹配到用例：" + case_name, 4);
+
+        return 结果 == 0;
+    }
+
+    //主线程轮询：有排队任务时执行一个时间片
     void Test_Runner::poll_on_caller(void)
     {
-        //取排队过滤串（无任务则立即返回）
-        std::string filter;
+        //—— 环节一：本轮尚未开始时取走排队清单 ——
+        if (!round_active)
         {
-            std::lock_guard<std::mutex> lock(mtx);
-            if (!queued)
+            std::vector<std::string> cases;
+            {
+                std::lock_guard<std::mutex> lock(mtx);
+                if (!queued)
+                {
+                    state.store(static_cast<int>(State::Idle));
+                    return;
+                }
+                cases.swap(pending_cases);
+                queued = false;
+                stop_requested = false;
+            }
+
+            //空清单不会入队（request_run 已拒绝），此处兜底
+            if (cases.empty())
             {
                 state.store(static_cast<int>(State::Idle));
                 return;
             }
-            filter = pending_filter;
-            pending_filter.clear();
-            queued = false;
+
+            //登记本轮清单并清空本轮记录
+            {
+                std::lock_guard<std::mutex> lock(mtx);
+                running_cases.swap(cases);
+                cursor = 0;
+                round_active = true;
+            }
+
+            //统计本轮涉及套件数（按 "套件.用例" 的前缀去重）
+            std::set<std::string> 套件集合;
+            for (const std::string& 用例全名 : running_cases)
+            {
+                const std::size_t 点位置 = 用例全名.find('.');
+                //无点号时按整体作为一个套件名
+                套件集合.insert((点位置 == std::string::npos) ? 用例全名
+                    : 用例全名.substr(0, 点位置));
+            }
+
+            //重置本轮退出码并打印轮首横幅
+            exit_code.store(0);
+            mirror.round_begin(static_cast<int>(running_cases.size()),
+                static_cast<int>(套件集合.size()));
         }
 
-        //设置本轮 gtest 参数（在主线程改动这些 flag）
-        ::testing::GTEST_FLAG(filter) = filter;
-        ::testing::GTEST_FLAG(repeat) = 1;
-        ::testing::GTEST_FLAG(break_on_failure) = false;
+        //—— 环节二：按时间预算执行若干条用例 ——
+        const auto 起点 = std::chrono::steady_clock::now();
+        while (true)
+        {
+            //取当前待执行用例（顺带检查停止标记）
+            std::string 用例全名;
+            bool 已结束 = false;
+            {
+                std::lock_guard<std::mutex> lock(mtx);
+                已结束 = stop_requested || cursor >= running_cases.size();
+                if (!已结束)
+                    用例全名 = running_cases[cursor];
+            }
+            //本轮执行完毕或收到停止请求
+            if (已结束)
+                break;
 
-        //清空本轮用例记录并执行一轮测试
-        mirror.round_begin();
-        exit_code = RUN_ALL_TESTS();
-        //汇总本轮入轮次历史
+            //执行当前用例
+            const bool 通过 = case_execute(用例全名);
+            //任一条失败即把本轮标记为失败
+            if (!通过)
+                exit_code.store(1);
+
+            //推进游标
+            {
+                std::lock_guard<std::mutex> lock(mtx);
+                ++cursor;
+            }
+
+            //超出时间片预算则让出一帧
+            const auto 用时 = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - 起点).count();
+            if (用时 >= 时间片预算毫秒)
+                break;
+        }
+
+        //—— 环节三：判断本轮是否收尾 ——
+        bool 收尾 = false;
+        {
+            std::lock_guard<std::mutex> lock(mtx);
+            收尾 = stop_requested || cursor >= running_cases.size();
+        }
+        if (!收尾)
+            return;
+
+        //写入轮次历史并复位
         mirror.round_end();
-        //队列已取空：标记空闲（后续若又有排队，request_run 会重新置为运行中）
+        {
+            std::lock_guard<std::mutex> lock(mtx);
+            running_cases.clear();
+            cursor = 0;
+            round_active = false;
+            stop_requested = false;
+        }
         state.store(static_cast<int>(State::Idle));
     }
 }

@@ -31,8 +31,8 @@ namespace engine
         const int 结果上限 = 400;
         //界面可见的最大引擎日志行数
         const int 日志上限 = 300;
-        //失败过滤串上限（避免超长过滤串）
-        const int 失败过滤上限 = 200;
+        //失败用例重跑清单上限（避免超长清单）
+        const int 失败清单上限 = 200;
 
         //—— 主题色 ——
         const ImVec4 主色(0.31f, 0.82f, 1.00f, 1.00f);
@@ -177,22 +177,19 @@ namespace engine
             return 文本.find(关键词) != std::string::npos;
         }
 
-        //从当前轮失败用例构造「重跑失败」过滤串（套件.用例:套件.用例…）
-        std::string 失败过滤串生成(const std::vector<Case_Result>& 用例表)
+        //从当前轮失败用例构造「重跑失败」的用例清单（套件.用例…）
+        std::vector<std::string> 失败用例清单生成(const std::vector<Case_Result>& 用例表)
         {
-            std::string 过滤串;
-            int 计数 = 0;
+            std::vector<std::string> 清单;
             for (const Case_Result& 用例 : 用例表)
             {
                 if (用例.status != Case_Status::Failed)
                     continue;
-                if (!过滤串.empty())
-                    过滤串 += ":";
-                过滤串 += 用例.suite + "." + 用例.name;
-                if (++计数 >= 失败过滤上限)
+                清单.push_back(用例.suite + "." + 用例.name);
+                if (static_cast<int>(清单.size()) >= 失败清单上限)
                     break;
             }
-            return 过滤串;
+            return 清单;
         }
 
         //引擎日志逐帧全量读取并保留尾部（文件不大，简单可靠）
@@ -355,15 +352,28 @@ namespace engine
         }
 
         //—— 运行控制条 ——
+        //最近一次运行请求的提示（空表示无提示）
+        static std::string 运行提示;
+
         if (ImGui::Button("运行选中"))
-            runner.request_run(model.filter_string_build());
+        {
+            //按勾选结果生成用例清单；空清单不启动（不再隐式全跑）
+            if (runner.request_run(model.selected_cases()))
+                运行提示.clear();
+            else
+                运行提示 = "未选择任何用例：请勾选套件，或右键套件选「只选此项」";
+        }
         ImGui::SameLine();
         //重跑失败（无失败则禁用）
-        const std::string 失败过滤 = 失败过滤串生成(用例表);
-        const bool 有失败 = !失败过滤.empty();
+        const std::vector<std::string> 失败清单 = 失败用例清单生成(用例表);
+        const bool 有失败 = !失败清单.empty();
         ImGui::BeginDisabled(!有失败);
         if (ImGui::Button("重跑失败"))
-            runner.request_run(失败过滤);
+        {
+            //仅重跑本轮失败用例
+            if (runner.request_run(失败清单))
+                运行提示.clear();
+        }
         ImGui::EndDisabled();
         ImGui::SameLine();
         if (ImGui::Button("清空结果"))
@@ -382,6 +392,12 @@ namespace engine
             exit_requested = true;
         ImGui::SameLine();
         ImGui::TextColored(次要色, "Enter 运行 / Esc 退出");
+
+        //空选择与启动被拒时的提示（已选非空且无提示时不占行）
+        if (model.checked_case_count() == 0)
+            ImGui::TextColored(失败色, "未选择任何用例：点套件复选框，或右键套件选「只选此项」");
+        else if (!运行提示.empty())
+            ImGui::TextColored(失败色, "%s", 运行提示.c_str());
 
         //—— 主体：左选择树 / 中结果 / 右详情 ——
         const float 底部控制台高 = 178.0f;
@@ -408,6 +424,7 @@ namespace engine
                 ImGui::InputTextWithHint("##搜索", "搜索模块或用例名…", 搜索缓冲, sizeof(搜索缓冲));
                 ImGui::TextColored(次要色, "已选 %zu / %zu",
                     model.checked_case_count(), model.case_count());
+                ImGui::TextColored(次要色, "右键套件：只选此项 / 全选 / 清空");
                 ImGui::Separator();
 
                 //可滚动的套件树
@@ -466,6 +483,24 @@ namespace engine
                         const bool 展开 = ImGui::TreeNodeEx("##节点",
                             ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_SpanAvailWidth,
                             "%s", 节点标签.c_str());
+                        //右键菜单：默认全部勾选时「点复选框」是取消，故提供显式的只选 / 全选 / 清空
+                        if (ImGui::BeginPopupContextItem("##套件菜单"))
+                        {
+                            if (ImGui::MenuItem("只选此项"))
+                            {
+                                model.all_clear();
+                                model.suite_check_set(套件序号, true);
+                                运行提示.clear();
+                            }
+                            if (ImGui::MenuItem("全选此项"))
+                            {
+                                model.suite_check_set(套件序号, true);
+                                运行提示.clear();
+                            }
+                            if (ImGui::MenuItem("清空此项"))
+                                model.suite_check_set(套件序号, false);
+                            ImGui::EndPopup();
+                        }
                         if (展开 != model.suite_expanded(套件序号))
                             model.suite_expand_set(套件序号, 展开);
                         if (展开)
@@ -664,7 +699,13 @@ namespace engine
         //—— 键盘快捷键 ——
         ImGuiIO& io = ImGui::GetIO();
         if (!io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_Enter))
-            runner.request_run(model.filter_string_build());
+        {
+            //回车上等同于「运行选中」：空选择同样拒绝启动
+            if (runner.request_run(model.selected_cases()))
+                运行提示.clear();
+            else
+                运行提示 = "未选择任何用例：请勾选套件，或右键套件选「只选此项」";
+        }
         //退出键只在按下沿生效（repeat=false），按住 Esc 不会逐帧退出
         if (ImGui::IsKeyPressed(ImGuiKey_Escape, false))
             exit_requested = true;
