@@ -54,6 +54,46 @@ function(byjy_banben_duqu _include_root _layer_name _token _out_var)
 endfunction()
 
 # -----------------------------------------------------------------------------
+# 最新构建树定位
+#   byjy_banben_zuixin(<层名> <层目录> <Debug|Release> <输出根> <输出包含根>)
+#   锁空时用它决定「用哪棵树」；锁非空时用它做「锁是否滞后」的对照。
+# -----------------------------------------------------------------------------
+function(byjy_banben_zuixin _layer_name _layer_dir _cfg_label _out_root _out_inc)
+    set(_tree "x64-${_cfg_label}")
+
+    # 候选①：Ninja 双预设约定 —— <层>/out/build/x64-<配置>/{lib/<库>.lib, include/}
+    set(_root "${_layer_dir}/out/build/${_tree}")
+    set(_lib "${_root}/lib/${_layer_name}.lib")
+    set(_inc "${_root}/include")
+
+    # 候选②：多配置生成器（VS）约定 —— <层>/out/build/<任意树>/lib/<配置>/<库>.lib，
+    #        头快照在 <该树>/include/<配置>/。多棵树并存时取库文件时间戳最新的一棵。
+    if(NOT EXISTS "${_lib}" OR NOT IS_DIRECTORY "${_inc}")
+        set(_best_tree "")
+        set(_best_stamp "")
+        file(GLOB _trees LIST_DIRECTORIES true "${_layer_dir}/out/build/*")
+        foreach(_cand_tree IN LISTS _trees)
+            set(_cand_lib "${_cand_tree}/lib/${_cfg_label}/${_layer_name}.lib")
+            if(EXISTS "${_cand_lib}")
+                file(TIMESTAMP "${_cand_lib}" _cand_stamp "%Y%m%d%H%M%S")
+                if("${_best_tree}" STREQUAL "" OR "${_cand_stamp}" GREATER "${_best_stamp}")
+                    set(_best_tree "${_cand_tree}")
+                    set(_best_stamp "${_cand_stamp}")
+                endif()
+            endif()
+        endforeach()
+        if(NOT "${_best_tree}" STREQUAL "")
+            set(_root "${_best_tree}")
+            set(_lib "${_root}/lib/${_cfg_label}/${_layer_name}.lib")
+            set(_inc "${_root}/include/${_cfg_label}")
+        endif()
+    endif()
+
+    set(${_out_root} "${_root}" PARENT_SCOPE)
+    set(${_out_inc} "${_inc}" PARENT_SCOPE)
+endfunction()
+
+# -----------------------------------------------------------------------------
 # 按版本锁解析某层
 #   byjy_banben_jiexi(<层名> <层标识> <层目录> <Debug|Release>
 #                     <输出库路径> <输出包含根> <输出版本>)
@@ -72,32 +112,10 @@ function(byjy_banben_jiexi _layer_name _token _layer_dir _cfg_label
 
     # 锁空 → 跟随最新构建树；锁非空 → 锁定版本缓存
     if("${_lock}" STREQUAL "")
-        # 候选①：Ninja 双预设约定 —— <层>/out/build/x64-<配置>/{lib/<库>.lib, include/}
-        set(_root "${_layer_dir}/out/build/${_tree}")
+        byjy_banben_zuixin("${_layer_name}" "${_layer_dir}" "${_cfg_label}" _root _inc)
         set(_lib "${_root}/lib/${_layer_name}.lib")
-        set(_inc "${_root}/include")
-
-        # 候选②：多配置生成器（VS）约定 —— <层>/out/build/<任意树>/lib/<配置>/<库>.lib，
-        #        头快照在 <该树>/include/<配置>/。多棵树并存时取库文件时间戳最新的一棵。
-        if(NOT EXISTS "${_lib}" OR NOT IS_DIRECTORY "${_inc}")
-            set(_best_tree "")
-            set(_best_stamp "")
-            file(GLOB _trees LIST_DIRECTORIES true "${_layer_dir}/out/build/*")
-            foreach(_cand_tree IN LISTS _trees)
-                set(_cand_lib "${_cand_tree}/lib/${_cfg_label}/${_layer_name}.lib")
-                if(EXISTS "${_cand_lib}")
-                    file(TIMESTAMP "${_cand_lib}" _cand_stamp "%Y%m%d%H%M%S")
-                    if("${_best_tree}" STREQUAL "" OR "${_cand_stamp}" GREATER "${_best_stamp}")
-                        set(_best_tree "${_cand_tree}")
-                        set(_best_stamp "${_cand_stamp}")
-                    endif()
-                endif()
-            endforeach()
-            if(NOT "${_best_tree}" STREQUAL "")
-                set(_root "${_best_tree}")
-                set(_lib "${_root}/lib/${_cfg_label}/${_layer_name}.lib")
-                set(_inc "${_root}/include/${_cfg_label}")
-            endif()
+        if(NOT EXISTS "${_lib}" AND EXISTS "${_root}/lib/${_cfg_label}/${_layer_name}.lib")
+            set(_lib "${_root}/lib/${_cfg_label}/${_layer_name}.lib")
         endif()
         message(STATUS "版本：${_layer_name} / ${_cfg_label} → 跟随最新（${_root}）")
     else()
@@ -114,6 +132,20 @@ function(byjy_banben_jiexi _layer_name _token _layer_dir _cfg_label
                 "            ③ 或改成缓存里确实存在的版本哈希。")
         endif()
         message(STATUS "版本：${_layer_name} / ${_cfg_label} → 锁定 ${_lock}（${_root}）")
+
+        # 滞后告警：锁值落后于当前构建树时不阻断（停在旧版本是合法选择），但必须可见，
+        # 否则「锁了旧版却以为在测最新」会一直静默成立。
+        byjy_banben_zuixin("${_layer_name}" "${_layer_dir}" "${_cfg_label}" _latest_root _latest_inc)
+        if(IS_DIRECTORY "${_latest_inc}")
+            byjy_banben_duqu("${_latest_inc}" "${_layer_name}" "${_token}" _latest_version)
+            if(NOT "${_latest_version}" STREQUAL "" AND NOT "${_latest_version}" STREQUAL "${_lock}")
+                message(WARNING
+                    "版本锁滞后：${_layer_name} / ${_cfg_label} 锁定 ${_lock}，当前构建树是 ${_latest_version}\n"
+                    "  锁定版本仍可用（取自 Engine/版本缓存），但已不是最新构建结果。\n"
+                    "  升级请成套修改 Engine/版本锁.cmake（Foundation / System / Renderer × 两配置），\n"
+                    "  或运行工作站脚本 升级测试锁.ps1。")
+            endif()
+        endif()
     endif()
 
     byjy_banben_duqu("${_inc}" "${_layer_name}" "${_token}" _version)
