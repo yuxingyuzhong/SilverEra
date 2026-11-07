@@ -5,7 +5,7 @@
 #include <gtest/gtest.h>
 
 //获取渲染器门面
-#include "Engine/EngineSystem/src/core/Renderer/src/render/Renderer/渲染器.h"
+#include "Engine/EngineRenderer/src/render/Renderer/渲染器.h"
 
 namespace
 {

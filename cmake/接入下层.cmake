@@ -1,5 +1,5 @@
 # =============================================================================
-# 接入下层 —— 通用接入函数（EngineSystem / Engine / Test / Game 四份逐字节相同）
+# 接入下层 —— 通用接入函数（EngineSystem / EngineRenderer / Engine / Test 四份逐字节相同）
 # -----------------------------------------------------------------------------
 # 位置：<层>/cmake/接入下层.cmake
 #
@@ -7,7 +7,8 @@
 #     每层各自维护 <层>/cmake/对外接口.cmake 声明本层对外面。
 #     「本层对外面 = 本层自有面 + 下层对外面」，并入动作由 对外接口.cmake include
 #     下层接口文件完成（纯数据赋值，重复 include 无副作用）。
-#     本文件提供三个通用函数，四个副本必须逐字节一致：
+#     EngineFoundation 处于拓扑最底层、没有下层可接，故不持有本文件。
+#     本文件提供三个通用函数，四份副本必须逐字节一致：
 #       byjy_jieru_xiaceng()        接入「下层已构建好的静态库」
 #       byjy_kuaizhao_lujing()      包含目录列表的「源码树 → 头快照」逐条换算
 #       byjy_qiehuan_tou_kuaizhao() 导入目标的「源码树包含目录」改指头快照
@@ -32,14 +33,17 @@
 # 库定位顺序（任何情况下都不回退编译下层源码）
 #     ① 覆盖变量非空 → 按元素下标与 OUT_LIB 逐项对应，元素个数须与 OUT_LIB 等长；
 #        指向的文件不存在 → FATAL_ERROR，不静默降级
-#     ② 覆盖变量为空 → 先看 <该库所在层目录>/out/build/x64-Debug/lib/<库名>.lib；
-#        没有则扫 <该库所在层目录>/out/build/*/lib/<库名>.lib，取时间戳最新的一份
-#        （Debug / Release 双构建树并存时，自动探测固定默认 Debug）
+#     ② 覆盖变量为空 → 只认 <该库所在层目录>/out/build/x64-<当前配置>/lib/<库名>.lib
+#        （多配置生成器配置期无 CMAKE_BUILD_TYPE，默认取 Debug；实际消费的分配置库
+#         由调用方用 IMPORTED_LOCATION_<CONFIG> 覆盖）
+#        不扫描其它配置的构建树：跨配置混链是 /MD 配 /MDd，且版次锚点必然在链接期失败
 #     ③ 仍没有 → FATAL_ERROR，并给出构建产出该库的下层命令
 #
 # 行为
 #     按 OUT_LIB 逐库建立 IMPORTED STATIC 目标（GLOBAL），把本层对外接口里的
 #     包含目录 / 编译定义 / 链接库挂到其 INTERFACE 上，供本层向上继续传递。
+#     若该库所在构建树的头快照里存在「版本锚点.h」，则把它作为消费 TU 的强制
+#     前置包含（MSVC /FI、GCC -include），使头与库不同版次在链接期直接失败。
 #     OUT_LIB 为空时只校验接口存在，不建目标。
 # =============================================================================
 
@@ -139,25 +143,22 @@ function(byjy_jieru_xiaceng interface_file prefix override_var)
             endif()
         endif()
 
-        # ② 自动探测：固定优先 Debug 树，其次回退「任意构建树取时间戳最新」
-        #    先看 x64-Debug，是为了让「留空 = 用 Debug」成为稳定默认：两棵树并存后
-        #    若只按时间戳取最新，结果会在 Debug / Release 之间摇摆，而 Debug(/MDd)
-        #    与 Release(/MD) 的运行库不一致，混链会出 LNK4098 甚至堆损坏。
-        #    需要 Release 版库时请显式指定覆盖变量，不要依赖自动探测。
+        # ② 确定性定位：只认与当前配置对应的构建树
+        #    旧实现会在 x64-Debug 缺失时扫描全部构建树取时间戳最新的一份，双树并存
+        #    时会静默拿到另一配置的库（/MDd 库混入 /MD 目标，出 LNK4098 甚至堆损坏）。
+        #    版次锚点落地后，跨配置混链必然在链接期失败，此处不再猜测：
+        #    按配置取固定路径，缺失即进入 ③ 报错。
+        #    多配置生成器在配置期没有 CMAKE_BUILD_TYPE，取 Debug 作为默认项；
+        #    真正的分配置库由调用方用 IMPORTED_LOCATION_<CONFIG> 覆盖。
         if("${_lib_file}" STREQUAL "")
-            set(_debug_candidate "${_lib_dir}/out/build/x64-Debug/lib/${_lib_name}.lib")
-            if(EXISTS "${_debug_candidate}")
-                set(_lib_file "${_debug_candidate}")
+            if("${CMAKE_BUILD_TYPE}" STREQUAL "")
+                set(_cfg "Debug")
             else()
-                file(GLOB _candidates "${_lib_dir}/out/build/*/lib/${_lib_name}.lib")
-                set(_newest_stamp "0")
-                foreach(_candidate IN LISTS _candidates)
-                    file(TIMESTAMP "${_candidate}" _candidate_stamp "%Y%m%d%H%M%S")
-                    if(_candidate_stamp GREATER _newest_stamp)
-                        set(_newest_stamp "${_candidate_stamp}")
-                        set(_lib_file "${_candidate}")
-                    endif()
-                endforeach()
+                set(_cfg "${CMAKE_BUILD_TYPE}")
+            endif()
+            set(_candidate "${_lib_dir}/out/build/x64-${_cfg}/lib/${_lib_name}.lib")
+            if(EXISTS "${_candidate}")
+                set(_lib_file "${_candidate}")
             endif()
         endif()
 
@@ -165,8 +166,8 @@ function(byjy_jieru_xiaceng interface_file prefix override_var)
         if("${_lib_file}" STREQUAL "")
             message(FATAL_ERROR
                 "接入下层：找不到 ${_lib_name} 的静态库 ${_lib_name}.lib\n"
-                "  查找位置：${_lib_dir}/out/build/x64-Debug/lib/（首选）\n"
-                "            ${_lib_dir}/out/build/<配置>/lib/（回退：取时间戳最新）\n"
+                "  查找位置：${_lib_dir}/out/build/x64-<当前配置>/lib/\n"
+                "            （不再回退到其它配置的构建树，请构建对应的配置树）\n"
                 "  本函数不会退回编译下层源码，请先构建产出该库的下层：\n"
                 "      cmake -S \"${_lib_dir}\" -B \"${_lib_dir}/out/build/x64-Debug\" -G Ninja\n"
                 "      cmake --build \"${_lib_dir}/out/build/x64-Debug\"\n"
@@ -183,6 +184,86 @@ function(byjy_jieru_xiaceng interface_file prefix override_var)
             INTERFACE_COMPILE_DEFINITIONS "${_compile_defs}"
             INTERFACE_LINK_LIBRARIES "${_link_libs};${_system_libs}"
         )
+
+        # ---------- 版次锚点注入 ----------
+        # 快照里若有锚点头，就把它做成每个消费 TU 的强制前置包含：
+        # 头与静态库不同版次时锚点符号对不上，链接期直接 LNK2019。
+        # 说明：锚点头由下层构建期生成，随头快照一起发布；它已做 C / C++ 双兼容，
+        #       因此纯 C 源（如渲染层就地编入的 SDL3）被强灌也不会编译失败。
+        #       没有锚点的第三方库（或尚未接入锚点的旧快照）不受影响，按原样接入。
+        get_filename_component(_lib_build_dir "${_lib_file}/../.." ABSOLUTE)
+        file(TO_CMAKE_PATH "${_lib_build_dir}/include" _snapshot_root)
+        file(GLOB_RECURSE _anchor_headers "${_snapshot_root}/Engine/*版本锚点.h")
+        foreach(_anchor IN LISTS _anchor_headers)
+            if(MSVC)
+                set_property(TARGET ${_lib_name} APPEND PROPERTY
+                    INTERFACE_COMPILE_OPTIONS "/FI${_anchor}")
+            else()
+                set_property(TARGET ${_lib_name} APPEND PROPERTY
+                    INTERFACE_COMPILE_OPTIONS "-include" "${_anchor}")
+            endif()
+            message(STATUS "接入下层：${_layer_name} → 版次锚点 ${_anchor}")
+        endforeach()
+
+        # ---------- 分配置锚点（多配置生成器） ----------
+        # 调用方提供 <覆盖变量>_DEBUG / <覆盖变量>_RELEASE 时，按 $<CONFIG> 分别强制包含
+        # 对应版本的锚点头；否则由单个 IMPORTED_LOCATION 派生的锚点会被所有配置共用
+        # （Release 会拿到 Debug 锚点，链接期符号对不上）。
+        # 两个变量与 OUT_LIB 同构：可以是分号列表，按当前库下标取值。
+        set(_byjy_lib_debug "")
+        set(_byjy_lib_release "")
+        if(DEFINED ${override_var}_DEBUG)
+            set(_byjy_override_debug "${${override_var}_DEBUG}")
+            list(LENGTH _byjy_override_debug _byjy_debug_count)
+            if(_byjy_debug_count GREATER _idx)
+                list(GET _byjy_override_debug ${_idx} _byjy_lib_debug)
+            endif()
+        endif()
+        if(DEFINED ${override_var}_RELEASE)
+            set(_byjy_override_release "${${override_var}_RELEASE}")
+            list(LENGTH _byjy_override_release _byjy_release_count)
+            if(_byjy_release_count GREATER _idx)
+                list(GET _byjy_override_release ${_idx} _byjy_lib_release)
+            endif()
+        endif()
+        if(MSVC AND NOT "${_byjy_lib_debug}" STREQUAL "" AND NOT "${_byjy_lib_release}" STREQUAL "")
+            set(_byjy_anchor_expr "")
+            foreach(_byjy_cfg IN ITEMS DEBUG RELEASE)
+                if("${_byjy_cfg}" STREQUAL "DEBUG")
+                    set(_byjy_cfg_lib "${_byjy_lib_debug}")
+                else()
+                    set(_byjy_cfg_lib "${_byjy_lib_release}")
+                endif()
+                # 优先用调用方给出的分配置头快照根（VS 构建树布局与 Ninja 不同，不能靠库路径反推）
+                set(_byjy_cfg_inc "")
+                if(DEFINED ${override_var}_INCLUDE_${_byjy_cfg})
+                    set(_byjy_inc_list "${${override_var}_INCLUDE_${_byjy_cfg}}")
+                    list(LENGTH _byjy_inc_list _byjy_inc_count)
+                    if(_byjy_inc_count GREATER _idx)
+                        list(GET _byjy_inc_list ${_idx} _byjy_cfg_inc)
+                    endif()
+                endif()
+                if("${_byjy_cfg_inc}" STREQUAL "")
+                    get_filename_component(_byjy_cfg_build "${_byjy_cfg_lib}/../.." ABSOLUTE)
+                    file(TO_CMAKE_PATH "${_byjy_cfg_build}/include" _byjy_cfg_inc)
+                endif()
+                file(GLOB_RECURSE _byjy_cfg_anchors "${_byjy_cfg_inc}/Engine/*版本锚点.h")
+                foreach(_byjy_one IN LISTS _byjy_cfg_anchors)
+                    list(APPEND _byjy_anchor_expr "$<$<CONFIG:${_byjy_cfg}>:/FI${_byjy_one}>")
+                endforeach()
+            endforeach()
+            # RelWithDebInfo / MinSizeRel 复用 Release 锚点（_byjy_cfg_inc 此时即 Release 的头快照根）
+            file(GLOB_RECURSE _byjy_rel_anchors "${_byjy_cfg_inc}/Engine/*版本锚点.h")
+            foreach(_byjy_one IN LISTS _byjy_rel_anchors)
+                list(APPEND _byjy_anchor_expr "$<$<CONFIG:RelWithDebInfo>:/FI${_byjy_one}>")
+                list(APPEND _byjy_anchor_expr "$<$<CONFIG:MinSizeRel>:/FI${_byjy_one}>")
+            endforeach()
+            if(_byjy_anchor_expr)
+                set_property(TARGET ${_lib_name} PROPERTY
+                    INTERFACE_COMPILE_OPTIONS "${_byjy_anchor_expr}")
+                message(STATUS "接入下层：${_layer_name} → 版次锚点按 $<CONFIG> 分别注入")
+            endif()
+        endif()
 
         message(STATUS "接入下层：${_layer_name} → ${_lib_name}\n"
                        "          库文件：${_lib_file}")

@@ -18,7 +18,7 @@
 #
 # 并入下层
 #     本层依赖 Engine 聚合层，因此本层对外面 = 本层自有面 + Engine 对外面。
-#     下面这一句 include 会依次并入 EngineSystem 与 EngineCore 的对外面。
+#     下面这一句 include 会依次并入 EngineSystem 与 EngineFoundation 的对外面。
 #
 # 备注：TestCore 只在 src/ 下有源文件时才产出；EngineTests.exe 不写进对外面 ——
 #       它是本层的运行产物，不是供上层链接的东西。本层当前是拓扑最上层，尚无使用方。

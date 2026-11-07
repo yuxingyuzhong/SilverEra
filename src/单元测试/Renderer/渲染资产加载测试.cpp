@@ -20,11 +20,11 @@
 #include <chrono>
 #include <thread>
 
-#include "Engine/EngineSystem/src/core/Renderer/src/render/Asset/资产加载.h"
+#include "Engine/EngineRenderer/src/render/Asset/资产加载.h"
 #include "Engine/EngineSystem/src/scene/Manifest/场景清单.h"
-#include "Engine/EngineSystem/src/scene/装配/场景装配.h"
-#include "Engine/EngineSystem/src/assets/资产缓存.h"
-#include "Engine/EngineSystem/src/core/Renderer/src/render/Renderer/渲染器.h"
+#include "Engine/EngineRenderer/src/render/Scene/场景装配.h"
+#include "Engine/EngineRenderer/src/render/Asset/资产缓存.h"
+#include "Engine/EngineRenderer/src/render/Renderer/渲染器.h"
 
 namespace
 {

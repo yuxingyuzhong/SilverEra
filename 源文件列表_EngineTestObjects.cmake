@@ -3,7 +3,7 @@
 # Application/Test 源文件列表（生成物，勿手改）
 # -----------------------------------------------------------------------------
 # 生成方式
-#     由 Engine/EngineCore/cmake/生成源文件列表.cmake 在每轮配置时自动维护：把
+#     由 Engine/EngineFoundation/cmake/生成源文件列表.cmake 在每轮配置时自动维护：把
 #     file(GLOB_RECURSE) 的扫描结果与本文件比对（按路径集合），仅在集合有差异时
 #     整体写回。
 #
@@ -22,32 +22,32 @@
 # =============================================================================
 #
 target_sources(EngineTestObjects PRIVATE
-    "src/单元测试/EngineCore/工具/二分查找测试.cpp"
-    "src/单元测试/EngineCore/工具/哈希混合测试.cpp"
-    "src/单元测试/EngineCore/工具/字段校验测试.cpp"
-    "src/单元测试/EngineCore/工具/引擎环境测试.cpp"
-    "src/单元测试/EngineCore/工具/数值分配器测试.cpp"
-    "src/单元测试/EngineCore/工具/数据校验器测试.cpp"
-    "src/单元测试/EngineCore/工具/日志系统测试.cpp"
-    "src/单元测试/EngineCore/工具/网格加载器测试.cpp"
-    "src/单元测试/EngineCore/工具/计时器测试.cpp"
-    "src/单元测试/EngineCore/工具/路径字符串转换测试.cpp"
-    "src/单元测试/EngineCore/工具/路径校验测试.cpp"
-    "src/单元测试/EngineCore/工具/随机数生成器测试.cpp"
-    "src/单元测试/EngineCore/核心/事件中转器测试.cpp"
-    "src/单元测试/EngineCore/核心/事件测试.cpp"
-    "src/单元测试/EngineCore/核心/事件终端测试.cpp"
-    "src/单元测试/EngineCore/核心/四叉树测试.cpp"
-    "src/单元测试/EngineCore/核心/四叉树管理器测试.cpp"
-    "src/单元测试/EngineCore/核心/坐标类型测试.cpp"
-    "src/单元测试/EngineCore/核心/对象池测试.cpp"
-    "src/单元测试/EngineCore/核心/对象测试.cpp"
-    "src/单元测试/EngineCore/核心/碰撞代理测试.cpp"
-    "src/单元测试/EngineCore/核心/碰撞体测试.cpp"
-    "src/单元测试/EngineCore/核心/碰撞区域测试.cpp"
-    "src/单元测试/EngineCore/核心/碰撞响应测试.cpp"
-    "src/单元测试/EngineCore/核心/碰撞测试.cpp"
-    "src/单元测试/EngineCore/核心/配置加载器测试.cpp"
+    "src/单元测试/EngineFoundation/工具/二分查找测试.cpp"
+    "src/单元测试/EngineFoundation/工具/哈希混合测试.cpp"
+    "src/单元测试/EngineFoundation/工具/字段校验测试.cpp"
+    "src/单元测试/EngineFoundation/工具/引擎环境测试.cpp"
+    "src/单元测试/EngineFoundation/工具/数值分配器测试.cpp"
+    "src/单元测试/EngineFoundation/工具/数据校验器测试.cpp"
+    "src/单元测试/EngineFoundation/工具/日志系统测试.cpp"
+    "src/单元测试/EngineFoundation/工具/网格加载器测试.cpp"
+    "src/单元测试/EngineFoundation/工具/计时器测试.cpp"
+    "src/单元测试/EngineFoundation/工具/路径字符串转换测试.cpp"
+    "src/单元测试/EngineFoundation/工具/路径校验测试.cpp"
+    "src/单元测试/EngineFoundation/工具/随机数生成器测试.cpp"
+    "src/单元测试/EngineFoundation/核心/事件中转器测试.cpp"
+    "src/单元测试/EngineFoundation/核心/事件测试.cpp"
+    "src/单元测试/EngineFoundation/核心/事件终端测试.cpp"
+    "src/单元测试/EngineFoundation/核心/四叉树测试.cpp"
+    "src/单元测试/EngineFoundation/核心/四叉树管理器测试.cpp"
+    "src/单元测试/EngineFoundation/核心/坐标类型测试.cpp"
+    "src/单元测试/EngineFoundation/核心/对象池测试.cpp"
+    "src/单元测试/EngineFoundation/核心/对象测试.cpp"
+    "src/单元测试/EngineFoundation/核心/碰撞代理测试.cpp"
+    "src/单元测试/EngineFoundation/核心/碰撞体测试.cpp"
+    "src/单元测试/EngineFoundation/核心/碰撞区域测试.cpp"
+    "src/单元测试/EngineFoundation/核心/碰撞响应测试.cpp"
+    "src/单元测试/EngineFoundation/核心/碰撞测试.cpp"
+    "src/单元测试/EngineFoundation/核心/配置加载器测试.cpp"
     "src/单元测试/EngineSystem/场景/关卡文本测试.cpp"
     "src/单元测试/Renderer/渲染Alpha覆盖测试.cpp"
     "src/单元测试/Renderer/渲染Cluster测试.cpp"
@@ -147,7 +147,7 @@ target_sources(EngineTestObjects PRIVATE
 # 头文件不参与编译，只为让 IDE 建立文件索引；同样经 target_sources 列出，
 # 使头文件改名 / 迁移时 VS 也能改写引用
 target_sources(EngineTestObjects PRIVATE
-    "src/单元测试/EngineCore/核心/碰撞测试辅助.h"
+    "src/单元测试/EngineFoundation/核心/碰撞测试辅助.h"
     "src/单元测试/Renderer/渲染后处理链测试辅助.h"
     "src/单元测试/Renderer/渲染场景测试辅助.h"
 )

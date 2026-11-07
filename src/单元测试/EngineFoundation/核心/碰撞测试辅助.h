@@ -10,7 +10,7 @@ Collider_Test、Collision_Region_Test、Collision_Proxy_Test。
 #include <fstream>
 
 //获取碰撞代理器（含碰撞空间、碰撞体与事件系统）
-#include "Engine/EngineCore/src/core/spatial/collision/Collision_Proxy/碰撞代理器.h"
+#include "Engine/EngineSystem/src/collision/Collision_Proxy/碰撞代理器.h"
 
 //构造盒体几何配置
 static nlohmann::json box_config(const uint64_t collider_ID, const double position_X)
@@ -47,7 +47,7 @@ static std::shared_ptr<engine::Event> make_event(const std::string& tag,
 }
 
 //临时网格文件（相对可执行文件目录）
-static const std::string temp_mesh_name = "src/单元测试/EngineCore/核心/碰撞测试临时网格.obj";
+static const std::string temp_mesh_name = "src/单元测试/EngineFoundation/核心/碰撞测试临时网格.obj";
 
 //写入手工立方体网格文件，返回可读取的相对路径
 static std::string temp_mesh_write(void)
@@ -81,7 +81,7 @@ static std::string temp_mesh_write(void)
 }
 
 //临时边界配置文件（相对可执行文件目录）
-static const std::string temp_boundary_name = "src/单元测试/EngineCore/核心/碰撞测试临时边界.json";
+static const std::string temp_boundary_name = "src/单元测试/EngineFoundation/核心/碰撞测试临时边界.json";
 
 //写入边界配置文件（登记空间的边界网格路径），返回可读取的相对路径
 static std::string temp_boundary_write(const std::string& region, const std::string& mesh_name)

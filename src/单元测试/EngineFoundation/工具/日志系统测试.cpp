@@ -5,9 +5,9 @@
 #include <gtest/gtest.h>
 
 //获取日志系统
-#include "Engine/EngineCore/src/tools/Logging/日志系统运行包.h"
+#include "Engine/EngineFoundation/src/tools/Logging/日志系统运行包.h"
 //获取路径字符串转换工具
-#include "Engine/EngineCore/src/tools/Detail/路径字符串转换.h"
+#include "Engine/EngineFoundation/src/tools/Detail/路径字符串转换.h"
 //获取引擎日志屏蔽（用例期间需临时关闭）
 #include "src/主调/引擎日志屏蔽.h"
 
@@ -640,7 +640,7 @@ TEST_F(Log_Test, 根目录之外日志被截断)
 	EXPECT_NE(log_read(file_name).find("[INFO]域内输出 21"), std::string::npos);
 
 	//把日志根目录改到一个不含本文件的目录
-	engine::logger.root_set("Engine/EngineCore");
+	engine::logger.root_set("Engine/EngineFoundation");
 	//域外再输出一条日志
 	engine::logger.info("域外输出 {}", 22);
 	//域外日志应被越界截断，不落盘

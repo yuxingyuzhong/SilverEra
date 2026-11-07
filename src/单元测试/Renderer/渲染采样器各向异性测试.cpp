@@ -19,7 +19,7 @@ mip 过滤为规范确定的确定性行为，故单独给出像素级差异断�
 #include <vector>
 
 //获取渲染器门面（含采样器状态与寻址模式）
-#include "Engine/EngineSystem/src/core/Renderer/src/render/Renderer/渲染器.h"
+#include "Engine/EngineRenderer/src/render/Renderer/渲染器.h"
 
 namespace
 {

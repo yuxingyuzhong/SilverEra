@@ -16,10 +16,10 @@
 #include <vector>
 
 //获取渲染器门面与包围体构造
-#include "Engine/EngineSystem/src/core/Renderer/src/render/Renderer/渲染器.h"
-#include "Engine/EngineSystem/src/core/Renderer/src/render/GPU驱动/包围体.h"
+#include "Engine/EngineRenderer/src/render/Renderer/渲染器.h"
+#include "Engine/EngineRenderer/src/render/GPU驱动/包围体.h"
 //视锥平面与 CPU 参考判定（第二百四十八轮）
-#include "Engine/EngineSystem/src/core/Renderer/src/render/GPU驱动/剔除数据.h"
+#include "Engine/EngineRenderer/src/render/GPU驱动/剔除数据.h"
 
 namespace
 {

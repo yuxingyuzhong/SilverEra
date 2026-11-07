@@ -9,9 +9,9 @@
 #include <cstdint>
 
 //获取渲染器门面
-#include "Engine/EngineSystem/src/core/Renderer/src/render/Renderer/渲染器.h"
+#include "Engine/EngineRenderer/src/render/Renderer/渲染器.h"
 //线程组数换算与屏障用途（第二百四十二轮）
-#include "Engine/EngineSystem/src/core/Renderer/src/render/Compute/计算数据.h"
+#include "Engine/EngineRenderer/src/render/Compute/计算数据.h"
 
 namespace
 {

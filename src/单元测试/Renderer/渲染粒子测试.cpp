@@ -18,8 +18,8 @@
 #include <limits>
 #include <vector>
 
-#include "Engine/EngineSystem/src/core/Renderer/src/render/Renderer/渲染器.h"
-#include "Engine/EngineSystem/src/effect/Particle/粒子模拟.h"
+#include "Engine/EngineRenderer/src/render/Renderer/渲染器.h"
+#include "Engine/EngineRenderer/src/render/Particle/粒子宿主.h"
 
 namespace
 {

@@ -3,7 +3,7 @@
 # Application/Test 源文件列表（生成物，勿手改）
 # -----------------------------------------------------------------------------
 # 生成方式
-#     由 Engine/EngineCore/cmake/生成源文件列表.cmake 在每轮配置时自动维护：把
+#     由 Engine/EngineFoundation/cmake/生成源文件列表.cmake 在每轮配置时自动维护：把
 #     file(GLOB_RECURSE) 的扫描结果与本文件比对（按路径集合），仅在集合有差异时
 #     整体写回。
 #

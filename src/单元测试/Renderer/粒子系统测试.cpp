@@ -7,7 +7,7 @@
 #include <cmath>
 #include <cstdint>
 
-#include "Engine/EngineCore/src/core/effect/粒子系统.h"
+#include "Engine/EngineFoundation/src/core/effect/粒子系统.h"
 
 //默认容量与初始状态
 TEST(Particle_System_Test, 默认状态)

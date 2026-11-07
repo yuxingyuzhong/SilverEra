@@ -6,7 +6,7 @@
 //获取引擎日志屏蔽（取日志文件路径）
 #include "src/主调/引擎日志屏蔽.h"
 //获取路径字符串转换（中文日志路径 → filesystem::path）
-#include "Engine/EngineCore/src/tools/Detail/路径字符串转换.h"
+#include "Engine/EngineFoundation/src/tools/Detail/路径字符串转换.h"
 
 //Dear ImGui
 #include "imgui.h"

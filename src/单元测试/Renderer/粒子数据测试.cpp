@@ -10,7 +10,7 @@
 #include <cstdint>
 #include <limits>
 
-#include "Engine/EngineCore/src/core/effect/粒子数据.h"
+#include "Engine/EngineFoundation/src/core/effect/粒子数据.h"
 
 namespace
 {
