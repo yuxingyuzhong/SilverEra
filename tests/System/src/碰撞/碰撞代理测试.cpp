@@ -206,19 +206,28 @@ TEST_F(Collision_Proxy_Test, 事件驱动检测链路)
 
 	//距离五个单位时检测结果为空
 	sent.clear();
-	entry(make_event("RegionDetect", region_payload));
+	ASSERT_TRUE(proxy.region_detect(region_payload["region"].get<std::string>()).has_value());
 	ASSERT_EQ(sent.size(), 1u);
 	EXPECT_EQ(sent[0]->tag, "DetectResult");
 	EXPECT_EQ(sent[0]->config["region"], "事件空间");
 	ASSERT_TRUE(sent[0]->config["results"].is_array());
 	EXPECT_TRUE(sent[0]->config["results"].empty());
 
-	//经位移事件把第二个盒体移入重叠位置
+	//经运动事件把第二个盒体移入重叠位置
 	sent.clear();
 	nlohmann::json move_B = collider_payload("事件空间", collider_B);
-	move_B["displacement"] = nlohmann::json::array({ -4.0, 0.0, 0.0 });
-	entry(make_event("ColliderDisplacement", move_B));
-	entry(make_event("RegionDetect", region_payload));
+	move_B["motion"] = nlohmann::json::object();
+	move_B["motion"]["translation"] = nlohmann::json::array({ -4.0, 0.0, 0.0 });
+	entry(make_event("ColliderMotion", move_B));
+
+	//公共 API 同步返回碰撞详情（含接触点）
+	std::optional<std::vector<engine::Collision_Detail>> detected =
+		proxy.region_detect("事件空间");
+	ASSERT_TRUE(detected.has_value());
+	ASSERT_EQ(detected->size(), 1u);
+	EXPECT_EQ((*detected)[0].collider_A, collider_A);
+	EXPECT_EQ((*detected)[0].collider_B, collider_B);
+	ASSERT_FALSE((*detected)[0].contacts.empty());
 
 	//检测结果应报告一对碰撞
 	ASSERT_FALSE(sent.empty());
@@ -229,8 +238,8 @@ TEST_F(Collision_Proxy_Test, 事件驱动检测链路)
 	EXPECT_EQ(result->config["results"][0]["collider_B"].get<uint64_t>(), collider_B);
 }
 
-//碰撞代理器：同一位移事件在连续检测中持续生效（位移不再一次性清零）
-TEST_F(Collision_Proxy_Test, 位移事件持续生效)
+//碰撞代理器：同一运动事件在连续检测中持续生效（运动不再一次性清零）
+TEST_F(Collision_Proxy_Test, 运动事件持续生效)
 {
 	//已发送事件集合
 	std::vector<std::shared_ptr<engine::Event>> sent;
@@ -246,40 +255,41 @@ TEST_F(Collision_Proxy_Test, 位移事件持续生效)
 	ASSERT_TRUE(static_cast<bool>(entry));
 
 	//构建空间与两个盒体
-	ASSERT_TRUE(proxy.region_build("位移空间"));
-	std::optional<uint64_t> collider_A = proxy.collider_build("位移空间");
-	std::optional<uint64_t> collider_B = proxy.collider_build("位移空间");
+	ASSERT_TRUE(proxy.region_build("运动空间"));
+	std::optional<uint64_t> collider_A = proxy.collider_build("运动空间");
+	std::optional<uint64_t> collider_B = proxy.collider_build("运动空间");
 	ASSERT_TRUE(collider_A.has_value());
 	ASSERT_TRUE(collider_B.has_value());
 
 	//经事件设置两个盒体的几何体（相距五个单位）
-	nlohmann::json set_A = collider_payload("位移空间", *collider_A);
+	nlohmann::json set_A = collider_payload("运动空间", *collider_A);
 	set_A["geometry"] = box_config(*collider_A, 0.0);
 	set_A["geometry"].erase("collider_ID");
 	entry(make_event("ColliderSet", set_A));
 
-	nlohmann::json set_B = collider_payload("位移空间", *collider_B);
+	nlohmann::json set_B = collider_payload("运动空间", *collider_B);
 	set_B["geometry"] = box_config(*collider_B, 5.0);
 	set_B["geometry"].erase("collider_ID");
 	entry(make_event("ColliderSet", set_B));
 
-	//经事件为第二个盒体提交一次位移（持续向左推进四个单位）
-	nlohmann::json displacement = collider_payload("位移空间", *collider_B);
-	displacement["displacement"] = nlohmann::json::array({ -4.0, 0.0, 0.0 });
-	entry(make_event("ColliderDisplacement", displacement));
+	//经事件为第二个盒体提交一次运动（持续向左推进四个单位）
+	nlohmann::json motion = collider_payload("运动空间", *collider_B);
+	motion["motion"] = nlohmann::json::object();
+	motion["motion"]["translation"] = nlohmann::json::array({ -4.0, 0.0, 0.0 });
+	entry(make_event("ColliderMotion", motion));
 
 	//激活碰撞空间
-	ASSERT_TRUE(proxy.region_state_set("位移空间", true));
+	ASSERT_TRUE(proxy.region_state_set("运动空间", true));
 
-	//第一次检测：位移生效使两盒体重叠，报告一对碰撞
+	//第一次检测：运动生效使两盒体重叠，报告一对碰撞
 	sent.clear();
-	ASSERT_TRUE(proxy.region_detect("位移空间"));
+	ASSERT_TRUE(proxy.region_detect("运动空间").has_value());
 	ASSERT_FALSE(sent.empty());
 	ASSERT_EQ(sent.back()->config["results"].size(), 1u);
 
-	//第二次检测：位移持续生效使盒体继续推进至远离位置，不再报告碰撞
+	//第二次检测：运动持续生效使盒体继续推进至远离位置，不再报告碰撞
 	sent.clear();
-	ASSERT_TRUE(proxy.region_detect("位移空间"));
+	ASSERT_TRUE(proxy.region_detect("运动空间").has_value());
 	ASSERT_FALSE(sent.empty());
 	EXPECT_TRUE(sent.back()->config["results"].empty());
 }
@@ -346,7 +356,7 @@ TEST_F(Collision_Proxy_Test, 几何体集合经事件设置生效)
 
 	//检测应报告一对碰撞
 	sent.clear();
-	entry(make_event("RegionDetect", region_payload));
+	ASSERT_TRUE(proxy.region_detect(region_payload["region"].get<std::string>()).has_value());
 	ASSERT_FALSE(sent.empty());
 	const std::shared_ptr<engine::Event> result = sent.back();
 	ASSERT_EQ(result->tag, "DetectResult");
@@ -355,4 +365,402 @@ TEST_F(Collision_Proxy_Test, 几何体集合经事件设置生效)
 	EXPECT_EQ(result->config["results"][0]["collider_B"].get<uint64_t>(), collider_B);
 }
 
-//碰撞空间：位移作废后不再施加位移，位移改写解除作废后按新向量运动
+//碰撞代理器：简略结果事件开关可经公共 API 与事件设置
+TEST_F(Collision_Proxy_Test, 简略结果事件开关)
+{
+	//已发送事件集合
+	std::vector<std::shared_ptr<engine::Event>> sent;
+	//接入入口接到的接收通道
+	std::function<void(std::shared_ptr<engine::Event>)> entry;
+
+	//注册发送通道与接入入口
+	proxy.event_terminal->bind(engine::Port_ID::Evt_Sender,
+		[&sent](std::shared_ptr<engine::Event> evt) { sent.push_back(evt); });
+	proxy.event_terminal->bind(engine::Port_ID::Broker_Attacher,
+		[&entry](auto&&, auto&&, auto&& event_entry) { entry = event_entry; });
+	proxy.attach();
+	ASSERT_TRUE(static_cast<bool>(entry));
+
+	//构建空间并激活（无碰撞体，检测结果为空）
+	ASSERT_TRUE(proxy.region_build("开关空间"));
+	ASSERT_TRUE(proxy.region_state_set("开关空间", true));
+	//排除接入时发出的订阅登记事件
+	sent.clear();
+
+	//默认开启：检测后应发布简略结果事件
+	ASSERT_TRUE(proxy.region_detect("开关空间").has_value());
+	ASSERT_FALSE(sent.empty());
+	EXPECT_EQ(sent.back()->tag, "DetectResult");
+
+	//经公共 API 关闭
+	sent.clear();
+	ASSERT_TRUE(proxy.region_event_output_set("开关空间", false));
+	EXPECT_FALSE(proxy.region_event_output_get("开关空间"));
+	ASSERT_TRUE(proxy.region_detect("开关空间").has_value());
+	EXPECT_TRUE(sent.empty());
+
+	//经事件重新开启
+	nlohmann::json output_payload = nlohmann::json::object();
+	output_payload["region"] = "开关空间";
+	output_payload["enabled"] = true;
+	entry(make_event("RegionEventOutput", output_payload));
+	EXPECT_TRUE(proxy.region_event_output_get("开关空间"));
+	sent.clear();
+	ASSERT_TRUE(proxy.region_detect("开关空间").has_value());
+	ASSERT_FALSE(sent.empty());
+	EXPECT_EQ(sent.back()->tag, "DetectResult");
+
+	//未构建空间无法设置开关
+	EXPECT_FALSE(proxy.region_event_output_set("未构建空间", false));
+}
+
+//碰撞代理器：含旋转的运动事件缺少离散步长时被拒绝，补齐步长后生效
+TEST_F(Collision_Proxy_Test, 旋转运动缺步数被拒绝)
+{
+	//已发送事件集合
+	std::vector<std::shared_ptr<engine::Event>> sent;
+	//接入入口接到的接收通道
+	std::function<void(std::shared_ptr<engine::Event>)> entry;
+
+	//注册发送通道与接入入口
+	proxy.event_terminal->bind(engine::Port_ID::Evt_Sender,
+		[&sent](std::shared_ptr<engine::Event> evt) { sent.push_back(evt); });
+	proxy.event_terminal->bind(engine::Port_ID::Broker_Attacher,
+		[&entry](auto&&, auto&&, auto&& event_entry) { entry = event_entry; });
+	proxy.attach();
+	ASSERT_TRUE(static_cast<bool>(entry));
+
+	//排除接入时发出的订阅登记事件
+	sent.clear();
+
+	//空间与两个盒体
+	nlohmann::json region_payload = nlohmann::json::object();
+	region_payload["region"] = "旋转空间";
+	entry(make_event("RegionBuild", region_payload));
+	entry(make_event("ColliderBuild", region_payload));
+	entry(make_event("ColliderBuild", region_payload));
+	ASSERT_EQ(sent.size(), 2u);
+	const uint64_t collider_A = sent[0]->config["collider_ID"].get<uint64_t>();
+	const uint64_t collider_B = sent[1]->config["collider_ID"].get<uint64_t>();
+
+	//两个盒体分别位于零与五个单位处
+	nlohmann::json set_A = collider_payload("旋转空间", collider_A);
+	set_A["geometry"] = box_config(collider_A, 0.0);
+	set_A["geometry"].erase("collider_ID");
+	entry(make_event("ColliderSet", set_A));
+
+	nlohmann::json set_B = collider_payload("旋转空间", collider_B);
+	set_B["geometry"] = box_config(collider_B, 5.0);
+	set_B["geometry"].erase("collider_ID");
+	entry(make_event("ColliderSet", set_B));
+
+	//激活空间
+	nlohmann::json state_payload = region_payload;
+	state_payload["active"] = true;
+	entry(make_event("RegionState", state_payload));
+
+	//第二个盒体的含旋转运动（绕 Z 轴旋转九十度并左移四个单位）
+	nlohmann::json motion = collider_payload("旋转空间", collider_B);
+	motion["motion"] = nlohmann::json::object();
+	motion["motion"]["translation"] = nlohmann::json::array({ -4.0, 0.0, 0.0 });
+	motion["motion"]["rotation"] = nlohmann::json::array({ 0.0, 0.0, 0.70710678, 0.70710678 });
+
+	//离散步长仍为零，事件应被整条拒绝
+	entry(make_event("ColliderMotion", motion));
+	sent.clear();
+	ASSERT_TRUE(proxy.region_detect("旋转空间").has_value());
+	ASSERT_FALSE(sent.empty());
+	EXPECT_EQ(sent.back()->tag, "DetectResult");
+	EXPECT_TRUE(sent.back()->config["results"].empty());
+
+	//补齐离散步长
+	nlohmann::json set_mode = collider_payload("旋转空间", collider_B);
+	set_mode["detection_mode"] = nlohmann::json::object();
+	set_mode["detection_mode"]["is_swept_volume"] = false;
+	set_mode["detection_mode"]["step_length"] = 2u;
+	entry(make_event("ColliderSet", set_mode));
+
+	//补齐步长后同一运动事件被接受
+	entry(make_event("ColliderMotion", motion));
+	sent.clear();
+	ASSERT_TRUE(proxy.region_detect("旋转空间").has_value());
+	ASSERT_FALSE(sent.empty());
+	ASSERT_EQ(sent.back()->config["results"].size(), 1u);
+	EXPECT_EQ(sent.back()->config["results"][0]["collider_A"].get<uint64_t>(), collider_A);
+	EXPECT_EQ(sent.back()->config["results"][0]["collider_B"].get<uint64_t>(), collider_B);
+
+	//删除响应协议后不再出现裁决事件
+	for (const std::shared_ptr<engine::Event>& evt : sent)
+		EXPECT_NE(evt->tag, "ColliderCollision");
+}
+
+//碰撞代理器：部件运动下标校验、单件生效与几何重建清空
+TEST_F(Collision_Proxy_Test, 部件运动与几何重建清空)
+{
+	//已发送事件集合
+	std::vector<std::shared_ptr<engine::Event>> sent;
+	//接入入口接到的接收通道
+	std::function<void(std::shared_ptr<engine::Event>)> entry;
+
+	//注册发送通道与接入入口
+	proxy.event_terminal->bind(engine::Port_ID::Evt_Sender,
+		[&sent](std::shared_ptr<engine::Event> evt) { sent.push_back(evt); });
+	proxy.event_terminal->bind(engine::Port_ID::Broker_Attacher,
+		[&entry](auto&&, auto&&, auto&& event_entry) { entry = event_entry; });
+	proxy.attach();
+	ASSERT_TRUE(static_cast<bool>(entry));
+
+	//排除接入时发出的订阅登记事件
+	sent.clear();
+
+	//空间与两个碰撞体
+	nlohmann::json region_payload = nlohmann::json::object();
+	region_payload["region"] = "部件空间";
+	entry(make_event("RegionBuild", region_payload));
+	entry(make_event("ColliderBuild", region_payload));
+	entry(make_event("ColliderBuild", region_payload));
+	ASSERT_EQ(sent.size(), 2u);
+	const uint64_t collider_A = sent[0]->config["collider_ID"].get<uint64_t>();
+	const uint64_t collider_B = sent[1]->config["collider_ID"].get<uint64_t>();
+
+	//碰撞体A为双部件（两个盒体分别位于正负五个单位处）
+	nlohmann::json set_A = collider_payload("部件空间", collider_A);
+	set_A["geometry"] = nlohmann::json::array();
+	nlohmann::json part_left = nlohmann::json::object();
+	part_left["type"] = "box";
+	part_left["half_extent"] = nlohmann::json::array({ 1.0, 1.0, 1.0 });
+	part_left["position"] = nlohmann::json::array({ -5.0, 0.0, 0.0 });
+	set_A["geometry"].push_back(part_left);
+	nlohmann::json part_right = nlohmann::json::object();
+	part_right["type"] = "box";
+	part_right["half_extent"] = nlohmann::json::array({ 1.0, 1.0, 1.0 });
+	part_right["position"] = nlohmann::json::array({ 5.0, 0.0, 0.0 });
+	set_A["geometry"].push_back(part_right);
+	entry(make_event("ColliderSet", set_A));
+
+	//碰撞体B为单体盒体，与本体的左侧部件重叠
+	nlohmann::json set_B = collider_payload("部件空间", collider_B);
+	set_B["geometry"] = box_config(collider_B, -5.5);
+	set_B["geometry"].erase("collider_ID");
+	entry(make_event("ColliderSet", set_B));
+
+	//碰撞体A启用离散检测，步长一（单段跳到终态，避免途中掠过目标）
+	nlohmann::json set_mode = collider_payload("部件空间", collider_A);
+	set_mode["detection_mode"] = nlohmann::json::object();
+	set_mode["detection_mode"]["is_swept_volume"] = false;
+	set_mode["detection_mode"]["step_length"] = 1u;
+	entry(make_event("ColliderSet", set_mode));
+
+	//激活空间
+	nlohmann::json state_payload = region_payload;
+	state_payload["active"] = true;
+	entry(make_event("RegionState", state_payload));
+
+	//基准检测报告一对碰撞（左侧部件与B重叠）
+	sent.clear();
+	ASSERT_TRUE(proxy.region_detect("部件空间").has_value());
+	ASSERT_FALSE(sent.empty());
+	ASSERT_EQ(sent.back()->config["results"].size(), 1u);
+	//结果条目必须携带子部件编号（两侧自动分配的首个编号均为零）
+	EXPECT_EQ(sent.back()->config["results"][0]["part_A"].get<uint16_t>(), 0u);
+	EXPECT_EQ(sent.back()->config["results"][0]["part_B"].get<uint16_t>(), 0u);
+
+	//越界部件下标的运动事件被整条拒绝
+	nlohmann::json bad_parts = collider_payload("部件空间", collider_A);
+	bad_parts["parts"] = nlohmann::json::array();
+	nlohmann::json bad_item = nlohmann::json::object();
+	bad_item["part"] = 2u;
+	bad_item["translation"] = nlohmann::json::array({ 0.0, 3.0, 0.0 });
+	bad_parts["parts"].push_back(bad_item);
+	entry(make_event("ColliderMotion", bad_parts));
+	sent.clear();
+	ASSERT_TRUE(proxy.region_detect("部件空间").has_value());
+	ASSERT_FALSE(sent.empty());
+	ASSERT_EQ(sent.back()->config["results"].size(), 1u);
+
+	//合法部件运动把左侧部件推离B
+	nlohmann::json parts_motion = collider_payload("部件空间", collider_A);
+	parts_motion["parts"] = nlohmann::json::array();
+	nlohmann::json part_item = nlohmann::json::object();
+	part_item["part"] = 0u;
+	part_item["translation"] = nlohmann::json::array({ 0.0, 3.0, 0.0 });
+	parts_motion["parts"].push_back(part_item);
+	entry(make_event("ColliderMotion", parts_motion));
+	sent.clear();
+	ASSERT_TRUE(proxy.region_detect("部件空间").has_value());
+	ASSERT_FALSE(sent.empty());
+	EXPECT_TRUE(sent.back()->config["results"].empty());
+
+	//同编号几何重建：子部件编号仍存在，运动登记保留，左侧部件继续被推离
+	entry(make_event("ColliderSet", set_A));
+	sent.clear();
+	ASSERT_TRUE(proxy.region_detect("部件空间").has_value());
+	ASSERT_FALSE(sent.empty());
+	EXPECT_TRUE(sent.back()->config["results"].empty());
+
+	//改用新编号重建几何：旧编号的运动登记被丢弃，左侧部件回到原位并再次重叠
+	nlohmann::json set_A_new = set_A;
+	set_A_new["geometry"][0]["part_ID"] = 3u;
+	set_A_new["geometry"][1]["part_ID"] = 7u;
+	entry(make_event("ColliderSet", set_A_new));
+	sent.clear();
+	ASSERT_TRUE(proxy.region_detect("部件空间").has_value());
+	ASSERT_FALSE(sent.empty());
+	ASSERT_EQ(sent.back()->config["results"].size(), 1u);
+	//新编号重建后的碰撞对为 A 的编号三部件与 B 的编号零部件
+	EXPECT_EQ(sent.back()->config["results"][0]["part_A"].get<uint16_t>(), 3u);
+	EXPECT_EQ(sent.back()->config["results"][0]["part_B"].get<uint16_t>(), 0u);
+}
+
+//碰撞代理器：离散步长归零时清除含旋转的运动登记
+TEST_F(Collision_Proxy_Test, 离散步长归零清除旋转登记)
+{
+	//已发送事件集合
+	std::vector<std::shared_ptr<engine::Event>> sent;
+	//接入入口接到的接收通道
+	std::function<void(std::shared_ptr<engine::Event>)> entry;
+
+	//注册发送通道与接入入口
+	proxy.event_terminal->bind(engine::Port_ID::Evt_Sender,
+		[&sent](std::shared_ptr<engine::Event> evt) { sent.push_back(evt); });
+	proxy.event_terminal->bind(engine::Port_ID::Broker_Attacher,
+		[&entry](auto&&, auto&&, auto&& event_entry) { entry = event_entry; });
+	proxy.attach();
+	ASSERT_TRUE(static_cast<bool>(entry));
+
+	//排除接入时发出的订阅登记事件
+	sent.clear();
+
+	//空间与两个碰撞体
+	nlohmann::json region_payload = nlohmann::json::object();
+	region_payload["region"] = "清零空间";
+	entry(make_event("RegionBuild", region_payload));
+	entry(make_event("ColliderBuild", region_payload));
+	entry(make_event("ColliderBuild", region_payload));
+	ASSERT_EQ(sent.size(), 2u);
+	const uint64_t collider_A = sent[0]->config["collider_ID"].get<uint64_t>();
+	const uint64_t collider_B = sent[1]->config["collider_ID"].get<uint64_t>();
+
+	//细长盒体（长轴沿 X）
+	nlohmann::json set_A = collider_payload("清零空间", collider_A);
+	set_A["geometry"] = nlohmann::json::object();
+	set_A["geometry"]["type"] = "box";
+	set_A["geometry"]["half_extent"] = nlohmann::json::array({ 3.0, 0.5, 0.5 });
+	set_A["geometry"]["position"] = nlohmann::json::array({ 0.0, 0.0, 0.0 });
+	entry(make_event("ColliderSet", set_A));
+
+	//目标盒体位于短轴正上方
+	nlohmann::json set_B = collider_payload("清零空间", collider_B);
+	set_B["geometry"] = nlohmann::json::object();
+	set_B["geometry"]["type"] = "box";
+	set_B["geometry"]["half_extent"] = nlohmann::json::array({ 0.3, 0.3, 0.3 });
+	set_B["geometry"]["position"] = nlohmann::json::array({ 0.0, 2.2, 0.0 });
+	entry(make_event("ColliderSet", set_B));
+
+	//细长盒体启用离散检测，步长二
+	nlohmann::json set_mode = collider_payload("清零空间", collider_A);
+	set_mode["detection_mode"] = nlohmann::json::object();
+	set_mode["detection_mode"]["is_swept_volume"] = false;
+	set_mode["detection_mode"]["step_length"] = 2u;
+	entry(make_event("ColliderSet", set_mode));
+
+	//激活空间
+	nlohmann::json state_payload = region_payload;
+	state_payload["active"] = true;
+	entry(make_event("RegionState", state_payload));
+
+	//旋转九十度的运动事件
+	nlohmann::json motion = collider_payload("清零空间", collider_A);
+	motion["motion"] = nlohmann::json::object();
+	motion["motion"]["rotation"] = nlohmann::json::array({ 0.0, 0.0, 0.70710678, 0.70710678 });
+	entry(make_event("ColliderMotion", motion));
+
+	//旋转到九十度时长轴扫过目标
+	sent.clear();
+	ASSERT_TRUE(proxy.region_detect("清零空间").has_value());
+	ASSERT_FALSE(sent.empty());
+	ASSERT_EQ(sent.back()->config["results"].size(), 1u);
+
+	//离散步长归零，含旋转的运动登记被清除
+	nlohmann::json clear_mode = collider_payload("清零空间", collider_A);
+	clear_mode["detection_mode"] = nlohmann::json::object();
+	clear_mode["detection_mode"]["is_swept_volume"] = false;
+	clear_mode["detection_mode"]["step_length"] = 0u;
+	entry(make_event("ColliderSet", clear_mode));
+
+	/*
+	登记已清除，细长盒体停留在九十度姿态不再旋转；
+	若登记残留则会继续旋转到一百八十度而与目标分离。
+	*/
+	sent.clear();
+	ASSERT_TRUE(proxy.region_detect("清零空间").has_value());
+	ASSERT_FALSE(sent.empty());
+	ASSERT_EQ(sent.back()->config["results"].size(), 1u);
+}
+
+//碰撞代理器：跨越状态查询经事件协议返回快照
+TEST_F(Collision_Proxy_Test, 跨越状态查询事件返回快照)
+{
+	//已发送事件集合
+	std::vector<std::shared_ptr<engine::Event>> sent;
+	//接入入口接到的接收通道
+	std::function<void(std::shared_ptr<engine::Event>)> entry;
+
+	//注册发送通道与接入入口
+	proxy.event_terminal->bind(engine::Port_ID::Evt_Sender,
+		[&sent](std::shared_ptr<engine::Event> evt) { sent.push_back(evt); });
+	proxy.event_terminal->bind(engine::Port_ID::Broker_Attacher,
+		[&entry](auto&&, auto&&, auto&& event_entry) { entry = event_entry; });
+	proxy.attach();
+	ASSERT_TRUE(static_cast<bool>(entry));
+	//排除接入时发出的订阅登记事件
+	sent.clear();
+
+	//写入临时网格与边界配置
+	const std::string mesh_name = temp_mesh_write();
+	const std::string boundary_path = temp_boundary_write("查询空间", mesh_name);
+
+	//构建空间与边界
+	ASSERT_TRUE(proxy.region_build("查询空间"));
+	ASSERT_TRUE(proxy.region_boundary_set(boundary_path));
+
+	//经事件构建碰撞体
+	nlohmann::json build_payload = nlohmann::json::object();
+	build_payload["region"] = "查询空间";
+	entry(make_event("ColliderBuild", build_payload));
+	ASSERT_FALSE(sent.empty());
+	ASSERT_EQ(sent.back()->tag, "ColliderBuildResult");
+	const uint64_t collider_ID = sent.back()->config["collider_ID"].get<uint64_t>();
+
+	//经事件设置盒体几何
+	nlohmann::json set_payload = collider_payload("查询空间", collider_ID);
+	set_payload["geometry"] = box_config(collider_ID, 0.0);
+	set_payload["geometry"]["half_extent"] = nlohmann::json::array({ 0.3, 0.3, 0.3 });
+	set_payload["geometry"].erase("collider_ID");
+	entry(make_event("ColliderSet", set_payload));
+
+	//激活空间并执行首次检测（建立基准）
+	ASSERT_TRUE(proxy.region_state_set("查询空间", true));
+	ASSERT_TRUE(proxy.region_detect("查询空间").has_value());
+
+	//发送跨越状态查询（指定编号与请求编号）
+	sent.clear();
+	nlohmann::json query = collider_payload("查询空间", collider_ID);
+	query["request_ID"] = 77u;
+	entry(make_event("RegionCrossStateQuery", query));
+
+	//查询结果事件应携带快照
+	ASSERT_FALSE(sent.empty());
+	const std::shared_ptr<engine::Event> result = sent.back();
+	ASSERT_EQ(result->tag, "RegionCrossStateResult");
+	EXPECT_TRUE(result->config["found"].get<bool>());
+	EXPECT_EQ(result->config["request_ID"].get<uint64_t>(), 77u);
+	ASSERT_EQ(result->config["states"].size(), 1u);
+	EXPECT_EQ(result->config["states"][0]["collider_ID"].get<uint64_t>(), collider_ID);
+	EXPECT_EQ(result->config["states"][0]["state"].get<std::string>(), "inside");
+
+	//清理临时网格文件
+	std::error_code ec;
+	std::filesystem::remove(
+		engine::detail::exe_dir_get() / engine::detail::string_to_path(mesh_name), ec);
+}
