@@ -1,44 +1,21 @@
 #pragma once
 //预编译头
 #include "Engine/EngineFoundation/common/前置头文件包含.h"
-//获取碰撞库依赖封装
-#include "../Common/依赖库封装.h"
+//无序集合（本帧移动集合与缓存失效集合）
+#include <unordered_set>
+//获取自有几何类型
+#include "../Common/几何类型.h"
+//获取碰撞数据类型
+#include "../Common/碰撞数据类型.h"
 //获取碰撞体定义
 #include "../Collider/碰撞体.h"
+//获取碰撞空间后端
+#include "backend/空间后端.h"
 //获取数值分配器
-#include "Engine/EngineFoundation/src/tools/Number_Allocator/数值分配器.h"
+#include "Engine/EngineFoundation/src/detail/class/Number_Pool/数值分配器.h"
 
 namespace engine
 {
-	//碰撞结果
-	struct Collision_Result
-	{
-		//碰撞体A
-		uint64_t collider_A = 0;
-		//碰撞体B
-		uint64_t collider_B = 0;
-	};
-
-	//碰撞体相对碰撞空间的跨越状态
-	enum class Cross_State
-	{
-		//完全位于碰撞空间内
-		inside,
-		//部分位于碰撞空间内(跨越边界)
-		crossing,
-		//完全位于碰撞空间外
-		outside
-	};
-
-	//跨越通知(碰撞体相对碰撞空间发生跨越状态转移)
-	struct Cross_Notice
-	{
-		//碰撞体编号
-		uint64_t collider_ID = 0;
-		//通知类型(部分跨越 cross / 完全回归 return / 完全超出跨越 exit)
-		std::string kind;
-	};
-
 	//碰撞空间
 	struct Collision_Region
 	{
@@ -49,48 +26,43 @@ namespace engine
 		bool is_active = false;
 
 		//碰撞体编号分配器
-		Number_Allocator<uint64_t> ID_allocator;
-		//空间边界(静态网格)
-		Collider region_boundary;
+		Number_Pool<uint64_t> ID_allocator;
 		//碰撞检测后端
-		Collision_Backend backend{};
+		Region_Backend backend{};
 		//碰撞体映射
 		std::unordered_map<uint64_t, Collider> mapping;
 		/*
-		位移事件读取回调（返回false表示该编号尚无位移事件）
-		由碰撞代理器注入，用于在更新碰撞体位置时重读最新位移事件。
+		运动事件读取回调（返回false表示该编号尚无运动事件）
+		由碰撞代理器注入，用于在更新碰撞体位置时重读最新运动事件。
 		*/
-		std::function<bool(uint64_t, Vector3&)> displacement_reader;
+		std::function<bool(uint64_t, Motion_Event&)> motion_reader;
 		//跨越状态记录（键为碰撞体编号，记录上一次判定所得的跨越状态）
 		std::unordered_map<uint64_t, Cross_State> cross_states;
+		//跨越状态失效集合（几何重建等变更后须强制重算）
+		std::unordered_set<uint64_t> cross_dirty;
 		//本帧跨越通知（检测时收集，供碰撞代理器发布后取走）
 		std::vector<Cross_Notice> cross_notices;
+		//跨越通知序号（本空间内单调递增）
+		uint64_t cross_sequence = 0;
 	public:
 		//默认构造
 		Collision_Region();
 		//含参构造(指定碰撞空间名称)
 		explicit Collision_Region(const std::string& region_name);
 
-		//禁止拷贝（backend 含 unique_ptr）
+		//禁止拷贝（backend 含唯一所有权）
 		Collision_Region(const Collision_Region&) = delete;
 		Collision_Region& operator=(const Collision_Region&) = delete;
 
 		/*
 		默认移动
-		注意：碰撞世界内部记录的是碰撞对象地址，而空间边界是直接成员，
-		      故向碰撞世界挂入边界之后再按值搬移本结构体会留下悬空指针。
-		      按 unique_ptr 搬移（碰撞代理器的做法）不受影响，
-		      确需按值搬移时须搬移后重新执行边界构建。
+		后端实现体在堆上分配，移动只搬移句柄，碰撞对象与碰撞世界地址均不变，
+		故按值搬移后无需重建空间边界。
 		*/
 		Collision_Region(Collision_Region&&) = default;
 		Collision_Region& operator=(Collision_Region&&) = default;
 
-		/*
-		析构函数
-		碰撞体与空间边界都直接持有碰撞对象，而碰撞世界内部记录的是这些对象的地址；
-		碰撞体映射先于碰撞世界析构，故须在此先把全部碰撞对象移出碰撞世界，
-		否则碰撞世界析构时会解引用已释放的碰撞对象。
-		*/
+		//析构函数
 		~Collision_Region();
 
 		//碰撞空间有效性检查
@@ -106,7 +78,7 @@ namespace engine
 
 		//碰撞体构建
 		uint64_t collider_build(void);
-		//卸载碰卸载
+		//碰撞体卸载
 		bool collider_unload(uint64_t collider_ID);
 		//碰撞体设置 —— 检测方式重载
 		bool collider_set(const uint64_t collider_ID, const Detection_Mode& vector);
@@ -122,50 +94,35 @@ namespace engine
 		bool collider_adopt(uint64_t collider_ID);
 		//碰撞体几何配置读取(编号不存在时返回空配置)
 		nlohmann::json collider_geometry(uint64_t collider_ID) const;
-		//位移事件读取回调注入(由碰撞代理器注入)
-		void displacement_reader_set(std::function<bool(uint64_t, Vector3&)> reader);
-		//碰撞体位移作废(碰撞响应判定为停止运动)
-		bool collider_displacement_void(uint64_t collider_ID);
-		//碰撞体位移改写(碰撞响应判定为继续运动且位移变化)
-		bool collider_displacement_replace(uint64_t collider_ID, const Vector3& displacement);
+		//碰撞体离散步长读取(编号不存在时返回false)
+		bool collider_step_length_get(uint64_t collider_ID, uint32_t& receiver) const;
+		//碰撞体几何部件数读取(编号不存在时返回false)
+		bool collider_part_count_get(uint64_t collider_ID, uint32_t& receiver) const;
+		//碰撞体子部件编号存在性检查
+		bool collider_part_exists(uint64_t collider_ID, uint16_t part_ID) const;
+		//运动事件读取回调注入(由碰撞代理器注入)
+		void motion_reader_set(std::function<bool(uint64_t, Motion_Event&)> reader);
 		//碰撞体位移频率设置(作用频率与生效计时随碰撞体保存于本空间，登记时重新起算生效计时)
 		bool collider_frequency_set(uint64_t collider_ID, uint64_t frequency);
 
-		//执行碰撞检测
+		//执行碰撞检测（返回碰撞对，供内部/兼容调用）
 		std::optional<std::vector<Collision_Result>> detect(void);
+		//执行碰撞检测（返回碰撞详情，含接触点/法线/穿透深度）
+		std::optional<std::vector<Collision_Detail>> detect_detail(void);
 		//碰撞体包含性检测
 		bool contains(uint64_t collider_ID) const;
 		//跨越通知取走(取出并清空本帧收集的跨越通知)
 		std::vector<Cross_Notice> cross_notices_take(void);
+		//跨越状态快照(查询用，含尚未建立基准的碰撞体)
+		void cross_state_snapshot(std::vector<Cross_State_Entry>& receiver) const;
 	private:
 		//碰撞体查找
 		Collider* collider_seek(uint64_t collider_ID);
 
-		//浮点字段读取
-		bool scalar_read(const nlohmann::json& config, const std::string& field, double& receiver) const;
-		//三元数组字段读取
-		bool vector_read(const nlohmann::json& config, const std::string& field, Vector3& receiver) const;
-		//四元数组字段读取
-		bool quaternion_read(const nlohmann::json& config, const std::string& field,
-			Quaternion& receiver) const;
-
-		//网格形状构建
-		bool mesh_shape_build(const std::string& mesh_path,
-			std::unique_ptr<Collision_Shape>& shape_receiver,
-			std::unique_ptr<Triangle_Mesh>& mesh_receiver) const;
-		//几何形状构建
-		bool shape_build(const nlohmann::json& geometry_config,
-			std::unique_ptr<Collision_Shape>& shape_receiver,
-			std::unique_ptr<Triangle_Mesh>& mesh_receiver);
-		//几何体集合构建(单几何体形式与集合形式统一处理，多部件时装配复合形状)
-		bool geometry_build(const nlohmann::json& geometry_config,
-			std::vector<Geometry_Part>& parts_receiver,
-			std::unique_ptr<Collision_Shape>& compound_receiver);
-
-		//边界点包含性判定(射线奇偶：与边界网格交点数为奇数则点在边界内部)
-		bool boundary_point_inside(const Vector3& point) const;
 		//跨越状态更新(位置更新后比对旧状态并收集跨越通知)
-		void cross_state_update(const std::vector<uint64_t>& boundary_contacts);
+		void cross_state_update(const std::vector<uint64_t>& boundary_contacts,
+			const std::vector<uint64_t>& swept_contacts,
+			const std::unordered_set<uint64_t>& moved_IDs);
 	};
 
 }

@@ -1,34 +1,12 @@
-#include "src/collision/Collision_Proxy/局部命名空间使用.h"
-#include "Engine/EngineFoundation/src/tools/Logging/日志系统运行包.h"
+#include "../局部命名空间使用.h"
+#include "Engine/EngineFoundation/src/log/日志系统运行包.h"
+//获取碰撞配置字段读取工具
+#include "src/collision/Common/字段读取.h"
 
 namespace engine
 {
-	//文件内部辅助设施（不对外暴露）
-	namespace
-	{
-		//字符串字段读取
-		bool text_read(const json& config, const string& field, string& receiver)
-		{
-			//字段存在性与类型检查
-			if (!config.is_object() || !config.contains(field) || !config[field].is_string())
-				return false;
-			//读取字段内容
-			receiver = config[field].get<string>();
-			return !receiver.empty();
-		}
-
-		//无符号整数字段读取
-		bool number_read(const json& config, const string& field, uint64_t& receiver)
-		{
-			//字段存在性与类型检查
-			if (!config.is_object() || !config.contains(field) ||
-				!config[field].is_number_integer())
-				return false;
-			//读取字段内容
-			receiver = config[field].get<uint64_t>();
-			return true;
-		}
-	}
+	//引入字段读取工具
+	using namespace collision_detail;
 
 	//事件中转站接入
 	void Collision_Proxy::attach(void)
@@ -52,19 +30,19 @@ namespace engine
 
 		//待订阅事件清单
 		vector<Event> needed_events{
-			Event("", "", "Config", "Load"),
-			Event("", "", "Collision", "RegionBuild"),
-			Event("", "", "Collision", "RegionUnload"),
-			Event("", "", "Collision", "RegionState"),
-			Event("", "", "Collision", "RegionBoundary"),
-			Event("", "", "Collision", "RegionDetect"),
-			Event("", "", "Collision", "ColliderBuild"),
-			Event("", "", "Collision", "ColliderUnload"),
-			Event("", "", "Collision", "ColliderTransfer"),
-			Event("", "", "Collision", "ColliderMirror"),
-			Event("", "", "Collision", "ColliderSet"),
-			Event("", "", "Collision", "ColliderDisplacement"),
-			Event("", "", "Collision", "ColliderCollisionResponse")
+			Event("", "", event_protocol::config, event_protocol::load),
+			Event("", "", collision_event::category, collision_event::region_build),
+			Event("", "", collision_event::category, collision_event::region_unload),
+			Event("", "", collision_event::category, collision_event::region_state),
+			Event("", "", collision_event::category, collision_event::region_boundary),
+			Event("", "", collision_event::category, collision_event::region_event_output),
+			Event("", "", collision_event::category, collision_event::collider_build),
+			Event("", "", collision_event::category, collision_event::collider_unload),
+			Event("", "", collision_event::category, collision_event::collider_transfer),
+			Event("", "", collision_event::category, collision_event::collider_mirror),
+			Event("", "", collision_event::category, collision_event::collider_set),
+			Event("", "", collision_event::category, collision_event::collider_motion),
+			Event("", "", collision_event::category, collision_event::region_cross_state_query)
 		};
 
 		//接入事件中转站（仅登记订阅者身份与接收入口）
@@ -81,13 +59,13 @@ namespace engine
 		{
 			//单条订阅事件标识
 			json subscribed_event;
-			subscribed_event["category"] = needed_event.category;
-			subscribed_event["tag"] = needed_event.tag;
+			subscribed_event[event_protocol::field_category] = needed_event.category;
+			subscribed_event[event_protocol::field_tag] = needed_event.tag;
 			subscribed_events.push_back(subscribed_event);
 		}
 
 		//构造订阅事件（目标对象名与权限密钥经载荷传递）
-		auto attach_evt = event_terminal.build("", "", "Subscribed_Events", "Add");
+		auto attach_evt = event_terminal.build("", "", event_protocol::subscribed_events, event_protocol::add);
 		//若事件构造失败
 		if (attach_evt == nullptr)
 		{
@@ -95,9 +73,9 @@ namespace engine
 			return;
 		}
 		//写入目标对象名、权限密钥与订阅清单
-		attach_evt->config["object"] = module_name;
-		attach_evt->config["acl_key"] = static_cast<uint64_t>(acl_key);
-		attach_evt->config["subscribed_events"] = subscribed_events;
+		attach_evt->config[event_protocol::field_object] = module_name;
+		attach_evt->config[event_protocol::field_acl_key] = static_cast<uint64_t>(acl_key);
+		attach_evt->config[event_protocol::field_subscribed_events] = subscribed_events;
 		//发送订阅事件（登记模块订阅清单）
 		if (!event_terminal.send(attach_evt, acl_key))
 			logger.error("Collision_Proxy::订阅事件发送失败");
@@ -111,7 +89,7 @@ namespace engine
 			return;
 
 		//---------- 配置路由指令 ----------
-		if (evt->category == "Config" && evt->tag == "Load")
+		if (evt->category == event_protocol::config && evt->tag == event_protocol::load)
 		{
 			//非本模块的配置指令一律忽略
 			if (evt->receiver != module_name)
@@ -122,19 +100,19 @@ namespace engine
 		}
 
 		//---------- 碰撞模块指令 ----------
-		if (evt->category != "Collision")
+		if (evt->category != collision_event::category)
 		{
 			logger.debug("Collision_Proxy::未识别事件({}/{})", evt->category, evt->tag);
 			return;
 		}
 
 		//碰撞空间构建
-		if (evt->tag == "RegionBuild")
+		if (evt->tag == collision_event::region_build)
 		{
 			//目标空间名称
 			string region;
 			//读取目标空间名称
-			if (!text_read(evt->config, "region", region))
+			if (!text_read(evt->config, collision_event::field_region, region))
 			{
 				logger.warn("Collision_Proxy::空间构建事件缺少有效字段(region)");
 				return;
@@ -145,12 +123,12 @@ namespace engine
 		}
 
 		//碰撞空间卸载
-		if (evt->tag == "RegionUnload")
+		if (evt->tag == collision_event::region_unload)
 		{
 			//目标空间名称
 			string region;
 			//读取目标空间名称
-			if (!text_read(evt->config, "region", region))
+			if (!text_read(evt->config, collision_event::field_region, region))
 			{
 				logger.warn("Collision_Proxy::空间卸载事件缺少有效字段(region)");
 				return;
@@ -161,34 +139,34 @@ namespace engine
 		}
 
 		//碰撞空间活跃性设置
-		if (evt->tag == "RegionState")
+		if (evt->tag == collision_event::region_state)
 		{
 			//目标空间名称
 			string region;
 			//读取目标空间名称
-			if (!text_read(evt->config, "region", region))
+			if (!text_read(evt->config, collision_event::field_region, region))
 			{
 				logger.warn("Collision_Proxy::空间状态事件缺少有效字段(region)");
 				return;
 			}
 			//若缺少活跃性字段
-			if (!evt->config.contains("active") || !evt->config["active"].is_boolean())
+			if (!evt->config.contains(collision_event::field_active) || !evt->config[collision_event::field_active].is_boolean())
 			{
 				logger.warn("Collision_Proxy::空间状态事件缺少有效字段(active)");
 				return;
 			}
 			//设置空间活跃性
-			region_state_set(region, evt->config["active"].get<bool>());
+			region_state_set(region, evt->config[collision_event::field_active].get<bool>());
 			return;
 		}
 
 		//碰撞空间边界设置
-		if (evt->tag == "RegionBoundary")
+		if (evt->tag == collision_event::region_boundary)
 		{
 			//空间边界配置路径
 			string path;
 			//读取空间边界配置路径
-			if (!text_read(evt->config, "path", path))
+			if (!text_read(evt->config, collision_event::field_path, path))
 			{
 				logger.warn("Collision_Proxy::空间边界事件缺少有效字段(path)");
 				return;
@@ -198,29 +176,109 @@ namespace engine
 			return;
 		}
 
-		//碰撞空间检测执行
-		if (evt->tag == "RegionDetect")
+		//碰撞空间检测执行（已改为公共 API，不再接受事件触发）
+
+		//简略碰撞结果事件开关设置
+		if (evt->tag == collision_event::region_event_output)
 		{
 			//目标空间名称
 			string region;
 			//读取目标空间名称
-			if (!text_read(evt->config, "region", region))
+			if (!text_read(evt->config, collision_event::field_region, region))
 			{
-				logger.warn("Collision_Proxy::空间检测事件缺少有效字段(region)");
+				logger.warn("Collision_Proxy::结果事件开关事件缺少有效字段(region)");
 				return;
 			}
-			//执行碰撞检测
-			region_detect(region);
+			//若缺少开关字段
+			if (!evt->config.contains(collision_event::field_enabled) || !evt->config[collision_event::field_enabled].is_boolean())
+			{
+				logger.warn("Collision_Proxy::结果事件开关事件缺少有效字段(enabled)");
+				return;
+			}
+			//设置开关
+			region_event_output_set(region, evt->config[collision_event::field_enabled].get<bool>());
+			return;
+		}
+
+		//跨越状态查询
+		if (evt->tag == collision_event::region_cross_state_query)
+		{
+			//目标空间名称
+			string region;
+			//读取目标空间名称
+			if (!text_read(evt->config, collision_event::field_region, region))
+			{
+				logger.warn("Collision_Proxy::跨越状态查询缺少有效字段(region)");
+				return;
+			}
+
+			//目标碰撞体编号（可选）
+			uint64_t collider_ID = 0;
+			//是否只查询单个碰撞体
+			bool single = false;
+			//若指定了碰撞体编号
+			if (evt->config.contains(collision_event::field_collider_ID))
+			{
+				//读取碰撞体编号
+				if (!number_read(evt->config, collision_event::field_collider_ID, collider_ID))
+				{
+					logger.warn("Collision_Proxy::跨越状态查询字段(collider_ID)非法");
+					return;
+				}
+				single = true;
+			}
+
+			//请求编号（可选）
+			uint64_t request_ID = 0;
+			//若指定了请求编号则读取
+			if (evt->config.contains(collision_event::field_request_ID))
+				number_read(evt->config, collision_event::field_request_ID, request_ID);
+
+			//查询结果载荷
+			json payload;
+			//写入空间名称、请求编号与默认结果
+			payload[collision_event::field_region] = region;
+			payload[collision_event::field_request_ID] = request_ID;
+			payload[collision_event::field_found] = false;
+			payload[collision_event::field_states] = json::array();
+
+			//查找目标碰撞空间
+			Collision_Region* target = backend.region_seek(region);
+			//空间存在时输出状态快照
+			if (target)
+			{
+				payload[collision_event::field_found] = true;
+				//状态快照
+				vector<Cross_State_Entry> entries;
+				target->cross_state_snapshot(entries);
+				//逐条写入查询结果
+				for (const Cross_State_Entry& entry : entries)
+				{
+					//指定编号时只输出目标碰撞体
+					if (single && entry.collider_ID != collider_ID)
+						continue;
+
+					//单条状态
+					json item;
+					item[collision_event::field_collider_ID] = entry.collider_ID;
+					item[collision_event::field_state] =
+						entry.known ? cross_state_text(entry.state) : "unknown";
+					payload[collision_event::field_states].push_back(item);
+				}
+			}
+
+			//发布查询结果事件
+			event_publish(collision_event::region_cross_state_result, payload);
 			return;
 		}
 
 		//碰撞体构建
-		if (evt->tag == "ColliderBuild")
+		if (evt->tag == collision_event::collider_build)
 		{
 			//目标空间名称
 			string region;
 			//读取目标空间名称
-			if (!text_read(evt->config, "region", region))
+			if (!text_read(evt->config, collision_event::field_region, region))
 			{
 				logger.warn("Collision_Proxy::碰撞体构建事件缺少有效字段(region)");
 				return;
@@ -234,58 +292,51 @@ namespace engine
 			//碰撞体构建结果载荷（事件调用无法取得返回值，故以结果事件回告编号）
 			json payload;
 			//写入空间名称与碰撞体编号
-			payload["region"] = region;
-			payload["collider_ID"] = *collider_ID;
+			payload[collision_event::field_region] = region;
+			payload[collision_event::field_collider_ID] = *collider_ID;
 			//发布碰撞体构建结果事件
-			event_publish("ColliderBuildResult", payload);
+			event_publish(collision_event::collider_build_result, payload);
 			return;
 		}
 
 		//位移向量事件
-		if (evt->tag == "ColliderDisplacement")
+		//运动事件
+		if (evt->tag == collision_event::collider_motion)
 		{
-			//保存位移事件（供碰撞空间更新位置时重读）
-			displacement_register(evt->config);
-			return;
-		}
-
-		//碰撞响应事件（回复本地回复信箱，供检测流程回查）
-		if (evt->tag == "ColliderCollisionResponse")
-		{
-			//登记碰撞响应
-			collision_response_register(evt->config);
+			//保存运动事件（供碰撞空间更新位置时重读）
+			motion_register(evt->config);
 			return;
 		}
 
 		//碰撞体卸载、转移、镜像与设置
-		if (evt->tag == "ColliderUnload" || evt->tag == "ColliderTransfer" ||
-			evt->tag == "ColliderMirror" || evt->tag == "ColliderSet")
+		if (evt->tag == collision_event::collider_unload || evt->tag == collision_event::collider_transfer ||
+			evt->tag == collision_event::collider_mirror || evt->tag == collision_event::collider_set)
 		{
 			//目标空间名称
 			string region;
 			//目标碰撞体编号
 			uint64_t collider_ID = 0;
 			//读取目标空间名称
-			if (!text_read(evt->config, "region", region))
+			if (!text_read(evt->config, collision_event::field_region, region))
 			{
 				logger.warn("Collision_Proxy::碰撞体事件缺少有效字段(region)");
 				return;
 			}
 			//读取目标碰撞体编号
-			if (!number_read(evt->config, "collider_ID", collider_ID))
+			if (!number_read(evt->config, collision_event::field_collider_ID, collider_ID))
 			{
 				logger.warn("Collision_Proxy::碰撞体事件缺少有效字段(collider_ID)");
 				return;
 			}
 
 			//碰撞体卸载
-			if (evt->tag == "ColliderUnload")
+			if (evt->tag == collision_event::collider_unload)
 				collider_unload(collider_ID, region);
 			//碰撞体转移
-			else if (evt->tag == "ColliderTransfer")
+			else if (evt->tag == collision_event::collider_transfer)
 				collider_transfer(collider_ID, region);
 			//碰撞体镜像
-			else if (evt->tag == "ColliderMirror")
+			else if (evt->tag == collision_event::collider_mirror)
 				collider_mirror(collider_ID, region);
 			//碰撞体设置
 			else
@@ -301,7 +352,7 @@ namespace engine
 	bool Collision_Proxy::event_publish(const string& tag, const json& payload)
 	{
 		//构造发布事件
-		shared_ptr<Event> evt = event_terminal.build(module_name, "", "Collision", tag);
+		shared_ptr<Event> evt = event_terminal.build(module_name, "", collision_event::category, tag);
 		//若事件内存分配失败
 		if (!evt)
 		{

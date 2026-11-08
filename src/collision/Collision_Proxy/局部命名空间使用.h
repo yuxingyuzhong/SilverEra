@@ -1,5 +1,7 @@
 #pragma once
 #include "碰撞代理器.h"
+#include "../Common/碰撞事件.h"
+#include "Engine/EngineFoundation/src/event/Common/事件协议.h"
 
 // ---------- 基础类型 ----------
 using std::string;

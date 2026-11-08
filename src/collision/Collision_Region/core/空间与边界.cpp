@@ -1,10 +1,6 @@
-#include "src/collision/Collision_Region/局部命名空间使用.h"
-//获取数据校验器
-#include "Engine/EngineFoundation/src/tools/Detail/package/数据校验工具.h"
+#include "../局部命名空间使用.h"
 //获取日志系统
-#include "Engine/EngineFoundation/src/tools/Logging/日志系统运行包.h"
-//获取网格加载器
-#include "Engine/EngineFoundation/src/tools/Mesh_Loader/网格加载器.h"
+#include "Engine/EngineFoundation/src/log/日志系统运行包.h"
 
 namespace engine
 {
@@ -19,23 +15,11 @@ namespace engine
 		//记录碰撞空间名称
 		name = region_name;
 		//预分配空间边界编号（编号0恒保留给空间边界）
-		region_boundary.ID = ID_allocator.get();
+		ID_allocator.get();
 	}
 
 	//析构函数
-	Collision_Region::~Collision_Region()
-	{
-		//若碰撞世界不可用则无需摘除
-		if (!backend.world)
-			return;
-
-		//摘除空间边界碰撞对象
-		if (region_boundary.mounted_shape())
-			backend.world->removeCollisionObject(&region_boundary.object);
-		//摘除全部碰撞体碰撞对象（碰撞体先于碰撞世界析构）
-		for (auto& pair : mapping)
-			backend.world->removeCollisionObject(&pair.second.object);
-	}
+	Collision_Region::~Collision_Region() = default;
 
 	//碰撞空间有效性检查
 	bool Collision_Region::valid(void) const
@@ -46,6 +30,14 @@ namespace engine
 	//碰撞空间状态设置
 	void Collision_Region::state_set(bool active)
 	{
+		//停用时清空跨越记录与待发通知（重新激活后重新建立基准）
+		if (!active)
+		{
+			cross_states.clear();
+			cross_dirty.clear();
+			cross_notices.clear();
+		}
+		//写入空间活跃性
 		is_active = active;
 	}
 
@@ -55,10 +47,10 @@ namespace engine
 		return is_active;
 	}
 
-	//位移事件读取回调注入(由碰撞代理器注入)
-	void Collision_Region::displacement_reader_set(std::function<bool(uint64_t, Vector3&)> reader)
+	//运动事件读取回调注入(由碰撞代理器注入)
+	void Collision_Region::motion_reader_set(std::function<bool(uint64_t, Motion_Event&)> reader)
 	{
-		displacement_reader = std::move(reader);
+		motion_reader = std::move(reader);
 	}
 
 	//边界构建
@@ -71,50 +63,21 @@ namespace engine
 			return false;
 		}
 
-		//网格形状与其数据源
-		unique_ptr<Collision_Shape> shape;
-		unique_ptr<Triangle_Mesh> mesh;
-		//构建网格形状
-		if (!mesh_shape_build(mesh_path, shape, mesh))
-		{
-			logger.warn("Collision_Region::空间边界网格构建失败({})", mesh_path);
+		//交由后端构建边界
+		if (!backend.boundary_build(mesh_path))
 			return false;
-		}
 
-		//若已存在空间边界则先卸载
-		boundary_unload();
-
-		//空间边界视作仅含一个几何体的碰撞体
-		Geometry_Part part;
-		//移交网格数据与形状
-		part.mesh = std::move(mesh);
-		part.shape = std::move(shape);
-		//挂载边界形状与网格数据
-		region_boundary.parts.clear();
-		region_boundary.compound.reset();
-		region_boundary.parts.push_back(std::move(part));
-		region_boundary.object.setCollisionShape(region_boundary.mounted_shape());
-		//空间边界恒为静态对象
-		region_boundary.object.setCollisionFlags(Static_Object_Flag);
-		//空间边界置于原点
-		region_boundary.object.setWorldTransform(Transform::getIdentity());
-		//空间边界加入碰撞世界
-		backend.world->addCollisionObject(&region_boundary.object);
+		//边界更换后清空跨越记录与待发通知（重新建立基准，不产生跨越通知）
+		cross_states.clear();
+		cross_dirty.clear();
+		cross_notices.clear();
 		return true;
 	}
 
 	//边界卸载
 	void Collision_Region::boundary_unload(void)
 	{
-		//若空间边界尚未构建
-		if (!region_boundary.mounted_shape())
-			return;
-
-		//摘除空间边界碰撞对象
-		backend.world->removeCollisionObject(&region_boundary.object);
-		//卸载空间边界形状与网格数据
-		region_boundary.object.setCollisionShape(nullptr);
-		region_boundary.compound.reset();
-		region_boundary.parts.clear();
+		//交由后端卸载边界
+		backend.boundary_unload();
 	}
 }

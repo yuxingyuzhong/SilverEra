@@ -1,8 +1,8 @@
 #pragma once
 //预编译头
 #include "Engine/EngineFoundation/common/前置头文件包含.h"
-//获取碰撞库依赖封装
-#include "Common/依赖库封装.h"
+//获取自有几何类型
+#include "Common/几何类型.h"
 //获取碰撞体定义
 #include "Collider/碰撞体.h"
 //获取碰撞空间定义

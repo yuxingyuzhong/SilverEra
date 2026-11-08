@@ -3,11 +3,16 @@
 #include "Engine/EngineFoundation/common/前置头文件包含.h"
 //获取 JSON 解析外部库
 #include <nlohmann/json.hpp>
-//获取碰撞库依赖封装
-#include "../Common/依赖库封装.h"
+//获取自有几何类型
+#include "../Common/几何类型.h"
+//获取运动量类型
+#include "../Common/运动类型.h"
 
 namespace engine
 {
+	//向后声明碰撞体后端
+	class Collider_Backend;
+
 	//碰撞检测方式
 	struct Detection_Mode
 	{
@@ -17,61 +22,38 @@ namespace engine
 		uint32_t step_length = 0;
 	};
 
-	//几何体部件（碰撞体内一个带相对变换的几何体）
-	struct Geometry_Part
-	{
-		/*
-		网格接口（网格形状的数据源）
-		注意：btBvhTriangleMeshShape 只持有网格指针而不接管所有权，
-		      故网格数据必须与形状同生共死；此处按成员声明顺序的逆序析构，
-		      网格先于形状声明，因此析构时形状先释放、网格后释放。
-		*/
-		std::unique_ptr<Triangle_Mesh> mesh;
-		//几何形状（由部件持有，碰撞对象只挂载指针）
-		std::unique_ptr<Collision_Shape> shape;
-		//相对变换（描述该几何体在碰撞体内的空间位置关系）
-		Transform local_transform = Transform::getIdentity();
-	};
-
-	//碰撞体
+	/*
+	碰撞体（前端数据）
+	只保留编号、运动状态与检测配置；碰撞对象与几何形状全部由 Collider_Backend 持有，
+	本结构不再出现任何碰撞库类型。
+	*/
 	struct Collider
 	{
 		//编号
 		uint64_t ID = 0;
-		//碰撞对象
-		Collision_Object object;
-		/*
-		几何体部件集合
-		属于同一碰撞体的所有几何体共用同一个碰撞对象与世界变换，
-		故整体具有相同的移动方向与速度；各几何体的相对位置由 local_transform 描述。
-		*/
-		std::vector<Geometry_Part> parts;
-		/*
-		复合形状（仅当部件数大于一时持有）
-		多部件时碰撞对象挂载复合形状，各部件形状作为其子形状；
-		单部件时为空，碰撞对象直接挂载该部件形状本体，
-		以免复合形状破坏凸包判断与扫掠检测，并保持旧配置语义不变。
-		*/
-		std::unique_ptr<Collision_Shape> compound;
+		//碰撞体后端（持有碰撞对象与几何形状）
+		std::unique_ptr<Collider_Backend> backend;
 
-		//位移向量
-		Vector3 displacement_vector{ 0.0f,0.0f,0.0f };
-		//位移作废标记（碰撞响应判定为停止运动时置位，作废期间不再施加位移）
-		bool displacement_invalid = false;
+		//整体运动量（周期总量）
+		Motion motion;
+		//部件运动量（周期总量）
+		std::vector<Part_Motion> part_motions;
 		/*
-		位移作用频率
-		逻辑帧率的因数，表示一个逻辑帧周期内位移生效的次数；
-		为零表示未配置，此时每次检测都按旧行为施加全量位移。
+		运动作用频率
+		逻辑帧率的因数，表示一个逻辑帧周期内运动生效的次数；
+		为零表示未配置，此时每次检测都按旧行为施加全量运动。
 		*/
-		uint64_t displacement_frequency = 0;
-		//位移上次生效的逻辑帧序号
-		uint64_t displacement_frame = 0;
+		uint64_t motion_frequency = 0;
+		//运动上次生效的逻辑帧序号
+		uint64_t motion_frame = 0;
 		/*
-		本帧实际施加的位移
-		生效帧为「位移向量 ÷ 作用频率」，非生效帧为零向量；
-		未配置频率时即等于位移向量本身。
+		本帧实际施加的运动量
+		生效帧为「运动量 ÷ 作用频率」，非生效帧为零运动；
+		未配置频率时即等于运动量本身。
 		*/
-		Vector3 displacement_step{ 0.0f,0.0f,0.0f };
+		Motion motion_step;
+		//本帧实际施加的部件运动量
+		std::vector<Part_Motion> part_motion_steps;
 		//检测方式
 		Detection_Mode detection_mode;
 		//豁免标记
@@ -79,92 +61,20 @@ namespace engine
 		//几何配置（供空间间镜像与转移复用）
 		nlohmann::json geometry;
 
-		//默认构造
-		Collider()
-		{
-			//挂载封装结构体指针
-			object.setUserPointer(this);
-		}
+		//构造函数（分配碰撞体后端）
+		Collider();
+		//析构函数
+		~Collider();
 
-		//默认析构
-		~Collider() = default;
-
-		//禁止拷贝（object 加入 world 后不能搬移）
+		//禁止拷贝（后端持有碰撞对象）
 		Collider(const Collider&) = delete;
 		Collider& operator=(const Collider&) = delete;
 
-		/*
-		移动构造
-		默认移动会连同object一起搬走，而object内挂载的自指针仍指向被搬空的源对象，
-		导致 Collider::recover 反查失效；故显式实现：搬移后重新挂载自指针，
-		并清空源对象自指针，保证反查结果始终有效。
-		*/
-		Collider(Collider&& other) noexcept
-		{
-			//搬移编号与数据成员
-			ID = other.ID;
-			object = other.object;
-			parts = std::move(other.parts);
-			compound = std::move(other.compound);
-			displacement_vector = other.displacement_vector;
-			displacement_invalid = other.displacement_invalid;
-			displacement_frequency = other.displacement_frequency;
-			displacement_frame = other.displacement_frame;
-			displacement_step = other.displacement_step;
-			detection_mode = other.detection_mode;
-			exemption_flag = other.exemption_flag;
-			geometry = std::move(other.geometry);
+		//移动构造/赋值（后端句柄随之搬移，碰撞对象地址不变）
+		Collider(Collider&& other) noexcept;
+		Collider& operator=(Collider&& other) noexcept;
 
-			//重新挂载封装结构体指针
-			object.setUserPointer(this);
-			//清空源对象自指针
-			other.object.setUserPointer(nullptr);
-		}
-
-		//移动赋值
-		Collider& operator=(Collider&& other) noexcept
-		{
-			//若为自身赋值则直接返回
-			if (this == &other)
-				return *this;
-
-			//搬移编号与数据成员
-			ID = other.ID;
-			object = other.object;
-			parts = std::move(other.parts);
-			compound = std::move(other.compound);
-			displacement_vector = other.displacement_vector;
-			displacement_invalid = other.displacement_invalid;
-			displacement_frequency = other.displacement_frequency;
-			displacement_frame = other.displacement_frame;
-			displacement_step = other.displacement_step;
-			detection_mode = other.detection_mode;
-			exemption_flag = other.exemption_flag;
-			geometry = std::move(other.geometry);
-
-			//重新挂载封装结构体指针
-			object.setUserPointer(this);
-			//清空源对象自指针
-			other.object.setUserPointer(nullptr);
-
-			return *this;
-		}
-
-		//挂载形状获取（未挂载任何几何体时返回空指针）
-		Collision_Shape* mounted_shape(void) const
-		{
-			//多部件时挂载复合形状
-			if (compound)
-				return compound.get();
-			//单部件时直接挂载该部件形状本体
-			return parts.empty() ? nullptr : parts.front().shape.get();
-		}
-
-		//反查获取封装结构
-		static Collider* recover(const Collision_Object* obj)
-		{
-			return static_cast<Collider*>(obj->getUserPointer());
-		}
-
+		//几何挂载状态
+		bool geometry_mounted(void) const;
 	};
 }

@@ -1,23 +1,15 @@
-#include "src/collision/Collision_Proxy/局部命名空间使用.h"
-#include "Engine/EngineFoundation/src/tools/Detail/package/数据校验工具.h"
-#include "Engine/EngineFoundation/src/tools/Logging/日志系统运行包.h"
+#include "../局部命名空间使用.h"
+#include "Engine/EngineFoundation/src/detail/methods/package/数据校验工具.h"
+#include "Engine/EngineFoundation/src/log/日志系统运行包.h"
+//获取文件读取工具
+#include "Engine/EngineFoundation/src/detail/methods/文件路径可用性校验.h"
+//获取碰撞配置字段读取工具
+#include "src/collision/Common/字段读取.h"
 
 namespace engine
 {
-	//文件内部辅助设施（不对外暴露）
-	namespace
-	{
-		//字符串字段读取
-		bool text_read(const json& config, const string& field, string& receiver)
-		{
-			//字段存在性与类型检查
-			if (!config.is_object() || !config.contains(field) || !config[field].is_string())
-				return false;
-			//读取字段内容
-			receiver = config[field].get<string>();
-			return !receiver.empty();
-		}
-	}
+	//引入字段读取工具
+	using namespace collision_detail;
 
 	//碰撞空间边界设置
 	bool Collision_Proxy::region_boundary_set(const string& path)
@@ -38,7 +30,7 @@ namespace engine
 			//空间边界网格路径
 			string mesh_path;
 			//读取空间名称
-			if (!text_read(boundary_data, "region", region))
+			if (!text_read(boundary_data, collision_event::field_region, region))
 			{
 				logger.warn("Collision_Proxy::边界配置缺少有效字段(region)");
 				all_set = false;
@@ -53,7 +45,7 @@ namespace engine
 			}
 
 			//查找目标碰撞空间
-			Collision_Region* target = region_seek(region);
+			Collision_Region* target = backend.region_seek(region);
 			//若目标碰撞空间不存在
 			if (!target)
 			{
@@ -77,19 +69,19 @@ namespace engine
 	void Collision_Proxy::config_apply(const json& config)
 	{
 		//配置内容格式检查
-		if (!config.is_object() || !config.contains("regions") || !config["regions"].is_array())
+		if (!config.is_object() || !config.contains(collision_event::field_regions) || !config[collision_event::field_regions].is_array())
 		{
 			logger.warn("Collision_Proxy::配置缺少有效字段(regions)");
 			return;
 		}
 
 		//逐个应用空间配置
-		for (const auto& region_config : config["regions"])
+		for (const auto& region_config : config[collision_event::field_regions])
 		{
 			//空间名称
 			string region;
 			//读取空间名称
-			if (!text_read(region_config, "region", region))
+			if (!text_read(region_config, collision_event::field_region, region))
 			{
 				logger.warn("Collision_Proxy::空间配置缺少有效字段(region)");
 				continue;
@@ -98,31 +90,35 @@ namespace engine
 			//构建碰撞空间
 			region_build(region);
 			//查找目标碰撞空间
-			Collision_Region* target = region_seek(region);
+			Collision_Region* target = backend.region_seek(region);
 			//若目标碰撞空间不存在则跳过
 			if (!target)
 				continue;
 
 			//设置空间活跃性
-			if (region_config.contains("active") && region_config["active"].is_boolean())
-				region_state_set(region, region_config["active"].get<bool>());
+			if (region_config.contains(collision_event::field_active) && region_config[collision_event::field_active].is_boolean())
+				region_state_set(region, region_config[collision_event::field_active].get<bool>());
+
+			//设置简略碰撞结果事件开关
+			if (region_config.contains(collision_event::field_event_output) && region_config[collision_event::field_event_output].is_boolean())
+				region_event_output_set(region, region_config[collision_event::field_event_output].get<bool>());
 
 			//设置空间边界
-			if (region_config.contains("boundary") && region_config["boundary"].is_string())
+			if (region_config.contains(collision_event::field_boundary) && region_config[collision_event::field_boundary].is_string())
 			{
 				//空间边界网格路径
-				string mesh_path = region_config["boundary"].get<string>();
+				string mesh_path = region_config[collision_event::field_boundary].get<string>();
 				//构建空间边界
 				if (!target->boundary_build(mesh_path))
 					logger.warn("Collision_Proxy::碰撞空间({})边界构建失败({})", region, mesh_path);
 			}
 
 			//若空间内无碰撞体清单则结束本空间
-			if (!region_config.contains("colliders") || !region_config["colliders"].is_array())
+			if (!region_config.contains(collision_event::field_colliders) || !region_config[collision_event::field_colliders].is_array())
 				continue;
 
 			//逐个构建并配置碰撞体
-			for (const auto& collider_config : region_config["colliders"])
+			for (const auto& collider_config : region_config[collision_event::field_colliders])
 			{
 				//在目标空间内构建碰撞体
 				optional<uint64_t> collider_ID = collider_build(region);
@@ -145,19 +141,22 @@ namespace engine
 			return false;
 		}
 
-		//打开边界配置文件
-		std::ifstream file(detail::string_to_path(path));
-		//若文件打开失败
-		if (!file.is_open())
+		//边界配置文件原始字节
+		vector<unsigned char> bytes;
+		//读取错误码
+		std::error_code error_info;
+		//整文件读取（复用 EngineFoundation 的文件读取工具）
+		if (!detail::file_read_whole(path, bytes, error_info))
 		{
-			logger.warn("Collision_Proxy::边界配置文件打开失败({})", path);
+			logger.warn("Collision_Proxy::边界配置文件读取失败({}): {}", path, error_info.message());
 			return false;
 		}
 
 		try
 		{
-			//解析边界配置内容
-			file >> receiver;
+			//字节转文本后解析边界配置内容
+			string text(bytes.begin(), bytes.end());
+			receiver = json::parse(text);
 		}
 		catch (const std::exception&)
 		{

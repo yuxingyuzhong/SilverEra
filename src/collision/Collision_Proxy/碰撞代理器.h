@@ -1,16 +1,18 @@
 #pragma once
 //预编译头
 #include "Engine/EngineFoundation/common/前置头文件包含.h"
-//获取引擎环境
-#include "Engine/EngineFoundation/src/tools/Engine_Env/引擎环境.h"
-//获取路径字符串转化方法
-#include "Engine/EngineFoundation/src/tools/Detail/路径字符串转换.h"
-//获取碰撞库依赖封装
-#include "../Common/依赖库封装.h"
-//获取空间系统运行包
+//获取路径操作工具
+#include "Engine/EngineFoundation/src/detail/methods/package/路径操作工具.h"
+//获取逻辑帧操作工具
+#include "Engine/EngineSystem/common/runtime/逻辑帧.h"
+//获取自有几何类型
+#include "../Common/几何类型.h"
+//获取碰撞空间系统运行包
 #include "../碰撞系统运行包.h"
+//获取碰撞代理后端
+#include "backend/代理后端.h"
 //获取事件系统运行包
-#include "Engine/EngineFoundation/src/core/event/事件系统运行包.h"
+#include "Engine/EngineFoundation/src/event/事件系统运行包.h"
 
 namespace engine
 {
@@ -21,18 +23,12 @@ namespace engine
 		//模块名称（事件中转站登记名与事件发送者标识）
 		inline static const std::string module_name = "Collision_Proxy";
 
-		//碰撞空间集合
-		std::unordered_map<std::string, std::unique_ptr<Collision_Region>> regions;
-		/*
-		碰撞体归属映射
-		键为碰撞体编号，值为持有该编号的碰撞空间名称；
-		编号由各碰撞空间自行分配，同一编号可被不同空间分别持有，故使用多重映射。
-		*/
-		std::unordered_multimap<uint64_t, std::string> collider_mapping;
-		//位移事件保存（键为碰撞体编号，同编号的新事件覆盖旧事件）
-		std::unordered_map<uint64_t, nlohmann::json> displacement_events;
-		//碰撞响应回复信箱（键为碰撞体编号，由事件接收入口存件，检测流程取件）
-		std::unordered_map<uint64_t, nlohmann::json> collision_responses;
+		//空间与编号编排后端
+		Proxy_Backend backend;
+		//运动事件保存（键为碰撞体编号，同编号的新事件覆盖旧事件）
+		std::unordered_map<uint64_t, nlohmann::json> motion_events;
+		//简略碰撞结果事件开关（键为空间名称；未登记时默认开启）
+		std::unordered_map<std::string, bool> event_output;
 	public:
 		//事件终端
 		Event_Terminal event_terminal;
@@ -49,8 +45,16 @@ namespace engine
 		bool region_build(const std::string& region);
 		//碰撞空间卸载
 		bool region_unload(const std::string& region);
-		//碰撞空间检测执行
-		bool region_detect(const std::string& region);
+		/*
+		碰撞空间检测执行
+		同步返回碰撞详情（碰撞对 + 接触点/法线/穿透深度/扫掠比例）；
+		是否同时经事件协议发送简略碰撞结果由空间的事件开关决定。
+		*/
+		std::optional<std::vector<Collision_Detail>> region_detect(const std::string& region);
+		//简略碰撞结果事件开关设置（false 时检测不再发布 DetectResult）
+		bool region_event_output_set(const std::string& region, bool enabled);
+		//简略碰撞结果事件开关读取
+		bool region_event_output_get(const std::string& region) const;
 		//碰撞空间边界设置
 		bool region_boundary_set(const std::string& path);
 		//碰撞空间活跃性设置
@@ -75,39 +79,14 @@ namespace engine
 		//事件处理
 		void event_process(std::shared_ptr<Event> evt);
 
-		//碰撞空间查找（不存在的返回空指针）
-		Collision_Region* region_seek(const std::string& region) const;
-		//碰撞体归属查找（同一编号被多个空间持有时取其中任一个）
-		bool collider_owner_seek(const uint64_t collider_ID, std::string& receiver) const;
-
-		//碰撞体编号登记
-		void collider_mapping_link(const uint64_t collider_ID, const std::string& region);
-		//碰撞体编号注销
-		void collider_mapping_unlink(const uint64_t collider_ID, const std::string& region);
-
-		//碰撞体设置分发（对所有持有该编号的空间生效）
-		bool collider_set_dispatch(const uint64_t collider_ID,
-			const std::function<bool(Collision_Region&)>& setter);
 		//碰撞体配置应用（几何体、检测方式、豁免标记）
 		void collider_config_apply(const std::string& region, uint64_t collider_ID,
 			const nlohmann::json& config);
 
-		//位移事件登记（保存位移事件配置，同编号的新事件覆盖旧事件）
-		void displacement_register(const nlohmann::json& config);
-		//位移向量查询（供碰撞空间在更新位置时读取最新位移事件）
-		bool displacement_seek(const uint64_t collider_ID, Vector3& receiver) const;
-		//位移读取回调注入（碰撞空间经此回调读取最新位移事件）
-		void region_displacement_link(Collision_Region& region) const;
-
-		//碰撞响应流程（发布碰撞事件、回查回复、搁置重发、施加响应）
-		void collision_protocol(const std::string& region,
-			const std::vector<Collision_Result>& pairs);
-		//碰撞响应登记（回复事件存入本地回复信箱）
-		void collision_response_register(const nlohmann::json& config);
-		//碰撞响应取件（取出并从信箱中移除）
-		bool collision_response_take(const uint64_t collider_ID, nlohmann::json& receiver);
-		//碰撞响应施加（按回复内容作废或改写位移）
-		bool collision_response_apply(const uint64_t collider_ID, const nlohmann::json& response);
+		//运动事件登记（保存运动事件配置，同编号的新事件覆盖旧事件）
+		void motion_register(const nlohmann::json& config);
+		//运动量查询（供碰撞空间在更新位置时读取最新运动事件）
+		bool motion_seek(const uint64_t collider_ID, Motion_Event& receiver) const;
 
 		//事件发布
 		bool event_publish(const std::string& tag, const nlohmann::json& payload);

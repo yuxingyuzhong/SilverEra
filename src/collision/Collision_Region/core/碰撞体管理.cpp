@@ -1,15 +1,18 @@
-#include "src/collision/Collision_Region/局部命名空间使用.h"
-//获取数据校验器
-#include "Engine/EngineFoundation/src/tools/Detail/package/数据校验工具.h"
+#include "../局部命名空间使用.h"
+//获取碰撞体后端声明
+#include "src/collision/Collider/backend/碰撞体后端.h"
 //获取日志系统
-#include "Engine/EngineFoundation/src/tools/Logging/日志系统运行包.h"
-//获取网格加载器
-#include "Engine/EngineFoundation/src/tools/Mesh_Loader/网格加载器.h"
-//获取引擎环境(逻辑帧计数)
-#include "Engine/EngineFoundation/src/tools/Engine_Env/引擎环境.h"
+#include "Engine/EngineFoundation/src/log/日志系统运行包.h"
+//获取逻辑帧操作工具
+#include "Engine/EngineSystem/common/runtime/逻辑帧.h"
+//获取碰撞配置字段读取工具
+#include "src/collision/Common/字段读取.h"
 
 namespace engine
 {
+	//引入字段读取工具
+	using namespace collision_detail;
+
 	//碰撞体构建
 	uint64_t Collision_Region::collider_build(void)
 	{
@@ -20,7 +23,11 @@ namespace engine
 			collider_ID = ID_allocator.get();
 
 		//登记碰撞体
-		mapping[collider_ID].ID = collider_ID;
+		Collider& collider = mapping[collider_ID];
+		//写入编号
+		collider.ID = collider_ID;
+		//写入后端身份标签
+		collider.backend->tag_set(collider_ID, false);
 		//返回碰撞体编号
 		return collider_ID;
 	}
@@ -36,7 +43,11 @@ namespace engine
 		}
 
 		//登记碰撞体
-		mapping[collider_ID].ID = collider_ID;
+		Collider& collider = mapping[collider_ID];
+		//写入编号
+		collider.ID = collider_ID;
+		//写入后端身份标签
+		collider.backend->tag_set(collider_ID, false);
 		return true;
 	}
 
@@ -53,20 +64,20 @@ namespace engine
 		}
 
 		//若目标碰撞体已挂载几何体
-		if (target->mounted_shape())
+		if (target->geometry_mounted())
 		{
-			//摘除碰撞对象
-			backend.world->removeCollisionObject(&target->object);
-			//卸载复合形状、部件形状与网格数据
-			target->object.setCollisionShape(nullptr);
-			target->compound.reset();
-			target->parts.clear();
+			//移出碰撞世界
+			backend.object_detach(*target->backend);
+			//卸载几何体
+			target->backend->geometry_clear();
 		}
 
 		//注销碰撞体
 		mapping.erase(collider_ID);
 		//抹除跨越状态记录（避免编号回收后被新碰撞体误继承）
 		cross_states.erase(collider_ID);
+		//抹除跨越状态脏标记
+		cross_dirty.erase(collider_ID);
 		//回收碰撞体编号
 		ID_allocator.recycle(collider_ID);
 		return true;
@@ -101,8 +112,21 @@ namespace engine
 			return false;
 		}
 
-		//写入豁免标记
+		//写入豁免标记（前后端同步）
 		target->exemption_flag = vector;
+		target->backend->exemption_flag_set(vector);
+
+		/*
+		重挂以重建宽阶段配对
+		豁免判定前移到宽阶段，标记变更后旧配对不再自动失效，
+		故重新挂载以强制清理并重新生成配对。
+		*/
+		if (backend.object_contains(*target->backend))
+		{
+			//摘除后重新挂载
+			backend.object_detach(*target->backend);
+			backend.object_attach(*target->backend);
+		}
 		return true;
 	}
 
@@ -115,14 +139,14 @@ namespace engine
 			logger.warn("Collision_Region::几何配置非对象格式");
 			return false;
 		}
-		//目标碰撞体编号字段检查
-		if (!detail::field_check<uint64_t>(geometry_config, "collider_ID"))
+		//目标碰撞体编号
+		uint64_t collider_ID = 0;
+		//提取目标碰撞体编号
+		if (!number_read(geometry_config, "collider_ID", collider_ID))
 		{
 			logger.warn("Collision_Region::几何配置缺少有效字段(collider_ID)");
 			return false;
 		}
-		//提取目标碰撞体编号
-		uint64_t collider_ID = geometry_config["collider_ID"].get<uint64_t>();
 		//查找目标碰撞体
 		Collider* target = collider_seek(collider_ID);
 		//若目标碰撞体不存在
@@ -132,17 +156,8 @@ namespace engine
 			return false;
 		}
 
-		//构建几何体部件集合与复合形状
-		vector<Geometry_Part> parts;
-		unique_ptr<Collision_Shape> compound;
-		if (!geometry_build(geometry_config, parts, compound))
-		{
-			logger.warn("Collision_Region::碰撞体({})几何配置非法", collider_ID);
-			return false;
-		}
-
 		//世界变换基准（未指定位置或旋转时沿用当前变换）
-		Transform transform = target->object.getWorldTransform();
+		Transform transform = target->backend->world_transform_get();
 
 		/*
 		基准位置
@@ -177,63 +192,25 @@ namespace engine
 			transform.setRotation(rotation);
 		}
 
+		//几何构建（暂存区装配，失败时保留当前几何）
+		if (!target->backend->geometry_build(geometry_config, transform))
+		{
+			logger.warn("Collision_Region::碰撞体({})几何配置非法", collider_ID);
+			return false;
+		}
+
 		//若目标碰撞体已挂载几何体则先摘除
-		if (target->mounted_shape())
-		{
-			//摘除碰撞对象
-			backend.world->removeCollisionObject(&target->object);
-			//卸载旧复合形状、旧部件形状与网格数据
-			target->object.setCollisionShape(nullptr);
-			target->compound.reset();
-			target->parts.clear();
-		}
+		if (target->geometry_mounted())
+			backend.object_detach(*target->backend);
 
-		//挂载几何体集合
-		target->parts = std::move(parts);
-		target->compound = std::move(compound);
-		target->object.setCollisionShape(target->mounted_shape());
-		//写入世界变换
-		target->object.setWorldTransform(transform);
+		//挂载暂存几何
+		target->backend->geometry_mount();
 		//几何配置留档（供空间间镜像与转移复用）
-		target->geometry = geometry_config;
+		target->geometry = std::move(geometry_config);
 		//加入碰撞世界
-		backend.world->addCollisionObject(&target->object);
-		return true;
-	}
-
-	//碰撞体位移作废(碰撞响应判定为停止运动)
-	bool Collision_Region::collider_displacement_void(uint64_t collider_ID)
-	{
-		//查找目标碰撞体
-		Collider* target = collider_seek(collider_ID);
-		//若目标碰撞体不存在
-		if (!target)
-		{
-			logger.warn("Collision_Region::待作废位移的碰撞体({})不存在", collider_ID);
-			return false;
-		}
-
-		//置位位移作废标记(作废期间检测不再施加位移)
-		target->displacement_invalid = true;
-		return true;
-	}
-
-	//碰撞体位移改写(碰撞响应判定为继续运动且位移变化)
-	bool Collision_Region::collider_displacement_replace(uint64_t collider_ID, const Vector3& displacement)
-	{
-		//查找目标碰撞体
-		Collider* target = collider_seek(collider_ID);
-		//若目标碰撞体不存在
-		if (!target)
-		{
-			logger.warn("Collision_Region::待改写位移的碰撞体({})不存在", collider_ID);
-			return false;
-		}
-
-		//写入新的位移向量
-		target->displacement_vector = displacement;
-		//解除位移作废(改写后继续运动)
-		target->displacement_invalid = false;
+		backend.object_attach(*target->backend);
+		//几何变更后标记跨越状态须强制重算（重建/瞬移不作为真实跨越的基准跳过）
+		cross_dirty.insert(collider_ID);
 		return true;
 	}
 
@@ -245,16 +222,17 @@ namespace engine
 		//若目标碰撞体不存在
 		if (!target)
 		{
-			logger.warn("Collision_Region::待设置位移频率的碰撞体({})不存在", collider_ID);
+			logger.warn("Collision_Region::待设置运动频率的碰撞体({})不存在", collider_ID);
 			return false;
 		}
 
-		//写入位移作用频率
-		target->displacement_frequency = frequency;
+		//写入运动作用频率
+		target->motion_frequency = frequency;
 		//生效计时重新起算(新配置须等待一个完整帧间隔后才生效)
-		target->displacement_frame = Engine_Env::frame_count_get();
-		//清零本帧施加位移
-		target->displacement_step.setValue(0.0f, 0.0f, 0.0f);
+		target->motion_frame = Logics::frame_count_get();
+		//清零本帧施加运动
+		target->motion_step = Motion();
+		target->part_motion_steps.clear();
 		return true;
 	}
 
@@ -292,6 +270,46 @@ namespace engine
 		return it->second.geometry;
 	}
 
+	//碰撞体离散步长读取
+	bool Collision_Region::collider_step_length_get(uint64_t collider_ID, uint32_t& receiver) const
+	{
+		//查找目标碰撞体
+		auto it = mapping.find(collider_ID);
+		//若目标碰撞体不存在
+		if (it == mapping.end())
+			return false;
+
+		//写入离散步长
+		receiver = it->second.detection_mode.step_length;
+		return true;
+	}
+
+	//碰撞体几何部件数读取
+	bool Collision_Region::collider_part_count_get(uint64_t collider_ID, uint32_t& receiver) const
+	{
+		//查找目标碰撞体
+		auto it = mapping.find(collider_ID);
+		//若目标碰撞体不存在或后端缺失
+		if (it == mapping.end() || !it->second.backend)
+			return false;
+
+		//写入部件数
+		receiver = it->second.backend->part_count();
+		return true;
+	}
+
+	//碰撞体子部件编号存在性检查
+	bool Collision_Region::collider_part_exists(uint64_t collider_ID, uint16_t part_ID) const
+	{
+		//查找目标碰撞体
+		auto it = mapping.find(collider_ID);
+		//若目标碰撞体不存在或后端缺失
+		if (it == mapping.end() || !it->second.backend)
+			return false;
+
+		return it->second.backend->part_exists(part_ID);
+	}
+
 	//碰撞体包含性检测
 	bool Collision_Region::contains(uint64_t collider_ID) const
 	{
@@ -301,16 +319,8 @@ namespace engine
 		if (it == mapping.end())
 			return false;
 
-		//碰撞世界内碰撞对象数量
-		int object_count = backend.world->getNumCollisionObjects();
-		//逐个比对碰撞世界内的碰撞对象
-		for (int i = 0; i < object_count; ++i)
-			//若命中目标碰撞对象
-			if (backend.world->getCollisionObjectArray()[i] == &it->second.object)
-				return true;
-
-		//目标碰撞体尚未进入碰撞世界
-		return false;
+		//交由后端判定对象是否已进入碰撞世界
+		return backend.object_contains(*it->second.backend);
 	}
 
 	//碰撞体查找
