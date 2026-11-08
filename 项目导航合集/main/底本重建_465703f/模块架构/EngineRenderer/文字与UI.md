@@ -1,5 +1,7 @@
 # 文字与UI模块
 
+> 依据版次：EngineRenderer fb26686 ｜ 依据：冻结快照 465703f ｜ 更新：2026-11-08
+
 ## 一、文件内目录
 
 本模块覆盖 `Engine/EngineRenderer/src/render/` 下两个并列子目录，共 13 个文件。快照内 `Application/Game/星屑弹幕/external/silver_era/include/...` 下的同名头是外部使用方的随包拷贝，不属于本模块源码，不重复登记。
