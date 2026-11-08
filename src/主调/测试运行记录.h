@@ -1,9 +1,7 @@
 #pragma once
+//预编译头
+#include "Engine/EngineFoundation/common/前置头文件包含.h"
 //测试运行记录 —— 数据结构（供界面与监听器共享，线程安全由 测试运行器 保证）
-
-#include <cstdint>
-#include <string>
-#include <vector>
 
 namespace engine
 {

@@ -1,8 +1,7 @@
 #pragma once
+//预编译头
+#include "Engine/EngineFoundation/common/前置头文件包含.h"
 //测试操作界面 —— 常驻 ImGui 界面：选择树 + 运行控制 + 结果表 + 输出镜像 + 轮次历史 + 引擎日志
-
-#include <cstdint>
-#include <string>
 
 #include "Application/Test/src/主调/测试选择模型.h"
 

@@ -13,13 +13,6 @@
 //Dear ImGui
 #include "imgui.h"
 
-#include <algorithm>
-#include <cmath>
-#include <cstdio>
-#include <fstream>
-#include <string>
-#include <unordered_map>
-#include <vector>
 
 //引擎命名空间
 namespace engine

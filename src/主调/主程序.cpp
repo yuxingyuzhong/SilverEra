@@ -21,10 +21,6 @@
 #include "src/主调/引擎日志屏蔽.h"
 
 #include <conio.h>
-#include <cstring>
-#include <iostream>
-#include <string>
-#include <vector>
 
 #include <windows.h>
 

@@ -1,11 +1,10 @@
 #pragma once
+//预编译头
+#include "Engine/EngineFoundation/common/前置头文件包含.h"
 //gtest 输出镜像 —— 采集每用例结果并按控制台风格格式化输出（供界面展示）
 //声明见 测试运行记录.h 与本文件；实现见 gtest输出镜像.cpp
 
 #include <gtest/gtest.h>
-
-#include <atomic>
-#include <mutex>
 
 #include "Application/Test/src/主调/测试运行记录.h"
 

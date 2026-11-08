@@ -4,9 +4,6 @@
 //获取被测的测试选择模型与控制台输入解析
 #include "src/主调/测试选择模型.h"
 
-#include <cstddef>
-#include <string>
-#include <vector>
 
 //在模型中按名称查找套件，命中时写回序号
 static bool 查找套件(const engine::Test_Selection_Model& 模型, const std::string& 名称, std::size_t& 序号)

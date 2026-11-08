@@ -4,9 +4,6 @@
 //获取被测的层级状态模块
 #include "src/主调/测试层级状态.h"
 
-#include <map>
-#include <string>
-#include <vector>
 
 //测试层级状态测试夹具
 class 测试层级状态测试 : public ::testing::Test

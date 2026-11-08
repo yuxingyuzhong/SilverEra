@@ -1,4 +1,6 @@
 #pragma once
+//预编译头
+#include "Engine/EngineFoundation/common/前置头文件包含.h"
 //测试层级状态 —— 按子 CMake 层级判定「测试库链接的下层版本」是否落后于当前可用版本
 //----------------------------------------------------------------------------
 // 位置：Application/Test/src/主调/测试层级状态.h
@@ -8,10 +10,6 @@
 //   ① 各层构建期写出的 依赖版本.cmake（tests/<子工程>/out/build/x64-<配置>/）
 //   ② 当前可用版本：Engine/版本锁.cmake 的锁值优先，锁空则读该层构建树的 版本锚点.h
 //----------------------------------------------------------------------------
-
-#include <map>
-#include <string>
-#include <vector>
 
 namespace engine
 {

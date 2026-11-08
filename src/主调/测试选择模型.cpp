@@ -3,9 +3,6 @@
 
 #include <gtest/gtest.h>
 
-#include <string>
-#include <vector>
-#include <cctype>
 
 //文件内部工具
 namespace

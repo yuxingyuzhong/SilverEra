@@ -1,12 +1,8 @@
 #pragma once
+//预编译头
+#include "Engine/EngineFoundation/common/前置头文件包含.h"
 //测试运行器 —— 在调用线程（界面主线程）分片执行一轮用例，界面在片间保持可交互
 //声明见 测试运行记录.h / gtest输出镜像.h；实现见 测试运行器.cpp
-
-#include <atomic>
-#include <cstddef>
-#include <mutex>
-#include <string>
-#include <vector>
 
 #include "Application/Test/src/主调/gtest输出镜像.h"
 #include "Application/Test/src/主调/测试运行记录.h"

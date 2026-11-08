@@ -4,7 +4,6 @@
 //获取被测的退出等待判定
 #include "src/主调/退出等待判定.h"
 
-#include <string>
 
 //退出暂停判定测试夹具
 class 退出暂停判定测试 : public ::testing::Test
