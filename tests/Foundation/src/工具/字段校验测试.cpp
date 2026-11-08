@@ -1,7 +1,5 @@
 //字段校验测试：覆盖布尔、整型、浮点、字符串与容器四类萃取的存在性、类型与空值判定
 #include <gtest/gtest.h>
-#include <string>
-#include <vector>
 
 //获取json字段可用性校验工具
 #include "Engine/EngineFoundation/src/detail/methods/json字段可用性校验.h"

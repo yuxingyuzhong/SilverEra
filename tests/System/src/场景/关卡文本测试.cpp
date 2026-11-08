@@ -8,17 +8,8 @@
 */
 #include <gtest/gtest.h>
 
-#include <cmath>
-#include <cstdint>
-#include <cstring>
-#include <filesystem>
-#include <fstream>
-#include <limits>
-#include <random>
-#include <string>
-#include <vector>
 
-#include "Engine/EngineSystem/src/scene/Level/关卡文本.h"
+#include "Engine/EngineSystem/src/world/data/scene/Level/关卡文本.h"
 
 namespace
 {

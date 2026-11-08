@@ -1,10 +1,10 @@
 //路径校验测试：覆盖空路径、缺失路径、目录路径、常规文件与两个重载的一致性
 #include <gtest/gtest.h>
-#include <filesystem>
-#include <fstream>
 
 //获取文件路径可用性校验工具
 #include "Engine/EngineFoundation/src/detail/methods/文件路径可用性校验.h"
+//获取文件路径规范化工具（路径前缀判定）
+#include "Engine/EngineFoundation/src/detail/methods/文件路径规范化.h"
 //获取引擎环境（取可执行文件目录作为临时文件基址）
 #include "Engine/EngineFoundation/src/detail/methods/文件路径获取.h"
 //获取路径字符串转换工具
@@ -163,4 +163,91 @@ TEST_F(Path_Check_Test, 相对与绝对均通过)
 	EXPECT_TRUE(engine::detail::path_check(temp_name));
 	//绝对路径形式
 	EXPECT_TRUE(engine::detail::path_check(temp_absolute()));
+}
+
+//静默存在性检查：文件与目录均算存在，缺失路径为假
+TEST_F(Path_Check_Test, 静默存在性检查)
+{
+	//常规文件
+	EXPECT_TRUE(engine::detail::path_exists(temp_absolute()));
+	//目录也算存在（与 path_check 的常规文件要求不同）
+	EXPECT_TRUE(engine::detail::path_exists(engine::detail::exe_dir_get()));
+	//缺失路径
+	EXPECT_FALSE(engine::detail::path_exists(
+		std::string("不存在的目录/不存在的文件.txt")));
+}
+
+//文件体量获取：读取正确，缺失路径返回错误码
+TEST_F(Path_Check_Test, 文件体量获取)
+{
+	//体量输出与错误码
+	uintmax_t byte_count = 0;
+	std::error_code ec;
+	//临时文件内容为 "path_check"（10 字节）
+	ASSERT_TRUE(engine::detail::file_size_get(temp_absolute(), byte_count, ec));
+	EXPECT_FALSE(ec);
+	EXPECT_EQ(byte_count, 10u);
+	//字符串重载
+	ASSERT_TRUE(engine::detail::file_size_get(temp_name, byte_count, ec));
+	EXPECT_EQ(byte_count, 10u);
+	//缺失路径失败并保留错误码
+	EXPECT_FALSE(engine::detail::file_size_get(
+		std::string("不存在的目录/不存在的文件.txt"), byte_count, ec));
+	EXPECT_TRUE(ec);
+}
+
+//整文件读取：字节内容正确，失败时清空输出
+TEST_F(Path_Check_Test, 整文件读取)
+{
+	//读取结果
+	std::vector<unsigned char> bytes;
+	std::error_code ec;
+	ASSERT_TRUE(engine::detail::file_read_whole(temp_absolute(), bytes, ec));
+	EXPECT_FALSE(ec);
+	ASSERT_EQ(bytes.size(), 10u);
+	//按文本比对内容
+	EXPECT_EQ(std::string(bytes.begin(), bytes.end()), "path_check");
+	//字符串重载
+	bytes.clear();
+	ASSERT_TRUE(engine::detail::file_read_whole(temp_name, bytes, ec));
+	EXPECT_EQ(bytes.size(), 10u);
+	//失败时应清空已有输出
+	bytes.assign(3u, 0xFFu);
+	EXPECT_FALSE(engine::detail::file_read_whole(
+		std::string("不存在的目录/不存在的文件.txt"), bytes, ec));
+	EXPECT_TRUE(bytes.empty());
+	EXPECT_TRUE(ec);
+}
+
+//路径越界检查：拒绝父目录返回符号
+TEST_F(Path_Check_Test, 路径越界检查)
+{
+	//正常相对路径
+	EXPECT_TRUE(engine::detail::path_traversal_check(std::string("a/b/c")));
+	//前导父目录
+	EXPECT_FALSE(engine::detail::path_traversal_check(std::string("../a")));
+	//中段父目录
+	EXPECT_FALSE(engine::detail::path_traversal_check(std::string("a/../b")));
+	//对象重载
+	EXPECT_TRUE(engine::detail::path_traversal_check(
+		engine::detail::string_to_path("a/b")));
+}
+
+//路径前缀判定：逐节比较，不做字符串前缀
+TEST_F(Path_Check_Test, 路径前缀判定)
+{
+	//前缀与目标路径
+	const std::filesystem::path prefix = engine::detail::string_to_path("a/b");
+	EXPECT_TRUE(engine::detail::path_prefix_check(prefix,
+		engine::detail::string_to_path("a/b/c")));
+	//自身即前缀
+	EXPECT_TRUE(engine::detail::path_prefix_check(prefix, prefix));
+	//字符串前缀不代表目录前缀
+	EXPECT_FALSE(engine::detail::path_prefix_check(prefix,
+		engine::detail::string_to_path("a/bc")));
+	//目标短于前缀
+	EXPECT_FALSE(engine::detail::path_prefix_check(prefix,
+		engine::detail::string_to_path("a")));
+	//空前缀
+	EXPECT_FALSE(engine::detail::path_prefix_check(std::filesystem::path{}, prefix));
 }

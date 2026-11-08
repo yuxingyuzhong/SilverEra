@@ -22,17 +22,25 @@
 # =============================================================================
 #
 target_sources(TestSystem PRIVATE
+    "src/ECS/世界生命周期测试.cpp"
+    "src/ECS/命令缓冲测试.cpp"
+    "src/ECS/实体与句柄测试.cpp"
+    "src/ECS/组件存取测试.cpp"
+    "src/ECS/视图查询测试.cpp"
     "src/场景/关卡文本测试.cpp"
     "src/注册锚.cpp"
     "src/碰撞/碰撞代理测试.cpp"
     "src/碰撞/碰撞体测试.cpp"
     "src/碰撞/碰撞区域测试.cpp"
-    "src/碰撞/碰撞响应测试.cpp"
+    "src/碰撞/碰撞后端测试.cpp"
     "src/碰撞/碰撞测试.cpp"
+    "src/输入/输入焦点测试.cpp"
+    "src/输入/输入组合测试.cpp"
 )
 
 # 头文件不参与编译，只为让 IDE 建立文件索引；同样经 target_sources 列出，
 # 使头文件改名 / 迁移时 VS 也能改写引用
 target_sources(TestSystem PRIVATE
+    "src/ECS/ECS测试组件.h"
     "src/碰撞/碰撞测试辅助.h"
 )

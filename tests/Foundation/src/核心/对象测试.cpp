@@ -3,8 +3,6 @@
 //      故本文件统一经对象池构建来观察写入结果，不再直接调用被移除的公开 setter。
 #include <gtest/gtest.h>
 
-#include <cstdint>
-#include <vector>
 
 //获取对象基类
 #include "Engine/EngineFoundation/src/object/Object/对象.h"
@@ -31,12 +29,10 @@ TEST_F(Object_Test, 默认构造为非法实体)
 	engine::Object object;
 	//ID 应为零
 	EXPECT_EQ(object.ID(), 0u);
-	//有效标记应为假
-	EXPECT_FALSE(object.valid());
 }
 
-//对象池构建：分配的 ID 可从对象取回，且有效标记为真
-TEST_F(Object_Test, 对象池构建后ID与有效性一致)
+//对象池构建：分配的 ID 可从对象取回
+TEST_F(Object_Test, 对象池构建后ID可读回)
 {
 	//对象池
 	engine::Object_Pool<engine::Object> pool;
@@ -47,9 +43,8 @@ TEST_F(Object_Test, 对象池构建后ID与有效性一致)
 	//按 ID 查找对象
 	auto it = pool.find(id);
 	ASSERT_NE(it, pool.end());
-	//取回 ID 与有效标记
+	//取回 ID
 	EXPECT_EQ(it->ID(), id);
-	EXPECT_TRUE(it->valid());
 }
 
 //派生能力：派生字段随对象保留，ID 由对象池分配
@@ -65,15 +60,14 @@ TEST_F(Object_Test, 派生类字段与基类接口共存)
 	//按 ID 查找对象
 	auto it = pool.find(id);
 	ASSERT_NE(it, pool.end());
-	//基类 ID 与有效性应正确
+	//基类 ID 应正确
 	EXPECT_EQ(it->ID(), id);
-	EXPECT_TRUE(it->valid());
 	//派生字段应保留
 	EXPECT_EQ(it->payload, 99u);
 }
 
-//多对象：各自 ID 唯一且均有效
-TEST_F(Object_Test, 多对象ID唯一且有效)
+//多对象：各自 ID 唯一
+TEST_F(Object_Test, 多对象ID唯一)
 {
 	//对象池
 	engine::Object_Pool<Test_Object> pool;
@@ -82,16 +76,15 @@ TEST_F(Object_Test, 多对象ID唯一且有效)
 	ASSERT_EQ(ids.size(), 2u);
 	//ID 互不相同
 	EXPECT_NE(ids[0], ids[1]);
-	//两个对象均可按 ID 找到且有效
+	//两个对象均可按 ID 找到
 	for (uint64_t id : ids)
 	{
 		auto it = pool.find(id);
 		ASSERT_NE(it, pool.end());
-		EXPECT_TRUE(it->valid());
 	}
 }
 
-//卸载：目标对象不再可按 ID 找到（有效标记已清除）
+//卸载：目标对象不再可按 ID 找到（映射已移除）
 TEST_F(Object_Test, 卸载后对象不可查找)
 {
 	//对象池与一个对象
@@ -106,7 +99,7 @@ TEST_F(Object_Test, 卸载后对象不可查找)
 	EXPECT_EQ(pool.size(), 0u);
 }
 
-//基类指针：经基类指针读取派生对象的 ID 与有效标记
+//基类指针：经基类指针读取派生对象的 ID
 TEST_F(Object_Test, 基类指针访问派生对象接口)
 {
 	//对象池与一个对象
@@ -116,9 +109,8 @@ TEST_F(Object_Test, 基类指针访问派生对象接口)
 	auto it = pool.find(id);
 	ASSERT_NE(it, pool.end());
 	engine::Object* base = &*it;
-	//经基类指针读回 ID 与有效标记
+	//经基类指针读回 ID
 	EXPECT_EQ(base->ID(), id);
-	EXPECT_TRUE(base->valid());
 	//直接经派生对象读取应一致
 	EXPECT_EQ(it->ID(), id);
 }
@@ -134,11 +126,10 @@ TEST_F(Object_Test, 多对象卸载互不影响)
 	uint64_t remove_id = ids[1];
 	//卸载第二个对象
 	pool.unload(remove_id);
-	//第一个对象仍可按 ID 找到且有效
+	//第一个对象仍可按 ID 找到
 	auto it = pool.find(keep_id);
 	ASSERT_NE(it, pool.end());
 	EXPECT_EQ(it->ID(), keep_id);
-	EXPECT_TRUE(it->valid());
 	//第二个对象不可再找到
 	EXPECT_EQ(pool.find(remove_id), pool.end());
 	//合法对象数剩一个

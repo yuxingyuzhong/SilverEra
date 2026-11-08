@@ -55,8 +55,8 @@ TEST_F(Object_Pool_Test, 新建对象返回非零ID)
 	EXPECT_NE(ID, 0u);
 }
 
-//对象新建：新对象被标记有效且数据可写
-TEST_F(Object_Pool_Test, 新建对象标记有效)
+//对象新建：新对象可查找且数据可写
+TEST_F(Object_Pool_Test, 新建对象可查找)
 {
 	//默认构造的对象池
 	engine::Object_Pool<Test_Object> pool;
@@ -66,8 +66,6 @@ TEST_F(Object_Pool_Test, 新建对象标记有效)
 	const auto it = pool.find(ID);
 	//应命中
 	ASSERT_NE(it, pool.end());
-	//对象应被标记有效
-	EXPECT_TRUE(it->valid());
 	//对象ID应与返回ID一致
 	EXPECT_EQ(it->ID(), ID);
 	//派生字段应可写可读
@@ -151,6 +149,23 @@ TEST_F(Object_Pool_Test, 卸载不存在ID不抛异常)
 	EXPECT_EQ(pool.size(), 1u);
 }
 
+//对象尝试卸载：存在返回真、不存在返回假且不告警
+TEST_F(Object_Pool_Test, 尝试卸载返回结果)
+{
+	//默认构造的对象池
+	engine::Object_Pool<Test_Object> pool;
+	//新建一个对象
+	const uint64_t ID = pool.build();
+	//目标存在时应卸载成功
+	EXPECT_TRUE(pool.try_unload(ID));
+	//卸载后不可再找到
+	EXPECT_EQ(pool.find(ID), pool.end());
+	//再次尝试卸载同一目标应返回假
+	EXPECT_FALSE(pool.try_unload(ID));
+	//对象计数应归零
+	EXPECT_EQ(pool.size(), 0u);
+}
+
 //对象卸载：多对象重载逐个卸载
 TEST_F(Object_Pool_Test, 多对象卸载重载)
 {
@@ -189,11 +204,11 @@ TEST_F(Object_Pool_Test, 卸载后新建复用索引)
 	EXPECT_NE(reused, 0u);
 }
 
-//定位字段：定位键改为构造时传入的投影字段，定位映射以投影字段为键
-//投影字段可为任意可比较类型，非整数键已可用（见文末字符串定位字段用例）
+//定位字段：定位键由构造时注入的投影器决定，定位映射以投影键为键
+//投影键可为任意可比较类型（见文末字符串定位字段用例）
 
-//排序模式：排列方式由 mode_set(Object_Order::Sorted, 比较器) 设置，投影字段在构造时固定
-//不再需要随排序方式重复传入投影
+//排序模式：排列方式由 mode_set(Object_Order::Sorted, 比较器) 设置，比较器与投影器均可在运行期替换
+//比较器作用于投影键，可为任意可调用对象（如 lambda）
 
 //排序模式：设置排序方式后仍可按ID查找
 TEST_F(Object_Pool_Test, 排序模式按ID查找)
@@ -228,11 +243,35 @@ TEST_F(Object_Pool_Test, 排序模式降序查找)
 	EXPECT_NE(pool.find(second), pool.end());
 }
 
+//排序模式：自定义 lambda 比较器可用（按对象ID降序）
+TEST_F(Object_Pool_Test, 排序模式自定义比较器可用)
+{
+	//默认构造的对象池
+	engine::Object_Pool<Test_Object> pool;
+	//新建三个对象
+	const uint64_t first = pool.build();
+	const uint64_t second = pool.build();
+	const uint64_t third = pool.build();
+	//以对象ID降序作为自定义比较器
+	pool.mode_set(engine::Object_Order::Sorted,
+		[](const uint64_t& left, const uint64_t& right) { return left > right; });
+	//有效区首位应为ID最大者
+	EXPECT_EQ(pool.begin()->ID(), third);
+	//按ID仍可查找
+	const auto it = pool.find(second);
+	ASSERT_NE(it, pool.end());
+	EXPECT_EQ(it->ID(), second);
+	//首个对象同样可查找到
+	const auto head = pool.find(first);
+	ASSERT_NE(head, pool.end());
+	EXPECT_EQ(head->ID(), first);
+}
+
 //排序模式：以派生字段为投影字段查找
 TEST_F(Object_Pool_Test, 排序模式按投影字段查找)
 {
-	//以派生字段定位的对象池
-	engine::Object_Pool<Test_Object, Payload_Projector> pool;
+	//以派生字段定位的对象池（构造时注入投影器）
+	engine::Object_Pool<Test_Object> pool(Payload_Projector{});
 	//新建三个对象
 	const uint64_t first = pool.build();
 	const uint64_t second = pool.build();
@@ -313,7 +352,7 @@ TEST_F(Object_Pool_Test, 排序重置后原对象可查找)
 }
 
 //排列方式重置：已卸载对象不会再被写回定位映射
-//mode_set(Object_Order::Unorder) 重建映射时以 valid() 判定记录有效，仅清有效标记的已卸载记录不会被误收录。
+//mode_set(Object_Order::Unorder) 重建映射时以有效标记判定记录有效，仅清有效标记的已卸载记录不会被误收录。
 TEST_F(Object_Pool_Test, 重置排序后已卸载对象查不到)
 {
 	//默认构造的对象池
@@ -571,8 +610,8 @@ TEST_F(Object_Pool_Test, 装满对象后析构不崩溃)
 //定位字段：非整数键可用（字符串投影字段）
 TEST_F(Object_Pool_Test, 字符串定位字段可用)
 {
-	//以字符串字段定位的对象池
-	engine::Object_Pool<Tagged_Object, Tag_Projector> pool;
+	//以字符串字段定位的对象池（键类型为字符串，构造时注入投影器）
+	engine::Object_Pool<Tagged_Object, std::string> pool(Tag_Projector{});
 	//新建两个对象
 	pool.build();
 	pool.build();

@@ -1,8 +1,5 @@
 //网格加载器测试：覆盖 OBJ 顶点与面解析、多边形三角化、索引写法与各类非法输入
 #include <gtest/gtest.h>
-#include <filesystem>
-#include <fstream>
-#include <cstring>
 
 //获取网格加载器
 #include "Engine/EngineFoundation/src/loader/assets/Mesh_Loader/网格加载器.h"

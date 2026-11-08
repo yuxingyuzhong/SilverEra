@@ -2,9 +2,7 @@
 #include <gtest/gtest.h>
 
 //四舍五入与浮点分类
-#include <cmath>
 //浮点边界值
-#include <limits>
 
 //获取坐标类型
 #include "Engine/EngineFoundation/src/spatial/math/坐标类型.h"

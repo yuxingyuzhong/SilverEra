@@ -22,6 +22,7 @@
 # =============================================================================
 #
 target_sources(TestFoundation PRIVATE
+    "src/工具/gltf加载器测试.cpp"
     "src/工具/二分查找测试.cpp"
     "src/工具/哈希混合测试.cpp"
     "src/工具/字段校验测试.cpp"
@@ -29,6 +30,7 @@ target_sources(TestFoundation PRIVATE
     "src/工具/数值分配器测试.cpp"
     "src/工具/数据校验器测试.cpp"
     "src/工具/日志系统测试.cpp"
+    "src/工具/材质加载器测试.cpp"
     "src/工具/网格加载器测试.cpp"
     "src/工具/计时器测试.cpp"
     "src/工具/路径字符串转换测试.cpp"
