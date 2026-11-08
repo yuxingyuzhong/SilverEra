@@ -8,20 +8,10 @@
 */
 #include <gtest/gtest.h>
 
-#include <cmath>
-#include <cstdint>
-#include <cstdio>
-#include <filesystem>
-#include <fstream>
-#include <iostream>
-#include <string>
-#include <vector>
 //异步用例：轮询等待
-#include <chrono>
-#include <thread>
 
 #include "Engine/EngineRenderer/src/render/Asset/资产加载.h"
-#include "Engine/EngineSystem/src/scene/Manifest/场景清单.h"
+#include "Engine/EngineSystem/src/world/data/scene/Manifest/场景清单.h"
 #include "Engine/EngineRenderer/src/render/Scene/场景装配.h"
 #include "Engine/EngineRenderer/src/render/Asset/资产缓存.h"
 #include "Engine/EngineRenderer/src/render/Renderer/渲染器.h"

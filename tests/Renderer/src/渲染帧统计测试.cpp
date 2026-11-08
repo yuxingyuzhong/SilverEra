@@ -8,8 +8,6 @@
 */
 #include <gtest/gtest.h>
 
-#include <array>
-#include <cstdint>
 
 //获取渲染器门面（含帧统计结构）与网格数据
 #include "Engine/EngineRenderer/src/render/Renderer/渲染器.h"

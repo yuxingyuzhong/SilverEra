@@ -7,10 +7,6 @@
 */
 #include <gtest/gtest.h>
 
-#include <algorithm>
-#include <cmath>
-#include <cstdint>
-#include <vector>
 
 //获取渲染器门面与网格数据
 #include "Engine/EngineRenderer/src/render/Renderer/渲染器.h"

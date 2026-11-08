@@ -6,7 +6,6 @@
 */
 #include "渲染场景测试辅助.h"
 
-#include <cstring>
 
 namespace
 {

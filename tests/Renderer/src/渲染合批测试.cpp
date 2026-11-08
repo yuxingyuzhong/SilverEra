@@ -8,7 +8,6 @@
 */
 #include "渲染场景测试辅助.h"
 
-#include <filesystem>
 
 /*
 相邻同网格同状态绘制合并（第一百二十七轮）

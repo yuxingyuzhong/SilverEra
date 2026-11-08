@@ -8,12 +8,6 @@
 */
 #include <gtest/gtest.h>
 
-#include <array>
-#include <cstddef>
-#include <cstdint>
-#include <cstring>
-#include <string>
-#include <vector>
 
 //获取渲染器门面（含混合档枚举）与网格数据
 #include "Engine/EngineRenderer/src/render/Renderer/渲染器.h"

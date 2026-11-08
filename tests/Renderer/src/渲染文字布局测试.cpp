@@ -9,13 +9,6 @@
 */
 #include <gtest/gtest.h>
 
-#include <algorithm>
-#include <array>
-#include <cstddef>
-#include <cstdint>
-#include <filesystem>
-#include <string>
-#include <vector>
 
 //获取渲染器门面（含文字布局语义类型）
 #include "Engine/EngineRenderer/src/render/Renderer/渲染器.h"

@@ -8,14 +8,7 @@
 */
 #include <gtest/gtest.h>
 
-#include <array>
-#include <cmath>
-#include <cstddef>
-#include <cstdint>
 //非数参数构造（第二百三十八轮）
-#include <limits>
-#include <string>
-#include <vector>
 
 //获取渲染器门面（含材质 / 混合档枚举）与网格数据
 #include "Engine/EngineRenderer/src/render/Renderer/渲染器.h"

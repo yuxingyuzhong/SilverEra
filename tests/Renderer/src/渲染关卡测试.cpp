@@ -11,20 +11,8 @@
 */
 #include <gtest/gtest.h>
 
-#include <cstdint>
-#include <cstring>
-#include <chrono>
-#include <cmath>
-#include <cstdio>
-#include <filesystem>
-#include <fstream>
-#include <iostream>
-#include <limits>
-#include <string>
-#include <utility>
-#include <vector>
 
-#include "Engine/EngineSystem/src/scene/Level/关卡文本.h"
+#include "Engine/EngineSystem/src/world/data/scene/Level/关卡文本.h"
 #include "Engine/EngineRenderer/src/render/Scene/场景装配.h"
 #include "Engine/EngineRenderer/src/render/Asset/资产缓存.h"
 #include "Engine/EngineRenderer/src/render/Renderer/渲染器.h"

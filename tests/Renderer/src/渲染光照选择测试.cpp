@@ -4,8 +4,6 @@
 */
 #include <gtest/gtest.h>
 
-#include <cmath>
-#include <cstdint>
 
 #include "Engine/EngineRenderer/src/render/Renderer/渲染器.h"
 

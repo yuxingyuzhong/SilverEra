@@ -4,9 +4,6 @@
 */
 #include <gtest/gtest.h>
 
-#include <array>
-#include <cstdint>
-#include <vector>
 
 //后处理链测试辅助（窗口尺寸、像素读取、四边形与最大通道差）
 #include "渲染后处理链测试辅助.h"

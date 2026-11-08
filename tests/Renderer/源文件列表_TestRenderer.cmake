@@ -22,6 +22,7 @@
 # =============================================================================
 #
 target_sources(TestRenderer PRIVATE
+    "src/UI事件桥测试.cpp"
     "src/注册锚.cpp"
     "src/渲染Alpha覆盖测试.cpp"
     "src/渲染Cluster测试.cpp"
@@ -110,10 +111,13 @@ target_sources(TestRenderer PRIVATE
     "src/渲染阴影预算测试.cpp"
     "src/渲染雾测试.cpp"
     "src/渲染风格化测试.cpp"
+    "src/用户界面闭环测试.cpp"
     "src/粒子数据测试.cpp"
     "src/粒子系统测试.cpp"
+    "src/系统输入桥测试.cpp"
     "src/纹理Mipmap测试.cpp"
     "src/纹理解码测试.cpp"
+    "src/输入聚合测试.cpp"
 )
 
 # 头文件不参与编译，只为让 IDE 建立文件索引；同样经 target_sources 列出，

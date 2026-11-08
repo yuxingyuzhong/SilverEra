@@ -6,11 +6,6 @@
 */
 #include <gtest/gtest.h>
 
-#include <array>
-#include <algorithm>
-#include <cmath>
-#include <cstdint>
-#include <vector>
 
 //遮挡测试公开面（Vulkan-free）
 #include "Engine/EngineRenderer/src/render/HiZ/遮挡测试.h"

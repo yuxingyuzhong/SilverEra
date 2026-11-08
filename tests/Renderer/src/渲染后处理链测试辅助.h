@@ -1,18 +1,11 @@
 #pragma once
+//预编译头
+#include "Engine/EngineFoundation/common/前置头文件包含.h"
 /*
 渲染后处理链测试辅助（第五十九轮拆分；由原「渲染后处理链测试.cpp」抽出）
 提供隐藏窗口配置、像素读取、纹理与网格构造，以及夹具 Renderer_Post_Chain_Test。
 */
 #include <gtest/gtest.h>
-
-#include <algorithm>
-#include <array>
-#include <cmath>
-#include <cstddef>
-#include <cstdint>
-#include <filesystem>
-#include <string>
-#include <vector>
 
 //获取渲染器门面（含管线登记与后处理链接口）与网格数据
 #include "Engine/EngineRenderer/src/render/Renderer/渲染器.h"

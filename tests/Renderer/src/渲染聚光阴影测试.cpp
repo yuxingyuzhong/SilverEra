@@ -6,17 +6,8 @@
 */
 #include <gtest/gtest.h>
 
-#include <chrono>
-#include <cstdint>
-#include <cstdio>
-#include <filesystem>
-#include <fstream>
-#include <iostream>
-#include <string>
-#include <utility>
-#include <vector>
 
-#include "Engine/EngineSystem/src/scene/Level/关卡文本.h"
+#include "Engine/EngineSystem/src/world/data/scene/Level/关卡文本.h"
 #include "Engine/EngineRenderer/src/render/Scene/场景装配.h"
 #include "Engine/EngineRenderer/src/render/Renderer/渲染器.h"
 

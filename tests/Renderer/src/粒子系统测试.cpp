@@ -4,10 +4,8 @@
 */
 #include <gtest/gtest.h>
 
-#include <cmath>
-#include <cstdint>
 
-#include "Engine/EngineSystem/src/effect/Particle/粒子系统.h"
+#include "Engine/EngineSystem/src/world/data/particle/Particle_Pool/粒子系统.h"
 
 //默认容量与初始状态
 TEST(Particle_System_Test, 默认状态)

@@ -10,13 +10,6 @@
 */
 #include <gtest/gtest.h>
 
-#include <algorithm>
-#include <chrono>
-#include <cstdint>
-#include <functional>
-#include <iostream>
-#include <limits>
-#include <vector>
 
 #include "Engine/EngineRenderer/src/render/Renderer/渲染器.h"
 #include "Engine/EngineRenderer/src/render/Particle/粒子宿主.h"

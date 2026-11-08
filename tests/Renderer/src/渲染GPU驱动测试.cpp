@@ -6,14 +6,6 @@
 */
 #include <gtest/gtest.h>
 
-#include <algorithm>
-#include <array>
-#include <cmath>
-#include <cstdint>
-#include <cstdio>
-#include <limits>
-#include <random>
-#include <vector>
 
 //获取渲染器门面与包围体构造
 #include "Engine/EngineRenderer/src/render/Renderer/渲染器.h"

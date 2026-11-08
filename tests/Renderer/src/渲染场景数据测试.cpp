@@ -5,7 +5,6 @@
 */
 #include "渲染场景测试辅助.h"
 
-#include <numeric>
 
 TEST_F(Renderer_Scene_Test, 未初始化应用场景无副作用)
 {

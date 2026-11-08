@@ -1,17 +1,12 @@
 #pragma once
+//预编译头
+#include "Engine/EngineFoundation/common/前置头文件包含.h"
 /*
 渲染场景测试辅助（第五十七轮拆分；由原「渲染场景数据测试.cpp」抽出）
 提供：隐藏窗口配置、像素读取与亮度、四边形 / 立方体网格构造、纹理构造、模型矩阵构造，
 以及所有场景渲染用例共用的夹具 Renderer_Scene_Test。
 */
 #include <gtest/gtest.h>
-
-#include <array>
-#include <cmath>
-#include <cstddef>
-#include <cstdint>
-#include <string>
-#include <vector>
 
 //获取渲染器门面（含场景描述）与网格数据
 #include "Engine/EngineRenderer/src/render/Renderer/渲染器.h"

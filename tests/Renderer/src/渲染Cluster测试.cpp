@@ -4,11 +4,6 @@
 */
 #include <gtest/gtest.h>
 
-#include <algorithm>
-#include <array>
-#include <cstdint>
-#include <iostream>
-#include <vector>
 
 #include "Engine/EngineRenderer/src/render/Renderer/渲染器.h"
 

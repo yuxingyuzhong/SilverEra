@@ -11,12 +11,6 @@ mip 过滤为规范确定的确定性行为，故单独给出像素级差异断�
 */
 #include <gtest/gtest.h>
 
-#include <algorithm>
-#include <array>
-#include <cstddef>
-#include <cstdint>
-#include <string>
-#include <vector>
 
 //获取渲染器门面（含采样器状态与寻址模式）
 #include "Engine/EngineRenderer/src/render/Renderer/渲染器.h"

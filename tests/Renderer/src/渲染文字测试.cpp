@@ -8,17 +8,10 @@
 */
 #include <gtest/gtest.h>
 
-#include <algorithm>
-#include <array>
-#include <cstddef>
-#include <cstdint>
-#include <string>
-#include <vector>
 
 //获取渲染器门面
 #include "Engine/EngineRenderer/src/render/Renderer/渲染器.h"
 //文件是否存在（决定是否跳过依赖系统字体的用例）
-#include <filesystem>
 
 namespace
 {

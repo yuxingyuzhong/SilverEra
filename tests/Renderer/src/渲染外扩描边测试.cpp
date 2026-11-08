@@ -6,11 +6,6 @@
 */
 #include <gtest/gtest.h>
 
-#include <algorithm>
-#include <array>
-#include <cstdint>
-#include <limits>
-#include <vector>
 
 //获取渲染器门面（含外扩描边接口）
 #include "Engine/EngineRenderer/src/render/Renderer/渲染器.h"
