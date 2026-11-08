@@ -1,4 +1,6 @@
 #pragma once
+//预编译头
+#include "Engine/EngineFoundation/common/前置头文件包含.h"
 /*
 碰撞测试辅助（第五十九轮拆分；由原「碰撞测试.cpp」抽出）
 提供临时网格 / 边界文件构造、事件构造等静态辅助，以及三个夹具：
@@ -6,8 +8,6 @@ Collider_Test、Collision_Region_Test、Collision_Proxy_Test。
 */
 //碰撞模块测试：覆盖碰撞体搬移、碰撞空间构建与检测、空间边界与碰撞代理器的事件接入
 #include <gtest/gtest.h>
-#include <filesystem>
-#include <fstream>
 
 //获取碰撞代理器（含碰撞空间、碰撞体与事件系统）
 #include "Engine/EngineSystem/src/collision/Collision_Proxy/碰撞代理器.h"
