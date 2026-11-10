@@ -110,3 +110,76 @@ TEST_F(Renderer_Shader_Test, 魔数不匹配初始化失败)
 	EXPECT_FALSE(renderer.init(shader_config(shader_probe_dir)));
 	EXPECT_FALSE(renderer.valid());
 }
+
+/*
+着色器加载失败后的回滚契约（第十八轮）
+失败点位于初始化第 ⑩ 步，其前已完成平台 / 实例 / 设备 / 表面 / 内存 / 交换链 / 帧 / 着色器模块，
+故本用例实际检验这八步的逆序回滚：资源计数归零、尺寸归零、帧推进拒绝、关闭幂等。
+*/
+TEST_F(Renderer_Shader_Test, 着色器失败后回滚契约)
+{
+	engine::Renderer renderer;
+	//指向从未创建的目录，使第 ⑩ 步失败
+	ASSERT_FALSE(renderer.init(shader_config(shader_missing_dir)));
+	EXPECT_FALSE(renderer.valid());
+	//交换链尺寸归零（交换链已随回滚销毁）
+	EXPECT_EQ(renderer.extent_width(), 0u);
+	EXPECT_EQ(renderer.extent_height(), 0u);
+	//资源计数全部归零（网格 / 纹理 / 管线 / 字体 / 渲染目标 / 材质）
+	const engine::Renderer_Resource_Counts counts = renderer.resource_counts();
+	EXPECT_EQ(counts.meshes, 0u);
+	EXPECT_EQ(counts.textures, 0u);
+	EXPECT_EQ(counts.pipelines, 0u);
+	EXPECT_EQ(counts.fonts, 0u);
+	EXPECT_EQ(counts.render_targets, 0u);
+	EXPECT_EQ(counts.materials, 0u);
+	//未初始化时推进一帧失败
+	EXPECT_FALSE(renderer.frame_render());
+	//失败后再关闭两次不得崩溃（幂等）
+	renderer.shutdown();
+	renderer.shutdown();
+	EXPECT_FALSE(renderer.valid());
+}
+
+//着色器加载失败后可重新初始化成功（回滚未污染实现体）
+TEST_F(Renderer_Shader_Test, 着色器失败后可重新初始化)
+{
+	engine::Renderer renderer;
+	//先以缺失目录失败一次
+	ASSERT_FALSE(renderer.init(shader_config(shader_missing_dir)));
+	EXPECT_FALSE(renderer.valid());
+	//再用默认着色器目录初始化（相对可执行目录的 shaders）
+	engine::Renderer_Config good;
+	good.width = 320;
+	good.height = 180;
+	good.hidden = true;
+	ASSERT_TRUE(renderer.init(good)) << "失败回滚后重新初始化失败";
+	EXPECT_TRUE(renderer.valid());
+	//能正常推进一帧
+	EXPECT_TRUE(renderer.frame_render());
+	//关闭后仍可再次初始化
+	renderer.shutdown();
+	ASSERT_TRUE(renderer.init(good));
+	EXPECT_TRUE(renderer.valid());
+}
+
+//失败与成功交替：反复初始化 / 关闭不得残留或二次销毁
+TEST_F(Renderer_Shader_Test, 失败成功交替不残留)
+{
+	engine::Renderer renderer;
+	engine::Renderer_Config good;
+	good.width = 320;
+	good.height = 180;
+	good.hidden = true;
+	//三轮「失败 → 成功 → 关闭」
+	for (int round = 0; round < 3; ++round)
+	{
+		EXPECT_FALSE(renderer.init(shader_config(shader_missing_dir))) << "第 " << round << " 轮失败注入未生效";
+		EXPECT_FALSE(renderer.valid());
+		ASSERT_TRUE(renderer.init(good)) << "第 " << round << " 轮重初始化失败";
+		EXPECT_TRUE(renderer.valid());
+		EXPECT_TRUE(renderer.frame_render());
+		renderer.shutdown();
+		EXPECT_FALSE(renderer.valid());
+	}
+}
